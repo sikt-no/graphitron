@@ -924,8 +924,9 @@ Independent of 8e.3. As built:
 * *Collision* (Alf, 2026-11-18, in `defects-as-facts.adoc`). An authored `_voucher` on a marked type is
   `VOUCHER_FIELD_NAME_TAKEN` at the marker; it keeps the coordinate, is never absorbed, and nothing is
   minted beside it.
-* *The double marker* (the author's call, not ruled; see *Open questions*). A type marked both is
-  `VOUCHER_MARKERS_BOTH` at each marker and is given the issuing field, which absorbs what it declares. Both shapes leave the type a
+* *The double marker* (Alf, 2026-11-18, in `defects-as-facts.adoc`: never both). A type marked both is
+  `VOUCHER_MARKERS_BOTH` at each marker, and is given the issuing field, which absorbs what it declares,
+  so the refused schema still assembles for capture to report it (see *Open questions*). Both shapes leave the type a
   field, so the refused schema still assembles and its defects are reported. They replace
   `VOUCHER_FIELD_REPEATED`.
 * *Membership.* Every field written on the issuing type but an authored `_voucher`.
@@ -1045,12 +1046,12 @@ want to see the plan.
 * Whether the 2026-11-15 ruling that a name Graphitron would mint is never silently withheld, written for
   types, covers fields too. Slice 8f's collision refusal rests on it if so, and needs a ruling of its own
   if not; for Alf and Filip, and the answer belongs in `defects-as-facts.adoc`.
-* A type marked both `@issue` and `@accept` (slice 8f): refused at each marker, and given the issuing
-  voucher field so the refused schema still assembles for capture to report it. `defects-as-facts.adoc`
-  § The supertype says a refused macro shape is refused before the mint; minting here departs from that
-  for capture's sake. For Alf and Filip: rule the refusal, and whether capture should instead judge a
-  field-less type itself, which would let both refused shapes (this and the name collision) mint nothing
-  and drop the member rule's `_voucher` exception.
+* The refused voucher shapes still mint (slice 8f). A type marked both `@issue` and `@accept` is refused
+  (Alf, 2026-11-18) but given the issuing voucher field, and an authored `_voucher` is kept out of the
+  membership, both so the refused schema still assembles for capture to report it.
+  `defects-as-facts.adoc` § The supertype says a refused macro shape is refused before the mint. For Alf
+  and Filip: whether capture should instead judge a field-less type itself, which would let both refused
+  shapes mint nothing and drop the member rule's `_voucher` exception.
 * The voucher refusals restate the mint rule's predicates (slice 8f): `VOUCHER_FIELD_NAME_TAKEN` and
   `VOUCHER_MARKERS_BOTH` are worked out again from the transcription rather than read as the absence of
   a `graphitron_voucher_field` row, against the ruling that a stage decides once in its relation's rule

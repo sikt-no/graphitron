@@ -246,6 +246,10 @@ graphitron's own value under graphitron's own name, the same in every subgraph. 
 either way that declares `_voucher` is `VOUCHER_FIELD_NAME_TAKEN` at the marker; the declared field
 keeps the coordinate and nothing is minted beside it.
 
+A type is marked `@issue` or `@accept`, never both (Alf, 2026-11-18): a type either vouches for its
+rows or grants access on another subgraph's voucher. Marking both is `VOUCHER_MARKERS_BOTH`, raised at
+each marker.
+
 == What is not a defect
 
 The classification walk still refuses schemas on its own, with typed rejections that reach the
