@@ -18,22 +18,22 @@ type Report { text: String }
 
 type Query {
   films(
-    inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
-    viaJunction: String @reference(path: [{key: "film_actor_film_id_fkey"}])
-    titled: String @reference(path: [{table: "film_translation"}])
+    inActor: String @field(name: "first_name") @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    viaJunction: Int @field(name: "actor_id") @reference(path: [{key: "film_actor_film_id_fkey"}])
+    titled: String @field(name: "title_txt") @reference(path: [{table: "film_translation"}])
     inLanguage: String @reference(path: [{table: "language"}])
     unresolved: String @reference(path: [{key: "no_such_fkey"}, {key: "film_actor_actor_id_fkey"}])
-    byCondition: String @reference(path: [{condition: {
+    byCondition: Int @field(name: "actor_id") @reference(path: [{condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
       method: "filmToFilmActor"}}])
-    keyThenCondition: String @reference(path: [{key: "film_actor_film_id_fkey"}, {condition: {
+    keyThenCondition: String @field(name: "first_name") @reference(path: [{key: "film_actor_film_id_fkey"}, {condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
       method: "filmActorJunctionToActor"}}])
-    conditionBesideKey: String @reference(path: [{key: "film_actor_film_id_fkey", condition: {
+    conditionBesideKey: Int @field(name: "actor_id") @reference(path: [{key: "film_actor_film_id_fkey", condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
       method: "customerToAddress"}}])
   ): [Film!]!
-  pagedFilms(inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}])): [Film!]! @asConnection
+  pagedFilms(inActor: Int @field(name: "actor_id") @reference(path: [{key: "film_actor_film_id_fkey"}])): [Film!]! @asConnection
   # The same element on the root field itself departs from Query, which binds nothing.
   rootPath(inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}])): [Film!]!
     @reference(path: [{key: "film_actor_film_id_fkey"}])
@@ -42,10 +42,10 @@ type Query {
     anyTable: String @reference(path: [{condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
       method: "customerToAnyTable"}}])
-    diverging: String @reference(path: [{condition: {
+    diverging: String @field(name: "address") @reference(path: [{condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
       method: "divergingArrivals"}}])
-    perDeparture: String @reference(path: [{condition: {
+    perDeparture: String @field(name: "address") @reference(path: [{condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
       method: "agreeingOnArrival"}}])
   ): [Customer!]!

@@ -3,17 +3,36 @@
 # COLUMN_UNRESOLVED, the detail its spelling, and so is Query.filmsPaged's, a filter on the rows a
 # connection pages. A @lookupKey argument naming no column, Query.filmsByKey's bogusKey, has no
 # column to drive its lookup and is COLUMN_UNRESOLVED as well, where filmId, naming film_id, draws
-# nothing. An argument naming a column, rating through
-# @field(name:), draws nothing, and neither does one its own @condition takes. A filter's input field
-# naming no column is input-object-build's.
+# nothing; an overriding condition stands in for a filter, not a lookup, so
+# Query.filmsByBogusKeyAndPrefix's bogusKey is COLUMN_UNRESOLVED under one too. An argument
+# reaching through @reference names its column on the table the path ends at:
+# Query.filmsByLanguage's languageBogus names none on language and is COLUMN_UNRESOLVED, where
+# languageName, naming name there, draws nothing. An argument naming a column, rating through
+# @field(name:), draws nothing, and neither does one its own @condition takes. A @routine's
+# arguments its parameters do not take filter the function's result: Query.actorFilmsBy's bogus names
+# no column of films_for_actor's and is COLUMN_UNRESOLVED, where title, naming the result's title,
+# and actorId and minLength, which the parameters take, draw nothing. A filter's input field naming
+# no column is input-object-build's.
 
 type Film @table(name: "film") { title: String }
+type ActorFilm { filmId: Int @field(name: "film_id") title: String }
 
 type Query {
   filmsBy(rating: String @field(name: "rating"), bogus: String): [Film!]! @defaultOrder(primaryKey: true)
   filmsByKey(filmId: [Int!] @field(name: "film_id") @lookupKey, bogusKey: [Int!] @lookupKey): [Film]
+  filmsByBogusKeyAndPrefix(bogusKey: [Int!] @lookupKey, titlePrefix: String): [Film]
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
   filmsPaged(rating: String @field(name: "rating"), bogus: String): [Film!]!
     @asConnection @defaultOrder(primaryKey: true)
+  filmsByLanguage(
+    languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}]),
+    languageBogus: String @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+    @defaultOrder(primaryKey: true)
+  actorFilmsBy(actorId: Int!, minLength: Int, title: String, bogus: String): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
   filmsByTitlePrefix(titlePrefix: String @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmTitlePrefixCondition"}, override: true)): [Film!]! @defaultOrder(primaryKey: true)
@@ -24,6 +43,9 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   COLUMN_UNRESOLVED, Query.filmsBy(bogus:), bogus
   COLUMN_UNRESOLVED, Query.filmsPaged(bogus:), bogus
   COLUMN_UNRESOLVED, Query.filmsByKey(bogusKey:), bogusKey
+  COLUMN_UNRESOLVED, Query.filmsByBogusKeyAndPrefix(bogusKey:), bogusKey
+  COLUMN_UNRESOLVED, Query.filmsByLanguage(languageBogus:), languageBogus
+  COLUMN_UNRESOLVED, Query.actorFilmsBy(bogus:), bogus
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
@@ -31,5 +53,10 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   COLUMN_UNRESOLVED, Query.filmsBy(rating:)
   COLUMN_UNRESOLVED, Query.filmsPaged(rating:)
   COLUMN_UNRESOLVED, Query.filmsByKey(filmId:)
+  COLUMN_UNRESOLVED, Query.filmsByBogusKeyAndPrefix(titlePrefix:)
+  COLUMN_UNRESOLVED, Query.filmsByLanguage(languageName:)
   COLUMN_UNRESOLVED, Query.filmsByTitlePrefix(titlePrefix:)
+  COLUMN_UNRESOLVED, Query.actorFilmsBy(title:)
+  COLUMN_UNRESOLVED, Query.actorFilmsBy(actorId:)
+  COLUMN_UNRESOLVED, Query.actorFilmsBy(minLength:)
   """)

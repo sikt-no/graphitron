@@ -19655,8 +19655,9 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate))
 UNION ALL
 -- A filter's argument or input field that names no column, at the @field where one is written and at
--- the declaration otherwise: under a field whose rows a filter reads, so no @service, write or
--- routine, and returning a table-bound type or a connection of one, it binds no column or node id,
+-- the declaration otherwise: under a field whose rows a filter reads, so no @service or write, and
+-- returning a table-bound type or a connection of one, or a @routine's result, which every leaf its
+-- parameters do not take filters (graphitron_routine_result), it binds no column or node id,
 -- nothing at or under it is taken, by its own @condition among the rest, and no step above it takes
 -- it, an overriding condition or a call reading the object; so no predicate compares it and the value
 -- a client sends goes nowhere.
@@ -19670,24 +19671,33 @@ SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
     ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
   JOIN graphitron_path_need_table n
     ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  -- Where a written @reference path lands, its join path says, the need's landing staying null.
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
   JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
   JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
   -- The type the field's rows are of, unwrapped from a connection where it returns one.
   JOIN graphitron_field_target ft
     ON ft.graph_name = ff.graph_name AND ft.type_name = ff.type_name AND ft.field_name = ff.field_name
-  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+  LEFT JOIN graphitron_routine_result rr
+    ON rr.graph_name = ff.graph_name AND rr.type_name = ff.type_name AND rr.field_name = ff.field_name
   LEFT JOIN graphitron_binding_claim cl
     ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
   LEFT JOIN graphitron_directive_application da
     ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
    AND da.directive_name = 'field' AND da.ordinal = 0
  WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
-   AND n.landing_table IS NOT NULL
+   AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+   AND (rr.field_name IS NOT NULL
+        OR EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
                     WHERE c.graph_name = o.graph_name AND c.parent_coordinate = o.coordinate)
+   -- A routine reading rows is judged; one writing them, which returns no function's rows, is not.
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
                     WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
-                      AND p.kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT'))
+                      AND (p.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT')
+                           OR p.kind = 'ROUTINE' AND rr.field_name IS NULL))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
                     WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
@@ -19696,8 +19706,12 @@ SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
                     WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
                     WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
-                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+   -- An overriding condition stands in for a filter's predicate, not for a lookup's join.
+   AND (NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                     WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+        OR EXISTS (SELECT 1 FROM graphitron_directive_application lk
+                    WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
+                      AND lk.directive_name = 'lookupKey'))
    -- A @lookupKey argument naming no column is judged here too, a lookup needing a column to drive its
    -- join; one that decodes a node id is the lookup's own node-id rules'.
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application lk

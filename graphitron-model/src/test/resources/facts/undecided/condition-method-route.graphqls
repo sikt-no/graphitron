@@ -16,24 +16,24 @@ type Address @table(name: "address") { addressId: Int }
 type Query {
   customers(
     # Both parameters concrete.
-    concrete: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "customerToAddress"}}])
+    concrete: String @field(name: "address") @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "customerToAddress"}}])
     # An arrival no generated table is: the wildcard, a primitive, and a class that is not a table.
     anyTable: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "customerToAnyTable"}}])
     primitive: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "customerToInt"}}])
     notATable: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "customerToRange"}}])
     # Overloads: the declarations must agree on the arrival, every one of them declaring one.
-    agreeing: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "agreeingOnBoth"}}])
-    perDeparture: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "agreeingOnArrival"}}])
-    diverging: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "divergingArrivals"}}])
-    wildcardBeside: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "wildcardBesideConcrete"}}])
-    nonTableBeside: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "nonTableBesideConcrete"}}])
+    agreeing: String @field(name: "address") @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "agreeingOnBoth"}}])
+    perDeparture: String @field(name: "address") @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "agreeingOnArrival"}}])
+    diverging: String @field(name: "address") @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "divergingArrivals"}}])
+    wildcardBeside: String @field(name: "address") @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "wildcardBesideConcrete"}}])
+    nonTableBeside: String @field(name: "address") @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "nonTableBesideConcrete"}}])
     # A declaration with no second parameter declares no arrival and suppresses nothing.
-    oneParameter: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "oneParameterBesideTwo"}}])
+    oneParameter: String @field(name: "address") @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "oneParameterBesideTwo"}}])
     # Not a condition, and not a method at all.
     notACondition: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "notACondition"}}])
     missing: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "noSuchMethod"}}])
     # Beside a key the key is the route, and the condition that hop's filter.
-    besideKey: String @reference(path: [{key: "customer_address_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "besideAKey"}}])
+    besideKey: String @field(name: "address") @reference(path: [{key: "customer_address_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "besideAKey"}}])
   ): [Customer!]!
 }
 

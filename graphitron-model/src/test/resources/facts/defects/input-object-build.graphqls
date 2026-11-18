@@ -2,7 +2,7 @@
 # cannot be built is a defect at the input field or argument, each beside the shape that builds: a
 # class nothing constructs, a field filling no member, a list that cannot group, two fields on one
 # member, a @condition taking a jOOQ record, a field naming no column of the record it writes, and a
-# filter's field naming no column of the table it filters. A
+# filter's field naming no column of the table it filters, or of the result a @routine filters. A
 # node id with no route onto the record is node-id-lands-on-table's.
 #
 # A nested input under a record groups onto its columns, and where it is named like a jOOQ embeddable
@@ -29,6 +29,10 @@ type Film implements Node @table(name: "film") @node { id: ID! title: String }
 
 # A filter built into nothing: nope names no column of film, so no predicate compares it.
 input FilmPlainFilterInput { title: String nope: String }
+# A @routine's parameters take actorId and minLength; title filters the function's result, and foo
+# names none of its columns.
+type ActorFilm { filmId: Int @field(name: "film_id") title: String }
+input ActorFilmFilter { actorId: Int! minLength: Int title: String foo: String }
 type FilmDraftsCountedPayload { count: Int }
 
 input FilmDraftInput { title: String! }
@@ -158,6 +162,10 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
   # releaseYear fills no member, but the filter, not overridden, compares it as a column.
   filmsByPlainFilter(filter: FilmPlainFilterInput): [Film!]! @defaultOrder(primaryKey: true)
+  actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: filter.actorId, pMinLength: filter.minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
   filmsByColumnSearch(search: FilmSearchColumnInput): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
       method: "filmSearchBean"})
@@ -180,6 +188,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   PeriodLeaves.starts,                 COLUMN_UNRESOLVED,          "starts, under period, named like the embeddable period of embedded_period, which an input does not bind to yet"
   SpanLeaves.starts,                   COLUMN_UNRESOLVED,          starts
   FilmPlainFilterInput.nope,           COLUMN_UNRESOLVED,          nope
+  ActorFilmFilter.foo,                 COLUMN_UNRESOLVED,          foo
   FilmBundleLimitsInput.capacity,      MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
   FilmBundleQuotaInput.capacity,       MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
   FilmBundleRenamedGroupInput.limits,  MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmBundleDraft
