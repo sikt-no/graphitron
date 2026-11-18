@@ -3,6 +3,12 @@
 # dropped. The same record built from an input with a nested input that does not reach itself again
 # draws nothing. A bean a @condition's parameter builds is judged the same way: CyclicSearchInput's
 # again reaches it again under FilmSearchFilter.
+#
+# A plain filter input is judged the same way under a field whose rows it filters, whatever an
+# override says: FilmCycleB.a reaches FilmCycleA again under filmsByCycle's filter, and
+# FilmSelfFilter.self reaches its own type. CyclicSearchInput.again is a filter too, under
+# filmsByCyclicSearch, one site with its bean's. A filter nesting an input that does not reach itself
+# again draws nothing, nor one taking the same input twice side by side, which is no cycle.
 
 type Film @table(name: "film") { title: String }
 
@@ -20,6 +26,34 @@ input InnerInput @table(name: "film") {
   description: String
 }
 
+input FilmCycleA {
+  title: String
+  b: FilmCycleB
+}
+
+input FilmCycleB {
+  a: FilmCycleA
+}
+
+input FilmSelfFilter {
+  title: String
+  self: FilmSelfFilter
+}
+
+input FilmLengthFilter {
+  length: Int
+}
+
+input FilmNestedFilter {
+  title: String
+  inner: FilmLengthFilter
+}
+
+input FilmTwiceFilter {
+  first: FilmLengthFilter
+  second: FilmLengthFilter
+}
+
 input CyclicSearchInput {
   title: String
   again: CyclicSearchInput
@@ -27,6 +61,10 @@ input CyclicSearchInput {
 
 type Query {
   films: [Film!]!
+  filmsByCycle(filter: FilmCycleA): [Film!]!
+  filmsBySelf(filter: FilmSelfFilter): [Film!]!
+  filmsByNested(filter: FilmNestedFilter): [Film!]!
+  filmsByTwice(filter: FilmTwiceFilter): [Film!]!
   filmsByCyclicSearch(search: CyclicSearchInput): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
       method: "filmSearchBean"}, override: true)
@@ -44,4 +82,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   code,                 coordinate,      detail
   INPUT_CYCLE_EXPANDED, CycleInput.self, CycleInput
   INPUT_CYCLE_EXPANDED, CyclicSearchInput.again, CyclicSearchInput
+  INPUT_CYCLE_EXPANDED, FilmCycleB.a, FilmCycleA
+  INPUT_CYCLE_EXPANDED, FilmSelfFilter.self, FilmSelfFilter
   """)

@@ -214,6 +214,20 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 
 *Next step.* Write what the field runs, or bind at least one implementer of the union or interface to a table. xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the layouts graphitron fetches.
 
+[#input-cycle-expanded]
+=== An input object that reaches itself again (`INPUT_CYCLE_EXPANDED`)
+
+*What it says.* `An input object is reached again inside itself where a call builds its value into a class or a filter compares it, and its nesting has no last level, so the nested value would be dropped`, at the input field that reaches the type again, the detail naming the type.
+
+*Cause.* An input object is read field by field, nested inputs included, and one whose fields lead back to its own type, directly or through another input type, has no last level. Graphitron refuses it where it reads the value as a whole:
+
+* under a class a `@service` or a `@condition` builds the input into;
+* under a field whose rows a plain filter input narrows, whatever an overriding `@condition` says.
+
+Taking the same input type in two sibling fields is no cycle; only a type inside itself is.
+
+*Next step.* Break the cycle in the input type, or take the nested part as a parameter of its own. xref:directives/field.adoc[`@field`] covers how a filter input binds its columns.
+
 [#parameter-names-missing]
 === A method whose class was compiled without `-parameters` (`PARAMETER_NAMES_MISSING`)
 

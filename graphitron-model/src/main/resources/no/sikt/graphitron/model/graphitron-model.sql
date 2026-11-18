@@ -21510,6 +21510,23 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
  WHERE it.type_kind = 'INPUT_OBJECT'
 UNION ALL
+-- An input object reached again inside itself under a field whose rows a filter reads, looks up or
+-- counts, at the input field that reaches it again: the filter's leaves stop there, so the nested
+-- value could filter nothing. Whatever an override or a bound column says, as the walk refuses it.
+-- Beside a bean a @condition builds at the same field the site is one, the two stages' rows alike.
+-- The detail is the input type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'INPUT_CYCLE_EXPANDED', it.type_name, 'occurrence-producers'
+  FROM graphitron_occurrence_input_type it
+  JOIN graphitron_occurrence_chain ch
+    ON ch.graph_name = it.graph_name AND ch.coordinate = it.coordinate AND ch.type_name = it.type_name
+  JOIN graphitron_occurrence o ON o.graph_name = it.graph_name AND o.coordinate = it.coordinate
+  JOIN graphitron_occurrence_producer fp
+    ON fp.graph_name = o.graph_name AND fp.coordinate = o.field_coordinate
+   AND fp.kind IN ('SELECT', 'LOOKUP', 'COUNT')
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE it.type_kind = 'INPUT_OBJECT' AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+UNION ALL
 -- A @service handing back records of a table with no primary key, at the field, at a root or under an
 -- object: the records it answers are read back from their table by its primary key, so there is
 -- nothing to read them back by. The detail is the table. A child's key table lacking one is the depth
@@ -29966,7 +29983,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('SERVICE_SOURCES_NOT_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_SOURCES_NOT_KEYS',
    'A @service under an object takes its parents'' keys as a class that is neither a jOOQ table record nor a jOOQ row or record of the key columns, and nothing says how to put a key into one: take the parent table''s records, or Row<N> or Record<N> of its key columns.'),
   ('INPUT_CYCLE_EXPANDED', 'error', 'GRAPHITRON', 'GRAPHITRON_INPUT_CYCLE_EXPANDED',
-   'An input object is reached again inside itself where a call builds its value into a class, and the class cannot be built without end, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
+   'An input object is reached again inside itself where a call builds its value into a class or a filter compares it, and its nesting has no last level, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
   ('ENUM_CONSTANT_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ENUM_CONSTANT_MISSING',
    'A GraphQL enum value a @service parameter or input member takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
   ('ERROR_FIELD_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_ERROR_FIELD_UNREADABLE',
