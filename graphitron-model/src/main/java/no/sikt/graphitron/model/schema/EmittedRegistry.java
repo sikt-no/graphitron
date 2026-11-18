@@ -69,6 +69,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
@@ -501,6 +502,38 @@ public final class EmittedRegistry {
     }
 
     private record Replacement(SDLDefinition<?> old, SDLDefinition<?> replacement) {}
+
+    /**
+     * Adds the voucher field Graphitron mints on each type a voucher marker sits on, as
+     * {@code graphitron_voucher_field} states it, to the type's own declaration where no declaration
+     * site already has it. For the walk's input ({@link AttributedRegistry#of}), which starts from the
+     * composition as written: an issuing type whose every written field is absorbed would otherwise be
+     * left with none, and no reader of the written composition would know the field exists. The
+     * emitted schema needs no such step, its fields coming from {@code graphitron_field} whole.
+     */
+    static void mintVoucherFields(TypeDefinitionRegistry patched, StoreHandle store) {
+        var v = GRAPHITRON_VOUCHER_FIELD;
+        var replacements = new ArrayList<Replacement>();
+        store.dsl().select(v.TYPE_NAME, v.FIELD_NAME).from(v)
+            .where(v.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(v.TYPE_NAME)
+            .forEach(r -> {
+                if (!(patched.getTypeOrNull(r.value1()) instanceof ObjectTypeDefinition object)) {
+                    return;
+                }
+                var extensions = patched.objectTypeExtensions().getOrDefault(r.value1(), List.of());
+                boolean declared = object.getFieldDefinitions().stream().anyMatch(f -> f.getName().equals(r.value2()))
+                    || extensions.stream().flatMap(e -> e.getFieldDefinitions().stream())
+                        .anyMatch(f -> f.getName().equals(r.value2()));
+                if (declared) {
+                    return;
+                }
+                var fields = new ArrayList<>(object.getFieldDefinitions());
+                fields.add(FieldDefinition.newFieldDefinition().name(r.value2()).type(type("String!")).build());
+                replacements.add(new Replacement(object, object.transform(b -> b.fieldDefinitions(fields))));
+            });
+        apply(patched, replacements);
+    }
 
     /**
      * Withholds the fields each {@code @issue} absorbs, as {@code graphitron_voucher_member} states

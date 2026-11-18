@@ -2,12 +2,12 @@ query IssuingHandover
     @factDocument(path: "scenarios/voucher-issue-subgraph")
     @factRows(relation: "graphitron_voucher_vouched_for")
     @factRows(relation: "graphitron_minted_key") {
-  applications { results { id eierId voucher } }
+  applications { results { id eierId _voucher } }
 }
 
 query AcceptingEntity
     @factDocument(path: "scenarios/voucher-accept-subgraph")
     @factRows(relation: "graphitron_accept_vouched_for")
     @factRows(relation: "graphitron_minted_key") {
-  results { id eierId grade details { subject } voucher }
+  results { id eierId grade details { subject } _voucher }
 }

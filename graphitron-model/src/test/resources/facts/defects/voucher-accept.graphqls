@@ -1,20 +1,18 @@
 extend schema @withConfiguration(sessionState: true)
 
-"A field marked @accept is the voucher field of an entity another subgraph vouches for: its application is captured as written, its vouchesFor parsed one selection per row, and it binds by the voucher kind, so the column rule never looks for a voucher column. A type whose subtree its SELECT reads whole is not refused for want of a dispatch."
-type Film @table(name: "film") @key(fields: "filmId") {
+"A type marked @accept is an entity another subgraph vouches for: its application is captured as written, its vouchesFor parsed one selection per row, and the voucher field Graphitron mints on it binds by the voucher kind, so the column rule never looks for a voucher column. A type whose subtree its SELECT reads whole is not refused for want of a dispatch."
+type Film @table(name: "film") @key(fields: "filmId") @accept(scope: "films", vouchesFor: "languageId") {
   filmId: ID! @field(name: "film_id")
   languageId: Int @field(name: "language_id")
   title: String
-  voucher: String! @accept(scope: "films", vouchesFor: "languageId")
 }
 
 # A node may accept: its node key and its voucher key are both minted, numbered once after the key its
 # author wrote.
-type Store implements Node @table(name: "store") @node @key(fields: "managerStaffId") {
+type Store implements Node @table(name: "store") @node @key(fields: "managerStaffId") @accept(scope: "stores", vouchesFor: "addressId") {
   id: ID!
   managerStaffId: Int @field(name: "manager_staff_id")
   addressId: Int @field(name: "address_id")
-  voucher: String @accept(scope: "stores", vouchesFor: "addressId")
 }
 
 interface Node {
@@ -63,7 +61,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: ""
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,              detail
-  COLUMN_UNRESOLVED, Film.voucher
+  COLUMN_UNRESOLVED, Film._voucher
   """)
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
@@ -73,8 +71,8 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
 # kept from clients.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name, role,   fields,  resolvable, ordinal
-  Film,      ACCEPT, voucher, TRUE,       2
-  Store,     ACCEPT, voucher, TRUE,       2
+  Film,      ACCEPT, _voucher, TRUE,       2
+  Store,     ACCEPT, _voucher, TRUE,       2
   Store,     NODE,   id,      TRUE,       1
   """)
 
@@ -83,10 +81,10 @@ extend schema @expectEquals(relation: "graphitron_directive_application", where:
   """, rows: """
   coordinate,    directive_name, ordinal
   Film,          key,            2
-  Film.voucher,  inaccessible,   0
+  Film._voucher,  inaccessible,   0
   Store,         key,            1
   Store,         key,            2
-  Store.voucher, inaccessible,   0
+  Store._voucher, inaccessible,   0
   """)
 
 extend schema @expectEquals(relation: "graphitron_directive_application_arg", where: """
@@ -100,8 +98,8 @@ extend schema @expectEquals(relation: "graphitron_directive_application_arg", wh
 # to its type's one authored resolvable key, the one it names being left out.
 extend schema @expectEquals(relation: "graphitron_key_field_binding", where: "kind = 'VOUCHER'", rows: """
   type_name, ordinal, position, field_name, kind,    bound
-  Film,      2,       0,        voucher,    VOUCHER, public.film
-  Store,     2,       0,        voucher,    VOUCHER, public.store
+  Film,      2,       0,        _voucher,    VOUCHER, public.film
+  Store,     2,       0,        _voucher,    VOUCHER, public.store
   """)
 
 extend schema @expectEquals(relation: "graphitron_accept_key", rows: """

@@ -116,7 +116,7 @@ class VoucherDispatchTest {
     private static Map<String, Object> rep(Object voucher) {
         var rep = new LinkedHashMap<String, Object>();
         rep.put("__typename", TYPE);
-        rep.put("voucher", voucher);
+        rep.put("_voucher", voucher);
         return rep;
     }
 

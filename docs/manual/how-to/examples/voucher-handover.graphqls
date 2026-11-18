@@ -11,10 +11,11 @@ type Application @table(name: "vouched_application") {
       @reference(path: [{key : "vouched_application_result_application_id_fkey"}])
 }
 
-type VgsResultat @table(name: "vouched_application_result") {
+type VgsResultat
+    @table(name: "vouched_application_result")
+    @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId") {
   id: ID! @field(name: "result_id")
   eierId: String! @field(name: "owner_id")
-  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId")
 }
 # end::IssuingHandover[]
 
@@ -24,12 +25,14 @@ type Query {
   results: [VgsResultat!]!
 }
 
-type VgsResultat @table(name: "vouched_result") @key(fields: "id") {
+type VgsResultat
+    @table(name: "vouched_result")
+    @key(fields: "id")
+    @accept(scope: "vgs-resultater", vouchesFor: "eierId") {
   id: ID! @field(name: "result_id")
   eierId: String! @field(name: "owner_id") @inaccessible
   grade: Int!
   details: [Detail!]! @reference(path: [{key : "vouched_result_detail_result_id_fkey"}])
-  voucher: String! @accept(scope: "vgs-resultater", vouchesFor: "eierId")
 }
 
 type Detail @table(name: "vouched_result_detail") {

@@ -350,10 +350,10 @@ public class GraphQLRewriteGenerator {
                                   List<EmittedRegistry.TagNarrowing> narrowings,
                                   no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         var warnings = withLintFindings(schema, attributed, store, narrowings, recordAccessors);
-        // The store owns validation, the walk's verdict being retired: where the store states a
-        // field's binding as one it owns whole, a voucher field on either side, the walk's verdict on
-        // it is not asked, the store's defects being the only refusals that field has. Which fields
-        // those are was read where the walk was handed its registry.
+        // The store owns validation, the walk's verdict being retired: on the voucher field Graphitron
+        // mints, which the store owns whole, the walk's verdict is not asked, the store's defects being
+        // the only refusals that field has. Which fields those are was read where the walk was handed
+        // its registry.
         var storeOwned = attributed.storeOwned();
         var walkErrors = new GraphitronSchemaValidator().validate(schema).stream()
             .filter(error -> !storeOwned.contains(error.coordinate()))

@@ -1,14 +1,12 @@
 "A voucher only makes sense where a router plans across subgraphs, so either marker in a graph with no federation @link is refused, and needs no <sessionState>, a voucher being bound to no caller; and a node is keyed by its id, which the voucher would absorb, so @issue on a node is refused."
-type Person @table(name: "actor") @node {
+type Person @table(name: "actor") @node @issue(scope: "s", ttl: "PT5M", vouchesFor: "firstName") {
   id: ID
   firstName: String @field(name: "first_name")
-  voucher: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "firstName")
 }
 
-type Accepting @table(name: "language") {
+type Accepting @table(name: "language") @accept(scope: "s", vouchesFor: "name") {
   languageId: Int @field(name: "language_id")
   name: String
-  voucher: String @accept(scope: "s", vouchesFor: "name")
 }
 
 type Query {
@@ -24,6 +22,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   """, rows: """
   code,                            type_name, detail
   VOUCHER_ISSUE_ON_NODE,           Person,    Person
-  VOUCHER_WITHOUT_FEDERATION_LINK, Accepting, Accepting.voucher
-  VOUCHER_WITHOUT_FEDERATION_LINK, Person,    Person.voucher
+  VOUCHER_WITHOUT_FEDERATION_LINK, Accepting, Accepting
+  VOUCHER_WITHOUT_FEDERATION_LINK, Person,    Person
   """)

@@ -10,14 +10,14 @@ This page wires both halves end to end. The reference pages for the two directiv
 
 == 1. Subgraph A issues
 
-Mark a field `@issue`. Every other field of its type is absorbed into the voucher, signed and withheld from what A publishes; `vouchesFor` names the absorbed fields whose values become the vouched-for part, and the rest are the lookup part, named and typed as B's key fields:
+Mark the type `@issue`. Graphitron gives it the voucher field `_voucher`, and every field you write on the type is absorbed into the voucher, signed and withheld from what A publishes; `vouchesFor` names the absorbed fields whose values become the vouched-for part, and the rest are the lookup part, named and typed as B's key fields:
 
 [source,graphql]
 ----
 include::examples/voucher-handover.graphqls[tag=IssuingHandover]
 ----
 
-A publishes `VgsResultat` keyed by `voucher` alone, not resolvable here and kept from clients, so a router reaches B's entity from A only through the voucher. The store states the vouched-for field and the minted key:
+A publishes `VgsResultat` keyed by `_voucher` alone, not resolvable here and kept from clients, so a router reaches B's entity from A only through the voucher. The store states the vouched-for field and the minted key:
 
 include::examples/_voucher-handover.adoc[tag=IssuingHandover-graphitron_voucher_vouched_for]
 
@@ -25,14 +25,14 @@ include::examples/_voucher-handover.adoc[tag=IssuingHandover-graphitron_minted_k
 
 == 2. Subgraph B accepts
 
-On B, the entity is table-bound and keyed by its own key. Mark the voucher field `@accept` with the same scope and the same vouched-for fields:
+On B, the entity is table-bound and keyed by its own key. Mark the type `@accept` with the same scope and the same vouched-for fields; Graphitron gives it the same `_voucher` field:
 
 [source,graphql]
 ----
 include::examples/voucher-handover.graphqls[tag=AcceptingEntity]
 ----
 
-B resolves `VgsResultat` by `id` as before, and by `voucher` beside it. The store states the vouched-for field and the minted key:
+B resolves `VgsResultat` by `id` as before, and by `_voucher` beside it. The store states the vouched-for field and the minted key:
 
 include::examples/_voucher-handover.adoc[tag=AcceptingEntity-graphitron_accept_vouched_for]
 

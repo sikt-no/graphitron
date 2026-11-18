@@ -13,7 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Writes the {@code Vouchers} class: the fetcher of every {@code @issue} field and the one
+ * Writes the {@code Vouchers} class: the fetcher of every voucher field an {@code @issue} mints and the one
  * {@code register} method the schema class calls to wire them. The store owns a voucher field whole,
  * so neither its fetcher nor its registration waits on the classified model.
  *
@@ -37,7 +37,7 @@ public final class VoucherIssueEmitter {
 
     private VoucherIssueEmitter() {}
 
-    /** The {@code Vouchers} class over {@code rows}: one fetcher per issuing field and {@code register}. */
+    /** The {@code Vouchers} class over {@code rows}: one fetcher per minted voucher field and {@code register}. */
     public static TypeSpec render(VoucherIssueQuery.Rows rows, String outputPackage) {
         var self = ClassName.get(outputPackage + ".fetchers", CLASS_NAME);
         var register = MethodSpec.methodBuilder("register")

@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class VoucherIssueExecutionTest {
 
     private static final String CLAIMS = "{\"sub\":\"test-user\"}";
-    private static final String QUERY = "{ languages { films { voucher } } }";
+    private static final String QUERY = "{ languages { films { _voucher } } }";
 
     static DSLContext dsl;
     static KeyPair pair;
@@ -80,7 +80,7 @@ class VoucherIssueExecutionTest {
         var languages = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("languages");
         return languages.stream()
             .flatMap(language -> ((List<Map<String, Object>>) language.get("films")).stream())
-            .map(film -> (String) film.get("voucher"))
+            .map(film -> (String) film.get("_voucher"))
             .toList();
     }
 

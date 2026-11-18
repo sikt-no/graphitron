@@ -71,6 +71,7 @@ public final class GraphitronAstEntries {
         var onEnumValues = admitted(GraphQLAstEntries.locatedOnEnumValues(document));
         var onSchemas = admitted(GraphQLAstEntries.locatedOnSchemas(document));
         GraphitronTypeEntries.write(dsl, graph, source, onTypes, touchedAt);
+        GraphitronVoucherEntries.write(dsl, graph, source, onTypes, touchedAt);
         GraphitronFieldEntries.write(dsl, graph, source, onFields, touchedAt);
         GraphitronInputValueEntries.write(dsl, graph, source, onInputValues, touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source, onEnumValues, touchedAt);

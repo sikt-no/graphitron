@@ -69,7 +69,7 @@ public record ConnectionKeyShape(Optional<TypeName> tenant, List<VouchedForPart>
 
     /**
      * The build's shape: the tenant part from {@code tenantKeyType}, null in a build without a tenant
-     * column, and the vouched-for parts read off the store's accepting fields ({@link AcceptVouchedForQuery}),
+     * column, and the vouched-for parts read off the store's accepting types ({@link AcceptVouchedForQuery}),
      * none where the graph accepts no vouchers.
      */
     public static ConnectionKeyShape read(StoreHandle store, TypeName tenantKeyType) {

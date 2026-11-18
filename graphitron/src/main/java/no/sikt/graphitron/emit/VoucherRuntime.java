@@ -181,7 +181,7 @@ public final class VoucherRuntime {
             .addEnumConstant("SIGNATURE", constant("the voucher's signature does not verify for this entity type"))
             .addEnumConstant("EXPIRED", constant("the voucher has expired"))
             .addEnumConstant("SCOPE", constant("the voucher was issued for another scope"))
-            .addEnumConstant("VOUCHED_FOR", constant("the voucher's vouched-for section names other fields than the accepting field's vouchesFor"))
+            .addEnumConstant("VOUCHED_FOR", constant("the voucher's vouched-for section names other fields than the accepting type's vouchesFor"))
             .addEnumConstant("KEY", constant("the voucher's lookup part names other fields than the entity's key"))
             .addEnumConstant("VALUE", constant("a value in the voucher is not a value of its field's column"))
             .addField(String.class, "check", Modifier.PRIVATE, Modifier.FINAL)

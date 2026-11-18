@@ -14,10 +14,11 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What an issuing subgraph publishes for a type whose voucher field carries {@code @issue}, read off
- * the two schemas capture hands back for the {@code scenarios/voucher-issue} document: the emitted
- * schema carries the voucher alone, kept from clients by {@code @inaccessible}, and keys the type by it
- * as a key this subgraph does not resolve, while the schema as written keeps every absorbed field.
+ * What an issuing subgraph publishes for a type marked {@code @issue}, read off the two schemas capture
+ * hands back for the {@code scenarios/voucher-issue} document: the emitted schema carries the voucher
+ * field Graphitron mints alone, kept from clients by {@code @inaccessible}, and keys the type by it
+ * as a key this subgraph does not resolve, while the schema as written keeps every absorbed field and
+ * has no voucher field, nobody having written one.
  */
 class VoucherPublishedShapeTest {
 
@@ -37,27 +38,27 @@ class VoucherPublishedShapeTest {
     }
 
     @Test
-    @DisplayName("the issuing type publishes the voucher alone, and the written schema keeps what it absorbs")
+    @DisplayName("the issuing type publishes the minted voucher alone, and the written schema keeps what it absorbs")
     void theVoucherAlone() {
         var emittedType = (GraphQLObjectType) emitted.getType("FilmRef");
         assertThat(emittedType.getFieldDefinitions()).extracting(GraphQLFieldDefinition::getName)
-            .containsExactly("voucher");
+            .containsExactly("_voucher");
         var writtenType = (GraphQLObjectType) written.getType("FilmRef");
         assertThat(writtenType.getFieldDefinitions()).extracting(GraphQLFieldDefinition::getName)
-            .containsExactly("filmId", "title", "voucher");
+            .containsExactly("filmId", "title");
     }
 
     @Test
     @DisplayName("the voucher is kept from clients, and keys the type as a key this subgraph does not resolve")
     void theVoucherKey() {
         var type = (GraphQLObjectType) emitted.getType("FilmRef");
-        assertThat(type.getFieldDefinition("voucher").getAppliedDirectives("inaccessible")).hasSize(1);
+        assertThat(type.getFieldDefinition("_voucher").getAppliedDirectives("inaccessible")).hasSize(1);
         var keys = type.getAppliedDirectives("key");
         assertThat(keys).hasSize(1);
         // Federation's FieldSet is no scalar graphql-java coerces, so it arrives as its literal.
         StringValue fields = keys.getFirst().getArgument("fields").getValue();
         Boolean resolvable = keys.getFirst().getArgument("resolvable").getValue();
-        assertThat(fields.getValue()).isEqualTo("voucher");
+        assertThat(fields.getValue()).isEqualTo("_voucher");
         assertThat(resolvable).isFalse();
     }
 }

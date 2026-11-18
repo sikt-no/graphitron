@@ -10,7 +10,7 @@ type Query {
   results: [VgsResultat!]!
 }
 
-type VgsResultat @table(name: "vouched_result") @key(fields: "id") {
+type VgsResultat @table(name: "vouched_result") @key(fields: "id") @accept(scope: "vgs-resultater", vouchesFor: "eierId") {
   id: ID! @field(name: "result_id")
   eierId: String! @field(name: "owner_id") @inaccessible
   grade: Int!
@@ -19,7 +19,6 @@ type VgsResultat @table(name: "vouched_result") @key(fields: "id") {
   items: [VouchedItem!]!
   servicedDetails: [Detail!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.VouchedResultService",
     method: "servicedDetails"})
-  voucher: String! @accept(scope: "vgs-resultater", vouchesFor: "eierId")
 }
 
 interface VouchedItem { subject: String! }

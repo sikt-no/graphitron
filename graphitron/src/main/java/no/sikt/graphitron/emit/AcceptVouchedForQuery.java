@@ -15,7 +15,7 @@ import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.select;
 
 /**
- * The shape of what a graph's {@code @accept} fields vouch for: each vouched-for field by name, with the
+ * The shape of what a graph's {@code @accept} types vouch for: each vouched-for field by name, with the
  * Java type of the column it reads at its type's table. Every {@code @accept} in a graph has the one
  * shape, the store refusing one whose shape differs from the first accepting type's
  * ({@code VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS}), so the shape is read off that type. Empty in a graph that

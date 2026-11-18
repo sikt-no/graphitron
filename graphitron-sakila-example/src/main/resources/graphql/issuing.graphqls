@@ -15,10 +15,9 @@ type Language @table(name: "language") {
   films: [FilmVoucher!]! @reference(path: [{key: "film_language_id_fkey"}])
 }
 
-type FilmVoucher @table(name: "film") {
+type FilmVoucher @table(name: "film") @issue(scope: "films", ttl: "PT5M", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title: String!
-  voucher: String! @issue(scope: "films", ttl: "PT5M", vouchesFor: "title")
 }
 
 # The voucher handover (VoucherAcceptExecutionTest): an application's results, written the way the
@@ -28,8 +27,7 @@ type Application @table(name: "vouched_application") {
   results: [VgsResultat!]! @reference(path: [{key: "vouched_application_result_application_id_fkey"}])
 }
 
-type VgsResultat @table(name: "vouched_application_result") {
+type VgsResultat @table(name: "vouched_application_result") @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId") {
   id: ID! @field(name: "result_id")
   eierId: String! @field(name: "owner_id")
-  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId")
 }

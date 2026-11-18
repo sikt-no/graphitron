@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_VOUCHED_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_COMPONENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -24,18 +25,18 @@ import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
- * {@link VoucherIssueEmitter}'s query, and the projection's: every {@code @issue} field the store
- * admits, with its scope and lifetime, the table its row is read from, and each value its voucher
+ * {@link VoucherIssueEmitter}'s query, and the projection's: every voucher field an {@code @issue}
+ * mints that the store admits, with its scope and lifetime, the table its row is read from, and each value its voucher
  * carries, the absorbed field it is named after, the column it is read from, the scalar constant
  * that serializes it and whether it is vouched for or part of the lookup.
  *
- * <p>Two statements at two grains: the issuing fields, and the components. Nothing here decides
+ * <p>Two statements at two grains: the minted voucher fields, and the components. Nothing here decides
  * anything: the members, their columns and their scalars are the voucher stage's rows, a vouched-for field is
  * its vouched-for row, and a graph with any refused part never reaches an emitter. The scalar constant is
  * a built-in's on {@code graphql.Scalars} or the one a scalar's {@code @scalarType} names, the two
  * ways a scalar is bound.
  *
- * <p>Cost: the population is the graph's {@code @issue} fields and their members, small by
+ * <p>Cost: the population is the graph's issuing types and their members, small by
  * construction.
  */
 public final class VoucherIssueQuery {
@@ -75,7 +76,7 @@ public final class VoucherIssueQuery {
         }
     }
 
-    /** One issuing field: its type and name, scope and lifetime, table, and components in name order. */
+    /** One minted voucher field of an issuing type: its type and name, scope and lifetime, table, and components in name order. */
     public record Issue(String typeName, String fieldName, String scope, Duration ttl, Table table,
                         List<Component> components) {
         public Issue {
@@ -98,7 +99,7 @@ public final class VoucherIssueQuery {
         }
     }
 
-    /** The issuing fields, by coordinate. */
+    /** The issuing types' voucher fields, by coordinate. */
     public record Rows(Map<String, Issue> byCoordinate) {
         public Rows {
             byCoordinate = Map.copyOf(byCoordinate);
@@ -114,15 +115,15 @@ public final class VoucherIssueQuery {
     }
 
     public static Rows read(StoreHandle store) {
-        var d = GRAPHQL_DIRECTIVE_APPLICATION;
+        var v = GRAPHITRON_VOUCHER_FIELD;
         var e = GRAPHITRON_AST_ISSUE_ENTRY;
         var dsl = store.dsl();
-        var issues = dsl.select(d.COORDINATE, e.SCOPE, e.TTL)
-            .from(d)
-            .join(e).on(e.GRAPH_NAME.eq(d.GRAPH_NAME), e.SOURCE_NAME.eq(d.SOURCE_NAME),
-                e.SOURCE_LINE.eq(d.SOURCE_LINE), e.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-            .where(d.GRAPH_NAME.eq(store.graphName()), d.DIRECTIVE_NAME.eq("issue"))
-            .orderBy(d.COORDINATE)
+        var issues = dsl.select(v.TYPE_NAME, v.FIELD_NAME, v.COORDINATE, e.SCOPE, e.TTL)
+            .from(v)
+            .join(e).on(e.GRAPH_NAME.eq(v.GRAPH_NAME), e.SOURCE_NAME.eq(v.SOURCE_NAME),
+                e.SOURCE_LINE.eq(v.SOURCE_LINE), e.SOURCE_COLUMN.eq(v.SOURCE_COLUMN))
+            .where(v.GRAPH_NAME.eq(store.graphName()), v.ROLE.eq("ISSUE"))
+            .orderBy(v.COORDINATE)
             .fetch();
 
         var c = GRAPHITRON_VOUCHER_COMPONENT;
@@ -135,11 +136,12 @@ public final class VoucherIssueQuery {
         var se = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
         var vouchedFor = exists(selectOne().from(cl)
             .where(cl.GRAPH_NAME.eq(c.GRAPH_NAME), cl.TYPE_NAME.eq(c.TYPE_NAME), cl.FIELD_NAME.eq(c.FIELD_NAME)));
-        var components = dsl.select(m.TYPE_NAME, m.ISSUING_FIELD, c.FIELD_NAME, col.COLUMN_NAME, col.JOOQ_NAME,
+        var components = dsl.select(m.TYPE_NAME, v.COORDINATE, c.FIELD_NAME, col.COLUMN_NAME, col.JOOQ_NAME,
                 col.BINDING_TYPE, col.DATABASE_TYPE, t.JOOQ_NAME, s.TABLES_CLASS_FQN, c.SCALAR_NAME,
                 se.SCALAR_REF_CLASS_PART, se.SCALAR_REF_FIELD_PART, org.jooq.impl.DSL.field(vouchedFor))
             .from(c)
             .join(m).on(m.GRAPH_NAME.eq(c.GRAPH_NAME), m.TYPE_NAME.eq(c.TYPE_NAME), m.FIELD_NAME.eq(c.FIELD_NAME))
+            .join(v).on(v.GRAPH_NAME.eq(m.GRAPH_NAME), v.TYPE_NAME.eq(m.TYPE_NAME))
             .join(col).on(col.SOURCE_NAME.eq(c.TABLE_SOURCE_NAME), col.TABLE_SCHEMA.eq(c.TABLE_SCHEMA),
                 col.TABLE_NAME.eq(c.TABLE_NAME), col.COLUMN_NAME.eq(c.COLUMN_NAME))
             .join(t).on(t.SOURCE_NAME.eq(c.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(c.TABLE_SCHEMA),
@@ -150,13 +152,13 @@ public final class VoucherIssueQuery {
             .leftJoin(se).on(se.GRAPH_NAME.eq(sd.GRAPH_NAME), se.SOURCE_NAME.eq(sd.SOURCE_NAME),
                 se.SOURCE_LINE.eq(sd.SOURCE_LINE), se.SOURCE_COLUMN.eq(sd.SOURCE_COLUMN))
             .where(c.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(m.TYPE_NAME, m.ISSUING_FIELD, c.FIELD_NAME)
+            .orderBy(m.TYPE_NAME, c.FIELD_NAME)
             .fetch();
 
         var componentsByIssue = new LinkedHashMap<String, List<Component>>();
         var tableByIssue = new LinkedHashMap<String, Table>();
         for (var r : components) {
-            String coordinate = r.get(m.TYPE_NAME) + "." + r.get(m.ISSUING_FIELD);
+            String coordinate = r.get(v.COORDINATE);
             String scalarName = r.get(c.SCALAR_NAME);
             String builtIn = BUILT_IN_CONSTANTS.get(scalarName);
             ScalarConstant scalar = builtIn != null
@@ -178,13 +180,12 @@ public final class VoucherIssueQuery {
 
         var byCoordinate = new LinkedHashMap<String, Issue>();
         for (var r : issues) {
-            String coordinate = r.get(d.COORDINATE);
+            String coordinate = r.get(v.COORDINATE);
             var table = tableByIssue.get(coordinate);
             if (table == null) {
                 continue;
             }
-            int dot = coordinate.indexOf('.');
-            byCoordinate.put(coordinate, new Issue(coordinate.substring(0, dot), coordinate.substring(dot + 1),
+            byCoordinate.put(coordinate, new Issue(r.get(v.TYPE_NAME), r.get(v.FIELD_NAME),
                 r.get(e.SCOPE), Duration.parse(r.get(e.TTL)), table, componentsByIssue.get(coordinate)));
         }
         return new Rows(byCoordinate);

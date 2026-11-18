@@ -10,19 +10,18 @@ type Application @table(name: "vouched_application") {
   results: [VgsResultat!]! @reference(path: [{key: "vouched_application_result_application_id_fkey"}])
 }
 
-type VgsResultat @table(name: "vouched_application_result") {
+type VgsResultat @table(name: "vouched_application_result") @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId") {
   id: ID! @field(name: "result_id")
   eierId: String! @field(name: "owner_id")
-  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId")
 }
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site")
 
-# Every other field of the type is absorbed into the voucher; the marked one never.
+# Every field written on the type is absorbed into the voucher; the minted voucher field is none.
 extend schema @expectEquals(relation: "graphitron_voucher_member", rows: """
-  type_name,   field_name, issuing_field
-  VgsResultat, eierId,     voucher
-  VgsResultat, id,         voucher
+  type_name,   field_name
+  VgsResultat, eierId
+  VgsResultat, id
   """)
 
 # Each absorbed field read off the issuing table, with the scalar that serializes it: the names and
@@ -47,11 +46,11 @@ extend schema @assertAbsent(relation: "graphitron_element", rows: """
 
 extend schema @assertContains(relation: "graphitron_element", rows: """
   coordinate
-  VgsResultat.voucher
+  VgsResultat._voucher
   """)
 
 # The voucher keys the type, as a key this subgraph does not resolve, and is kept from clients.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name,   role,  fields,  resolvable
-  VgsResultat, ISSUE, voucher, FALSE
+  VgsResultat, ISSUE, _voucher, FALSE
   """)

@@ -1,56 +1,48 @@
 extend schema @withConfiguration(sessionState: true)
 
 "The accepting side's refusals the entity key stage decides, each at the @accept. A voucher decodes to an authored key this subgraph resolves the type by: the one key: names, field set for field set in any order, or the type's one such key where key: is left out, never a nested selection. Its vouched-for fields read one column of the type's own table each, and none is a field of that key."
-type NoKey @table(name: "actor") {
+type NoKey @table(name: "actor") @accept(scope: "s", vouchesFor: "firstName") {
   actorId: Int @field(name: "actor_id")
   firstName: String @field(name: "first_name")
-  voucher: String @accept(scope: "s", vouchesFor: "firstName")
 }
 
 # A key this subgraph does not resolve by is no key to decode to.
-type StubKey @table(name: "staff") @key(fields: "staffId", resolvable: false) {
+type StubKey @table(name: "staff") @key(fields: "staffId", resolvable: false) @accept(scope: "s", vouchesFor: "firstName") {
   staffId: Int @field(name: "staff_id")
   firstName: String @field(name: "first_name")
-  voucher: String @accept(scope: "s", vouchesFor: "firstName")
 }
 
-type TwoKeys @table(name: "customer") @key(fields: "customerId") @key(fields: "email") {
+type TwoKeys @table(name: "customer") @key(fields: "customerId") @key(fields: "email") @accept(scope: "s", vouchesFor: "firstName") {
   customerId: Int @field(name: "customer_id")
   email: String
   firstName: String @field(name: "first_name")
-  voucher: String @accept(scope: "s", vouchesFor: "firstName")
 }
 
 # key: names the first key in another order; the vouched-for field is a field of the other key, which is allowed.
-type Named @table(name: "inventory") @key(fields: "filmId storeId") @key(fields: "inventoryId") {
+type Named @table(name: "inventory") @key(fields: "filmId storeId") @key(fields: "inventoryId") @accept(scope: "s", key: "storeId filmId", vouchesFor: "inventoryId") {
   inventoryId: Int @field(name: "inventory_id")
   filmId: Int @field(name: "film_id")
   storeId: Int @field(name: "store_id")
-  voucher: String @accept(scope: "s", key: "storeId filmId", vouchesFor: "inventoryId")
 }
 
-type Unknown @table(name: "category") @key(fields: "categoryId") {
+type Unknown @table(name: "category") @key(fields: "categoryId") @accept(scope: "s", key: "name", vouchesFor: "name") {
   categoryId: Int @field(name: "category_id")
   name: String
-  voucher: String @accept(scope: "s", key: "name", vouchesFor: "name")
 }
 
-type Nested @table(name: "city") @key(fields: "cityId") {
+type Nested @table(name: "city") @key(fields: "cityId") @accept(scope: "s", key: "cityId { x }", vouchesFor: "city") {
   cityId: Int @field(name: "city_id")
   city: String
-  voucher: String @accept(scope: "s", key: "cityId { x }", vouchesFor: "city")
 }
 
-type ClaimInKey @table(name: "country") @key(fields: "countryId") {
+type ClaimInKey @table(name: "country") @key(fields: "countryId") @accept(scope: "s", vouchesFor: "countryId country") {
   countryId: Int @field(name: "country_id")
   country: String
-  voucher: String @accept(scope: "s", vouchesFor: "countryId country")
 }
 
-type NotColumn @table(name: "language") @key(fields: "languageId") {
+type NotColumn @table(name: "language") @key(fields: "languageId") @accept(scope: "s", vouchesFor: "tags") {
   languageId: Int @field(name: "language_id")
   tags: [String]
-  voucher: String @accept(scope: "s", vouchesFor: "tags")
 }
 
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])

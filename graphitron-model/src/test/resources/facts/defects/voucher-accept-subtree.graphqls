@@ -1,19 +1,17 @@
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
 "An accepting type's entity is read on the vouched connection, and so is every field below it: what its SELECT projects, a reference child nested in it included, in the entity's statement, and a field with a fetcher of its own, a split query or a @service here, on the connection the entity row hands down. A connection below it does not yet read on that connection, so an accepting type with one anywhere in its subtree is refused at the @accept. The walk follows the fields type by type, a type it reaches twice being one step, so a subtree that leads back to a type it has read ends there."
-type Projected @table(name: "film") @key(fields: "filmId") {
+type Projected @table(name: "film") @key(fields: "filmId") @accept(scope: "films", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title: String!
   language: Language! @reference(path: [{key: "film_language_id_fkey"}])
-  voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
 # A split query runs on the key the entity row hands down, so it is accepted.
-type Split @table(name: "film") @key(fields: "filmId") {
+type Split @table(name: "film") @key(fields: "filmId") @accept(scope: "films", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title: String!
   language: Language! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
-  voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
 type Language @table(name: "language") {
@@ -22,29 +20,26 @@ type Language @table(name: "language") {
 
 # A child service runs on the key the entity row hands down, so it is accepted; one returning a
 # connection pages, which the vouched connection does not reach yet.
-type Serviced @table(name: "film") @key(fields: "filmId") {
+type Serviced @table(name: "film") @key(fields: "filmId") @accept(scope: "films", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title: String!
   languages: [Language!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
     method: "languagesByFilm"})
-  voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
-type Connected @table(name: "film") @key(fields: "filmId") {
+type Connected @table(name: "film") @key(fields: "filmId") @accept(scope: "films", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title: String!
   languages: [Language!]! @asConnection
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
       method: "languagesByFilm"})
-  voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
 # A subtree that leads back to its own types: the walk ends, and nothing below is a connection.
-type Cyclic @table(name: "film") @key(fields: "filmId") {
+type Cyclic @table(name: "film") @key(fields: "filmId") @accept(scope: "films", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title: String!
   language: CycleLanguage! @reference(path: [{key: "film_language_id_fkey"}])
-  voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
 type CycleLanguage @table(name: "language") {
@@ -53,11 +48,10 @@ type CycleLanguage @table(name: "language") {
 }
 
 # A projected cycle with a connection two types down: the walk reaches it.
-type Deep @table(name: "film") @key(fields: "filmId") {
+type Deep @table(name: "film") @key(fields: "filmId") @accept(scope: "films", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title: String!
   language: DeepLanguage! @reference(path: [{key: "film_language_id_fkey"}])
-  voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
 type DeepLanguage @table(name: "language") {
@@ -87,6 +81,6 @@ type Query {
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'VOUCHER_ACCEPT_NOT_GENERATED'", rows: """
   code,                         type_name, detail
-  VOUCHER_ACCEPT_NOT_GENERATED, Connected, Connected.voucher
-  VOUCHER_ACCEPT_NOT_GENERATED, Deep,      Deep.voucher
+  VOUCHER_ACCEPT_NOT_GENERATED, Connected, Connected
+  VOUCHER_ACCEPT_NOT_GENERATED, Deep,      Deep
   """)

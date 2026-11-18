@@ -1,10 +1,9 @@
 extend schema @withConfiguration(sessionState: true)
 
-"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each vouched-for field names the member it is. A schema whose voucher stage refuses nothing generates."
-type FilmRef @table(name: "film") {
+"A type marked @issue is given the voucher field `_voucher`, and every field written on it is a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each vouched-for field names the member it is. A schema whose voucher stage refuses nothing generates."
+type FilmRef @table(name: "film") @issue(scope: "films", ttl: "PT5M", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title(lang: String): String
-  voucher: String! @issue(scope: "films", ttl: "PT5M", vouchesFor: "title")
 }
 
 type Language @table(name: "language") {
@@ -23,11 +22,11 @@ extend schema @expectEquals(relation: "graphitron_ast_issue_entry", rows: """
   films, PT5M, title
   """)
 
-# Every other field of the type is a member, the marked one never.
+# Every field written on the type is a member; the minted voucher field is none.
 extend schema @expectEquals(relation: "graphitron_voucher_member", rows: """
-  type_name, field_name, issuing_field
-  FilmRef,   filmId,     voucher
-  FilmRef,   title,      voucher
+  type_name, field_name
+  FilmRef,   filmId
+  FilmRef,   title
   """)
 
 # The members, and a member's argument, are no part of the emitted population; the voucher field is.
@@ -40,7 +39,7 @@ extend schema @assertAbsent(relation: "graphitron_element", rows: """
 
 extend schema @assertContains(relation: "graphitron_element", rows: """
   coordinate
-  FilmRef.voucher
+  FilmRef._voucher
   """)
 
 # Each member read off the issuing table, by its @field or its name, with the scalar that serializes it.
@@ -61,7 +60,7 @@ extend schema @expectEquals(relation: "graphitron_binding_claim", where: """
   kind = 'VOUCHER'
   """, rows: """
   coordinate,      kind
-  FilmRef.voucher, VOUCHER
+  FilmRef._voucher, VOUCHER
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: """
@@ -73,14 +72,14 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: ""
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,              detail
-  COLUMN_UNRESOLVED, FilmRef.voucher
+  COLUMN_UNRESOLVED, FilmRef._voucher
   """)
 
 # The voucher keys its type, as a key this subgraph does not resolve, and is kept from clients; the
 # link is given @inaccessible to import.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name, role,  fields,  resolvable, ordinal
-  FilmRef,   ISSUE, voucher, FALSE,      0
+  FilmRef,   ISSUE, _voucher, FALSE,      0
   """)
 
 extend schema @expectEquals(relation: "graphitron_directive_application", where: """
@@ -88,5 +87,5 @@ extend schema @expectEquals(relation: "graphitron_directive_application", where:
   """, rows: """
   coordinate,      directive_name, ordinal
   FilmRef,         key,            0
-  FilmRef.voucher, inaccessible,   0
+  FilmRef._voucher, inaccessible,   0
   """)

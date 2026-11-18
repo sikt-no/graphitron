@@ -58,13 +58,11 @@ input ImportInput {
   title: String
 }
 
-type FilmVoucher @table(name: "film") {
+type FilmVoucher @table(name: "film") @issue(scope: "films", ttl: "PT5M", vouchesFor: "filmId") {
   filmId: ID @field(name: "film_id")
-  voucher: String @issue(scope: "films", ttl: "PT5M", vouchesFor: "filmId")
 }
 
-type LanguageVoucher @table(name: "language") @key(fields: "languageId") {
+type LanguageVoucher @table(name: "language") @key(fields: "languageId") @accept(scope: "languages", key: "languageId", vouchesFor: "name") {
   languageId: Int @field(name: "language_id")
   name: String
-  voucher: String @accept(scope: "languages", key: "languageId", vouchesFor: "name")
 }

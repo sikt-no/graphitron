@@ -1983,7 +1983,7 @@ public final class ConnectionRuntimeClassGenerator {
                 "ConnectionKey[" + String.join(", ", names) + "]", "ConnectionKey[]");
         } else {
             builder.addJavadoc("The key a connection is acquired under. A build with neither a tenant column nor an\n"
-                    + "accepting field has one connection per request, so the key has no parts.\n")
+                    + "accepting type has one connection per request, so the key has no parts.\n")
                 .addMethod(MethodSpec.methodBuilder("defaultSource")
                     .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                     .returns(self)

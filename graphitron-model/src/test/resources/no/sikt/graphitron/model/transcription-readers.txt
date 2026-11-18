@@ -97,3 +97,10 @@ graphitron_voucher_component_rule graphql_field
 graphitron_voucher_component_rule graphql_type
 graphitron_voucher_entry_defect_rule graphql_field
 graphitron_voucher_entry_defect_rule graphql_type
+
+# The voucher field is minted after every field the author declared on its type, and is written
+# before the emitted population exists (the voucher-members stage runs ahead of macro expansion,
+# which unions it in), so graphitron_voucher_field_rule reads the declared fields' ordinals off the
+# transcription: it is placing a minted field among authored ones, which is a question about what
+# the author wrote.
+graphitron_voucher_field_rule graphql_field

@@ -1,31 +1,27 @@
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
 "A graph's vouched connections are keyed by one generated ConnectionKey, so every @accept vouches for values of one shape: the same field names, each reading a column of the same Java type. The first accepting type by name sets the shape, and each @accept whose shape differs, by a name or by a column's type, is refused at the @accept."
-type Actor @table(name: "actor") @key(fields: "actorId") {
+type Actor @table(name: "actor") @key(fields: "actorId") @accept(scope: "people", vouchesFor: "firstName") {
   actorId: Int! @field(name: "actor_id")
   firstName: String! @field(name: "first_name")
-  voucher: String! @accept(scope: "people", vouchesFor: "firstName")
 }
 
 # Another table, the same name and a column of the same Java type: one shape.
-type Staff @table(name: "staff") @key(fields: "staffId") {
+type Staff @table(name: "staff") @key(fields: "staffId") @accept(scope: "people", vouchesFor: "firstName") {
   staffId: Int! @field(name: "staff_id")
   firstName: String! @field(name: "first_name")
-  voucher: String! @accept(scope: "people", vouchesFor: "firstName")
 }
 
 # Another name: refused.
-type Customer @table(name: "customer") @key(fields: "customerId") {
+type Customer @table(name: "customer") @key(fields: "customerId") @accept(scope: "people", vouchesFor: "lastName") {
   customerId: Int! @field(name: "customer_id")
   lastName: String! @field(name: "last_name")
-  voucher: String! @accept(scope: "people", vouchesFor: "lastName")
 }
 
 # The same name over a column of another Java type: refused.
-type Rental @table(name: "rental") @key(fields: "rentalId") {
+type Rental @table(name: "rental") @key(fields: "rentalId") @accept(scope: "people", vouchesFor: "firstName") {
   rentalId: Int! @field(name: "rental_id")
   firstName: Int! @field(name: "customer_id")
-  voucher: String! @accept(scope: "people", vouchesFor: "firstName")
 }
 
 type Query {
@@ -38,6 +34,6 @@ type Query {
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS'", rows: """
   code,                               type_name, detail
-  VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS, Customer,  Customer.voucher
-  VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS, Rental,    Rental.voucher
+  VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS, Customer,  Customer
+  VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS, Rental,    Rental
   """)

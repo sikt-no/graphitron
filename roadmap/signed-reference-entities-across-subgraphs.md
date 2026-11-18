@@ -110,16 +110,16 @@ both as an `ID`. A client that wants the result's `id` gets it from B, through t
 
 ### Where it stands
 
-Slices 1 to 8e.2 are on trunk: A issues vouchers end to end, B verifies them and reads the vouched
+Slices 1 to 8f are on trunk: A issues vouchers end to end, B verifies them and reads the vouched
 entity and every field below it on the vouched connection, except a connection-typed field, which
-`VOUCHER_ACCEPT_NOT_GENERATED` still refuses below an accepting type. What remains: 8f moves both
-markers from a field the author writes onto the type and mints the voucher field (*Rulings*,
-2026-11-18); 8e.3, connection-typed fields, waits on R876's node for their fetchers. The two are
-independent; 8f goes first because it is ready. See *Slices*.
+`VOUCHER_ACCEPT_NOT_GENERATED` still refuses below an accepting type; and both markers sit on the type,
+with the voucher field minted (*Rulings*, 2026-11-18). What remains is 8e.3, connection-typed fields,
+which waits on R876's node for their fetchers. See *Slices*.
 
-Until 8f lands, the text below the *Rulings* still describes some mechanisms in the field-marker form
-they shipped in (the membership's `issuing_field`, the claim read off a field-level application, the
-minted key's field set read off the marked field's name); *Slice 8f* says what each becomes.
+The *Implementation* text below the *Rulings* was written for the field markers and describes some
+mechanisms in that form (the membership's `issuing_field`, the claim read off a field-level
+application, the minted key's field set read off the marked field's name); *Slice 8f* says what each
+became.
 
 ## First-client docs draft (for `federation-keys.adoc` and the security guide)
 
@@ -503,12 +503,12 @@ Decisions the user made on this item; each is stated where it applies below.
   * Owned by `minted-keys`, which already reads the federation link: either marker in a graph with no
     federation link, since a voucher only makes sense where a router plans across subgraphs, and the
     minted key it publishes needs the link.
-  * Owned by the voucher stage, decided from the transcription and the capture entries: more than one
-    voucher field on one type, whichever markers they carry (one code, `VOUCHER_FIELD_REPEATED`, at each
-    marker after the first); `@issue` on a type with an authored `@key` (it would let a router reach B
+  * Owned by the voucher stage, decided from the transcription and the capture entries: a type marked
+    both `@issue` and `@accept` (`VOUCHER_MARKERS_BOTH`, at each), and an authored field at the minted
+    name (`VOUCHER_FIELD_NAME_TAKEN`), both since slice 8f; `@issue` on a type with an authored `@key` (it would let a router reach B
     without the voucher); `@issue` on a type
     `graphitron_node` holds, authored or inferred from the table's node metadata, since the minted node
-    key would name an absorbed `id`; an `@issue` that absorbs nothing; an absorbed field that is a list or
+    key would name an absorbed `id`; an absorbed field that is a list or
     an object, or carries `@nodeId`, `@service`, `@routine`, `@reference` or another directive that gives
     it a value of its own (read off `graphql_directive_application`, not off a producer fact); an absorbed
     field whose column does not resolve (a member with no component row); `@accept` in a graph with a
@@ -711,7 +711,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8e.1. The grain and a `@service` below | A field below a vouched entity is handed the entity's key; a child `@service` reads on it | `8bb6d38`, `3f44811` |
 | 8e.2. The walk reads the handed-down key | A split query and a polymorphic field below a vouched entity read on the key it hands down | `c0f511d`, `420ba54` |
 | 8e.3. Connection-typed fields | Pending on R876; below | |
-| 8f. Markers on the type | Pending; below | |
+| 8f. Markers on the type | `@issue` and `@accept` on the type, `_voucher` minted on both sides | see *Slice 8f* |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -904,57 +904,52 @@ from the store, on its stated connection": a connection's count and facets resol
 the type, and Graphitron mints the voucher field on both sides (*Rulings*, 2026-11-18). What it buys: the
 field's name and type are fixed, so A and B cannot disagree on them, a disagreement neither build can
 check; on A, "absorb every other field" becomes "absorb every field written", so the membership loses its
-exception; two refusals go. Independent of 8e.3. A `feat!` whose `BREAKING-CHANGE:` footer says what an
-author changes: move the marker from the voucher field onto its type and delete the field. Nothing
-outside the repo applies either marker yet.
+marked-field exception, and the minted key's field set is a constant rather than a read of the marked
+field's name. A `feat!` whose `BREAKING-CHANGE:` footer says what an author changes: move the marker from
+the voucher field onto its type and delete the field. Nothing outside the repo applied either marker.
+Independent of 8e.3. As built:
 
-* *Directives.* Both definitions' location becomes `OBJECT`, and their descriptions say Graphitron adds
-  the voucher field. Neither is repeatable, so two `@issue` on one type is graphql-java's own error.
-* *Capture.* `graphitron_ast_issue_entry`, `graphitron_ast_accept_entry` and their field-set entries are
-  keyed by the application's written position and do not change. What changes is every join that went
-  from the entry through the marked field's element to its type: the application's coordinate is the
-  type now.
-* *The mint.* A stored set of its own, one row per marked type, written by `macro-expansion` and unioned
-  into `graphitron_field_minted` beside the candidate arm: the field `_voucher: String!`, last among the
-  type's fields. It is not an arm of `graphitron_field_minted_candidate`, whose `position` references
-  `graphitron_connection_position`, whose `carrier_coordinate` is a connection carrier's, and whose rows
-  stand down silently to an authored field at the same coordinate; none of the three fits.
-  `voucher-members` runs before `macro-expansion` already, so the anti-joins keep their order.
-  Minted fields already get occurrences (`graphitron_occurrence_start_rule` reads `graphitron_field`), so
-  the voucher field needs nothing new to have one.
-* *Collision.* An authored field named `_voucher` on a marked type is a defect at the marker
-  application, not a stand-down: standing down would make it a member on A, which is the exception this
-  slice deletes, and a name Graphitron would mint is never silently withheld (Alf, 2026-11-15, in
-  `docs/architecture/explanation/defects-as-facts.adoc`). A type marked both `@issue` and `@accept`
-  would mint one field twice and is refused. These two replace `VOUCHER_FIELD_REPEATED`.
-* *Membership.* Every field written on the issuing type. `graphitron_voucher_member_rule` loses its
-  `NOT EXISTS` over `issue`/`accept` applications, and `graphitron_voucher_member` its `issuing_field`
-  column and `CHECK (field_name <> issuing_field)`; the issuing type is the row's own type.
-* *The voucher binding.* The `VOUCHER` kind stays. Its claim arm in `graphitron_binding_claim_rule`
-  reads the minted voucher field instead of a field-level `issue`/`accept` application, taking its
-  source position from the type-level application. `graphitron_occurrence_voucher_rule` is unchanged.
-* *Minted keys.* The `ISSUE` and `ACCEPT` rows of `graphitron_minted_key` take `_voucher` as their field
-  set, no longer read off the marked field's name, and the minted `@inaccessible` arm lands on the minted
-  field.
-* *The emitters.* `VoucherIssueQuery` and `VoucherBindingQuery` stop rebuilding the coordinate as
-  `TYPE_NAME || '.' || ISSUING_FIELD` and find the field by its binding; the projection's switch on the
-  selected field's name reads the one name. `EntityKeyQuery`'s join to `graphitron_ast_accept_entry`
-  reaches the type directly.
-* *The walk.* It builds from the written composition (`AttributedRegistry`), which a minted field is not
-  part of, so the walk never sees the voucher field and `AttributedRegistry.voucherFields`, the
-  stand-down for the store-owned voucher fields, goes. Confirm the runtime wiring, handed the emitted
-  schema, still gets the field and its fetcher on A.
-* *Refusals restated.* `@issue` on a keyed type, on a node, on a type a root field returns, and one that
-  absorbs nothing, and the `@accept` key refusals, keep their codes; they are raised at the type-level
-  application. Their fact documents move with them.
-* *Prose and fixtures.* `issue.adoc` and `accept.adoc`, the directive definitions, the how-to
-  `voucher-handover.adoc` and its `ManualExampleTest`-rendered example, the sakila `issuing.graphqls`
-  and `accepting.graphqls`, and the fact documents `scenarios/voucher-*.graphqls` and
-  `defects/voucher-*.graphqls`. This item's own text below *Rulings* is brought to the type form in the
-  same slice, as the *Example* and the docs draft above already are.
-* *Tests.* The fact documents change by the rows above and no others; one defect document claims the
-  collision and the double marker. `VoucherAcceptExecutionTest` and the issuing execution tests pass
-  unchanged in substance, the representation now `{_voucher}`.
+* *Directives.* Both definitions' location is `OBJECT`, and their descriptions say Graphitron adds
+  `_voucher: String!`. Capture admits an application only at its declared location, so the decode moved
+  from the field site to the type site, in a class of its own (`GraphitronVoucherEntries`). The entries
+  are keyed by the application's written position and did not change; every join that went from the
+  entry through the marked field's element to its type now reaches the type, the application's
+  coordinate.
+* *The mint.* `graphitron_voucher_field`, one row per marked type (role `ISSUE` or `ACCEPT`, ordinal
+  after the authored fields, the marker's position), written by the `voucher-members` stage beside the
+  membership, from the transcription alone, and unioned into `graphitron_field_minted` as an arm of its
+  own. It is not an arm of `graphitron_field_minted_candidate`, whose `position` and
+  `carrier_coordinate` are the connection's and whose rows stand down to an authored field. Minted
+  fields already get occurrences, so the voucher field needed nothing new to have one.
+* *Collision and the double marker* (Alf, 2026-11-18, in `defects-as-facts.adoc`). An authored
+  `_voucher` on a marked type is `VOUCHER_FIELD_NAME_TAKEN` at the marker; it keeps the coordinate, is
+  never absorbed, and nothing is minted beside it. A type marked both is `VOUCHER_MARKERS_BOTH` at each
+  marker and is given the issuing field, which absorbs what it declares. Both shapes leave the type a
+  field, so the refused schema still assembles and its defects are reported. They replace
+  `VOUCHER_FIELD_REPEATED`.
+* *Membership.* Every field written on the issuing type but an authored `_voucher`.
+  `graphitron_voucher_member` lost `issuing_field` and its `CHECK`, and gained a foreign key into
+  `graphql_element` on its coordinate, which it is.
+* *The voucher binding.* The `VOUCHER` kind stays; its claim arm reads the mint, its source position the
+  marker's. `graphitron_occurrence_voucher_rule` is unchanged.
+* *Minted keys.* The `ISSUE` and `ACCEPT` rows read the mint, their field set its name; the minted
+  `@inaccessible` lands on the minted field.
+* *The emitters.* `VoucherIssueQuery` and `VoucherBindingQuery` find the field by the mint rather than
+  rebuilding `TYPE_NAME || '.' || ISSUING_FIELD`.
+* *The walk.* Not as planned: the walk's schema must be valid GraphQL, and an issuing type whose written
+  fields are all absorbed would have none. So `AttributedRegistry.of` adds the minted field
+  (`EmittedRegistry.mintVoucherFields`), and the walk's stand-down stays, read off the mint rather than
+  the binding. Both go with the walk.
+* *`VOUCHER_ISSUE_ABSORBS_NOTHING` retired.* A type whose only field is the minted one is no type
+  graphql-java assembles, so the refusal can no longer fire.
+* *Refusals restated.* The rest keep their codes, raised at the type-level application; a detail that
+  was the marked field's coordinate is the type's name.
+* *Prose and fixtures.* `issue.adoc`, `accept.adoc`, the directive definitions, the how-to and its
+  rendered example, the sakila `issuing.graphqls` and `accepting.graphqls`, the fact documents, and
+  `pipeline-overview.adoc`'s account of the stand-down.
+* *Tests.* The fact documents changed by the rows above; the refusal documents claim the collision on
+  both sides and the double marker, and that neither collision mints. The execution tests pass unchanged
+  in substance, the representation now `{_voucher}`.
 
 ## Tests
 
@@ -1130,7 +1125,8 @@ want to see the plan.
   "marked field" and "issuing field" as terms; `graphitron_voucher_member.issuing_field` and its `CHECK`;
   the membership rule's stand-down for fields carrying a marker; the minted key's field set read off the
   marked field's name; the binding claim read off a field-level marker; `VOUCHER_FIELD_REPEATED`;
-  `AttributedRegistry.voucherFields` and the walk's stand-down for store-owned voucher fields.
+  `VOUCHER_ISSUE_ABSORBS_NOTHING`; the walk's stand-down read off the `VOUCHER` binding (it reads the
+  mint now).
 
 ## Other solutions we've considered
 

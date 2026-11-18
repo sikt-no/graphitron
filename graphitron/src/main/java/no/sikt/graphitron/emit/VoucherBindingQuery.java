@@ -13,6 +13,7 @@ import java.util.TreeSet;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_COMPONENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_MEMBER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 
@@ -65,26 +66,26 @@ public final class VoucherBindingQuery {
     public static Rows read(StoreHandle store) {
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var o = GRAPHITRON_OCCURRENCE;
+        var v = GRAPHITRON_VOUCHER_FIELD;
         var m = GRAPHITRON_VOUCHER_MEMBER;
         var c = GRAPHITRON_VOUCHER_COMPONENT;
         var col = SQL_COLUMN;
-        var rows = store.dsl().selectDistinct(m.TYPE_NAME, m.ISSUING_FIELD, c.FIELD_NAME, col.COLUMN_NAME,
+        var rows = store.dsl().selectDistinct(v.TYPE_NAME, v.FIELD_NAME, c.FIELD_NAME, col.COLUMN_NAME,
                 col.JOOQ_NAME, col.BINDING_TYPE, col.DATABASE_TYPE)
             .from(b)
             .join(o).on(o.GRAPH_NAME.eq(b.GRAPH_NAME), o.COORDINATE.eq(b.COORDINATE))
-            .join(m).on(m.GRAPH_NAME.eq(o.GRAPH_NAME),
-                org.jooq.impl.DSL.concat(m.TYPE_NAME, org.jooq.impl.DSL.inline("."), m.ISSUING_FIELD)
-                    .eq(o.ELEMENT_COORDINATE))
+            .join(v).on(v.GRAPH_NAME.eq(o.GRAPH_NAME), v.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .join(m).on(m.GRAPH_NAME.eq(v.GRAPH_NAME), m.TYPE_NAME.eq(v.TYPE_NAME))
             .join(c).on(c.GRAPH_NAME.eq(m.GRAPH_NAME), c.TYPE_NAME.eq(m.TYPE_NAME), c.FIELD_NAME.eq(m.FIELD_NAME))
             .join(col).on(col.SOURCE_NAME.eq(c.TABLE_SOURCE_NAME), col.TABLE_SCHEMA.eq(c.TABLE_SCHEMA),
                 col.TABLE_NAME.eq(c.TABLE_NAME), col.COLUMN_NAME.eq(c.COLUMN_NAME))
             .where(b.GRAPH_NAME.eq(store.graphName()), b.KIND.eq("VOUCHER"))
-            .orderBy(m.TYPE_NAME, m.ISSUING_FIELD, c.FIELD_NAME)
+            .orderBy(v.TYPE_NAME, v.FIELD_NAME, c.FIELD_NAME)
             .fetch();
         var byType = new LinkedHashMap<String, Map<String, List<ColumnRef>>>();
         for (var r : rows) {
-            byType.computeIfAbsent(r.get(m.TYPE_NAME), k -> new LinkedHashMap<>())
-                .computeIfAbsent(r.get(m.ISSUING_FIELD), k -> new java.util.ArrayList<>())
+            byType.computeIfAbsent(r.get(v.TYPE_NAME), k -> new LinkedHashMap<>())
+                .computeIfAbsent(r.get(v.FIELD_NAME), k -> new java.util.ArrayList<>())
                 .add(new ColumnRef(r.get(col.COLUMN_NAME), r.get(col.JOOQ_NAME), r.get(col.BINDING_TYPE),
                     r.get(col.DATABASE_TYPE)));
         }

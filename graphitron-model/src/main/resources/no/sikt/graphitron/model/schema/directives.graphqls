@@ -659,11 +659,12 @@ enum OutboxOutcome {
 }
 
 """
-Marks the voucher field of a table-bound type in a federated subgraph that vouches for its rows to
-another subgraph. Every other field of the type is absorbed into the voucher: sealed inside it, signed,
-and withheld from this subgraph's published schema, which publishes the voucher alone. The voucher is
-`@inaccessible`, and the type is keyed by it, so a router can reach the other subgraph's entity from
-here only through the voucher. Requires a federation `@link`.
+Marks a table-bound type in a federated subgraph that vouches for its rows to another subgraph.
+Graphitron adds the voucher field, `_voucher: String!`, and every field written on the type is absorbed
+into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which
+publishes the voucher alone. The voucher is `@inaccessible`, and the type is keyed by it, so a router
+can reach the other subgraph's entity from here only through the voucher. Requires a federation
+`@link`. A field the author names `_voucher` is refused.
 """
 directive @issue(
   """
@@ -681,13 +682,14 @@ directive @issue(
   remaining absorbed fields are the key of the vouched row.
   """
   vouchesFor: String!
-) on FIELD_DEFINITION
+) on OBJECT
 
 """
-Marks the voucher field of a table-bound entity in a federated subgraph that grants access to its rows
-on another subgraph's voucher. The field is the voucher a router hands over from the issuing subgraph's
-`@issue` field: it is not a column and is never selected. The type gains a resolvable key on the
-voucher, beside the key the author wrote, and the voucher is `@inaccessible`. Graphitron verifies each
+Marks a table-bound entity in a federated subgraph that grants access to its rows on another
+subgraph's voucher. Graphitron adds the voucher field, `_voucher: String!`, which a router hands over
+from the issuing subgraph's `@issue` type: it is not a column and is never selected. The type gains a
+resolvable key on the voucher, beside the key the author wrote, and the voucher is `@inaccessible`. A
+field the author names `_voucher` is refused. Graphitron verifies each
 voucher and reads the vouched row on the connection the request's connection source leases for a key
 carrying the voucher's vouched-for values, so the database's row-level security decides what they
 unlock. Requires a federation `@link`. The entity and every field below it are read on that connection,
@@ -710,7 +712,7 @@ directive @accept(
   and may be `@inaccessible`.
   """
   vouchesFor: String!
-) on FIELD_DEFINITION
+) on OBJECT
 
 """
 Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.
