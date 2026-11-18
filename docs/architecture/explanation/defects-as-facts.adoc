@@ -256,7 +256,10 @@ The classification walk still refuses schemas on its own, with typed rejections 
 build as validation errors; xref:typed-rejection.adoc[Typed rejection] describes them. Those are
 not rows here, and the walk runs only on a graph the store's verdict accepts. A walk refusal that
 duplicates a stored defect is removed where it untangles simply; otherwise it is replaced in effect,
-since the verdict stops first, and goes with the walk.
+since the verdict stops first, and goes with the walk. Removing it takes no help the author had: where
+its message suggested the fix, the stored defect's message suggests it too, so a filter naming no
+column keeps its "did you mean" columns of the table it filters when the walk's refusal of it goes
+(Alf, 2026-11-18).
 
 Some rule families still judge in Java outside the defect family, the ones `StoreDetections`
 gathers; their violations join the walk's errors once the verdict has accepted the graph. They are
