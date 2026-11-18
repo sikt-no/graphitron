@@ -25267,6 +25267,33 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
                       AND po.field_name = f.field_name)
 UNION ALL
+-- The same, where the service hands back a list of the class its payloads' data field is read off
+-- rather than table records: each element fills one payload's data field, which is a list and so has
+-- one element to hold. The payload passes its object through to that field, as its OBJECT data field
+-- states, and the field's type is backed by the class the method hands back. The detail is the
+-- payload's field.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_PAYLOAD_IN_A_LIST', d.field_name, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_call_method cm ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate
+  JOIN code_method m
+    ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
+   AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
+  JOIN graphitron_payload_data_field d
+    ON d.graph_name = f.graph_name AND d.type_name = f.named_type AND d.kind = 'OBJECT'
+  JOIN graphitron_field df
+    ON df.graph_name = d.graph_name AND df.type_name = d.type_name AND df.field_name = d.field_name
+ WHERE p.kind = 'SERVICE' AND f.is_list AND df.is_list AND m.result_delivery = 'MANY'
+   AND EXISTS (SELECT 1 FROM graphitron_type_backing b
+                WHERE b.graph_name = df.graph_name AND b.type_name = df.named_type
+                  AND b.class_name = m.result_element_class)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                    WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
+                      AND po.field_name = f.field_name)
+UNION ALL
 -- A scalar or enum field's occurrence whose spelling names no column, or several, where its path
 -- lands: the occurrences the column rule takes, the @field(name:) or the field's own name folded by
 -- case, the SQL name before the generated one, with no candidate or more than one on the landing
@@ -29168,7 +29195,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('NO_KEY_FROM_PARENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_KEY_FROM_PARENT',
    'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.'),
   ('SERVICE_PAYLOAD_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_PAYLOAD_IN_A_LIST',
-   'A @service hands back a list of table records under a list of payloads whose field taking them is a list too, and each record fills one payload: make the payload''s field a single record, return one payload, or hand back the payloads themselves.'),
+   'A @service hands back a list of table records, or of the class a payload''s data field is read off, under a list of payloads whose field taking them is a list too, and each element fills one payload: make the payload''s field a single one, return one payload, or hand back the payloads themselves.'),
   ('OUTCOME_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTCOME_IN_A_LIST',
    'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.'),
   ('WRITE_RESULT_HOLDS_ONLY_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_RESULT_HOLDS_ONLY_KEYS',

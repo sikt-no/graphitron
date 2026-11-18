@@ -2,6 +2,9 @@
 # FilmPage's field takes one film, so filmPages is coherent; FilmShelf's takes a list of them, which
 # one record per payload cannot fill, so filmShelves is refused. CreateFilmsPayloadService hands back
 # the payloads themselves, each with its own list of films, so a list of those is coherent too.
+# FilmsWithActorsService.create hands back a list of FilmWithActors, the class each payload's data
+# field is read off: one payload over the whole list fills its list field, a list of payloads whose
+# field is a list is refused, and a list of payloads whose field is one element is coherent.
 
 type Film @table(name: "film") { title: String }
 
@@ -11,6 +14,17 @@ type FilmShelf { films: [Film!]! }
 
 type CreateFilmsPayload { films: [Film!]! }
 
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+
+type FilmWithActorsResult {
+  film: Film! @field(name: "filmRecord")
+  actors: [Actor!] @field(name: "actorRecords")
+}
+
+type FilmsWithActorsPayload { results: [FilmWithActorsResult] }
+
+type FilmWithActorsPayload { result: FilmWithActorsResult }
+
 type Query {
   filmPages: [FilmPage!]! @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
@@ -19,10 +33,17 @@ type Query {
   createdBatches: [CreateFilmsPayload!]! @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
       method: "recentlyCreatedFilmsBatched"})
+  withActorsOnce(filmIds: [Int!]!): FilmsWithActorsPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
+  withActorsBatches(filmIds: [Int!]!): [FilmsWithActorsPayload!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
+  withActorsEach(filmIds: [Int!]!): [FilmWithActorsPayload!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_PAYLOAD_IN_A_LIST'", rows: """
   code,                      coordinate,        detail
-  SERVICE_PAYLOAD_IN_A_LIST, Query.filmShelves, films
+  SERVICE_PAYLOAD_IN_A_LIST, Query.filmShelves,       films
+  SERVICE_PAYLOAD_IN_A_LIST, Query.withActorsBatches, results
   """)
