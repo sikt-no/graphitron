@@ -8708,6 +8708,52 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void staffAlias_deprecatedNameDeclaredFirst_liveStillWins() {
+        // The deprecated name comes first in the input type: declaration order does not make it win.
+        Map<String, Object> data = execute(
+            "mutation { staffAliasDeclaredFirstUpsert(in: {givenName: \"Ada\", firstName: \"Grace\"}) }");
+        assertThat(data).extractingByKey("staffAliasDeclaredFirstUpsert")
+            .isEqualTo("first[changed=true,val=Grace] last[changed=false,val=null]");
+    }
+
+    @Test
+    void staffAlias_twoDeprecatedNames_newestDeclaredWinsWhenTheLiveOneIsAbsent() {
+        // Live first, then the deprecated names newest-declared first: forename, declared after
+        // givenName, wins over it; and with the live name sent too, the live one wins over both.
+        Map<String, Object> aliasesOnly = execute(
+            "mutation { staffTwoAliasesUpsert(in: {givenName: \"Ada\", forename: \"Augusta\"}) }");
+        assertThat(aliasesOnly).extractingByKey("staffTwoAliasesUpsert")
+            .isEqualTo("first[changed=true,val=Augusta] last[changed=false,val=null]");
+        Map<String, Object> all = execute(
+            "mutation { staffTwoAliasesUpsert(in: {givenName: \"Ada\", forename: \"Augusta\", firstName: \"Grace\"}) }");
+        assertThat(all).extractingByKey("staffTwoAliasesUpsert")
+            .isEqualTo("first[changed=true,val=Grace] last[changed=false,val=null]");
+    }
+
+    @Test
+    void staffAlias_onlyDeprecatedNames_laterDeclaredWins() {
+        // With no live name at all, the later-declared deprecated name is the newest and wins.
+        Map<String, Object> data = execute(
+            "mutation { staffDeprecatedOnlyUpsert(in: {givenName: \"Ada\", forename: \"Augusta\"}) }");
+        assertThat(data).extractingByKey("staffDeprecatedOnlyUpsert")
+            .isEqualTo("first[changed=true,val=Augusta] last[changed=false,val=null]");
+    }
+
+    @Test
+    void staffAlias_deprecatedNameNestedInAGrouping_liveTopLevelNameWins() {
+        // The pair is split across nesting: the live name at the top level, the deprecated one in a
+        // grouping under it. Each writes alone, and with both sent the live one wins.
+        Map<String, Object> nestedOnly = execute(
+            "mutation { staffNestedAliasUpsert(in: {former: {givenName: \"Ada\"}}) }");
+        assertThat(nestedOnly).extractingByKey("staffNestedAliasUpsert")
+            .isEqualTo("first[changed=true,val=Ada] last[changed=false,val=null]");
+        Map<String, Object> both = execute(
+            "mutation { staffNestedAliasUpsert(in: {firstName: \"Grace\", former: {givenName: \"Ada\"}}) }");
+        assertThat(both).extractingByKey("staffNestedAliasUpsert")
+            .isEqualTo("first[changed=true,val=Grace] last[changed=false,val=null]");
+    }
+
+    @Test
     void staffAlias_neitherNameSent_columnUntouched() {
         // Neither path present: the column stays changed=false, so the @service's own INSERT/UPDATE
         // excludes it. The jOOQ changed-flag contract holds per COLUMN, not per alias: two aliases do

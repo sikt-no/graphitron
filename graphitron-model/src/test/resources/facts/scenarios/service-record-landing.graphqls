@@ -4,7 +4,10 @@
 # and a list of records (countFilmRecordDrafts) on film. inReplyTo writes its path from email, so it
 # lands where the self-referencing key takes it. An argument the service takes as a plain class
 # (countFilmDrafts) reaches no table. A column an input field names is judged once what consumes the
-# record is stated, not here.
+# record is stated, not here. A grouping under a record is no class of its own, so the fields two
+# levels below countFilmRecordNested's in bind film's columns as a top-level field does; and a
+# @table on the record's input names the table the record already lands on, so
+# countFilmRecordTableDrafts binds as its directiveless twin does.
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! }
@@ -22,6 +25,10 @@ input InsertEmailReplyInput {
   inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
 }
 input FilmRecordDraftInput { title: String @field(name: "title") }
+input FilmRecordTitleInput { title: String @field(name: "title") }
+input FilmRecordNamingInput { naming: FilmRecordTitleInput }
+input FilmRecordNestedDraftInput { draft: FilmRecordNamingInput }
+input FilmRecordTableDraftInput @table(name: "film") { title: String @field(name: "title") }
 input FilmDraftInput { title: String! }
 type FilmDraftsCountedPayload { count: Int }
 
@@ -33,6 +40,12 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.services.EmailReplyRecordService",
       method: "describeReply"})
   countFilmRecordDrafts(in: [FilmRecordDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "count", argMapping: "drafts: in"})
+  countFilmRecordNested(in: [FilmRecordNestedDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "count", argMapping: "drafts: in"})
+  countFilmRecordTableDrafts(in: [FilmRecordTableDraftInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
       method: "count", argMapping: "drafts: in"})
   countFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload @service(service: {
@@ -48,6 +61,12 @@ extend schema @expectEquals(relation: "graphitron_path_need_table",
   coordinate,                                  target_type,           start_table,      landing_table
   Query.countFilmRecordDrafts(in:),            FilmRecordDraftInput,  film,             film
   Query.countFilmRecordDrafts(in.title:),      FilmRecordDraftInput,  film,             film
+  Query.countFilmRecordNested(in:),            FilmRecordNestedDraftInput, film,        film
+  Query.countFilmRecordNested(in.draft:),      FilmRecordNestedDraftInput, film,        film
+  Query.countFilmRecordNested(in.draft.naming:), FilmRecordNestedDraftInput, film,      film
+  Query.countFilmRecordNested(in.draft.naming.title:), FilmRecordNestedDraftInput, film, film
+  Query.countFilmRecordTableDrafts(in:),       FilmRecordTableDraftInput, film,         film
+  Query.countFilmRecordTableDrafts(in.title:), FilmRecordTableDraftInput, film,         film
   Query.describeEmailReply(in:),               InsertEmailReplyInput, email,            email
   Query.describeEmailReply(in.inReplyTo:),     InsertEmailReplyInput, email,
   Query.describeEmailReply(in.mailboxRef:),    InsertEmailReplyInput, email,            email
@@ -65,6 +84,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column",
     where: "coordinate LIKE 'Query.%(%'", rows: """
   coordinate,                              table_name,       column_name
   Query.countFilmRecordDrafts(in.title:),  film,             title
+  Query.countFilmRecordNested(in.draft.naming.title:), film, title
+  Query.countFilmRecordTableDrafts(in.title:), film,         title
   Query.describeEmailReply(in.messageNo:), email,            message_no
   Query.describeEmailReply(in.subject:),   email,            subject
   Query.describeEndorsement(in.note:),     film_endorsement, note
@@ -77,6 +98,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
   coordinate,                  position, landing_coordinate,                record_table
   Query.countFilmDrafts,       0,        Query.countFilmDrafts(in:),
   Query.countFilmRecordDrafts, 0,        Query.countFilmRecordDrafts(in:),  film
+  Query.countFilmRecordNested, 0,        Query.countFilmRecordNested(in:),  film
+  Query.countFilmRecordTableDrafts, 0,   Query.countFilmRecordTableDrafts(in:), film
   Query.describeEmailReply,    0,        Query.describeEmailReply(in:),     email
   Query.describeEndorsement,   0,        Query.describeEndorsement(in:),    film_endorsement
   """)

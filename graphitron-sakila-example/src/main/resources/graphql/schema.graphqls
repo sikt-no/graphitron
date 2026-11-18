@@ -4086,6 +4086,31 @@ input StaffAliasInput {
     lastName: String @field(name: "last_name")
 }
 
+# The same column through names in other orders: the deprecated name declared before the live one;
+# two deprecated names beside the live one; two deprecated names and no live one; and a deprecated
+# name nested in a grouping below the live one. Precedence is the live name, then the deprecated
+# names newest-declared first, whatever the declaration order or the nesting.
+input StaffAliasDeclaredFirstInput {
+    givenName: String @field(name: "first_name") @deprecated(reason: "renamed to firstName")
+    firstName: String @field(name: "first_name")
+}
+input StaffTwoAliasesInput {
+    firstName: String @field(name: "first_name")
+    givenName: String @field(name: "first_name") @deprecated(reason: "renamed to firstName")
+    forename: String @field(name: "first_name") @deprecated(reason: "renamed to firstName")
+}
+input StaffDeprecatedOnlyInput {
+    givenName: String @field(name: "first_name") @deprecated(reason: "renamed to forename")
+    forename: String @field(name: "first_name") @deprecated(reason: "kept for old clients")
+}
+input StaffFormerNamesInput {
+    givenName: String @field(name: "first_name") @deprecated(reason: "renamed to firstName")
+}
+input StaffNestedAliasInput {
+    firstName: String @field(name: "first_name")
+    former: StaffFormerNamesInput
+}
+
 # R311 composite-key: a jOOQ FilmActorRecord param (composite PK actor_id, film_id) whose @nodeId
 # identity decodes both key columns in one fromArray call.
 input ModifyFilmActorRecordInput {
@@ -6433,6 +6458,26 @@ type Mutation {
     # changed=false, and an explicit null on the live name writes NULL rather than falling through to
     # the alias's value (presence is containsKey, not non-null).
     staffAliasUpsert(in: StaffAliasInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.StaffAliasRecordService",
+            method: "describeStaffAlias"
+        })
+    staffAliasDeclaredFirstUpsert(in: StaffAliasDeclaredFirstInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.StaffAliasRecordService",
+            method: "describeStaffAlias"
+        })
+    staffTwoAliasesUpsert(in: StaffTwoAliasesInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.StaffAliasRecordService",
+            method: "describeStaffAlias"
+        })
+    staffDeprecatedOnlyUpsert(in: StaffDeprecatedOnlyInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.StaffAliasRecordService",
+            method: "describeStaffAlias"
+        })
+    staffNestedAliasUpsert(in: StaffNestedAliasInput!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.StaffAliasRecordService",
             method: "describeStaffAlias"
