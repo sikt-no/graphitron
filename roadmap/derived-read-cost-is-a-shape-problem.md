@@ -1033,6 +1033,8 @@ static method needs no holder.
   each alias with the occurrence's declaring type (Alf, 2026-11-13), so once the lift calls those
   units the set and the selective `restrictTo` are deleted and each participant restricts with
   `Set.of()`.
+  On the flip, add `Mutation.countNotedFilmDraft` over `FilmDraftService.countNoted` with its
+  execution test and census entry; the walk's `InputBeanResolver` refuses it until then.
   * **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
     At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
     `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and

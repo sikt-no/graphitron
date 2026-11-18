@@ -5,16 +5,20 @@ import org.jooq.Records;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TAKEN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
@@ -58,7 +62,8 @@ import static org.jooq.impl.DSL.selectOne;
  * writing the column it binds rather than filling a member.
  *
  * <p>What cannot be made this way is refused with the reason, an input object being made into a
- * class nothing says how to construct, an input field matching no member, a list of groups, two
+ * class nothing says how to construct, an input field matching no member that nothing else takes, a
+ * list of groups, two
  * plain fields on one member, and a node id that cannot be decoded into its member.
  */
 public final class BuildQuery {
@@ -172,9 +177,10 @@ public final class BuildQuery {
     /**
      * What the store says an input object is built into and how each field fills it: the class each
      * occurrence is built into, by occurrence and class, with how it got it and the classpath entry
-     * the class is read from, and the member each field fills, by field and the class it is of.
+     * the class is read from, the member each field fills, by field and the class it is of, and the
+     * fields something other than a member takes, at or under them, which fill none and are no refusal.
      */
-    private record Builds(Map<String, Built> classes, Map<String, String> members) {
+    private record Builds(Map<String, Built> classes, Map<String, String> members, Set<String> taken) {
 
         record Built(String declaredVia, String sourceRef, boolean record) {}
 
@@ -196,7 +202,17 @@ public final class BuildQuery {
                 .from(m)
                 .where(m.GRAPH_NAME.eq(store.graphName()))
                 .forEach(r -> members.put(key(r.value1(), r.value2()), slotKey(r.value3(), r.value4(), r.value5())));
-            return new Builds(classes, members);
+            // Taken at or under the field, as MEMBER_UNKNOWN reads it: a field whose value a call's
+            // parameter, a tenant, an outbox key or a predicate reads off the request fills no member
+            // and needs none.
+            var s = GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+            var t = GRAPHITRON_OCCURRENCE_TAKEN;
+            var taken = new HashSet<>(store.dsl().selectDistinct(s.STEP_COORDINATE)
+                .from(s)
+                .join(t).on(t.GRAPH_NAME.eq(s.GRAPH_NAME), t.COORDINATE.eq(s.COORDINATE))
+                .where(s.GRAPH_NAME.eq(store.graphName()))
+                .fetch(s.STEP_COORDINATE));
+            return new Builds(classes, members, taken);
         }
 
         static String slotKey(String methodName, String descriptor, int position) {
@@ -566,7 +582,8 @@ public final class BuildQuery {
      * Binds the fields under {@code occurrence} to {@code construction}'s members, a grouping's
      * fields under its name; the reason the first one cannot bind, or null. The member each field
      * fills is its {@code MEMBER} binding's, and a field filling none is a grouping where
-     * {@code graphitron_occurrence_built_class} says it is built into the same class.
+     * {@code graphitron_occurrence_built_class} says it is built into the same class, or is left out
+     * where {@code graphitron_occurrence_taken} says something takes it, which reads it off the request.
      */
     private static String bind(String occurrence, Construction construction,
                                Map<String, List<InputField>> children, Map<String, Construction> constructions,
@@ -591,6 +608,9 @@ public final class BuildQuery {
                 if ("INPUT_OBJECT".equals(field.typeKind()) && field.list()) {
                     return "input field " + String.join(".", path) + " matches no member of "
                         + className + " and is a list, so it cannot group";
+                }
+                if (builds.taken().contains(field.coordinate())) {
+                    continue;
                 }
                 return "input field " + String.join(".", path) + " fills no member of " + className;
             }

@@ -33,6 +33,7 @@ type FilmDraftsCountedPayload { count: Int }
 
 input FilmDraftInput { title: String! }
 input FilmDraftExtraInput { title: String!, subtitle: String }
+input FilmDraftNotedInput { title: String!, note: String }
 input FilmDraftTwiceInput { title: String!, name: String @field(name: "title") }
 input FilmBundleExtrasInput { name: String, films: [FilmDraftInput!], extras: [FilmDraftInput!] }
 input AbstractDraftInput { title: String }
@@ -89,6 +90,11 @@ type Query {
   # subtitle fills no member of FilmDraft.
   countExtraDrafts(in: [FilmDraftExtraInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
+  # note fills no member of FilmDraft, and is no MEMBER_UNKNOWN: the pair hands it to the note
+  # parameter, so it is taken, and the build leaves it out of the bean (BuildQueryTest reads it here).
+  countNotedDraft(in: FilmDraftNotedInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "countNoted",
+      argMapping: "draft: in, note: in.note"})
   # title and name both fill FilmDraft's title.
   countTwiceDrafts(in: [FilmDraftTwiceInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})

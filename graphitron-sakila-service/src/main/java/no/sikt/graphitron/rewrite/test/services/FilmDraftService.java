@@ -25,6 +25,14 @@ public final class FilmDraftService {
         return new FilmDraftsCountedPayload(drafts.size(), List.of());
     }
 
+    /**
+     * One draft and a note its input carries beside it, which FilmDraft has no member for: the note
+     * reaches the service through its own parameter, so the count is the note's length.
+     */
+    public static FilmDraftsCountedPayload countNoted(FilmDraft draft, String note) {
+        return new FilmDraftsCountedPayload(note == null ? 0 : note.length(), List.of());
+    }
+
     /** The distinct drafts: a list of input objects built into a set, equal drafts counting once. */
     public static FilmDraftsCountedPayload countDistinct(Set<FilmDraft> drafts) {
         return new FilmDraftsCountedPayload(drafts.size(), List.of());

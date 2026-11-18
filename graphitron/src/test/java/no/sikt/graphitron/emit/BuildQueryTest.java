@@ -42,6 +42,22 @@ class BuildQueryTest {
     }
 
     @Test
+    void anInputFieldAPairTakesIsLeftOutOfTheBeanItFillsNoMemberOf() {
+        // note fills no member of FilmDraft and is handed to countNoted's note parameter by the pair,
+        // so the build leaves it out rather than refusing it; MEMBER_UNKNOWN is silent on the same
+        // field in the same document, so the two readers of the taken fact agree.
+        var result = FACTS.read("defects/input-object-build", graph -> BuildQuery.read(graph.handle())
+            .entrySet().stream()
+            .filter(e -> e.getKey().callCoordinate().equals("Query.countNotedDraft"))
+            .map(Map.Entry::getValue)
+            .findFirst().orElseThrow());
+        assertThat(result).isInstanceOfSatisfying(BuildQuery.Result.Built.class, built -> {
+            assertThat(built.build().className()).isEqualTo(SERVICES + "FilmDraft");
+            assertThat(built.build().members()).extracting(m -> m.slot().slotName()).containsExactly("title");
+        });
+    }
+
+    @Test
     void aListOfInputObjectsIsMadeIntoTheRecordTheListHolds() {
         var build = built("Query.countFilmDrafts");
         assertThat(build.className()).isEqualTo(SERVICES + "FilmDraft");
