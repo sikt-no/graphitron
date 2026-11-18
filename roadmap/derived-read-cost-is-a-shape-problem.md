@@ -1171,16 +1171,19 @@ static method needs no holder.
 * **A root call's routing refusal is a defect written before its connection, claimed by B** `open`, off the
   critical path. `graphitron_occurrence_route_entry_defect_rule` reads the refusal off
   `graphitron_occurrence_connection_rule`, a view reading a view, which Alf and B ruled out on
-  2026-11-14: a rule view reads stored tables, a defect is written first, and the rule raising it
-  computes its facts in a CTE. occurrence-routes' defect rule computes the verdict from stored
-  tables (the call, its tenant slots and their optionality, the result's scope) and writes
-  `TENANT_SLOTS_OPTIONAL_ONLY` or `UNROUTED_SERVICE_CALL` into the defect family; the connection
-  rule then states a row only for a root call with no such defect. One derivation, no refusal
-  relation beside the defect. The slot facts the verdict reads, whether a slot is guaranteed, read
-  per element, and through its own argument only, go onto the stored tenant slot as columns its
-  writer captures, an extended near-match rather than a relation beside it (Alf, 2026-11-14), so the
-  defect rule reads stored tables only. Done takes `graphitron_occurrence_connection_rule` off
-  `StageRuleGateTest.READ_BY_VIEWS`. The model goes past the architect at take-up.
+  2026-11-14. The connection rule decides a root call's route once and states no row for a root it
+  cannot route; the stage's defect rule, its last statement, raises a code at each root the stored
+  `graphitron_occurrence_connection` lacks, as it raises `UNROUTED_CHILD`, the code chosen from stored
+  facts: `TENANT_SLOTS_OPTIONAL_ONLY` where a tenant slot exists, `ROUTINE_WRITE_TENANT_SCOPED` for a
+  routine write onto a tenant's table, `UNROUTED_SERVICE_CALL` otherwise (Alf, 2026-11-18, replacing
+  "a defect is written first", which a warm store breaks: the sweep runs after the stages, so a rule
+  reading its own stage's defects reads the previous reading's). The slot facts the route reads,
+  whether a slot's value is guaranteed, read per element, and through its own argument only, are
+  facts of the slot's occurrence, computed once by the tenant writer onto the stored tenant slot
+  (Alf, 2026-11-18). One derivation, no refusal relation beside the defect. Done takes
+  `graphitron_occurrence_connection_rule` off `StageRuleGateTest.READ_BY_VIEWS`, which stays as an
+  empty map refusing the next. The `@globalData` rungs that judge route facts follow on the same
+  form; its placement rungs go to the earliest stage holding the directive.
 * **The walk's service refusals are stored** `open`, E's. Ten refusals the walk raises for a service
   field have no code in the store, and the walk code raising them goes with the service path, so each
   becomes a stored defect first: the record class behind an output `[ID] @nodeId` service payload

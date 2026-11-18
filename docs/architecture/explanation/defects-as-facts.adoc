@@ -100,6 +100,17 @@ stages have run, deletes the rows its stages raised that the reading did not mar
 gatherer's rows are never touched. A detail row names the stage that wrote it, which is the stage
 that raised its defect, and is swept the same way.
 
+A stage that states a relation and refuses what the relation cannot hold decides once, in the
+relation's rule, and the defect is the stored relation's absence: the rule writes no row for a
+subject it cannot state, and the stage's defect rule, its last statement, raises a code at each
+subject the stored relation lacks, choosing the code from stored facts. `occurrence-routes` raises a
+root call's refusals so, `TENANT_SLOTS_OPTIONAL_ONLY`, `ROUTINE_WRITE_TENANT_SCOPED` and
+`UNROUTED_SERVICE_CALL` at a root with no connection, as it raises `UNROUTED_CHILD` at a child with
+none (Alf, 2026-11-18). A defect is not written first for a later rule of its stage to read: the
+sweep runs once the gatherer's stages have run, so such a rule would read the previous reading's
+defects, and a subject refused then and fixed now would be left with neither its row nor its
+defect.
+
 Every graphitron code is raised so, by a stage's own rule view or Java writer; no stage runs after
 the others to raise what they leave. A stage takes a rule by raising it, and the details a defect
 names go with it: `occurrence-builds` writes the node-id slot and container defects with the members
