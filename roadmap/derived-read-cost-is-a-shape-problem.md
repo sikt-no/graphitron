@@ -1133,8 +1133,12 @@ static method needs no holder.
     * **A @service argument's fields an argMapping path leaves behind are refused** `open`, E's. A service argument taken in part by dotted `argMapping` paths, `range.tilVerdi` left over, is judged by neither: `ARGUMENT_UNBOUND` fires only where the whole argument binds nothing.
     * **An argument on a field read off an object is judged** `open`, E's. An argument on a field that is neither a service nor table-bound reaches no call or predicate, and neither side says so.
 * **A @service batch key is read through the read slots** `open`, E's, off the critical path. The walk finds a `Sources` element's key through `ClassAccessorResolver.enumerateZeroArg`, every zero-argument method, while the store's record lift reads only the class's read slots, so the two can pick different members for one key.
+* **A child @service keys off its parent's object through the accessor lift** `open`, E's, off the
+  critical path. The store states the lift (`graphitron_occurrence_producer_lift_accessor`) and
+  refuses the shape as `SERVICE_KEY_OFF_OBJECT_UNSUPPORTED`; the frame reads the keys through that
+  member, and the deferral goes.
 * **A getter taking arguments is captured as a read slot** `open`, E's, off the critical path. A class-backed field with arguments reads `getX(args)` or `getX(DataFetchingEnvironment)` in the walk, which `code_read_slot` does not hold, so `MEMBER_UNRESOLVED` leaves such fields unjudged and the store cannot bind them.
-* **A routine write's re-read keeps its rows in the order the write returned them** `open`, off the critical path. A routine write's rows are re-read by
+* **A routine write's re-read keeps its rows in the order the write returned them** `open`, E's, off the critical path. A routine write's rows are re-read by
   the keys it returned through an unordered `IN`, so they can come back in another order than the
   write handed them; the re-read keeps the write's order. A fix of its own, not a gate on the
   service flip.
@@ -1147,7 +1151,8 @@ static method needs no holder.
   routed so. Interim debt, agreed to go with the depth loop: `Paths` still counts keys off
   `sql_table_reference` for a need starting anywhere but its field's declaring table, and
   `Paths.declaringStart` restates in Java the first key rule's predicate for a field no claim covers.
-* **A routine write's routing is named by the connection key** `open`, F's, off the critical path.
+* **A routine write's routing is named by the connection key** `open`, E's, off the critical path,
+  taken with the routine write's frame (A, 2026-11-18).
   `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
   the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
   other, which the request's connection source decides (Alf, 2026-11-14, 2026-11-16).
@@ -1174,9 +1179,37 @@ static method needs no holder.
   writer captures, an extended near-match rather than a relation beside it (Alf, 2026-11-14), so the
   defect rule reads stored tables only. Done takes `graphitron_occurrence_connection_rule` off
   `StageRuleGateTest.READ_BY_VIEWS`. The model goes past the architect at take-up.
-* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service refusals are stored** `open`, E's. Ten refusals the walk raises for a service
+  field have no code in the store, and the walk code raising them goes with the service path, so each
+  becomes a stored defect first: the record class behind an output `[ID] @nodeId` service payload
+  that its node's table does not back; a list carrier whose data field is a list; one payload type
+  produced by both a DML write and a `@service`; a `Sources` of another table's records under a
+  `@table` parent; a list service's re-fetch key wider than jOOQ's typed `Row22`; an `argMapping` left
+  side naming no Java parameter, today caught only as `PARAMETER_UNFILLED` on the real one; `@tenant`
+  on a child service's argument; `@tenant` beside `@nodeId`; `@globalData`'s service rungs (no
+  connection, a tenant-scoped or global return, argument evidence); and the `@splitQuery` redundancy
+  lint on a service child or carrier, which `lint_rule` lists and only `FieldBuilder` emits.
+* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "The walk's service refusals are stored". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
+* **A record component no field fills is refused in the store** `open`, off the critical path.
+  `InputBeanResolver.bindRecord` refuses a positional class whose component no input field fills;
+  the store states the other direction only, `MEMBER_UNKNOWN`.
+* **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
+  `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
+* **A `@splitQuery` on a write payload's data field is judged in the store** `open`, off the
+  critical path. `MutationInputResolver.validateReturnType` refuses it; the store makes the data field
+  a `LOOKUP` producer and says nothing. Refused or admitted is Alf's to rule.
+* **A list field over an accessor returning one record is refused in the store** `open`, off the
+  critical path. `FieldBuilder.collectAccessorMatches` refuses it; `LIST_OVER_ONE_VALUE` covers
+  service and write producers only.
+* **A hop-0 filter on a record parent's split query is refused in the store** `open`, off the
+  critical path. `BuildContext.buildParentCorrelation` refuses a `condition:` filter on the first
+  hop where the parent is no catalog table; the store has no code for it.
+* **`@globalData`'s placement is refused in the store** `open`, off the critical path. On a child,
+  a root that is not a service, an interface or nesting field, beside `@tenantFanOut` or in a
+  single-tenant build, `TenantBindingIndex` refuses it; the store never reads the directive.
+* **splitquery-redundant-on-record-parent is an ENGINE lint over the store's results** `open`, off the critical path. The rule is CLASSIFIER, raised by FieldBuilder at a field returning a @table type under a class-backed parent and at a @service payload's data field. The payload arm goes silent when the service subtract deletes it, and the record-parent arm with the walk. In the store it is a lint_violation arm: the parent holds an object (graphitron_result OBJECT) and the field returns a table-bound type. It reads the fetchers stage's relations, so its case is a fact document rather than LintRuleCasesTest's AST-only corpus, and the move settles how that catalogue test counts it. It also reaches a DML payload's data field, which the walk does not warn on.
 * **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
   A root `@routine` is the producer call: its parameters are filled per occurrence in
   `graphitron_occurrence_call_parameter`, widened from service calls to any producer's call, and its
