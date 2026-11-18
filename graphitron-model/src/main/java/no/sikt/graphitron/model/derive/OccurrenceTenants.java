@@ -7,9 +7,13 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TENANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TENANT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_OPTIONAL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_AUTHORED_RULE;
@@ -17,7 +21,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_NODE_ID_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN_RULE;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -90,13 +101,16 @@ public final class OccurrenceTenants {
                               Table<?> subtype, List<String> carried) {
         var s = GRAPHITRON_OCCURRENCE_TENANT_SLOT;
         Field<String> ruleGraph = rule.field("GRAPH_NAME", String.class);
+        Field<String> ruleCoordinate = rule.field("COORDINATE", String.class);
+        var presence = Presence.of(ruleGraph, ruleCoordinate);
         dsl.insertInto(s)
             .columns(s.GRAPH_NAME, s.CALL_COORDINATE, s.CALL, s.SLOT, s.KIND, s.COORDINATE, s.KEY_POSITION,
-                s.TOUCHED_AT)
+                s.GUARANTEED, s.PER_ELEMENT, s.OWN_ARGUMENT, s.TOUCHED_AT)
             .select(dsl.select(ruleGraph, rule.field("CALL_COORDINATE", String.class),
                     rule.field("CALL", String.class), rule.field("SLOT", String.class),
-                    rule.field("KIND", String.class), rule.field("COORDINATE", String.class),
-                    rule.field("KEY_POSITION", Integer.class), val(touchedAt, s.TOUCHED_AT))
+                    rule.field("KIND", String.class), ruleCoordinate,
+                    rule.field("KEY_POSITION", Integer.class), presence.guaranteed(), presence.perElement(),
+                    presence.ownArgument(), val(touchedAt, s.TOUCHED_AT))
                 .from(rule)
                 .where(ruleGraph.eq(graph)))
             .onConflict(s.GRAPH_NAME, s.CALL_COORDINATE, s.CALL, s.SLOT)
@@ -104,6 +118,9 @@ public final class OccurrenceTenants {
             .set(s.KIND, excluded(s.KIND))
             .set(s.COORDINATE, excluded(s.COORDINATE))
             .set(s.KEY_POSITION, excluded(s.KEY_POSITION))
+            .set(s.GUARANTEED, excluded(s.GUARANTEED))
+            .set(s.PER_ELEMENT, excluded(s.PER_ELEMENT))
+            .set(s.OWN_ARGUMENT, excluded(s.OWN_ARGUMENT))
             .set(s.TOUCHED_AT, excluded(s.TOUCHED_AT))
             .execute();
         var columns = new java.util.ArrayList<Field<?>>();
@@ -132,5 +149,37 @@ public final class OccurrenceTenants {
             .doUpdate()
             .set(updates)
             .execute();
+    }
+
+    /**
+     * How a slot's value is present, which is a fact of its occurrence and the same for every slot the
+     * occurrence is: whether every call holds it once, or once per element of a list, the occurrence
+     * being no list of its own or read under one, and whether every list it is read through is its own
+     * argument. An occurrence that may be left out is neither, read off the occurrences' own relations.
+     */
+    private record Presence(Field<Boolean> guaranteed, Field<Boolean> perElement, Field<Boolean> ownArgument) {
+
+        static Presence of(Field<String> graph, Field<String> coordinate) {
+            var op = GRAPHITRON_OCCURRENCE_OPTIONAL;
+            var le = GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
+            var it = GRAPHITRON_OCCURRENCE_INPUT_TYPE;
+            var o = GRAPHITRON_OCCURRENCE;
+            var optional = exists(selectOne().from(op).where(op.GRAPH_NAME.eq(graph), op.COORDINATE.eq(coordinate)));
+            var underList = exists(selectOne().from(le).where(le.GRAPH_NAME.eq(graph), le.COORDINATE.eq(coordinate)));
+            var isList = coalesce(field(select(it.IS_LIST).from(it)
+                .where(it.GRAPH_NAME.eq(graph), it.COORDINATE.eq(coordinate))), inline(false)).isTrue();
+            var inputFieldList = exists(selectOne().from(o).join(it)
+                .on(it.GRAPH_NAME.eq(o.GRAPH_NAME), it.COORDINATE.eq(o.COORDINATE))
+                .where(o.GRAPH_NAME.eq(graph), o.COORDINATE.eq(coordinate), o.KIND.eq("INPUT_FIELD"),
+                    it.IS_LIST.isTrue()));
+            var otherList = exists(selectOne().from(le).join(o)
+                .on(o.GRAPH_NAME.eq(le.GRAPH_NAME), o.COORDINATE.eq(le.COORDINATE))
+                .where(le.GRAPH_NAME.eq(graph), le.COORDINATE.eq(coordinate),
+                    le.LIST_COORDINATE.ne(o.ARGUMENT_COORDINATE)));
+            return new Presence(
+                field(not(optional).and(not(underList)).and(not(isList))),
+                field(not(optional).and(underList.or(isList))),
+                field(not(otherList).and(not(inputFieldList))));
+        }
     }
 }

@@ -1170,22 +1170,6 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **A root call's routing refusal is a defect written before its connection, claimed by B** `open`, off the
-  critical path. `graphitron_occurrence_route_entry_defect_rule` reads the refusal off
-  `graphitron_occurrence_connection_rule`, a view reading a view, which Alf and B ruled out on
-  2026-11-14. The connection rule decides a root call's route once and states no row for a root it
-  cannot route; the stage's defect rule, its last statement, raises a code at each root the stored
-  `graphitron_occurrence_connection` lacks, as it raises `UNROUTED_CHILD`, the code chosen from stored
-  facts: `TENANT_SLOTS_OPTIONAL_ONLY` where a tenant slot exists, `ROUTINE_WRITE_TENANT_SCOPED` for a
-  routine write onto a tenant's table, `UNROUTED_SERVICE_CALL` otherwise (Alf, 2026-11-18, replacing
-  "a defect is written first", which a warm store breaks: the sweep runs after the stages, so a rule
-  reading its own stage's defects reads the previous reading's). The slot facts the route reads,
-  whether a slot's value is guaranteed, read per element, and through its own argument only, are
-  facts of the slot's occurrence, computed once by the tenant writer onto the stored tenant slot
-  (Alf, 2026-11-18). One derivation, no refusal relation beside the defect. Done takes
-  `graphitron_occurrence_connection_rule` off `StageRuleGateTest.READ_BY_VIEWS`, which stays as an
-  empty map refusing the next. The `@globalData` rungs that judge route facts follow on the same
-  form; its placement rungs go to the earliest stage holding the directive.
 * **The walk's service refusals are stored** `open`, E's. Ten refusals the walk raises for a service
   field have no code in the store, and the walk code raising them goes with the service path, so each
   becomes a stored defect first: the record class behind an output `[ID] @nodeId` service payload

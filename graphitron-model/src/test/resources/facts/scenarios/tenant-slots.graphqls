@@ -1,7 +1,8 @@
 # Every value a @service call's tenant is read from, under a database-per-tenant build whose tenant
 # column is film_id: an argument a $tenant pair names, one written @tenant, an input field a jOOQ
 # record binds to film_id, and a node id whose key is film_id. A value a call may be given none of
-# is said by graphitron_occurrence_optional, whatever its slot.
+# is said by graphitron_occurrence_optional, whatever its slot; how each is present, once or once per
+# element of a list the call's own argument holds, is stated on the slot, a fact of its occurrence.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
@@ -23,6 +24,9 @@ type Query {
   filmByRecord(in: FilmIn!): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
       method: "modifyFilmRecord"})
+  markedFilms(ids: [Int!]! @tenant): [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
   filmByNode(in: ID! @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
       method: "modifyFilmRecord"})
@@ -33,15 +37,17 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding_tenant", ro
   coordinate,             call_coordinate,  call,     origin,     key_position
   Query.filmByPair(org:), Query.filmByPair, producer, ARGMAPPING,
   Query.filmMarked(id:),  Query.filmMarked, producer, DIRECTIVE,
+  Query.markedFilms(ids:), Query.markedFilms, producer, DIRECTIVE,
   """)
 
 # Every value each call's tenant is read from, and how.
 extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows: """
-  call_coordinate,   kind,          coordinate,                    key_position
-  Query.filmByPair,  AUTHORED,      Query.filmByPair(org:),
-  Query.filmMarked,  AUTHORED,      Query.filmMarked(id:),
-  Query.filmByRecord, RECORD_COLUMN, Query.filmByRecord(in.filmId:),
-  Query.filmByNode,  NODE_ID_KEY,   Query.filmByNode(in:),         0
+  call_coordinate,    kind,          coordinate,                     key_position, guaranteed, per_element, own_argument
+  Query.filmByPair,   AUTHORED,      Query.filmByPair(org:),         ,             TRUE,       FALSE,       TRUE
+  Query.filmMarked,   AUTHORED,      Query.filmMarked(id:),          ,             TRUE,       FALSE,       TRUE
+  Query.markedFilms,  AUTHORED,      Query.markedFilms(ids:),        ,             FALSE,      TRUE,        TRUE
+  Query.filmByRecord, RECORD_COLUMN, Query.filmByRecord(in.filmId:), ,             TRUE,       FALSE,       TRUE
+  Query.filmByNode,   NODE_ID_KEY,   Query.filmByNode(in:),          0,            TRUE,       FALSE,       TRUE
   """)
 
 # Every tenant value here is required; the record's title, which names no tenant, may be left out.

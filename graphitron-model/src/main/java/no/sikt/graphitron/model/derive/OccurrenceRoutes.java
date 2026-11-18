@@ -42,7 +42,7 @@ public final class OccurrenceRoutes {
             .columns(c.GRAPH_NAME, c.COORDINATE, c.OUTCOME, c.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.OUTCOME, val(touchedAt, c.TOUCHED_AT))
                 .from(r)
-                .where(r.GRAPH_NAME.eq(graph), r.OUTCOME.isNotNull()))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(c.GRAPH_NAME, c.COORDINATE)
             .doUpdate()
             .set(c.OUTCOME, excluded(c.OUTCOME))

@@ -19050,6 +19050,9 @@ CREATE TABLE graphitron_occurrence_tenant_slot (
   kind            VARCHAR   NOT NULL,
   coordinate      VARCHAR   NOT NULL,
   key_position    INT,
+  guaranteed      BOOLEAN   NOT NULL,
+  per_element     BOOLEAN   NOT NULL,
+  own_argument    BOOLEAN   NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, call_coordinate, call, slot),
   -- What each subtype references, so a subtype row can only hang under a slot of its own kind.
@@ -19066,8 +19069,11 @@ COMMENT ON COLUMN graphitron_occurrence_tenant_slot.call_coordinate IS 'the occu
 COMMENT ON COLUMN graphitron_occurrence_tenant_slot.call IS 'which of its calls, as graphitron_occurrence_call spells it';
 COMMENT ON COLUMN graphitron_occurrence_tenant_slot.slot IS 'the value spelled from its occurrence and how it is read, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_tenant_slot.kind IS 'where the value comes from: AUTHORED, an author''s $tenant or @tenant; RECORD_COLUMN, an input field a jOOQ record binds to the tenant column; NODE_ID_KEY, a node id whose key holds the tenant column. Each has a subtype naming what it rests on';
-COMMENT ON COLUMN graphitron_occurrence_tenant_slot.coordinate IS 'the argument or input-field occurrence the value is read from; whether it is always there is graphitron_occurrence_optional''s and graphitron_occurrence_list_element''s to say';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.coordinate IS 'the argument or input-field occurrence the value is read from';
 COMMENT ON COLUMN graphitron_occurrence_tenant_slot.key_position IS 'where the value is a node id, the position of the tenant column in its key; NULL where the value is the tenant';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.guaranteed IS 'whether every call holds the value once: its occurrence may not be left out, is no list and is read under none. A fact of the occurrence, read off graphitron_occurrence_optional, graphitron_occurrence_list_element and graphitron_occurrence_input_type, and the same for every slot it is';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.per_element IS 'whether every call holds the value once per element of a list: its occurrence may not be left out and is a list or read under one. FALSE where the occurrence may be left out, as guaranteed is, so a slot neither guaranteed nor per element is an optional one';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.own_argument IS 'whether every list the value is read through is its own argument, the occurrence itself being no list of an input field''s, so an empty list is the call''s own answer; meaningful where per_element holds';
 COMMENT ON COLUMN graphitron_occurrence_tenant_slot.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_occurrence_tenant_slot_authored (
@@ -21583,11 +21589,12 @@ COMMENT ON COLUMN graphitron_occurrence_connection_part.when_empty IS 'what a ca
 COMMENT ON COLUMN graphitron_occurrence_connection_part.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_connection_rule
-  (graph_name, coordinate, outcome, when_empty, refusal) AS
+  (graph_name, coordinate, outcome, when_empty) AS
 -- Each root service producer of a graph with a tenant column, and each routine write, a ROUTINE
 -- producer on the mutation root, with its call, and what decides its route. A routine write mints no
 -- tenant slot and is handed no connection, so its result's table alone decides: a global table's runs
--- on the key with an empty tenant part, and a tenant's table's is refused as ROUTINE_WRITE_TENANT_SCOPED.
+-- on the key with an empty tenant part, and a tenant's table's has no row, which the stage's defect rule
+-- refuses.
 WITH root (graph_name, coordinate, call, element_coordinate, kind) AS (
   SELECT p.graph_name, p.coordinate, c.call, o.element_coordinate, p.kind
     FROM graphitron_occurrence_producer p
@@ -21603,30 +21610,6 @@ WITH root (graph_name, coordinate, call, element_coordinate, kind) AS (
                              ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
                             AND ro.operation = 'MUTATION'
                           WHERE f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate))
-),
--- Each tenant slot, with how its value is present: guaranteed where it may not be left out and is
--- read once, per element where it may not be left out but is read per element of a list, the list
--- its own type or one above it; and whether every list it is read through is its own argument.
-slot (graph_name, call_coordinate, call, guaranteed, per_element, own_argument) AS (
-  SELECT s.graph_name, s.call_coordinate, s.call,
-         NOT EXISTS (SELECT 1 FROM graphitron_occurrence_list_element le
-                      WHERE le.graph_name = s.graph_name AND le.coordinate = s.coordinate)
-           AND COALESCE(a.is_list, f.is_list, FALSE) = FALSE,
-         EXISTS (SELECT 1 FROM graphitron_occurrence_list_element le
-                  WHERE le.graph_name = s.graph_name AND le.coordinate = s.coordinate)
-           OR COALESCE(a.is_list, f.is_list, FALSE) = TRUE,
-         NOT EXISTS (SELECT 1 FROM graphitron_occurrence_list_element le
-                      WHERE le.graph_name = s.graph_name AND le.coordinate = s.coordinate
-                        AND le.list_coordinate <> o.argument_coordinate)
-           AND COALESCE(f.is_list, FALSE) = FALSE
-    FROM graphitron_occurrence_tenant_slot s
-    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
-    LEFT JOIN graphitron_argument a
-      ON o.kind = 'FIELD_ARGUMENT' AND a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
-    LEFT JOIN graphitron_field f
-      ON o.kind = 'INPUT_FIELD' AND f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_optional op
-                      WHERE op.graph_name = s.graph_name AND op.coordinate = s.coordinate)
 ),
 fact (graph_name, coordinate, call, kind, result_scope, global_data, bound, any_slot, guaranteed, per_element,
       own_argument, has_empty) AS (
@@ -21648,13 +21631,13 @@ fact (graph_name, coordinate, call, kind, result_scope, global_data, bound, any_
                          AND ps.constructor_descriptor = '(Lorg/jooq/DSLContext;)V'),
          EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                   WHERE s.graph_name = r.graph_name AND s.call_coordinate = r.coordinate AND s.call = r.call),
-         EXISTS (SELECT 1 FROM slot s
+         EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                   WHERE s.graph_name = r.graph_name AND s.call_coordinate = r.coordinate AND s.call = r.call
                     AND s.guaranteed = TRUE),
-         EXISTS (SELECT 1 FROM slot s
+         EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                   WHERE s.graph_name = r.graph_name AND s.call_coordinate = r.coordinate AND s.call = r.call
                     AND s.per_element = TRUE),
-         NOT EXISTS (SELECT 1 FROM slot s
+         NOT EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                       WHERE s.graph_name = r.graph_name AND s.call_coordinate = r.coordinate AND s.call = r.call
                         AND s.per_element = TRUE AND s.own_argument = FALSE),
          EXISTS (SELECT 1 FROM graphitron_occurrence_producer_empty e
@@ -21666,21 +21649,15 @@ fact (graph_name, coordinate, call, kind, result_scope, global_data, bound, any_
       ON rtc.graph_name = pr.graph_name AND rtc.source_name = pr.table_source_name
      AND rtc.table_schema = pr.table_schema AND rtc.table_name = pr.table_name
 ),
-verdict (graph_name, coordinate, call, outcome, refusal, guaranteed, own_argument, has_empty) AS (
+verdict (graph_name, coordinate, call, outcome, guaranteed, own_argument, has_empty) AS (
   SELECT graph_name, coordinate, call,
          -- Global records are re-read on the key with an empty tenant part whatever the arguments name.
+         -- A root no route reaches has none, and no row: a tenant slot that may be left out, a routine
+         -- write onto a tenant's table, or a tenant's records or a connection with no tenant named.
          CASE WHEN result_scope = 'GLOBAL' OR global_data = TRUE THEN 'UNSCOPED'
               WHEN guaranteed = TRUE OR per_element = TRUE THEN 'ROUTED'
               WHEN any_slot = TRUE OR result_scope = 'TENANT' OR bound = TRUE THEN CAST(NULL AS VARCHAR)
               ELSE 'UNSCOPED' END,
-         CASE WHEN result_scope = 'GLOBAL' OR global_data = TRUE OR guaranteed = TRUE OR per_element = TRUE
-              THEN CAST(NULL AS VARCHAR)
-              WHEN any_slot = TRUE THEN 'TENANT_SLOTS_OPTIONAL_ONLY'
-              -- A routine write names no tenant and is handed no connection: its own code, since a
-              -- service's remedies are not open to it.
-              WHEN kind = 'ROUTINE' AND result_scope = 'TENANT' THEN 'ROUTINE_WRITE_TENANT_SCOPED'
-              WHEN result_scope = 'TENANT' OR bound = TRUE THEN 'UNROUTED_SERVICE_CALL'
-              ELSE CAST(NULL AS VARCHAR) END,
          guaranteed, own_argument, has_empty
     FROM fact
 )
@@ -21688,9 +21665,9 @@ SELECT graph_name, coordinate, outcome,
        CASE WHEN outcome <> 'ROUTED' THEN CAST(NULL AS VARCHAR)
             WHEN guaranteed = TRUE THEN 'UNREACHABLE'
             WHEN own_argument = TRUE AND has_empty = TRUE THEN 'EMPTY'
-            ELSE 'REFUSE' END,
-       refusal
+            ELSE 'REFUSE' END
   FROM verdict
+ WHERE outcome IS NOT NULL
 UNION ALL
 -- A child producer of a graph with a tenant column, by the table of the parent it starts from: the
 -- declaring type's table for a field of a table-bound type, the parent occurrence's source tables for a
@@ -21703,8 +21680,7 @@ UNION ALL
 -- row: nothing says which tenant's database to read, which the stage's defect rule refuses.
 SELECT x.graph_name, x.coordinate, x.outcome,
        CASE WHEN x.outcome <> 'ROUTED' THEN CAST(NULL AS VARCHAR)
-            WHEN x.parent_nullable THEN 'EMPTY' ELSE 'UNREACHABLE' END,
-       CAST(NULL AS VARCHAR)
+            WHEN x.parent_nullable THEN 'EMPTY' ELSE 'UNREACHABLE' END
   FROM (SELECT p.graph_name, p.coordinate,
                CASE WHEN tf.parent_column IS NOT NULL THEN 'ROUTED'
                     WHEN pr.table_name IS NOT NULL AND rtc.table_name IS NULL THEN 'UNSCOPED'
@@ -21753,25 +21729,45 @@ UNION ALL
 -- with no key handed down runs on the request's own connection, the rule for a field outside a vouched
 -- entity's subtree. Roots and _entities have no row: a root runs on the request's connection, and a
 -- vouched key is only ever handed down by _entities.
-SELECT p.graph_name, p.coordinate, 'INHERIT', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+SELECT p.graph_name, p.coordinate, 'INHERIT', CAST(NULL AS VARCHAR)
   FROM graphitron_occurrence_producer p
  WHERE p.start = 'CHILD'
    AND EXISTS (SELECT 1 FROM graphitron_accept_vouched_for av WHERE av.graph_name = p.graph_name)
    AND NOT EXISTS (SELECT 1 FROM store_graph_tenant_column t WHERE t.graph_name = p.graph_name);
-COMMENT ON VIEW graphitron_occurrence_connection_rule IS 'One row per producer of a graph whose ConnectionKey has a part: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none. For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.';
+COMMENT ON VIEW graphitron_occurrence_connection_rule IS 'One row per producer of a graph whose ConnectionKey has a part that a route reaches: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty; a root no route reaches has no row. For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule raises a code at each root the stored connection lacks.';
 
 -- The occurrence-routes stage's own defects: a call it cannot route, at the field making it. The detail
 -- is NULL; the code says why.
 CREATE VIEW graphitron_occurrence_route_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
-SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, v.refusal,
+-- A root service call or routine write of a graph with a tenant column that the stored connection
+-- lacks, the connection rule having decided no route reaches it, as UNROUTED_CHILD is raised for a
+-- child: by why, a tenant slot that may be left out, a routine write onto a tenant's table, or else a
+-- call naming no tenant that re-reads a tenant's rows or is handed a connection.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
+                          WHERE s.graph_name = p.graph_name AND s.call_coordinate = p.coordinate
+                            AND s.call = c.call)
+            THEN 'TENANT_SLOTS_OPTIONAL_ONLY'
+            WHEN p.kind = 'ROUTINE' THEN 'ROUTINE_WRITE_TENANT_SCOPED'
+            ELSE 'UNROUTED_SERVICE_CALL' END,
        CAST(NULL AS VARCHAR), 'occurrence-routes'
-  FROM graphitron_occurrence_connection_rule v
-  JOIN graphitron_occurrence o ON o.graph_name = v.graph_name AND o.coordinate = v.coordinate
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_call c
+    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate AND c.call = 'producer'
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE v.refusal IS NOT NULL
+ WHERE p.start = 'ROOT'
+   AND (p.kind = 'SERVICE'
+        OR p.kind = 'ROUTINE'
+           AND EXISTS (SELECT 1 FROM graphql_root_operation ro
+                        WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                          AND ro.operation = 'MUTATION'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_connection oc
+                    WHERE oc.graph_name = p.graph_name AND oc.coordinate = p.coordinate)
 UNION ALL
 -- A field of a nesting type, one with no table of its own, whose path from where it is nested starts
 -- with a key fanning out by the parent row's tenant, at the field: routing it by that row's tenant
@@ -30757,9 +30753,9 @@ INSERT INTO meta_relation VALUES
    'For example Mutation.rateFilms''s connection has a TENANT part, read from its tenant slots, which a call naming no tenant cannot reach.',
    'Each part of a connection key is read from sources of its own, at their own grain, the tenant''s being the call''s tenant slots; what a call whose sources name none gets is the part''s, so it sits here rather than on the connection.'),
   ('graphitron_occurrence_connection_rule', 'graph-occurrence', 'graphitron',
-   'One row per producer of a graph whose ConnectionKey has a part: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none.',
-   'For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.',
-   'The rule, stated once for all three: a producer is routed, inherits, runs unscoped or is refused by the same facts, so the connection, its part and its defect cannot disagree about which producers they cover.'),
+   'One row per producer of a graph whose ConnectionKey has a part that a route reaches: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty; a root no route reaches has no row.',
+   'For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule raises a code at each root the stored connection lacks.',
+   'The rule, stated once for both: a producer is routed, inherits or runs unscoped by the same facts, and a root none of those reaches has no row, so the connection, its part and its defect, read off the connection''s absence, cannot disagree about which producers they cover.'),
   ('graphitron_occurrence_participant_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the occurrence-participants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a @service returning an interface whose participants a discriminator tells apart on film, one of them on a table of its own, gives one SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED row at the field, naming that participant.',
@@ -30767,7 +30763,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_route_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.',
-   'The stage''s own defects, read off the route rule''s refused rows, so every root service call and routine write of a tenanted graph has a route or a defect.'),
+   'The stage''s own defects, read off the stored connection''s absence as the stage''s last statement, so every root service call and routine write of a tenanted graph has a route or a defect, and the route is decided once.'),
   ('graphitron_anchor_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.',
