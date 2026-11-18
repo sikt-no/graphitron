@@ -419,6 +419,9 @@ consumer reads the contract off the schema (Alf, 2026-11-18). Graphitron cannot 
 routine does, but it does know a routine returning a table has no order of its own: such a routine
 behind a plural mutation must be given an order, and is refused without one, the refusal naming the
 plural identifying field it fails to keep.
+The order is given with `@defaultOrder(fields:)` on the mutation field, naming columns of the
+routine's own result rather than of the table the field's type is bound to, since only what the
+routine hands back can say which element a row answers (Alf, 2026-11-18).
 
 A field returning a `@table` type on its parent's own table is refused unless the schema says how
 it is reached: a nesting type, with no table of its own, or a `@reference` keyed on the table's
