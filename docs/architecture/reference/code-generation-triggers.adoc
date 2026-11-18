@@ -411,6 +411,9 @@ One that takes an array answers an array in the same order, and Graphitron only 
 order is the routine's to keep. One that takes a single value is called laterally once per element
 of a derived table built from the argument, and Graphitron orders by that table's position. A
 routine returning a table cannot keep the contract, since nothing ties its rows to the elements.
+`@lookupKey` is what declares a field plural identifying; an insert or a delete whose schema has
+that shape, a list argument and one answer per element, is taken to want the same order without it
+(Alf, 2026-11-18).
 
 A field returning a `@table` type on its parent's own table is refused unless the schema says how
 it is reached: a nesting type, with no table of its own, or a `@reference` keyed on the table's
