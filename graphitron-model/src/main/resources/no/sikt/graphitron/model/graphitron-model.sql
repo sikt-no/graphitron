@@ -25031,6 +25031,39 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
  WHERE f.is_list
 UNION ALL
+-- A @service handing back a list of table records under a list of payloads whose field taking them
+-- is a list too, at the service's field: each record fills one payload, so a payload's field has one
+-- record to hold and no list of them. A service handing back the payloads themselves fills each one's
+-- list from its own member, a field taking node ids reads them where they are, and an outcome in a
+-- list is OUTCOME_IN_A_LIST's. The detail is the payload's field.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_PAYLOAD_IN_A_LIST', df.field_name, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r
+    ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate AND r.shape = 'RECORD_LIST'
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence child
+    ON child.graph_name = o.graph_name AND child.parent_coordinate = o.coordinate AND child.kind = 'FIELD'
+  JOIN graphitron_occurrence_producer_lift l
+    ON l.graph_name = child.graph_name AND l.coordinate = child.coordinate
+  JOIN graphitron_field df ON df.graph_name = child.graph_name AND df.coordinate = child.element_coordinate
+ WHERE p.kind = 'SERVICE' AND f.is_list AND df.is_list
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = f.graph_name AND tt.type_name = f.named_type)
+   -- The payload's field re-reads the records themselves, its type bound to their table; a field
+   -- following a path off each record to another table is a field of the record, not the payload's.
+   AND EXISTS (SELECT 1 FROM graphitron_tabletype dt
+                WHERE dt.graph_name = df.graph_name AND dt.type_name = df.named_type
+                  AND dt.table_source_name = r.table_source_name AND dt.table_schema = r.table_schema
+                  AND dt.table_name = r.table_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                    WHERE n.graph_name = child.graph_name AND n.coordinate = child.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                    WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
+                      AND po.field_name = f.field_name)
+UNION ALL
 -- A scalar or enum field's occurrence whose spelling names no column, or several, where its path
 -- lands: the occurrences the column rule takes, the @field(name:) or the field's own name folded by
 -- case, the SQL name before the generated one, with no candidate or more than one on the landing
@@ -28907,6 +28940,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list.'),
   ('NO_KEY_FROM_PARENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_KEY_FROM_PARENT',
    'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.'),
+  ('SERVICE_PAYLOAD_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_PAYLOAD_IN_A_LIST',
+   'A @service hands back a list of table records under a list of payloads whose field taking them is a list too, and each record fills one payload: make the payload''s field a single record, return one payload, or hand back the payloads themselves.'),
   ('OUTCOME_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTCOME_IN_A_LIST',
    'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.'),
   ('WRITE_RESULT_HOLDS_ONLY_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_RESULT_HOLDS_ONLY_KEYS',

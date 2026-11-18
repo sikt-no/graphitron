@@ -1,0 +1,28 @@
+# A service handing back a list of film records under a list of payloads fills one payload per record.
+# FilmPage's field takes one film, so filmPages is coherent; FilmShelf's takes a list of them, which
+# one record per payload cannot fill, so filmShelves is refused. CreateFilmsPayloadService hands back
+# the payloads themselves, each with its own list of films, so a list of those is coherent too.
+
+type Film @table(name: "film") { title: String }
+
+type FilmPage { film: Film }
+
+type FilmShelf { films: [Film!]! }
+
+type CreateFilmsPayload { films: [Film!]! }
+
+type Query {
+  filmPages: [FilmPage!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+  filmShelves: [FilmShelf!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+  createdBatches: [CreateFilmsPayload!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
+      method: "recentlyCreatedFilmsBatched"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_PAYLOAD_IN_A_LIST'", rows: """
+  code,                      coordinate,        detail
+  SERVICE_PAYLOAD_IN_A_LIST, Query.filmShelves, films
+  """)
