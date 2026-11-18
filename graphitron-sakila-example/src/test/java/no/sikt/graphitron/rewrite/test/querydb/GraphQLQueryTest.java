@@ -9822,6 +9822,41 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void createFilmWithActors_singleComposite_roundTrips() {
+        // The single arm: one composite onto one result, its film and actors re-fetched off it.
+        Map<String, Object> data = execute("""
+            mutation {
+                createFilmWithActors(filmId: 1) {
+                    result { film { title } actors { firstName } }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("createFilmWithActors", as(MAP));
+        payload.containsEntry("errors", null);
+        var result = payload.extractingByKey("result", as(MAP));
+        result.extractingByKey("film", as(MAP)).extractingByKey("title").isNotNull();
+        result.extractingByKey("actors", as(LIST)).isNotEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithActorsBare_noErrorsField_readsTheListDirectly() {
+        // No errors field, so no outcome to narrow: the results read the producer's list as it is.
+        Map<String, Object> data = execute("""
+            mutation {
+                createFilmsWithActorsBare(filmIds: [1, 2]) {
+                    results { film { title } actors { firstName } }
+                }
+            }
+            """);
+        var results = assertThat(data).extractingByKey("createFilmsWithActorsBare", as(MAP))
+            .extractingByKey("results", as(list(Map.class))).hasSize(2);
+        results.element(0, as(MAP)).extractingByKey("film", as(MAP)).extractingByKey("title").isNotNull();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void createFilmsWithActors_errorArm_rendersResultsNull() {
         // filmId -1 throws IllegalArgumentException; the MutationServiceRecordField try/catch ships
         // Outcome.ErrorList. The `results` passthrough narrows Outcome.Success, sees the ErrorList arm,
@@ -10133,6 +10168,30 @@ class GraphQLQueryTest {
         payload.containsEntry("errors", null);
         payload.containsEntry("filmId",
             no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmById_noErrorsField_encodesNodeIdOffTheRecord() {
+        // The carrier has no errors field, so there is no outcome to narrow: the data field reads
+        // the producer's record directly and encodes its node id.
+        Map<String, Object> data = execute("""
+            mutation { serviceDeleteFilmById(id: 9001) { filmId } }
+            """);
+        assertThat(data).extractingByKey("serviceDeleteFilmById", as(MAP))
+            .containsEntry("filmId", no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmsByIds_noErrorsField_encodesNodeIdsInProducerOrder() {
+        Map<String, Object> data = execute("""
+            mutation { serviceDeleteFilmsByIds(ids: [9002, 9001]) { filmIds } }
+            """);
+        assertThat(data).extractingByKey("serviceDeleteFilmsByIds", as(MAP))
+            .extractingByKey("filmIds", as(LIST)).containsExactly(
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9002),
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));
     }
 
     @Test

@@ -1816,6 +1816,17 @@ type FilmsWithActorsPayload {
     errors: [FilmsWithActorsErr]
 }
 
+# The single arm of the composite carrier: one composite onto one result; and the list carrier with
+# no errors field, which reads the producer's list directly.
+type FilmWithActorsPayload {
+    result: FilmWithActorsResult
+    errors: [FilmsWithActorsErr]
+}
+
+type FilmsWithActorsBarePayload {
+    results: [FilmWithActorsResult]
+}
+
 # The non-null half of the minimal pair above: the record-composite list declared non-null answers
 # [] on the error arm, and also when the producer returns null (nothing was produced).
 type FilmsWithActorsNonNullPayload {
@@ -4077,8 +4088,8 @@ input CustomerDetailsGroup {
 # (live first), so the generated helper emits one presence-guarded assignment that takes the first
 # present path. lastName is a control column no alias touches. No @nodeId here, so no trailing key
 # decode can reset the touched flag of a null-valued column, which keeps the explicit-null case
-# observable. StaffRecord because no other fixture binds it as a @service param, so the alias
-# behaviour is read off an uncontended create<Record> helper.
+# observable. The inputs below bind the same StaffRecord in other shapes, none of them carrying
+# lastName, so each shape writes only its own columns: their tests read last_name back untouched.
 input StaffAliasInput {
     firstName: String @field(name: "first_name")
     givenName: String @field(name: "first_name")
@@ -5203,6 +5214,16 @@ type FilmIdsCarrierWithErrorsPayload {
     errors: [FilmReviewError]
 }
 
+# The same two ID carriers with no errors field: the data field reads the producer's record or
+# records directly, there being no outcome to narrow, and encodes the node ids off them.
+type FilmIdCarrierPayload {
+    filmId: ID @nodeId(typeName: "Film")
+}
+
+type FilmIdsCarrierPayload {
+    filmIds: [ID] @nodeId(typeName: "Film")
+}
+
 # The non-null halves of the two list carriers above: a non-null list data field answers [] on
 # the error arm, and when the producer returned null.
 type FilmsCarrierWithErrorsNonNullPayload {
@@ -6020,6 +6041,18 @@ type Mutation {
             method: "deleteFilmsByIds"
         })
 
+    # The two producers above into the errors-less ID carriers.
+    serviceDeleteFilmById(id: Int!): FilmIdCarrierPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "deleteFilmById"
+        })
+    serviceDeleteFilmsByIds(ids: [Int!]!): FilmIdsCarrierPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "deleteFilmsByIds"
+        })
+
     # The non-null list siblings of the three carriers above: the error arm (id 999) and a producer
     # that returns null (an empty id list, filmsByIdsWithNulls) render the list [] instead of null.
     serviceFilmsByIdsNonNullWithErrors(ids: [Int!]!): FilmsCarrierWithErrorsNonNullPayload
@@ -6079,6 +6112,16 @@ type Mutation {
     # accessor path off the composite's filmRecord() / actorRecords(). A filmId of -1 throws, exercising
     # the Outcome error arm (data renders null, errors populated). See FilmsWithActorsService.create.
     createFilmsWithActors(filmIds: [Int!]!): FilmsWithActorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService",
+            method: "create"
+        })
+    createFilmWithActors(filmId: Int!): FilmWithActorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService",
+            method: "createOne"
+        })
+    createFilmsWithActorsBare(filmIds: [Int!]!): FilmsWithActorsBarePayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService",
             method: "create"

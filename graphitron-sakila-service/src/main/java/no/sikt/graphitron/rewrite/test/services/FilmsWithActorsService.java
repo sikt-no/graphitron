@@ -50,6 +50,12 @@ public final class FilmsWithActorsService {
         return out;
     }
 
+    /** One composite: {@link #create} of the one film, or {@code null} where no film has the id. */
+    public static FilmWithActors createOne(DSLContext dsl, Integer filmId) {
+        var out = create(dsl, List.of(filmId));
+        return out.isEmpty() ? null : out.getFirst();
+    }
+
     /**
      * {@link #create}, except that an empty {@code filmIds} list returns {@code null}: the producer
      * produced nothing, which a non-null list data field renders as {@code []}.
