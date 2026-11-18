@@ -688,8 +688,7 @@ static method needs no holder.
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
 * **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
   call, the re-read and the polymorphic re-read each have an emitter reading the store; what remains
-  is routine writes, which take neither the re-read, today an unordered `IN` (a bug), nor the frame,
-  whose error channel and tenancy their caller still hands `RoutineWriteEmitter` as values.
+  is routine writes, which take the frame but not yet the re-read, today an unordered `IN` (a bug).
 * **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store" and "The walk's service path is gone". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
 * **The projection units are rendered from the store** `blocked`, on the facts below. The flip goes
   as soon as it can, each piece when the store states it whole and the walk keeps the rest
@@ -1157,11 +1156,6 @@ static method needs no holder.
   routed so. Interim debt, agreed to go with the depth loop: `Paths` still counts keys off
   `sql_table_reference` for a need starting anywhere but its field's declaring table, and
   `Paths.declaringStart` restates in Java the first key rule's predicate for a field no claim covers.
-* **A routine write's routing is named by the connection key** `open`, E's, off the critical path,
-  taken with the routine write's frame (A, 2026-11-18).
-  `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
-  the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
-  other, which the request's connection source decides (Alf, 2026-11-14, 2026-11-16).
 * **The connection relation's grain covers accepting graphs** `open`, E's, off the critical path, as
   R1119's slice 8e.1. `graphitron_occurrence_connection` widens from a database-per-tenant graph's
   producers to those of any graph whose `ConnectionKey` has a part, a tenant column or an accepting
@@ -1664,7 +1658,11 @@ generated Java or SQL as text.
   old renderers import them from there, and the import rule's exception list is empty.
 * **Routine writes read only the store** `blocked`, E's, on "The tenant column and the session hook signature are captured". The write's tenancy is read from the tenant table that node captures, not decided a second
   way, so `RoutineWriteEmitter` takes nothing from `GraphitronSchema`, and its inherited and
-  argument-bound routings, which a rejected tenant-scoped write never reaches, go.
+  argument-bound routings, which a rejected tenant-scoped write never reaches, go. The connection rule judges
+  a routine write by the table its records land on alone, so a tenant's table crossed on the way, an
+  anchor under a global terminus or the table an object result's re-reading child reads, comes out
+  `UNSCOPED`; the walk's tenant binding still refuses those until it goes, and the rule reads every
+  table the write's re-read touches first.
 * **Operation members and delivery are read from their relations alone** `open`. The readers of
   `OperationMembers.membersOf` and `DeliveryFact.leafDerivedOf` move to the relations,
   `LauncherCommands`' two productions merge, and the crosswalk goes.

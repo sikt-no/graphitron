@@ -878,14 +878,14 @@ public class TypeFetcherGenerator {
                 }
                 case MutationField.DmlTableField f -> builder.addMethod(buildDmlTableFetcher(ctx, f, outputPackage,
                     launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
-                // Both @routine-writing shapes render from their store row. What rides beside it
-                // are per-class collectors (the arg-path helpers, the projected-key host, the
-                // request-context seam), drains rather than decisions: an emitted call and the
-                // helper it names have to land on one class together.
+                // Both @routine-writing shapes render from their store rows, a frame around a body.
+                // What rides beside them are per-class collectors (the arg-path helpers, the
+                // projected-key host, the request-context seam), drains rather than decisions: an
+                // emitted call and the helper it names have to land on one class together.
                 case MutationField.MutationRoutineWriteField f ->
-                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
+                    renderRoutineWrite(ctx, f, routineWrites, outputPackage).forEach(builder::addMethod);
                 case MutationField.MutationRoutineWriteRecordField f ->
-                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
+                    renderRoutineWrite(ctx, f, routineWrites, outputPackage).forEach(builder::addMethod);
                 case MutationField.MutationServiceTableField f -> builder.addMethod(
                     buildMutationServiceTableFetcher(ctx, f,
                         serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
@@ -1578,13 +1578,14 @@ public class TypeFetcherGenerator {
 
 
     /**
-     * Renders the fetcher entry point of one {@code @routine}-writing mutation coordinate through
-     * {@link no.sikt.graphitron.emit.RoutineWriteEmitter}, from the coordinate's store row. The
-     * error channel and the tenancy are read off the classified schema here and handed over as
-     * values, the store not stating them yet; the generated names come from
-     * {@link no.sikt.graphitron.plan.GeneratedUnits} like every other reference to them.
+     * Renders the fetcher of one {@code @routine}-writing mutation coordinate from the coordinate's
+     * store rows: {@link no.sikt.graphitron.emit.FrameEmitter}'s frame under the entry point's name,
+     * and beside it the body {@link no.sikt.graphitron.emit.RoutineWriteEmitter} renders, which the
+     * frame calls. The frame's outcome and connection are the store's, read beside the routine-write
+     * rows; the generated names come from {@link no.sikt.graphitron.plan.GeneratedUnits} like every
+     * other reference to them.
      */
-    private static MethodSpec renderRoutineWrite(TypeFetcherEmissionContext ctx,
+    private static List<MethodSpec> renderRoutineWrite(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.OutputField field,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites, String outputPackage) {
         var row = routineWrites.rowFor(ctx.parentTypeName(), field.name())
@@ -1594,67 +1595,48 @@ public class TypeFetcherGenerator {
                 + " the store's membership and this dispatch have drifted. The rows are read"
                 + " from the fact store, so a caller that generated without one has no row for"
                 + " any routine write and reaches this by construction"));
+        var frame = routineWrites.frameFor(row)
+            .orElseThrow(() -> new IllegalStateException(
+                "Graphitron generator bug (routine-write frame): coordinate '"
+                + ctx.parentTypeName() + "." + field.name() + "' has a routine-write row read with"
+                + " no frame beside it; the rows reach emission framed"));
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
         var coordinate = graphql.schema.FieldCoordinates.coordinates(ctx.parentTypeName(), field.name());
-        return no.sikt.graphitron.emit.RoutineWriteEmitter.render(row,
-            units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
+        String bodyName = field.name() + "Call";
+        var body = no.sikt.graphitron.emit.RoutineWriteEmitter.render(row, bodyName,
             className(units.typeClass(row.returnTypeName())),
             className(units.selectionOccurrences()),
-            routineWriteErrors(ctx, field, units), routineWriteTenancy(ctx, coordinate, units),
-            () -> ctx.requestContextRead().call(), ctx.argPathHelpers(),
-            ctx.projectedKeyHost().at(coordinate), OwnedScope.provider(outputPackage));
+            ctx.argPathHelpers(), ctx.projectedKeyHost().at(coordinate), OwnedScope.provider(outputPackage));
+        var entry = no.sikt.graphitron.emit.FrameEmitter.render(frame,
+            units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
+            body.returnType(), className(units.fetchers(ctx.parentTypeName())), bodyName,
+            frameRuntime(ctx, units), true, false,
+            routineWriteConnection(routineWrites.connectionFor(row), coordinate, outputPackage));
+        return List.of(entry, body);
     }
 
     /**
-     * The routine write's error channel as the emitter's value. An absent channel takes the
-     * router's privacy disposition; a mapped one rides the typed {@code Outcome}.
+     * The connection a routine write's frame runs on, as the store states it: the request's own where
+     * it states none, as in a graph with no tenant column, and else the key with an empty tenant part,
+     * the default source. A routine write mints no tenant slot, so the store routes none, and a root
+     * inherits no key; either is drift, refused rather than run on a guessed connection.
      */
-    private static no.sikt.graphitron.emit.RoutineWriteEmitter.Errors routineWriteErrors(
-            TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field,
-            no.sikt.graphitron.plan.GeneratedUnits units) {
-        var channel = field instanceof no.sikt.graphitron.rewrite.model.WithErrorChannel withChannel
-            ? withChannel.errorChannel()
-            : Optional.<no.sikt.graphitron.rewrite.model.ErrorChannel>empty();
-        var router = className(units.errorRouter());
-        if (channel.isEmpty()) {
-            return new no.sikt.graphitron.emit.RoutineWriteEmitter.Errors.Redacting(router);
+    private static no.sikt.graphitron.emit.FrameEmitter.Connection routineWriteConnection(
+            Optional<no.sikt.graphitron.emit.ConnectionQuery.Row> row, graphql.schema.FieldCoordinates coordinate,
+            String outputPackage) {
+        if (row.isEmpty()) {
+            return new no.sikt.graphitron.emit.FrameEmitter.Connection.Request();
         }
-        return new no.sikt.graphitron.emit.RoutineWriteEmitter.Errors.OutcomeWrapped(router,
-            className(units.errorMappings()), className(units.outcome()),
-            ctx.mappingsConstant(field.name()));
-    }
-
-    /**
-     * The routine write's connection. A single-tenant run reads the request context's; a
-     * multi-tenant run the fixed default source, which is the only binding a routine write
-     * classifies to: it mints no tenant slot, so a tenant-scoped one has no binding and the
-     * validator rejects it, and a write never classifies as a global read. Any other arm is drift
-     * between the classifier and this emission, refused rather than routed to a connection.
-     */
-    private static no.sikt.graphitron.emit.RoutineWriteEmitter.Tenancy routineWriteTenancy(
-            TypeFetcherEmissionContext ctx, graphql.schema.FieldCoordinates coordinate,
-            no.sikt.graphitron.plan.GeneratedUnits units) {
-        if (!TenantDslEmitter.isMultiTenant(ctx)) {
-            return new no.sikt.graphitron.emit.RoutineWriteEmitter.Tenancy.Unrouted();
-        }
-        var binding = ctx.graphitronSchema().tenantBindingOf(coordinate);
-        if (binding == null) {
-            throw new IllegalStateException(
-                "the routine-write coordinate " + coordinate + " reaches a tenant-scoped table with"
-                + " no tenant binding in scope; that is the classifier's noTenantBinding finding and"
-                + " the validator rejects it with a located error, so generation ran past"
-                + " validation, and acquiring the default source here would read another tenant's"
-                + " rows");
-        }
-        if (!(binding instanceof no.sikt.graphitron.rewrite.model.TenantBinding.Untenanted.DefaultSource)) {
-            throw new IllegalStateException(
-                "Graphitron generator bug (tenant routing): the routine-write coordinate " + coordinate
-                + " classifies as " + binding.getClass().getSimpleName() + "; a routine write mints"
-                + " no tenant slot and always classifies as running on the default source, so the"
-                + " classifier and this emission have drifted");
-        }
-        return new no.sikt.graphitron.emit.RoutineWriteEmitter.Tenancy.DefaultSource(
-            className(units.ownedConnections()));
+        return switch (row.get().outcome()) {
+            case UNSCOPED -> new no.sikt.graphitron.emit.FrameEmitter.Connection.Unscoped(
+                TenantDslEmitter.ownedConnectionsClass(outputPackage),
+                no.sikt.graphitron.emit.ConnectionKeyShape.className(outputPackage));
+            case ROUTED, INHERIT -> throw new IllegalStateException(
+                "Graphitron generator bug (routine-write connection): the store states "
+                + row.get().outcome() + " for the routine write " + coordinate + ", which mints no"
+                + " tenant slot and inherits no key; it runs on the request's connection or the"
+                + " default source");
+        };
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {
@@ -1707,12 +1689,10 @@ public class TypeFetcherGenerator {
         return true;
     }
 
-    /** The generated classes a store-emitted fetcher in this type's fetchers class calls into. */
-    private static no.sikt.graphitron.emit.ServiceEmission.Runtime storeRuntime(TypeFetcherEmissionContext ctx,
-                                                                                String outputPackage) {
-        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
-        var ownedConnections = TenantDslEmitter.ownedConnectionsClass(outputPackage);
-        var frame = new no.sikt.graphitron.emit.FrameEmitter.Runtime(
+    /** The generated classes a frame in this type's fetchers class calls into. */
+    private static no.sikt.graphitron.emit.FrameEmitter.Runtime frameRuntime(TypeFetcherEmissionContext ctx,
+                                                                             no.sikt.graphitron.plan.GeneratedUnits units) {
+        return new no.sikt.graphitron.emit.FrameEmitter.Runtime(
             className(units.errorRouter()), className(units.outcome()), className(units.errorMappings()),
             no.sikt.graphitron.plan.GeneratedUnits::mappingsConstant,
             // The batched frame reads the context off the batch's first environment, so the seam is
@@ -1721,6 +1701,14 @@ public class TypeFetcherGenerator {
                 ctx.graphitronContextCall();
                 return CodeBlock.of("graphitronContext($L).getDslContext($L)", env, env);
             });
+    }
+
+    /** The generated classes a store-emitted fetcher in this type's fetchers class calls into. */
+    private static no.sikt.graphitron.emit.ServiceEmission.Runtime storeRuntime(TypeFetcherEmissionContext ctx,
+                                                                                String outputPackage) {
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var ownedConnections = TenantDslEmitter.ownedConnectionsClass(outputPackage);
+        var frame = frameRuntime(ctx, units);
         var fill = new no.sikt.graphitron.emit.FillEmitter.Runtime(
             key -> CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), key),
             coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", ownedConnections, coordinate),

@@ -7782,13 +7782,13 @@ class GraphQLQueryTest {
 
     @Test
     void rentFilmPayloadProjected_badNodeIdIsARequestErrorAndCommitsNothing() {
-        // The behavioral half of "the decode precedes the write transaction". The routine-write
-        // entry point catches everything inside its transaction and routes it through the payload's
-        // errors field (rentFilmPayload_failingRoutine below); a bad node id must not arrive there,
-        // because it is a client error about an argument rather than a failure of the write. Decoded
-        // before that try opens, it surfaces as a request-level error, the data field renders null,
-        // and nothing is committed. Both bad shapes take that path: a string that is not a node id
-        // at all, and a well-formed id encoding another type.
+        // The behavioral half of "the decode precedes the write transaction". The routine write's
+        // frame routes what its body throws through the payload's errors field where a mapping claims
+        // it (rentFilmPayload_failingRoutine below); a bad node id must not arrive there, because it
+        // is a client error about an argument rather than a failure of the write. Decoded before the
+        // write's transaction opens and claimed by no mapping, it surfaces as a request-level error,
+        // the data field renders null, and nothing is committed. Both bad shapes take that path: a
+        // string that is not a node id at all, and a well-formed id encoding another type.
         int countBefore = rentalCount(2, 3);
         for (String customerId : new String[] {
                 "not-a-node-id",

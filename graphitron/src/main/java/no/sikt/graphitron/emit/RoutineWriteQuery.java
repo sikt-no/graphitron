@@ -56,7 +56,9 @@ import static org.jooq.impl.DSL.when;
 
 /**
  * {@link RoutineWriteEmitter}'s query: every {@code @routine}-writing mutation coordinate whose
- * re-read the store states, with every catalog name its entry point spells.
+ * re-read the store states, with every catalog name its body spells. The fetcher around the body is
+ * {@link FrameEmitter}'s frame, read by {@link FrameQuery} and {@link ConnectionQuery} and carried
+ * beside the rows ({@link Rows#framed}).
  *
  * <p>A routine write is an occurrence on the mutation root whose producer is a {@code ROUTINE}: the
  * store states the callable it calls ({@code graphitron_occurrence_producer_routine}) and what it
@@ -297,20 +299,31 @@ public final class RoutineWriteQuery {
 
     /**
      * Every admitted coordinate, in coordinate order, keyed by the coordinate: a second row for one
-     * coordinate fails here rather than emitting two methods of one name.
+     * coordinate fails here rather than emitting two methods of one name. Beside them, by the same
+     * coordinate, each one's frame from {@link FrameQuery} and, in a graph whose connection key has a
+     * part, its connection from {@link ConnectionQuery}: the fetcher is {@link FrameEmitter}'s frame
+     * around the body {@link RoutineWriteEmitter} renders, and the frame reads both.
      */
-    public record Rows(List<Row> rows) {
+    public record Rows(List<Row> rows, Map<String, FrameQuery.Row> frames,
+                       Map<String, ConnectionQuery.Row> connections) {
 
         public Rows {
             rows = List.copyOf(rows);
+            frames = Map.copyOf(frames);
+            connections = Map.copyOf(connections);
             var seen = new java.util.HashSet<String>();
             for (var r : rows) {
-                if (!seen.add(r.typeName() + "." + r.fieldName())) {
+                if (!seen.add(coordinate(r))) {
                     throw new IllegalArgumentException(
-                        "the routine-write rows are keyed by coordinate; " + r.typeName() + "."
-                        + r.fieldName() + " appears twice");
+                        "the routine-write rows are keyed by coordinate; " + coordinate(r)
+                        + " appears twice");
                 }
             }
+        }
+
+        /** The rows alone, with no frame or connection read beside them. */
+        public Rows(List<Row> rows) {
+            this(rows, Map.of(), Map.of());
         }
 
         /** No rows: a graph that writes through no routine, or a run with no store. */
@@ -318,11 +331,56 @@ public final class RoutineWriteQuery {
             return new Rows(List.of());
         }
 
+        /**
+         * These rows with each one's frame out of {@code graphFrames} and connection out of
+         * {@code graphConnections}, the rest dropped. Every row has a frame: a routine write is a root
+         * occurrence, which {@link FrameQuery} frames by construction, so a row with none is drift
+         * between the two queries.
+         */
+        public Rows framed(List<FrameQuery.Row> graphFrames, Map<String, ConnectionQuery.Row> graphConnections) {
+            var framed = new LinkedHashMap<String, FrameQuery.Row>();
+            graphFrames.forEach(f -> framed.put(f.coordinate(), f));
+            var ownFrames = new LinkedHashMap<String, FrameQuery.Row>();
+            var ownConnections = new LinkedHashMap<String, ConnectionQuery.Row>();
+            for (var r : rows) {
+                String coordinate = coordinate(r);
+                var frame = framed.get(coordinate);
+                if (frame == null) {
+                    throw new IllegalStateException("Graphitron generator bug (routine-write frame): "
+                        + coordinate + " has a routine-write row and no frame; the two queries have drifted");
+                }
+                ownFrames.put(coordinate, frame);
+                var connection = graphConnections.get(coordinate);
+                if (connection != null) {
+                    ownConnections.put(coordinate, connection);
+                }
+            }
+            return new Rows(rows, ownFrames, ownConnections);
+        }
+
         /** The row for one coordinate, empty when the coordinate writes through no routine. */
         public Optional<Row> rowFor(String typeName, String fieldName) {
             return rows.stream()
                 .filter(r -> r.typeName().equals(typeName) && r.fieldName().equals(fieldName))
                 .findFirst();
+        }
+
+        /** {@code row}'s frame, empty where these rows were read with none beside them. */
+        public Optional<FrameQuery.Row> frameFor(Row row) {
+            return Optional.ofNullable(frames.get(coordinate(row)));
+        }
+
+        /**
+         * {@code row}'s connection, empty where the store states none: in a graph whose connection
+         * key has no part, the request's own.
+         */
+        public Optional<ConnectionQuery.Row> connectionFor(Row row) {
+            return Optional.ofNullable(connections.get(coordinate(row)));
+        }
+
+        /** A root occurrence's coordinate: its type and field. */
+        private static String coordinate(Row row) {
+            return row.typeName() + "." + row.fieldName();
         }
     }
 

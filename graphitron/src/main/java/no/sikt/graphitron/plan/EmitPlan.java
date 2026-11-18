@@ -5,7 +5,9 @@ import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.emit.ConnectionQuery;
 import no.sikt.graphitron.emit.ErrorChannelRelation;
+import no.sikt.graphitron.emit.FrameQuery;
 import no.sikt.graphitron.emit.OutboxQuery;
 import no.sikt.graphitron.emit.RoutineWriteQuery;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -36,8 +38,9 @@ import java.util.List;
  * conditions because a polymorphic root's glue targets are derived from the condition rows),
  * the type-keyed command relation ({@link TypeUnitRelation}: one row per per-type unit, the
  * generator families' membership loops replaced kind by kind), the routine-write rows
- * ({@link RoutineWriteQuery}: the routine-write emitter's own query, read once per run and carried
- * here so the reachability check below and the emission read one answer), and the key-projection relation
+ * ({@link RoutineWriteQuery}: the routine-write emitter's own query, read once per run with each
+ * write's frame and connection beside it and carried here so the reachability check below and the
+ * emission read one answer), and the key-projection relation
  * ({@link no.sikt.graphitron.command.KeyProjectionRelation}: one row per {@code argMapping} binding
  * that decodes a node id and projects one of its key columns).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
@@ -209,7 +212,11 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.FACADE, units.rootUnit("Graphitron")));
         globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         var conditions = ConditionCommands.produce(schema, outputPackage);
-        var routineWrites = store == null ? RoutineWriteQuery.Rows.empty() : RoutineWriteQuery.read(store);
+        // Each routine write's frame and connection are read beside its rows, so its fetcher is the
+        // frame around its body.
+        var routineWrites = store == null ? RoutineWriteQuery.Rows.empty()
+            : RoutineWriteQuery.read(store).framed(FrameQuery.read(store),
+                ConnectionQuery.read(store));
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage,

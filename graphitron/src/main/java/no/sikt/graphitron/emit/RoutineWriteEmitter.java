@@ -16,24 +16,21 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.ArgPathHelperRegistry;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.ColumnComparison;
-import no.sikt.graphitron.render.ErrorDispatchFragments;
-import no.sikt.graphitron.render.FetcherResult;
 import no.sikt.graphitron.render.ProjectedKeyReads;
 import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.RoutineCallEmitter;
-import no.sikt.graphitron.render.ConnectionKeyHandDown;
 
 import javax.lang.model.element.Modifier;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
-import java.util.function.Supplier;
 
 /**
- * Emits the datafetcher entry point of one {@code @routine}-writing mutation coordinate, from that
- * coordinate's row of {@link RoutineWriteQuery}:
- * {@code public static DataFetcherResult<Ret> <field>(DataFetchingEnvironment env)}.
+ * Emits the body of one {@code @routine}-writing mutation coordinate, from that coordinate's row of
+ * {@link RoutineWriteQuery}: {@code public static <V> <body>(DataFetchingEnvironment env, DSLContext dsl)}.
+ * The fetcher graphql-java calls is {@link FrameEmitter}'s frame around it, which reaches the
+ * connection the store states for the write, runs this body on it and routes what it throws; the
+ * body holds the write and nothing of the frame.
  *
  * <p><b>The two-statements rule.</b> The write transaction holds the routine call and a projection
  * of the routine's own result columns, and nothing else. Anything past that capture is a
@@ -46,10 +43,8 @@ import java.util.function.Supplier;
  * routine rolls back at the {@code transactionResult} boundary; an error in the follow-up cannot
  * undo the committed write.
  *
- * <p>Two facts come from the caller as values because the store does not state them yet: the
- * error channel ({@link Errors}) and the run's tenancy ({@link Tenancy}). Generated names (the
- * method, the projection unit, the runtime units) are the caller's too, minted where every other
- * reference to them is.
+ * <p>Generated names (the body, the projection unit, the transaction provider) are the caller's, minted
+ * where every other reference to them is.
  */
 public final class RoutineWriteEmitter {
 
@@ -61,115 +56,55 @@ public final class RoutineWriteEmitter {
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
 
-    /** What the {@code catch} arm does with a throw. */
-    public sealed interface Errors {
-
-        /** No typed-error channel: the router's privacy disposition. */
-        record Redacting(ClassName errorRouter) implements Errors {
-            public Redacting {
-                Objects.requireNonNull(errorRouter, "errorRouter");
-            }
-        }
-
-        /**
-         * The typed {@code Outcome} transport: the value is wrapped in {@code Outcome.Success}, and a
-         * throw matching the channel's mappings constant returns {@code Outcome.ErrorList}.
-         */
-        record OutcomeWrapped(ClassName errorRouter, ClassName errorMappings, ClassName outcome,
-                              String mappingsConstantName) implements Errors {
-            public OutcomeWrapped {
-                Objects.requireNonNull(errorRouter, "errorRouter");
-                Objects.requireNonNull(errorMappings, "errorMappings");
-                Objects.requireNonNull(outcome, "outcome");
-                if (mappingsConstantName == null || mappingsConstantName.isBlank()) {
-                    throw new IllegalArgumentException(
-                        "an Outcome-wrapped channel names its mappings constant; a blank one would"
-                        + " emit a reference to nothing");
-                }
-            }
-        }
-    }
-
     /**
-     * Where the write's connection comes from. A routine write mints no tenant slot and a
-     * tenant-scoped one is rejected before emission, so a multi-tenant run reaches only the fixed
-     * default source.
-     */
-    public sealed interface Tenancy {
-
-        /** A single-tenant run: the request context's one connection. */
-        record Unrouted() implements Tenancy {}
-
-        /** A multi-tenant run: the default source, through the generated connections carrier. */
-        record DefaultSource(ClassName connections) implements Tenancy {
-            public DefaultSource {
-                Objects.requireNonNull(connections, "connections");
-            }
-        }
-    }
-
-    /**
-     * Renders the entry point for {@code row}.
+     * Renders the body for {@code row}, answering what the write produces: the re-read's
+     * {@code Result<Record>} or {@code Record} for a records result, the captured keys'
+     * {@code Result<RecordN>} or {@code RecordN} for an object result, {@code null} where a single
+     * capture finds no row. Its return type is the value type the frame declares.
      *
-     * @param methodName        the entry point's generated name
+     * @param bodyName          the body's generated name, which the frame calls
      * @param returnTypeClass   the return type's projection unit; read for a records result only
      * @param selectionOccurrences the generated selection scaffold a records result's re-read
      *                          groups the fetched field's own fields through
-     * @param graphitronContext the host class's {@code graphitronContext(env)} call; calling it
-     *                          records that the host needs the helper, so it is called only where
-     *                          the call is emitted
      * @param argHelpers        the host class's collector of dotted-path descent helpers
      * @param keys              the method's node-id decodes, for an argument whose path projects a
      *                          key column
      * @param transactionProvider the emitted provider the write's transaction is opened through,
      *                          from {@link OwnedScope#provider}
      */
-    public static MethodSpec render(Row row, String methodName, ClassName returnTypeClass,
-            ClassName selectionOccurrences, Errors errors, Tenancy tenancy, Supplier<CodeBlock> graphitronContext,
-            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys, ClassName transactionProvider) {
-        var dsl = switch (tenancy) {
-            case Tenancy.Unrouted ignored -> CodeBlock.builder()
-                .addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, graphitronContext.get())
-                .build();
-            case Tenancy.DefaultSource d -> CodeBlock.builder()
-                .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, d.connections())
-                .build();
-        };
+    public static MethodSpec render(Row row, String bodyName, ClassName returnTypeClass,
+            ClassName selectionOccurrences, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys,
+            ClassName transactionProvider) {
         var call = routineCall(row, argHelpers, keys);
         return switch (row) {
-            case RecordsResult records -> recordsReRead(records, methodName, returnTypeClass,
-                selectionOccurrences, errors, dsl, call, keys, transactionProvider);
-            case ObjectResult object -> objectResultKeys(object, methodName, errors, dsl, call, keys,
-                transactionProvider);
+            case RecordsResult records -> recordsReRead(records, bodyName, returnTypeClass,
+                selectionOccurrences, call, keys, transactionProvider);
+            case ObjectResult object -> objectResultKeys(object, bodyName, call, keys, transactionProvider);
         };
     }
 
-    private static MethodSpec recordsReRead(RecordsResult row, String methodName, ClassName returnTypeClass,
-            ClassName selectionOccurrences,
-            Errors errors, CodeBlock dsl, CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
+    private static MethodSpec recordsReRead(RecordsResult row, String bodyName, ClassName returnTypeClass,
+            ClassName selectionOccurrences, CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
         boolean isList = row.listReturn();
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-        TypeName declaredType = declaredValueType(errors, valueType);
-        var builder = entryPoint(methodName, declaredType);
+        var builder = body(bodyName, valueType);
         var anchor = row.hops().getFirst();
         var tail = row.hops().subList(1, row.hops().size());
 
-        // Node-id decodes go ahead of the try: a malformed id is a client error about an argument,
-        // not a database error for the catch arm's error channel.
+        // Node-id decodes go first, ahead of the routine call and the write's transaction: a
+        // malformed id is a client error about an argument, raised before anything is written.
         builder.addCode(keys.declarations());
-        builder.beginControlFlow("try");
         builder.addStatement("$T source = $L", tableClass(row.call().resultTable()), call);
         for (var hop : row.hops()) {
             builder.addStatement(aliasDeclaration(hop.table(), hop.alias()));
         }
-        builder.addCode(dsl);
 
         var capturedColumns = anchor.pairs().stream().map(Pair::source).toList();
         TypeName keyRowType = keyRecordType(capturedColumns);
         builder.addCode(captureTransaction(
             isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType,
             capturedColumns, null, isList, transactionProvider));
-        builder.addCode(nullKeysGuard(declaredType, isList));
+        builder.addCode(nullKeysGuard(isList));
 
         // The post-commit re-read: from the anchor keyed by the captured values, the tail hops
         // joining forward as a read chain does.
@@ -203,23 +138,20 @@ public final class RoutineWriteEmitter {
         sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
         builder.addCode(sel.build());
 
-        return closeEntryPoint(builder, errors, declaredType, "payload");
+        return builder.addStatement("return payload").build();
     }
 
-    private static MethodSpec objectResultKeys(ObjectResult row, String methodName, Errors errors,
-            CodeBlock dsl, CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
+    private static MethodSpec objectResultKeys(ObjectResult row, String bodyName, CodeBlock call,
+            ProjectedKeyReads keys, ClassName transactionProvider) {
         var reRead = row.reRead();
         boolean isList = reRead.listReturn();
         var targetKeyColumns = reRead.capturedPairs().stream().map(Pair::target).toList();
         TypeName keyRowType = keyRecordType(targetKeyColumns);
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType;
-        TypeName declaredType = declaredValueType(errors, valueType);
-        var builder = entryPoint(methodName, declaredType);
+        var builder = body(bodyName, valueType);
 
         builder.addCode(keys.declarations());
-        builder.beginControlFlow("try");
         builder.addStatement("$T source = $L", tableClass(row.call().resultTable()), call);
-        builder.addCode(dsl);
 
         // Re-typed under the re-read table's key fields, so the re-reading field reads them back by
         // field identity rather than by jOOQ's name-lookup fallback.
@@ -230,9 +162,9 @@ public final class RoutineWriteEmitter {
             .toList(), ", ");
         builder.addCode(captureTransaction(valueType,
             reRead.capturedPairs().stream().map(Pair::source).toList(), coerceTo, isList, transactionProvider));
-        builder.addCode(nullKeysGuard(declaredType, isList));
+        builder.addCode(nullKeysGuard(isList));
 
-        return closeEntryPoint(builder, errors, declaredType, "keys");
+        return builder.addStatement("return keys").build();
     }
 
     /**
@@ -250,39 +182,14 @@ public final class RoutineWriteEmitter {
             call.methodName(), args);
     }
 
-    private static MethodSpec.Builder entryPoint(String methodName, TypeName declaredType) {
-        return MethodSpec.methodBuilder(methodName)
+    /** {@code public static <valueType> <bodyName>(DataFetchingEnvironment env, DSLContext dsl)}. */
+    private static MethodSpec.Builder body(String bodyName, TypeName valueType) {
+        return MethodSpec.methodBuilder(bodyName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(FetcherResult.syncResultType(declaredType))
-            .addParameter(ENV, "env");
-    }
-
-    private static TypeName declaredValueType(Errors errors, TypeName valueType) {
-        return errors instanceof Errors.OutcomeWrapped o
-            ? ErrorDispatchFragments.outcomeType(o.outcome(), valueType)
-            : valueType;
-    }
-
-    /** The success return and the {@code catch} arm, closing the {@code try}. No tenant rides down. */
-    private static MethodSpec closeEntryPoint(MethodSpec.Builder builder, Errors errors,
-            TypeName declaredType, String payloadLocal) {
-        var handDown = ConnectionKeyHandDown.none();
-        switch (errors) {
-            case Errors.Redacting r -> {
-                builder.addCode(FetcherResult.success(declaredType, payloadLocal, handDown));
-                builder.nextControlFlow("catch ($T e)", Exception.class);
-                builder.addCode(ErrorDispatchFragments.redactArm(r.errorRouter(), "e"));
-            }
-            case Errors.OutcomeWrapped o -> {
-                builder.addCode(ErrorDispatchFragments.outcomeSuccessReturn(o.outcome(), declaredType,
-                    payloadLocal, handDown));
-                builder.nextControlFlow("catch ($T e)", Exception.class);
-                builder.addCode(ErrorDispatchFragments.outcomeCatchArm(o.errorRouter(),
-                    o.errorMappings(), o.mappingsConstantName(), declaredType, o.outcome()));
-            }
-        }
-        builder.endControlFlow();
-        return builder.build();
+            .returns(valueType)
+            .addParameter(ENV, "env")
+            .addParameter(DSL_CONTEXT, "dsl")
+            .addException(Exception.class);
     }
 
     /**
@@ -303,13 +210,11 @@ public final class RoutineWriteEmitter {
     }
 
     /**
-     * The single shape's empty capture: the routine returned no row, so the payload is null. The
+     * The single shape's empty capture: the routine returned no row, so the body answers null. The
      * many shape needs no guard, an empty {@code Result} being a value.
      */
-    private static CodeBlock nullKeysGuard(TypeName declaredType, boolean isList) {
-        return isList
-            ? CodeBlock.of("")
-            : CodeBlock.builder().add("if (keys == null) ").add(FetcherResult.nullData(declaredType)).build();
+    private static CodeBlock nullKeysGuard(boolean isList) {
+        return isList ? CodeBlock.of("") : CodeBlock.of("if (keys == null) return null;\n");
     }
 
     /**

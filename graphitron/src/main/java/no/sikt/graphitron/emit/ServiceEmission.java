@@ -162,10 +162,13 @@ public final class ServiceEmission {
         var targets = new HashMap<String, String>();
         lifts.forEach((coordinate, row) -> targets.put(coordinate, row.targetType()));
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var services = Set.copyOf(store.dsl().select(p.COORDINATE).from(p)
+            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE")).fetch(p.COORDINATE));
         return new ServiceEmission(
-            Set.copyOf(store.dsl().select(p.COORDINATE).from(p)
-                .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE")).fetch(p.COORDINATE)),
-            byCoordinate(FrameQuery.read(store), FrameQuery.Row::coordinate),
+            services,
+            // The services' frames: a routine write's is framed by its own emitter.
+            byCoordinate(FrameQuery.read(store).stream().filter(f -> services.contains(f.coordinate())).toList(),
+                FrameQuery.Row::coordinate),
             byCoordinate(CallQuery.read(store), CallQuery.Row::coordinate),
             byCoordinate(FillQuery.read(store), FillQuery.Row::coordinate),
             builds,

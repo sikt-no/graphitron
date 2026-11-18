@@ -1,0 +1,30 @@
+# A routine write re-reading rows a tenant's database holds, under the tenant column film_id. A
+# routine write names no tenant and is handed no connection, so it runs on the default source: one
+# landing on inventory, which film_id scopes, is refused with a code of its own, not as an unrouted
+# service call, whose remedies a routine write cannot take. One landing on rental, which no tenant
+# column scopes, is refused with neither.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+
+type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+
+type Query {
+  rentals: [Rental!]!
+}
+
+type Mutation {
+  rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentFilmInventory(inventoryId: Int!, customerId: Int!): [Inventory!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}, {table: "inventory"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('ROUTINE_WRITE_TENANT_SCOPED', 'UNROUTED_SERVICE_CALL')", rows: """
+  code,                        coordinate,                  detail
+  ROUTINE_WRITE_TENANT_SCOPED, Mutation.rentFilmInventory,
+  """)

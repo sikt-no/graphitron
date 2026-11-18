@@ -1,9 +1,10 @@
-# Which connection each root @service call runs on under the tenant column film_id. A required value
-# names the tenant, so a call cannot come without one. A list argument names it per element, and a
-# call given an empty list answers the field's own empty list without a connection. @globalData says
-# the call runs on the request's own connection. A child service under film rows runs on the key its
-# parent handed down; one under language rows, which no tenant column scopes, on the key with an empty
-# tenant part.
+# Which connection each root @service call and routine write runs on under the tenant column film_id.
+# A required value names the tenant, so a call cannot come without one. A list argument names it per
+# element, and a call given an empty list answers the field's own empty list without a connection.
+# @globalData says the call runs on the request's own connection. A child service under film rows runs
+# on the key its parent handed down; one under language rows, which no tenant column scopes, on the key
+# with an empty tenant part. A routine write re-reading rental rows, which no tenant column scopes,
+# runs on the key with an empty tenant part too: it names no tenant and needs none.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
@@ -19,6 +20,8 @@ type Language @table(name: "language") {
     method: "languageServedBy"})
 }
 
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+
 type Query {
   films: [Film!]!
   languages: [Language!]!
@@ -33,11 +36,18 @@ type Query {
       method: "filmById"})
 }
 
+type Mutation {
+  rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+}
+
 extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
   coordinate,                outcome
   Query.filmByPair,          ROUTED
   Query.filmsByIds,          ROUTED
   Query.filmGlobal,          UNSCOPED
+  Mutation.rentFilm,         UNSCOPED
   Film.servedBy,             INHERIT
   Language.servedBy,         UNSCOPED
   """)

@@ -21454,7 +21454,7 @@ CREATE TABLE graphitron_occurrence_connection (
 COMMENT ON TABLE graphitron_occurrence_connection IS 'The connection one producer of a graph whose ConnectionKey has a part runs on: one row per producer the generated code can say that for. For example Mutation.rateFilms runs on a connection keyed by the tenant its input''s film ids name, Film.servedBy on the key its parent handed down, and Language.servedBy on the key with an empty tenant part.';
 COMMENT ON COLUMN graphitron_occurrence_connection.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_connection.coordinate IS 'the producer''s occurrence; with the graph, the key';
-COMMENT ON COLUMN graphitron_occurrence_connection.outcome IS 'ROUTED, a root''s connection keyed by the parts beneath it; INHERIT, a child''s run on the whole key its producer chain hands down; UNSCOPED, the key with an empty tenant part: a child whose rows lie in no tenant scope, or a root that reads global data, is marked @globalData, or names no tenant and needs none';
+COMMENT ON COLUMN graphitron_occurrence_connection.outcome IS 'ROUTED, a root''s connection keyed by the parts beneath it; INHERIT, a child''s run on the whole key its producer chain hands down; UNSCOPED, the key with an empty tenant part: a child whose rows lie in no tenant scope, or a root that reads or writes global data, is marked @globalData, or names no tenant and needs none';
 COMMENT ON COLUMN graphitron_occurrence_connection.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_occurrence_connection_part (
@@ -21481,15 +21481,25 @@ COMMENT ON COLUMN graphitron_occurrence_connection_part.touched_at IS 'the readi
 
 CREATE VIEW graphitron_occurrence_connection_rule
   (graph_name, coordinate, outcome, when_empty, refusal) AS
--- Each root service producer of a graph with a tenant column, with its call, and what decides its route.
-WITH root (graph_name, coordinate, call, element_coordinate) AS (
-  SELECT p.graph_name, p.coordinate, c.call, o.element_coordinate
+-- Each root service producer of a graph with a tenant column, and each routine write, a ROUTINE
+-- producer on the mutation root, with its call, and what decides its route. A routine write mints no
+-- tenant slot and is handed no connection, so its result's table alone decides: a global table's runs
+-- on the key with an empty tenant part, and a tenant's table's is refused as ROUTINE_WRITE_TENANT_SCOPED.
+WITH root (graph_name, coordinate, call, element_coordinate, kind) AS (
+  SELECT p.graph_name, p.coordinate, c.call, o.element_coordinate, p.kind
     FROM graphitron_occurrence_producer p
     JOIN graphitron_occurrence_call c
       ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate AND c.call = 'producer'
     JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
     JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
-   WHERE p.kind = 'SERVICE' AND p.start = 'ROOT'
+   WHERE p.start = 'ROOT'
+     AND (p.kind = 'SERVICE'
+          OR p.kind = 'ROUTINE'
+             AND EXISTS (SELECT 1 FROM graphitron_field f
+                           JOIN graphql_root_operation ro
+                             ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                            AND ro.operation = 'MUTATION'
+                          WHERE f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate))
 ),
 -- Each tenant slot, with how its value is present: guaranteed where it may not be left out and is
 -- read once, per element where it may not be left out but is read per element of a list, the list
@@ -21515,9 +21525,9 @@ slot (graph_name, call_coordinate, call, guaranteed, per_element, own_argument) 
    WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_optional op
                       WHERE op.graph_name = s.graph_name AND op.coordinate = s.coordinate)
 ),
-fact (graph_name, coordinate, call, result_scope, global_data, bound, any_slot, guaranteed, per_element,
+fact (graph_name, coordinate, call, kind, result_scope, global_data, bound, any_slot, guaranteed, per_element,
       own_argument, has_empty) AS (
-  SELECT r.graph_name, r.coordinate, r.call,
+  SELECT r.graph_name, r.coordinate, r.call, r.kind,
          -- The table the service's records are re-read from: none, one a tenant's database holds,
          -- or one the default source holds.
          CASE WHEN pr.table_name IS NULL THEN 'NONE'
@@ -21563,6 +21573,9 @@ verdict (graph_name, coordinate, call, outcome, refusal, guaranteed, own_argumen
          CASE WHEN result_scope = 'GLOBAL' OR global_data = TRUE OR guaranteed = TRUE OR per_element = TRUE
               THEN CAST(NULL AS VARCHAR)
               WHEN any_slot = TRUE THEN 'TENANT_SLOTS_OPTIONAL_ONLY'
+              -- A routine write names no tenant and is handed no connection: its own code, since a
+              -- service's remedies are not open to it.
+              WHEN kind = 'ROUTINE' AND result_scope = 'TENANT' THEN 'ROUTINE_WRITE_TENANT_SCOPED'
               WHEN result_scope = 'TENANT' OR bound = TRUE THEN 'UNROUTED_SERVICE_CALL'
               ELSE CAST(NULL AS VARCHAR) END,
          guaranteed, own_argument, has_empty
@@ -29110,6 +29123,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.'),
   ('UNROUTED_SERVICE_CALL', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_SERVICE_CALL',
    'A root @service in a database-per-tenant build is handed a connection, or re-reads rows a tenant''s database holds, and nothing in its arguments names the tenant, so it would run on the default source whatever its own SQL touches: name the tenant with $tenant in its argMapping, take the node table''s record or a jOOQ record carrying the tenant column, or mark it @globalData where it touches only global data.'),
+  ('ROUTINE_WRITE_TENANT_SCOPED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_TENANT_SCOPED',
+   'A @routine mutation in a database-per-tenant build re-reads rows a tenant''s database holds, and a routine write names no tenant, so it runs on the default source and cannot reach that tenant''s rows: return rows of a table no tenant column scopes, or write through a @service that names its tenant with $tenant.'),
   ('TENANT_SLOTS_OPTIONAL_ONLY', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_SLOTS_OPTIONAL_ONLY',
    'Every value a root @service''s tenant is read from may be left out, so a call can name none and nothing says where it runs: make one of them required.'),
   ('TENANT_NAMED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_NAMED_TWICE',
@@ -30596,7 +30611,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_route_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.',
-   'The stage''s own defects, read off the route rule''s refused rows, so every root service call of a tenanted graph has a route or a defect.'),
+   'The stage''s own defects, read off the route rule''s refused rows, so every root service call and routine write of a tenanted graph has a route or a defect.'),
   ('graphitron_anchor_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.',

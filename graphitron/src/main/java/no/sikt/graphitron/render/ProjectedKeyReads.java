@@ -26,10 +26,9 @@ import java.util.function.Function;
  * argument and nothing else, so it depends on no alias, no {@code DSLContext} and no chain local.
  *
  * <p>That hoisting is also what keeps the decode <em>outside</em> the write transaction on the
- * routine-write shapes, whose entry points wrap their body in {@code try}/{@code catch (Exception e)}
- * and route what they catch through the field's error channel. A malformed node id is a client error
- * about an argument, not a database error about a write, so it has to be raised before that
- * {@code try} opens; a caller emits {@link #declarations()} first and the guard follows for free.
+ * routine-write shapes: a malformed node id is a client error about an argument, not a database error
+ * about a write, so it is raised before the routine is called or the transaction opens; a caller emits
+ * {@link #declarations()} first and the guard follows for free.
  *
  * <p><b>Read in the prelude, not at the call.</b> A projected column is a declared local too, so what
  * a consumer splices is a name: the argument list of a routine call and the initialiser of a
@@ -43,8 +42,8 @@ import java.util.function.Function;
  * host a {@code decode<TypeName>Record} body for a jOOQ-record-typed input-bean member, and the resolver that
  * keeps those names collision-free across schema packages is the shell's, while a conditions class has
  * its own namespace and mints bodies on demand through {@link RecordDecodeHelperRegistry}. So the host
- * hands in the function that reaches a decode and owns emitting the body, exactly as it owns the
- * tenancy fragments a routine-write renderer receives, and this sink spells the call.
+ * hands in the function that reaches a decode and owns emitting the body, and this sink spells the
+ * call.
  */
 public final class ProjectedKeyReads {
 

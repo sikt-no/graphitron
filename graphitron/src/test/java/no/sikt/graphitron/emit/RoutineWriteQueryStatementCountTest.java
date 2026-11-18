@@ -27,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * adding a fact to a row will reach for another query keyed by the coordinate, which is the
  * natural move and the one this test refuses.
  *
- * <p>The query is the emission's only store read. The two facts still taken from the classified
- * schema (the error channel and the tenancy) are read where the emitter is called, which holds no
- * store handle, so they cost the store nothing by construction.
+ * <p>The query is the body's only store read. The frame around the body reads its outcome and its
+ * connection through {@link FrameQuery} and {@link ConnectionQuery}, each read once per run beside
+ * these rows ({@link RoutineWriteQuery.Rows#framed}), so neither is counted here.
  */
 @PipelineTier
 class RoutineWriteQueryStatementCountTest {

@@ -28,10 +28,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Four properties are pinned rather than one, because each has its own way of going wrong. The
  * decode is <b>named</b>, so a transposed composite-key projection is unconstructable. It happens
  * <b>once</b> per node id however many parameters read columns off it, so one bad id has one failure
- * point. It happens <b>outside</b> the write transaction, because the entry point catches
- * everything inside that transaction and routes it through the field's error channel, where a
- * malformed node id has no business: it is a client error about an argument, not a database error
- * about a write. And the column read is <b>hoisted and guarded</b>, a declared local the consumer
+ * point. It happens <b>outside</b> the write transaction, ahead of the routine call: a malformed
+ * node id is a client error about an argument, not a database error about a write. And the column read is <b>hoisted and guarded</b>, a declared local the consumer
  * splices by name, which is what lets an omitted {@code @nodeId} anywhere along the projected path
  * reach the routine or the condition as a plain null instead of crashing the request on a read off a
  * record the decode returned as null.

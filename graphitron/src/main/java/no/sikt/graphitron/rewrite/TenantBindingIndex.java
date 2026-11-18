@@ -459,8 +459,8 @@ public record TenantBindingIndex(
          * <p>The arms children get below a counted edge are counterfactual and reach no consumer.
          * The validator reads only {@link TenantBindingIndex#rejections()}; the emit-side readers,
          * {@link no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator}
-         * and the per-field seam {@link GraphitronSchema#tenantBindingOf} (read by the launcher,
-         * routine-write and tenant DSL emitters), run only once the error list is empty. A
+         * and the per-field seam {@link GraphitronSchema#tenantBindingOf} (read by the launcher
+         * and tenant DSL emitters), run only once the error list is empty. A
          * diagnostics consumer that shows arms of a failing build must revisit this.
          */
         private final Set<FieldCoordinates> countedRejectedEdges = new HashSet<>();
