@@ -1,7 +1,7 @@
 # A child service batches its parents' keys, and under a @table type a parent is a row of that table.
 # CallShapeService.byFilm takes its parents as a Set of FilmRecord: under Film that is the parents
 # themselves, while under Language nothing turns a language row into a film record, so the call is
-# refused there for the record class it takes.
+# refused there for the record class it takes, and so under CityNames, nested in a city's row.
 
 type Film @table(name: "film") {
   title: String
@@ -15,13 +15,21 @@ type Language @table(name: "language") {
       className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byFilm"})
 }
 
+type City @table(name: "city") { city: String, names: CityNames }
+type CityNames {
+  shape: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byFilm"})
+}
+
 type Query {
   films: [Film!]!
   languages: [Language!]!
+  cities: [City!]!
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_SOURCES_OTHER_TABLE'", rows: """
   code,                        coordinate,     detail
   SERVICE_SOURCES_OTHER_TABLE, Language.shape, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  SERVICE_SOURCES_OTHER_TABLE, CityNames.shape, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   """)

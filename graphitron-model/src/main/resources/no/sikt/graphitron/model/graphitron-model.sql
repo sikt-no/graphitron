@@ -26477,7 +26477,72 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
   JOIN graphitron_occurrence o ON o.graph_name = io.graph_name AND o.coordinate = io.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE io.declared_by = 'WRITE_SHAPE' AND fe.shape IN ('METHOD', 'PATH');
+ WHERE io.declared_by = 'WRITE_SHAPE' AND fe.shape IN ('METHOD', 'PATH')
+UNION ALL
+-- A child @service on a type with no table under which the batch has no key, no lift stated for it,
+-- at the field's definition, the code by what the method takes and what the parent holds: under a
+-- type nested in a table's row, no parameter taking the parents' keys (SOURCE_PARAMETER_MISSING, the
+-- method), or records of another table than the row's (SERVICE_SOURCES_OTHER_TABLE, their class);
+-- under an object of a class nothing in it is read off, table records as keys (NO_KEY_FROM_PARENT,
+-- the class). Keys that are no table's records, or held in no container delivering many, are their
+-- own codes'.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN x.position IS NULL THEN 'SOURCE_PARAMETER_MISSING'
+            WHEN x.nested THEN 'SERVICE_SOURCES_OTHER_TABLE'
+            ELSE 'NO_KEY_FROM_PARENT' END,
+       MIN(CASE WHEN x.position IS NULL THEN x.method_name
+                WHEN x.nested THEN x.element_class
+                ELSE x.parent_class END),
+       'occurrence-depth-defects'
+  FROM (SELECT p.graph_name, f.type_name, f.field_name, cm.method_name, cp.position, mp.element_class,
+               pn.coordinate IS NOT NULL AS nested, co.class_name AS parent_class,
+               EXISTS (SELECT 1 FROM graphitron_call_parameter_table kt
+                        WHERE kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
+                          AND kt.class_name = cm.method_class_name AND kt.method_name = cm.method_name
+                          AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position
+                          AND kt.fit = 'RECORD') AS records,
+               mp.erased_class
+          FROM graphitron_occurrence_producer p
+          JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+          JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+          JOIN graphitron_occurrence_call_method cm
+            ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate AND cm.call = 'producer'
+          LEFT JOIN graphitron_occurrence_call_parameter cp
+            ON cp.graph_name = cm.graph_name AND cp.coordinate = cm.coordinate AND cp.call = cm.call
+           AND cp.fill = 'SOURCE'
+          LEFT JOIN code_method_parameter mp
+            ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+           AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
+           AND mp.position = cp.position
+          LEFT JOIN graphitron_occurrence_nesting pn
+            ON pn.graph_name = o.graph_name AND pn.coordinate = o.parent_coordinate
+          LEFT JOIN graphitron_occurrence_source_claim_object co
+            ON co.graph_name = p.graph_name AND co.coordinate = p.coordinate
+         WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                            WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name)
+           AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_lift pl
+                            WHERE pl.graph_name = p.graph_name AND pl.coordinate = p.coordinate)) x
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = x.graph_name AND d.type_name = x.type_name AND d.name = x.field_name
+ -- Where the stage's other arms already judge the field, a parent the object rules claim with no
+ -- parameter for the keys, or a parent type holding one class the store has read, they raise it.
+ WHERE (x.position IS NULL AND x.nested AND x.parent_class IS NULL)
+    OR (x.position IS NOT NULL AND x.records
+        AND x.erased_class IN ('java.util.Set', 'java.util.List', 'java.util.Collection', 'org.jooq.Result')
+        AND (x.nested
+             OR x.parent_class IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                                 WHERE rc.graph_name = x.graph_name AND rc.type_name = x.type_name
+                                   AND EXISTS (SELECT 1 FROM code_read_slot known
+                                                WHERE known.class_name = rc.class_name)
+                                   AND (SELECT COUNT(*) FROM graphitron_result_class c2
+                                         WHERE c2.graph_name = rc.graph_name
+                                           AND c2.type_name = rc.type_name) = 1)))
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column,
+          CASE WHEN x.position IS NULL THEN 'SOURCE_PARAMETER_MISSING'
+               WHEN x.nested THEN 'SERVICE_SOURCES_OTHER_TABLE'
+               ELSE 'NO_KEY_FROM_PARENT' END;
 COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
 
 CREATE VIEW graphitron_occurrence_source_claim_declaring_table_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
@@ -29829,7 +29894,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('SERVICE_KEY_TOO_WIDE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_KEY_TOO_WIDE_UNSUPPORTED',
    'A @service hands back records of a table whose primary key has more columns than its records can be read back by: each is lifted through a typed jOOQ record of its key and two more values, and jOOQ types records of at most 22. Return a table with a narrower key, or a type that binds no table.'),
   ('SERVICE_SOURCES_OTHER_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_SOURCES_OTHER_TABLE',
-   'A child @service under a @table type takes its parents as records of another table, and a parent row is a record of its own table only: take the parent table''s records, or a Row or Record of its key columns.'),
+   'A child @service under a @table type, or a type nested in one, takes its parents as records of another table, and a parent row is a record of its own table only: take the parent table''s records, or a Row or Record of its key columns.'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
    'Rows graphitron keys by their table''s primary key are of a table that has none: a field fetching its own rows under a parent holding an object is batched by the key table''s, and the records a @service hands back are read back by their own table''s. Give the table a primary key, or fetch the field another way.'),
   ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',
