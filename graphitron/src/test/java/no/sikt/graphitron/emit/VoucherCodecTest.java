@@ -7,6 +7,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
@@ -14,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
+import java.security.Signature;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -26,6 +29,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * The emitted voucher runtime, compiled at Java 17 and run: a voucher round trips with its values in
@@ -266,6 +270,134 @@ class VoucherCodecTest {
         var rsa = KeyPairGenerator.getInstance("RSA").generateKeyPair();
         assertThatThrownBy(() -> call(issuing, null, "k1", rsa.getPrivate()))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** One section entry as the token carries it: the name, the tag and the value's text. */
+    private record Raw(String name, char tag, String text) {}
+
+    /**
+     * A version-2 token written byte by byte, so a test can say what no issuer would: its expiry, a
+     * value's text whatever its tag. Signed with {@code signer} over the body and {@code typeName}.
+     */
+    private static String forge(KeyPair signer, long expiresAt, List<Raw> lookup) throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        var out = new DataOutputStream(bytes);
+        out.writeByte(2);
+        out.writeLong(VOUCH.getMostSignificantBits());
+        out.writeLong(VOUCH.getLeastSignificantBits());
+        writeString(out, "results");
+        out.writeLong(expiresAt);
+        writeString(out, "k1");
+        out.writeInt(1);
+        writeString(out, "ownerId");
+        out.writeByte('I');
+        writeString(out, "42");
+        out.writeInt(lookup.size());
+        for (Raw entry : lookup) {
+            writeString(out, entry.name());
+            out.writeByte(entry.tag());
+            writeString(out, entry.text());
+        }
+        byte[] body = bytes.toByteArray();
+        byte[] type = "Result".getBytes(StandardCharsets.UTF_8);
+        var signature = Signature.getInstance("Ed25519");
+        signature.initSign(signer.getPrivate());
+        signature.update(body);
+        signature.update(java.nio.ByteBuffer.allocate(4).putInt(type.length).array());
+        signature.update(type);
+        byte[] signed = signature.sign();
+        out.writeInt(signed.length);
+        out.write(signed);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray());
+    }
+
+    private static void writeString(DataOutputStream out, String value) throws Exception {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        out.writeInt(bytes.length);
+        out.write(bytes);
+    }
+
+    private static final long EXPIRES_AT = EXPIRES.getEpochSecond();
+
+    @Test
+    void aForgedTokenIsTheSameAsAnIssuedOne() throws Throwable {
+        // The forge writes the format the codec does: anything below that it refuses, it refuses for
+        // what the test changed.
+        assertThat(forge(pair, EXPIRES_AT, List.of(new Raw("id", 'S', "r-7")))).isEqualTo(voucher());
+        check(forge(pair, EXPIRES_AT, List.of(new Raw("id", 'I', "7"))));
+    }
+
+    @Test
+    void aMultiMegabyteTokenIsMalformedBeforeAnyOfItIsDecoded() throws Throwable {
+        // A huge integer would cost the accepting side seconds of CPU to parse; the length alone refuses it.
+        String huge = forge(other, EXPIRES_AT, List.of(new Raw("id", 'I', "9".repeat(4_000_000))));
+        assertThat(huge.length()).isGreaterThan(5_000_000);
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> assertRejected(() -> check(huge), "MALFORMED"));
+        String justOver = "A".repeat(VoucherRuntime.MAX_TOKEN + 1);
+        assertRejected(() -> check(justOver), "MALFORMED");
+    }
+
+    @Test
+    void aNumberLongerThanTheCapIsMalformedWhetherOrNotItIsSigned() throws Throwable {
+        var tooLong = List.of(new Raw("id", 'I', "1".repeat(VoucherRuntime.MAX_NUMBER_TEXT + 1)));
+        assertRejected(() -> check(forge(other, EXPIRES_AT, tooLong)), "MALFORMED");
+        assertRejected(() -> check(forge(pair, EXPIRES_AT, tooLong)), "MALFORMED");
+        var decimal = List.of(new Raw("id", 'F', "1".repeat(VoucherRuntime.MAX_NUMBER_TEXT + 1)));
+        assertRejected(() -> check(forge(pair, EXPIRES_AT, decimal)), "MALFORMED");
+        var atCap = List.of(new Raw("id", 'I', "1".repeat(VoucherRuntime.MAX_NUMBER_TEXT)));
+        assertThat(((Map<?, ?>) accessor(check(forge(pair, EXPIRES_AT, atCap)), "lookup")).get("id"))
+            .isInstanceOf(BigInteger.class);
+    }
+
+    @Test
+    void noValueIsReadUntilTheSignatureVerifies() throws Throwable {
+        // Text no tag reads is a forger's: refused for the signature, so nothing read it first.
+        for (char tag : new char[] {'I', 'F', 'B'}) {
+            var unreadable = List.of(new Raw("id", tag, "not a value"));
+            assertRejected(() -> check(forge(other, EXPIRES_AT, unreadable)), "SIGNATURE");
+            assertRejected(() -> check(forge(pair, EXPIRES_AT, unreadable)), "MALFORMED");
+        }
+        assertRejected(() -> check(forge(pair, EXPIRES_AT, List.of(new Raw("id", 'X', "1")))), "MALFORMED");
+    }
+
+    @Test
+    void anExpiryNoInstantHoldsIsARejectionNeverAnotherException() throws Throwable {
+        for (long expiresAt : new long[] {Long.MAX_VALUE, Long.MIN_VALUE, Instant.MAX.getEpochSecond() + 1}) {
+            assertRejected(() -> check(forge(other, expiresAt, List.of(new Raw("id", 'S', "r-7")))), "SIGNATURE");
+            assertRejected(() -> check(forge(pair, expiresAt, List.of(new Raw("id", 'S', "r-7")))), "MALFORMED");
+        }
+        // The furthest expiry an instant holds: past it by the clock skew is no instant, and no overflow.
+        var furthest = check(forge(pair, Instant.MAX.getEpochSecond(), List.of(new Raw("id", 'S', "r-7"))));
+        assertThat(accessor(furthest, "expires")).isEqualTo(Instant.ofEpochSecond(Instant.MAX.getEpochSecond()));
+        assertRejected(() -> check(forge(pair, Instant.MIN.getEpochSecond(), List.of(new Raw("id", 'S', "r-7")))),
+            "EXPIRED");
+    }
+
+    @Test
+    void theIssuerSignsNothingTheVerifierWouldRefuseForItsLength() {
+        var longNumber = new BigInteger("1".repeat(VoucherRuntime.MAX_NUMBER_TEXT + 1));
+        assertThatThrownBy(() -> issue(keys(), VOUCH, "results", EXPIRES, "Result", Map.of("ownerId", 42),
+                Map.of("id", longNumber)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("'id'");
+        assertThatThrownBy(() -> issue(keys(), VOUCH, "results", EXPIRES, "Result", Map.of("ownerId", 42),
+                Map.of("id", "r".repeat(VoucherRuntime.MAX_TOKEN))))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("MAX_TOKEN");
+    }
+
+    @Test
+    void theCodecBoundsANumberAsColumnValuesDoes() throws Exception {
+        var units = new HashMap<String, TypeSpec>();
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator.generate()) {
+            units.put(PACKAGE + ".util." + spec.name(), spec);
+        }
+        try (var columnValues = EmittedCodeHarness.compileStrictly(units)) {
+            var bound = columnValues.load(PACKAGE + ".util.ColumnValues").getField("MAX_NUMBER_TEXT").getInt(null);
+            assertThat(VoucherRuntime.MAX_NUMBER_TEXT).isEqualTo(bound);
+            assertThat(harness.load(PACKAGE + ".schema.VoucherCodec").getField("MAX_NUMBER_TEXT").getInt(null))
+                .isEqualTo(bound);
+        }
     }
 
     private static byte[] replaceLast(byte[] bytes, String from, String to) {

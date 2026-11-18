@@ -56,7 +56,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
  * {@code F} decimal, {@code B} boolean) and the value's text, so the accepting side's scalar parses
  * the value exactly as it would a plain representation's. The signature covers every byte before it
  * and the entity type name, which the token does not carry, so a voucher for one type is refused as
- * another's. Generated code compiles at Java 17 and depends on the JDK alone; Ed25519 is the JDK's.
+ * another's. A voucher is at most {@link #MAX_TOKEN} characters and a number in it at most
+ * {@link #MAX_NUMBER_TEXT}; the accepting side refuses either before decoding, and reads no value as
+ * a number or an instant until the signature verifies, so an unsigned token costs work linear in a
+ * bounded length. Generated code compiles at Java 17 and depends on the JDK alone; Ed25519 is the JDK's.
  */
 public final class VoucherRuntime {
 
@@ -81,6 +84,19 @@ public final class VoucherRuntime {
 
     /** How far past its expiry a voucher is still accepted, absorbing clock skew between the subgraphs. */
     public static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
+
+    /**
+     * The longest voucher, in characters, the codec issues or reads. It bounds what an unsigned token
+     * costs the accepting side, which takes a token apart before its signature is checked.
+     */
+    public static final int MAX_TOKEN = 16384;
+
+    /**
+     * The longest text of a number the codec issues or reads: the bound the emitted {@code ColumnValues}
+     * reads a numeric column value's text under, restated because {@code emit} does not name the
+     * generator that writes it. {@code VoucherCodecTest} pins the two equal.
+     */
+    public static final int MAX_NUMBER_TEXT = 2 * 1000 + 16;
 
     private static final TypeName OBJECT_MAP =
         ParameterizedTypeName.get(ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
@@ -351,6 +367,17 @@ public final class VoucherRuntime {
     private static TypeSpec codec(ClassName self, ClassName keys, ClassName rejected) {
         var token = self.nestedClass("Token");
         var reason = rejected.nestedClass("Reason");
+        var entry = self.nestedClass("Entry");
+        var rawSection = ParameterizedTypeName.get(ClassName.get(List.class), entry);
+        var entryRecord = TypeSpec.recordBuilder("Entry")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addJavadoc("A section entry as the token carries it, its value's text not yet read as its tag says.\n")
+            .recordConstructor(MethodSpec.constructorBuilder()
+                .addParameter(String.class, "name")
+                .addParameter(byte.class, "tag")
+                .addParameter(String.class, "text")
+                .build())
+            .build();
         var tokenRecord = TypeSpec.recordBuilder("Token")
             .addModifiers(Modifier.PUBLIC)
             .addJavadoc("A voucher's content. Each section maps a field name to the value its scalar serialized, as\n"
@@ -397,7 +424,9 @@ public final class VoucherRuntime {
                 .addJavadoc("The voucher for one row of {@code typeName}. Each value is what the field's scalar\n"
                     + "serialized: a string, a number or a boolean.\n"
                     + "\n"
-                    + "@throws IllegalArgumentException where a value is null or of another kind\n")
+                    + "@throws IllegalArgumentException where a value is null or of another kind, a number's\n"
+                    + "    text is longer than {@link VoucherCodec#MAX_NUMBER_TEXT}, or the voucher longer than\n"
+                    + "    {@link VoucherCodec#MAX_TOKEN}\n")
                 .addParameter(String.class, "typeName")
                 .addParameter(WIRE_MAP, "vouchedFor")
                 .addParameter(WIRE_MAP, "lookup")
@@ -413,7 +442,13 @@ public final class VoucherRuntime {
                 .nextControlFlow("catch ($T e)", IOException.class)
                 .addStatement("throw new $T(e)", UncheckedIOException.class)
                 .endControlFlow()
-                .addStatement("return $T.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray())", Base64.class)
+                .addStatement("$T voucher = $T.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray())",
+                    String.class, Base64.class)
+                .beginControlFlow("if (voucher.length() > MAX_TOKEN)")
+                .addStatement("throw new $T($S + typeName + $S)", IllegalArgumentException.class,
+                    "the voucher for '", "' is longer than MAX_TOKEN")
+                .endControlFlow()
+                .addStatement("return voucher")
                 .build())
             .build();
 
@@ -483,31 +518,47 @@ public final class VoucherRuntime {
                 + "{@code keyFields}. Each voucher is checked on its own; the vouch id is an audit handle and\n"
                 + "agrees with nothing. Needs no connection.\n"
                 + "\n"
-                + "@throws $T naming the first check that failed\n", rejected)
+                + "<p>Until the signature verifies, the token is only taken apart: a token over\n"
+                + "{@link #MAX_TOKEN} characters, or a number's text over {@link #MAX_NUMBER_TEXT}, is\n"
+                + "malformed before anything is decoded, and no value is read as a number or an instant\n"
+                + "until the signature over the raw bytes holds. The work an unsigned token costs is linear\n"
+                + "in its length and bounded by the cap.\n"
+                + "\n"
+                + "@throws $T naming the first check that failed; no other exception leaves for any token\n",
+                rejected)
             .addParameter(String.class, "typeName")
             .addParameter(String.class, "voucher")
             .addParameter(String.class, "scope")
             .addParameter(STRING_SET, "vouchedForFields")
             .addParameter(STRING_SET, "keyFields")
+            .beginControlFlow("if (voucher.length() > MAX_TOKEN)")
+            .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
+            .endControlFlow()
             .addStatement("$T buffer", ByteBuffer.class)
             .beginControlFlow("try")
             .addStatement("buffer = $T.wrap($T.getUrlDecoder().decode(voucher))", ByteBuffer.class, Base64.class)
             .nextControlFlow("catch ($T e)", IllegalArgumentException.class)
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
-            .addStatement("$T decoded", token)
+            .addCode("// Taken apart only: nothing below reads a value as a number or an instant.\n")
+            .addStatement("$T vouchId", UUID.class)
+            .addStatement("$T tokenScope", String.class)
+            .addStatement("long expiresAt")
+            .addStatement("$T keyId", String.class)
+            .addStatement("$T vouchedForRaw", rawSection)
+            .addStatement("$T lookupRaw", rawSection)
             .addStatement("byte[] body")
             .addStatement("byte[] signature")
             .beginControlFlow("try")
             .beginControlFlow("if (buffer.get() != VERSION)")
             .addStatement("throw new $T($T.UNKNOWN_VERSION)", rejected, reason)
             .endControlFlow()
-            .addStatement("$T vouchId = new $T(buffer.getLong(), buffer.getLong())", UUID.class, UUID.class)
-            .addStatement("$T tokenScope = readString(buffer)", String.class)
-            .addStatement("$T expires = $T.ofEpochSecond(buffer.getLong())", Instant.class, Instant.class)
-            .addStatement("$T keyId = readString(buffer)", String.class)
-            .addStatement("$T vouchedFor = readSection(buffer)", OBJECT_MAP)
-            .addStatement("$T lookup = readSection(buffer)", OBJECT_MAP)
+            .addStatement("vouchId = new $T(buffer.getLong(), buffer.getLong())", UUID.class)
+            .addStatement("tokenScope = readString(buffer)")
+            .addStatement("expiresAt = buffer.getLong()")
+            .addStatement("keyId = readString(buffer)")
+            .addStatement("vouchedForRaw = readSection(buffer)")
+            .addStatement("lookupRaw = readSection(buffer)")
             .addStatement("body = new byte[buffer.position()]")
             .addStatement("buffer.get(0, body)")
             .addStatement("signature = new byte[length(buffer)]")
@@ -515,17 +566,24 @@ public final class VoucherRuntime {
             .beginControlFlow("if (buffer.hasRemaining())")
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
-            .addStatement("decoded = new $T(vouchId, tokenScope, expires, keyId, vouchedFor, lookup)", token)
             .nextControlFlow("catch ($T | $T e)", BufferUnderflowException.class, IllegalArgumentException.class)
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
-            .beginControlFlow("if (!keys.hasVerificationKey(decoded.keyId()))")
+            .beginControlFlow("if (!keys.hasVerificationKey(keyId))")
             .addStatement("throw new $T($T.UNKNOWN_KEY)", rejected, reason)
             .endControlFlow()
-            .beginControlFlow("if (!keys.verify(decoded.keyId(), signed(body, typeName), signature))")
+            .beginControlFlow("if (!keys.verify(keyId, signed(body, typeName), signature))")
             .addStatement("throw new $T($T.SIGNATURE)", rejected, reason)
             .endControlFlow()
-            .beginControlFlow("if (now.isAfter(decoded.expires().plus(CLOCK_SKEW)))")
+            .addCode("// Signed: the values are the issuer's, and only now read as what their tags say.\n")
+            .addStatement("$T decoded", token)
+            .beginControlFlow("try")
+            .addStatement("decoded = new $T(vouchId, tokenScope, $T.ofEpochSecond(expiresAt), keyId,"
+                + " section(vouchedForRaw), section(lookupRaw))", token, Instant.class)
+            .nextControlFlow("catch ($T | $T e)", java.time.DateTimeException.class, IllegalArgumentException.class)
+            .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
+            .endControlFlow()
+            .beginControlFlow("if (now.minus(CLOCK_SKEW).isAfter(decoded.expires()))")
             .addStatement("throw new $T($T.EXPIRED)", rejected, reason)
             .endControlFlow()
             .beginControlFlow("if (!decoded.scope().equals(scope))")
@@ -611,9 +669,14 @@ public final class VoucherRuntime {
             .addStatement("throw new $T($S + entry.getKey() + $S)", IllegalArgumentException.class,
                 "the voucher value of '", "' is not a serialized string, number or boolean")
             .endControlFlow()
+            .addStatement("$T text = value.toString()", String.class)
+            .beginControlFlow("if ((tag == 'I' || tag == 'F') && text.length() > MAX_NUMBER_TEXT)")
+            .addStatement("throw new $T($S + entry.getKey() + $S)", IllegalArgumentException.class,
+                "the voucher value of '", "' is a number longer than MAX_NUMBER_TEXT")
+            .endControlFlow()
             .addStatement("writeString(out, entry.getKey())")
             .addStatement("out.writeByte(tag)")
-            .addStatement("writeString(out, value.toString())")
+            .addStatement("writeString(out, text)")
             .endControlFlow()
             .build();
 
@@ -639,13 +702,15 @@ public final class VoucherRuntime {
 
         var readSection = MethodSpec.methodBuilder("readSection")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(OBJECT_MAP)
+            .returns(rawSection)
+            .addJavadoc("Takes a section apart without reading any value: names in strictly ascending order, a\n"
+                + "known tag, and a number's text no longer than {@link #MAX_NUMBER_TEXT}.\n")
             .addParameter(ByteBuffer.class, "buffer")
             .addStatement("int count = buffer.getInt()")
             .beginControlFlow("if (count < 0 || count > buffer.remaining())")
             .addStatement("throw new $T()", BufferUnderflowException.class)
             .endControlFlow()
-            .addStatement("$T<$T, $T> section = new $T<>()", TreeMap.class, String.class, Object.class, TreeMap.class)
+            .addStatement("$T section = new $T<>(count)", rawSection, java.util.ArrayList.class)
             .addStatement("$T previous = null", String.class)
             .beginControlFlow("for (int i = 0; i < count; i++)")
             .addStatement("$T name = readString(buffer)", String.class)
@@ -654,8 +719,26 @@ public final class VoucherRuntime {
             .endControlFlow()
             .addStatement("previous = name")
             .addStatement("byte tag = buffer.get()")
+            .beginControlFlow("if (tag != 'S' && tag != 'B' && tag != 'I' && tag != 'F')")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class, "unknown value tag")
+            .endControlFlow()
             .addStatement("$T text = readString(buffer)", String.class)
-            .addStatement("section.put(name, value(tag, text))")
+            .beginControlFlow("if ((tag == 'I' || tag == 'F') && text.length() > MAX_NUMBER_TEXT)")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class, "number too long")
+            .endControlFlow()
+            .addStatement("section.add(new $T(name, tag, text))", entry)
+            .endControlFlow()
+            .addStatement("return section")
+            .build();
+
+        var section = MethodSpec.methodBuilder("section")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(OBJECT_MAP)
+            .addJavadoc("A signed section's values, each read as its tag says.\n")
+            .addParameter(rawSection, "raw")
+            .addStatement("$T<$T, $T> section = new $T<>()", TreeMap.class, String.class, Object.class, TreeMap.class)
+            .beginControlFlow("for ($T entry : raw)", entry)
+            .addStatement("section.put(entry.name(), value(entry.tag(), entry.text()))")
             .endControlFlow()
             .addStatement("return section")
             .build();
@@ -684,10 +767,7 @@ public final class VoucherRuntime {
             .endControlFlow()
             .addStatement("return integer")
             .endControlFlow()
-            .beginControlFlow("if (tag == 'F')")
             .addStatement("return $T.valueOf(text)", Double.class)
-            .endControlFlow()
-            .addStatement("throw new $T($S)", IllegalArgumentException.class, "unknown value tag")
             .build();
 
         return TypeSpec.classBuilder(self)
@@ -695,9 +775,18 @@ public final class VoucherRuntime {
             .addJavadoc("Owns the voucher format: signs a voucher on the issuing side and decodes and checks one on\n"
                 + "the accepting side. A failed check is a {@link $T}, never another exception.\n", rejected)
             .addType(tokenRecord)
+            .addType(entryRecord)
             .addField(FieldSpec.builder(int.class, "VERSION", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .addJavadoc("The format version written, and the only one read.\n")
                 .initializer("$L", VERSION).build())
+            .addField(FieldSpec.builder(int.class, "MAX_TOKEN", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("The longest voucher, in characters, that is issued or read; a longer one is malformed\n"
+                    + "before it is decoded.\n")
+                .initializer("$L", MAX_TOKEN).build())
+            .addField(FieldSpec.builder(int.class, "MAX_NUMBER_TEXT", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("The longest text of a number in a voucher, the bound a numeric column value's text is\n"
+                    + "read under.\n")
+                .initializer("$L", MAX_NUMBER_TEXT).build())
             .addField(FieldSpec.builder(Duration.class, "CLOCK_SKEW", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .addJavadoc("How far past its expiry a voucher is still accepted.\n")
                 .initializer("$T.ofSeconds($L)", Duration.class, CLOCK_SKEW.toSeconds()).build())
@@ -713,6 +802,7 @@ public final class VoucherRuntime {
             .addMethod(length)
             .addMethod(readString)
             .addMethod(readSection)
+            .addMethod(section)
             .addMethod(value)
             .build();
     }

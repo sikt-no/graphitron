@@ -549,6 +549,12 @@ Decisions the user made on this item; each is stated where it applies below.
   a vouched-for section naming fields other than B's `vouchesFor:`, a lookup section naming fields other than B's
   authored key, or a value B's scalar does not parse is a verification failure, not an exception to the
   consumer. Dropping the caller (*Rulings*) changes the format, so the version byte goes up.
+  Hardened 2026-11-18 after a security finding that an unsigned token could cost B unbounded CPU, and a
+  far-off expiry could escape as a `DateTimeException` past the audit log. The codec now caps a token at
+  `MAX_TOKEN` characters and a number's text at `MAX_NUMBER_TEXT` (the same bound as `ColumnValues`)
+  before decoding anything. It takes the token apart without reading a value, verifies the signature,
+  and only then reads values and the expiry, so every failure is a `VoucherRejectedException`. The issuer
+  refuses to sign what the verifier would refuse for its length.
 * *Generated, not shipped.* The codec, `VoucherRejectedException`, the key provider interface and its
   default Ed25519 implementation are emitted per consumer, as `NodeIdEncoder` is
   (`NodeIdEncoderClassGenerator`), and only in a build whose store holds a marker entry. Generated code has
@@ -961,6 +967,10 @@ outside the repo applies either marker yet.
   a voucher presented under another `__typename`; a vouched-for section naming other
   fields than B's `vouchesFor:`; a lookup section naming other fields than B's key; a missing or extra
   vouched-for field; a value that does not coerce.
+* Bounded and total before the signature: a multi-megabyte token or one over `MAX_TOKEN` is malformed;
+  a number over `MAX_NUMBER_TEXT` is malformed whether or not it is signed; text no tag reads is refused
+  for the signature when unsigned, so nothing parsed it first; an expiry no `Instant` holds is a
+  rejection, never another exception; the issuer refuses what the verifier would refuse for its length.
 
 **Refactor gates (slices 1 to 3).** Every existing fact document row-identical after the column-name
 relation, the minted-key relation and the entity key alternatives land, and generated output unchanged
