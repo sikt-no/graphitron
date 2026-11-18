@@ -80,6 +80,8 @@ class MutationScopeExecutionTest {
         dsl.deleteFrom(DSL.table("mutation_scope_marker"))
             .where(DSL.field("marker", String.class).in(markers)).execute();
         dsl.deleteFrom(DSL.table("film")).where(DSL.field("title", String.class).in(filmTitles)).execute();
+        dsl.execute("delete from outbox where type in ('MarkerOwnWritten', 'MarkerOwnThrown', 'MarkerOwnFailed')"
+            + " and payload ->> 'marker' like 'MUTATION-SCOPE-%'");
     }
 
     // ===== a field's writes stand or fall together =====
@@ -401,6 +403,113 @@ class MutationScopeExecutionTest {
         Integer max = dsl.select(DSL.max(DSL.field("rental_id", Integer.class))).from(DSL.table("rental"))
             .fetchOne(0, Integer.class);
         return max == null ? 0 : max;
+    }
+
+    // ===== a field whose service owns its transactions =====
+
+    @Test
+    void aServiceControlledField_keepsWhatItsOwnTransactionCommitted_whenItFailsAfterwards() {
+        String own = marker();
+
+        Captured run = warningsDuring(() -> execute("""
+            mutation { own: scopeServiceOwnThenThrow(marker: "%s") }
+            """.formatted(own)));
+
+        assertThat(errorPaths(run.result())).containsExactly(List.of("own"));
+        assertThat(run.result().getErrors().getFirst().getMessage())
+            .as("the client is told the service failed and nothing was rolled back")
+            .startsWith("The service failed; graphitron rolled nothing back, so what it committed stands. ");
+        assertThat(rows(own)).as("the service's own transaction committed as it left it").isEqualTo(1);
+        assertThat(run.warnings()).as("its transaction is its own, so no join is reported")
+            .noneMatch(w -> w.contains("joined the enclosing transaction"));
+    }
+
+    @Test
+    void aServiceControlledField_runsInAutocommit_soEveryWriteBeforeTheFailureStands() {
+        String good = marker(), written = marker();
+
+        ExecutionResult result = execute("""
+            mutation {
+                good: scopeWriteOne(marker: "%s")
+                written: scopeServiceAutocommitThenThrow(marker: "%s")
+            }
+            """.formatted(good, written));
+
+        assertThat(errorPaths(result)).containsExactly(List.of("written"));
+        assertThat(rows(good)).as("the field before it still committed in its own transaction").isEqualTo(1);
+        assertThat(rows(written)).as("both writes ran in autocommit, and nothing rolled them back").isEqualTo(2);
+    }
+
+    @Test
+    void aServiceControlledField_thatSucceeds_commitsItsWrites_withoutAJoinWarning() {
+        String marker = marker();
+
+        Captured run = warningsDuring(() -> execute("""
+            mutation { ok: scopeServiceOwnSucceeds(marker: "%s") }
+            """.formatted(marker)));
+
+        assertThat(run.result().getErrors()).isEmpty();
+        assertThat(rows(marker)).isEqualTo(2);
+        assertThat(run.warnings()).noneMatch(w -> w.contains("joined the enclosing transaction"));
+    }
+
+    @Test
+    void underRollbackOnly_aServiceControlledFieldRunningFirst_savepointsItsOwnTransaction_andLeavesNothing() {
+        GraphQL devEngine = GraphQL.newGraphQL(Graphitron.buildSchema(b -> {}))
+            .instrumentation(new GraphitronConnectionInstrumentation(
+                runtime, GraphitronTransactionProvider.CommitPolicy.ROLLBACK_ONLY))
+            .build();
+        String own = marker(), after = marker();
+        CONNECTION_EVENTS.clear();
+
+        ExecutionResult result = devEngine.execute(ownedInput("""
+            mutation {
+                own: scopeServiceOwnSucceeds(marker: "%s")
+                after: scopeWriteOne(marker: "%s")
+            }
+            """.formatted(own, after)).build());
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(CONNECTION_EVENTS)
+            .as("the service's own transaction is a savepoint inside the operation's, and nothing commits")
+            .contains("setAutoCommit:false", "setSavepoint")
+            .doesNotContain("commit");
+        assertThat(rows(own)).as("the write outside its transaction and the one inside are both discarded")
+            .isZero();
+        assertThat(rows(after)).isZero();
+    }
+
+    @Test
+    void aServiceControlledField_thatSucceeds_writesItsMessageOnceItSettled() {
+        String marker = marker();
+
+        ExecutionResult result = execute("""
+            mutation { outboxServiceWriteOne(marker: "%s") }
+            """.formatted(marker));
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(rows(marker)).isEqualTo(1);
+        assertThat(messages("MarkerOwnWritten", marker)).isEqualTo(1);
+    }
+
+    @Test
+    void aServiceControlledField_thatFailsAfterItsServiceCommitted_writesItsFailureMessageOnly() {
+        String marker = marker();
+
+        ExecutionResult result = execute("""
+            mutation { outboxServiceOwnThenThrow(marker: "%s") }
+            """.formatted(marker));
+
+        assertThat(errorPaths(result)).containsExactly(List.of("outboxServiceOwnThenThrow"));
+        assertThat(rows(marker)).as("what the service committed stands").isEqualTo(1);
+        assertThat(messages("MarkerOwnThrown", marker))
+            .as("the messages follow the field's outcome, not what the service committed").isZero();
+        assertThat(messages("MarkerOwnFailed", marker)).isEqualTo(1);
+    }
+
+    private int messages(String type, String marker) {
+        return dsl.fetchOne("select count(*) from outbox where type = ? and payload ->> 'marker' = ?", type, marker)
+            .get(0, Integer.class);
     }
 
     // ===== what is not a mutation field transaction =====

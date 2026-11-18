@@ -681,9 +681,6 @@ static method needs no holder.
   `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
-* **A `@service` field may opt out of the field's transaction** `open`, off the critical path.
-  A mutation `@service` written `@service(transactionControl: SERVICE)` runs on the same connection it would under the default `GRAPHITRON`, in autocommit, so the transactions it opens are its own and commit as it leaves them (Alf, 2026-11-17);
-  graphitron then rolls back nothing on a failure and the field's error says the service failed rather than that nothing was written, an `@outbox` is written by the field's outcome in a transaction of its own and not by what the service committed, as `outbox.adoc` already states, and `SERVICE` outside a mutation field is an entry defect. The walk's service emitters refuse it rather than gain it.
 * **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
 * **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
@@ -1117,6 +1114,11 @@ static method needs no holder.
     It closes when, on any graph the store's verdict accepts, the verdict can only be `EMITTED`; then
     the walk's fallback for the fields `ServiceEmission.emits` refuses goes, and
     `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes` go in the same commit.
+    Until then a `@service(transactionControl: SERVICE)` field `ServiceEmission.emits` refuses falls
+    back to the walk, which runs it in the field's transaction, so the gap this node closes also
+    covers that argument; on sis and opptak every refused service already has a stored error defect
+    on the field or its input types (`PARAMETER_UNFILLED`, `CODE_REFERENCE_*`, `MEMBER_UNKNOWN`,
+    `GROUPING_LIST`, `NODE_ID_TYPE_NAME_UNDECLARED_STUB`).
     Unused in FS-plattform for the two measured so far: sis
     73 and opptak 251 service producers, none returning a connection, none fanning out by row tenant.
     What of `ServiceCatalog` stays when the walk's service path goes, and who owns it, is named in the

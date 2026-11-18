@@ -26,7 +26,8 @@ class DirectiveSupportTypesTest {
             "ErrorHandlerType",
             "SortDirection",
             "MutationType",
-            "OutboxOutcome");
+            "OutboxOutcome",
+            "TransactionControl");
     }
 
     @Test

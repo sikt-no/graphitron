@@ -252,6 +252,22 @@ transaction of its own: what it nests inside that transaction joins it, and a
 caught nested failure makes the transaction's commit fail. Work that must
 commit on its own belongs in its own top-level mutation field, or in a job.
 
+A mutation field whose `@service` says `transactionControl: SERVICE` opens no
+transaction of Graphitron's. It runs on the same connection, in autocommit,
+as a Query field's `@service` does: a transaction the service opens is its own
+and commits as the service leaves it, and no warning is logged. The field
+still settles in document order, but there is nothing to commit or roll back:
+when it fails, what the service committed stands, and the field's error says
+the service failed and nothing was rolled back. Its `@outbox` messages follow
+the field's outcome in a transaction of their own, at most once (see the
+`@outbox` page). The connection carrier records the field as service-controlled
+before its fetcher acquires anything, so every acquisition under the field,
+payload re-reads included, hands out the connection in autocommit. Under
+`CommitPolicy.ROLLBACK_ONLY` the field's first acquisition starts the
+operation's discarded transaction instead, so a transaction the service opens
+is a savepoint inside it: dev commits and rolls back as production does, and
+still leaves nothing behind (Alf, 2026-11-18).
+
 A field reported as successful has committed, and a field that rolled back is
 never shown with a value: a field that rolled back because of an error under it
 (a nested read in its payload that failed, say) is `null`, like one that failed

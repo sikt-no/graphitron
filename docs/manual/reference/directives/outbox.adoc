@@ -51,6 +51,7 @@ Keys are flat, one JSON key per entry. An object or an array in the payload come
 include::examples/outbox.graphqls[tag=TwoEvents]
 ----
 
+[#when]
 == When
 
 Right after the field's write succeeds and before its payload is resolved, as one more statement in the field's transaction. A field that failed writes no message: its transaction rolls back, and a failure an `@error` channel turned into a typed payload is a failure. If the emit fails, the field fails and rolls back, write included; the error is logged and redacted, and no `@error` channel can claim it, since an outbox fault is not business data.
@@ -58,6 +59,8 @@ Right after the field's write succeeds and before its payload is resolved, as on
 A call that wrote no rows (an `UPDATE` that matched nothing, or one whose input sets no column) writes no message.
 
 On a `@service` field the service runs inside the same transaction as its messages: graphitron opens it and hands the service a `DSLContext` on it. What the service writes through that `DSLContext`, nested transactions included, commits with the messages or rolls back with them. A write the service makes some other way, through a connection of its own or a call to another system, is outside the transaction, and no message can be made atomic with it.
+
+A `@service` field that says `transactionControl: SERVICE` has no transaction for its messages to share: its service commits its own writes as it goes (xref:service.adoc#transaction-demarcation[transaction demarcation]). Its messages follow the field's outcome instead of what the service committed. When the field settles having succeeded, its payload included, graphitron writes its success messages in one transaction of their own on the field's connection; when it fails, it writes its `ERROR` messages the same way, with nothing rolled back first, so what the service committed stands beside them. Both sides are then at most once, as failure messages always are (<<on-failure,On failure>>): a process that dies between the service's commit and the write loses the message, and a message never says more than the field's outcome, so a field that failed after its service committed writes its `ERROR` messages and no success message.
 
 [#on-failure]
 == On failure

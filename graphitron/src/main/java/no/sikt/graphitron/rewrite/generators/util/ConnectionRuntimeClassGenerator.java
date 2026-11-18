@@ -1650,11 +1650,14 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(MutationFieldScopeEmitter.markFieldFailed(self))
             .addMethod(MutationFieldScopeEmitter.markFieldClaimed(self))
             .addMethod(MutationFieldScopeEmitter.markFieldRefused(self))
+            .addMethod(MutationFieldScopeEmitter.markFieldServiceControlled(self))
+            .addMethod(MutationFieldScopeEmitter.isServiceControlled(self))
             .addMethod(MutationFieldScopeEmitter.runningField(self));
         if (failureMessages) {
             String freshAcquisition = acquisition;
             carrier.addType(MutationFieldScopeEmitter.fieldRollbackType())
                 .addMethod(MutationFieldScopeEmitter.onFieldRollback(self))
+                .addMethod(MutationFieldScopeEmitter.onFieldSuccess(self))
                 .addMethod(MutationFieldScopeEmitter.afterRollback(self, keyType, multiTenant, true))
                 .addMethod(MutationFieldScopeEmitter.dropped(self))
                 .addMethod(MutationFieldScopeEmitter.writeOnFreshConnection(self, provider, pinnedConnection, keyType,

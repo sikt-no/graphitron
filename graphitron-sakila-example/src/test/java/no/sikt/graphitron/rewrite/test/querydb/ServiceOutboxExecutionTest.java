@@ -35,7 +35,7 @@ class ServiceOutboxExecutionTest {
 
     @AfterAll
     static void removeWhatWasWritten() {
-        dsl.execute("delete from outbox where type in ('MarkerWritten', 'MarkerThrown', 'FilmBlurbRead',"
+        dsl.execute("delete from outbox where type in ('MarkerWritten', 'MarkerThrown', 'MarkerOwnWritten', 'FilmBlurbRead',"
             + " 'FilmCardMade', 'FilmAssigned',"
             + " 'FilmActorAssigned', 'FilmActorsAssigned')");
         dsl.execute("delete from mutation_scope_marker where marker like 'service-outbox-%'");
@@ -73,6 +73,18 @@ class ServiceOutboxExecutionTest {
             .as("$result is the String the service returned")
             .containsEntry("value", marker)
             .containsEntry("at", "Mutation.outboxScopeWriteOne");
+        assertThat(markers(marker)).isEqualTo(1L);
+    }
+
+    @Test
+    void offTheOwnedPath_aServiceControlledField_writesItsMessageAtOnce_afterItsServiceReturned() {
+        var marker = marker();
+        var result = execute("mutation { outboxServiceWriteOne(marker: \"" + marker + "\") }");
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(payloads("MarkerOwnWritten", "marker", marker))
+            .as("with no carrier to settle the field, the message is written in its own transaction at once")
+            .hasSize(1);
         assertThat(markers(marker)).isEqualTo(1L);
     }
 

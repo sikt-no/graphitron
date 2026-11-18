@@ -28,6 +28,16 @@ public final class MutationScopeService {
         throw new IllegalStateException("mutation-scope fixture: failing after two writes");
     }
 
+    /**
+     * Writes a marker row inside a transaction of its own, which commits as it leaves it, then throws
+     * an exception no {@code @error} channel claims. Under {@code transactionControl: SERVICE} the
+     * transaction is the service's own, so its row survives the field's failure.
+     */
+    public static String writeOwnThenThrow(DSLContext dsl, String marker) {
+        dsl.transaction(tx -> insert(DSL.using(tx), marker));
+        throw new IllegalStateException("mutation-scope fixture: failing after its own commit");
+    }
+
     /** Writes two marker rows, then throws the exception the field's {@code @error} channel claims. */
     public static MutationScopeRefusedPayload writeTwiceThenRefuse(DSLContext dsl, String marker) {
         insert(dsl, marker);

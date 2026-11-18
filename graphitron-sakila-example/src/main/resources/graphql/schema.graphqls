@@ -5647,6 +5647,22 @@ type Mutation {
         })
         @outbox(event: "MarkerThrown", argMapping: "marker: marker")
         @outbox(on: ERROR, event: "MarkerFailed", argMapping: "marker: marker, at: $scope.coordinate")
+    # The same under transactionControl: SERVICE (MutationScopeExecutionTest, ServiceOutboxExecutionTest):
+    # the service commits its own writes, and its messages follow the field's outcome in a transaction
+    # of their own, so a field that fails after its service committed writes its ERROR message only.
+    outboxServiceWriteOne(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeOne"
+        }, transactionControl: SERVICE)
+        @outbox(event: "MarkerOwnWritten", argMapping: "marker: marker")
+    outboxServiceOwnThenThrow(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeOwnThenThrow"
+        }, transactionControl: SERVICE)
+        @outbox(event: "MarkerOwnThrown", argMapping: "marker: marker")
+        @outbox(on: ERROR, event: "MarkerOwnFailed", argMapping: "marker: marker")
     outboxFilmBlurb(filmId: Int!): FilmBlurbHolder
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService",
@@ -6592,6 +6608,23 @@ type Mutation {
             className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
             method: "writeADeferredOrphan"
         })
+    # transactionControl: SERVICE: the service owns its transactions, so what it commits survives
+    # the field's failure, and graphitron rolls nothing back.
+    scopeServiceOwnThenThrow(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeOwnThenThrow"
+        }, transactionControl: SERVICE)
+    scopeServiceAutocommitThenThrow(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeTwiceThenThrow"
+        }, transactionControl: SERVICE)
+    scopeServiceOwnSucceeds(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "nestedScopeForWarning"
+        }, transactionControl: SERVICE)
     scopeNoDatabase(marker: String!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",

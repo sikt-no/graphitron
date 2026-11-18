@@ -21,6 +21,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
@@ -118,6 +121,8 @@ public final class ServiceEmission {
     private final Map<String, PolymorphicLiftQuery.Row> polymorphic;
     /** The services whose outcome claims validation, by coordinate. */
     private final Set<String> validating;
+    /** The services that own their transactions ({@code transactionControl: SERVICE}), by coordinate. */
+    private final Set<String> serviceControlled;
     /** The lifting occurrences whose rows a column of one shared table tells apart, by coordinate. */
     private final Map<String, DiscriminatedQuery.Row> discriminated;
     /** The services whose rows a column of one shared table tells apart, lifting or not. */
@@ -130,7 +135,8 @@ public final class ServiceEmission {
     private ServiceEmission(Set<String> services, Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
-                            Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated,
+                            Set<String> validating, Set<String> serviceControlled,
+                            Map<String, DiscriminatedQuery.Row> discriminated,
                             Set<String> toldApart,
                             Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
         this.services = services;
@@ -141,6 +147,7 @@ public final class ServiceEmission {
         this.lifts = lifts;
         this.polymorphic = polymorphic;
         this.validating = validating;
+        this.serviceControlled = serviceControlled;
         this.discriminated = discriminated;
         this.toldApart = toldApart;
         this.connections = connections;
@@ -149,7 +156,8 @@ public final class ServiceEmission {
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
-        return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+        return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Set.of(),
+            Map.of(),
             Set.of(), Map.of(), Optional.empty());
     }
 
@@ -175,6 +183,7 @@ public final class ServiceEmission {
             lifts,
             byCoordinate(PolymorphicLiftQuery.read(store), PolymorphicLiftQuery.Row::coordinate),
             validating(store),
+            serviceControlled(store),
             DiscriminatedQuery.read(store, targets),
             toldApart(store),
             ConnectionQuery.read(store),
@@ -209,6 +218,26 @@ public final class ServiceEmission {
                 pt.RECOGNIZED_BY.eq("DISCRIMINATOR"))
             .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
             .fetch(p.COORDINATE));
+    }
+
+    /**
+     * The services that own their transactions: the {@code @service} a call came from says
+     * {@code transactionControl: SERVICE}. The store refuses one outside a mutation field, so each is
+     * a top-level mutation field's.
+     */
+    private static Set<String> serviceControlled(StoreHandle store) {
+        var c = GRAPHITRON_OCCURRENCE_CALL;
+        var da = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var se = GRAPHITRON_AST_SERVICE_ENTRY;
+        return Set.copyOf(store.dsl().select(c.COORDINATE)
+            .from(c)
+            .join(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.COORDINATE.eq(c.APPLICATION_COORDINATE),
+                da.DIRECTIVE_NAME.eq(c.APPLICATION_DIRECTIVE), da.ORDINAL.eq(c.APPLICATION_ORDINAL))
+            .join(se).on(se.GRAPH_NAME.eq(da.GRAPH_NAME), se.SOURCE_NAME.eq(da.SOURCE_NAME),
+                se.SOURCE_LINE.eq(da.SOURCE_LINE), se.SOURCE_COLUMN.eq(da.SOURCE_COLUMN))
+            .where(c.GRAPH_NAME.eq(store.graphName()), c.CALL_KIND.eq("SERVICE"),
+                se.TRANSACTION_CONTROL.eq("SERVICE"))
+            .fetch(c.COORDINATE));
     }
 
     /**
@@ -400,7 +429,8 @@ public final class ServiceEmission {
         }
         if (writesSuccess) {
             framed = fieldName + "Written";
-            written.addAll(written(outbox.get(), emitted.body(), framed, runtime.fetchersClass(), validates));
+            written.addAll(written(outbox.get(), emitted.body(), framed, runtime.fetchersClass(), validates,
+                serviceControlled.contains(coordinate)));
         }
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
             framed, runtime.frame(),
@@ -412,6 +442,13 @@ public final class ServiceEmission {
             var o = outbox.get();
             frame = prepended(frame, OutboxEmitter.registration(o.row(), o.ownedConnections()));
             written.addAll(OutboxEmitter.renderFailed(o.row(), o.outputPackage(), o.runtime()));
+        }
+        if (serviceControlled.contains(coordinate)) {
+            // Marked ahead of everything else, the failure registration included, so the field opens
+            // no transaction on any connection it acquires.
+            frame = prepended(frame, CodeBlock.builder()
+                .addStatement("$T.markFieldServiceControlled(env)", runtime.routing().ownedConnections())
+                .build());
         }
         var all = new ArrayList<MethodSpec>();
         all.add(frame);
@@ -426,36 +463,76 @@ public final class ServiceEmission {
      * The owned transaction an {@code @outbox} field's body runs in, and the companion writing its
      * messages on it from the value the body answers: the success's value where the body answers an
      * outcome, and nothing where it answers a failure, since then the service was never called.
+     *
+     * <p>A service that owns its transactions shares none with its messages: it runs on the
+     * connection as it is, and its messages follow the field's outcome, handed to the connection
+     * carrier to write once the field settled succeeded, in a transaction of their own. Where no
+     * carrier takes them (the escape hatch) they are written at once, in an owned transaction.
      */
     private static List<MethodSpec> written(Outbox outbox, MethodSpec body, String name, ClassName host,
-                                            boolean validates) {
+                                            boolean validates, boolean serviceControlled) {
         TypeName answered = body.returnType();
         TypeName value = validates ? ((ParameterizedTypeName) answered).typeArguments().getFirst() : answered;
         var companion = OutboxEmitter.renderService(outbox.row(), value, outbox.outputPackage(), outbox.runtime());
         var dsl = ClassName.get("org.jooq.impl", "DSL");
-        var lambda = CodeBlock.builder()
-            .add("return $L{\n", OwnedScope.transactionResult(outbox.provider(), "dsl")).indent()
-            .addStatement("$T answered = $T.$L(env, $T.using(tx))", answered, host, body.name(), dsl);
+        var lambda = CodeBlock.builder();
+        if (serviceControlled) {
+            lambda.addStatement("$T answered = $T.$L(env, dsl)", answered, host, body.name());
+        } else {
+            lambda.add("return $L{\n", OwnedScope.transactionResult(outbox.provider(), "dsl")).indent()
+                .addStatement("$T answered = $T.$L(env, $T.using(tx))", answered, host, body.name(), dsl);
+        }
+        String written = validates ? "success.value()" : "answered";
         if (validates) {
             var success = ((ParameterizedTypeName) answered).rawType().nestedClass("Success");
-            lambda.beginControlFlow("if (answered instanceof $T<$T> success)", success, value.box())
-                .add(OutboxEmitter.call(outbox.row(), "tx", "success.value()"))
-                .endControlFlow();
-        } else {
-            lambda.add(OutboxEmitter.call(outbox.row(), "tx", "answered"));
+            lambda.beginControlFlow("if (answered instanceof $T<$T> success)", success, value.box());
         }
-        lambda.addStatement("return answered").unindent().add("});\n");
+        lambda.add(serviceControlled ? afterSettle(outbox, written) : OutboxEmitter.call(outbox.row(), "tx", written));
+        if (validates) {
+            lambda.endControlFlow();
+        }
+        lambda.addStatement("return answered");
+        if (!serviceControlled) {
+            lambda.unindent().add("});\n");
+        }
         var wrapper = MethodSpec.methodBuilder(name)
             .addModifiers(javax.lang.model.element.Modifier.STATIC)
             .returns(answered)
             .addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "env")
             .addParameter(ClassName.get("org.jooq", "DSLContext"), "dsl")
             .addException(Exception.class)
-            .addJavadoc("Runs {@code $L} and writes its {@code @outbox} messages in one owned transaction.\n",
+            .addJavadoc(serviceControlled
+                ? "Runs {@code $L} on the connection as it is, its service owning its transactions, and has\n"
+                    + "its {@code @outbox} messages written once the field settled succeeded.\n"
+                : "Runs {@code $L} and writes its {@code @outbox} messages in one owned transaction.\n",
                 body.name())
             .addCode(lambda.build())
             .build();
         return List.of(wrapper, companion);
+    }
+
+    /**
+     * A service-controlled field's success messages: handed to the connection carrier, which writes
+     * them when the field settles succeeded, or written now, in an owned transaction, where no
+     * carrier takes them.
+     */
+    private static CodeBlock afterSettle(Outbox outbox, String written) {
+        var events = CodeBlock.join(outbox.row().successMessages().stream()
+            .map(m -> CodeBlock.of("$S", m.event())).toList(), ", ");
+        var write = OutboxEmitter.call(outbox.row(), "tx", written);
+        return CodeBlock.builder()
+            .add("if (!$T.onFieldSuccess(env, $T.of($L), (settled, claimed) -> $L{\n",
+                outbox.ownedConnections(), List.class, events,
+                OwnedScope.transactionResult(outbox.provider(), "settled")).indent()
+            .add(write)
+            .addStatement("return null")
+            .unindent().add("}))) {\n").indent()
+            .add("$L{\n", OwnedScope.transactionResult(outbox.provider(), "dsl")).indent()
+            .add(write)
+            .addStatement("return null")
+            .unindent().add("});\n")
+            .unindent().add("}\n")
+            .build();
     }
 
     /** {@code method} with {@code first} ahead of its body. */

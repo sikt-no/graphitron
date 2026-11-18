@@ -109,6 +109,11 @@ final class MutationFieldScopeEmitter {
                 .initializer("new $T<>()", LINKED_HASH_MAP)
                 .build())
             .addField(FieldSpec.builder(boolean.class, "settled", Modifier.PRIVATE).build())
+            .addField(FieldSpec.builder(boolean.class, "serviceControlled", Modifier.PRIVATE, Modifier.VOLATILE)
+                .addJavadoc("Whether the field's {@code @service} owns its transactions\n"
+                    + "({@code transactionControl: SERVICE}): the field then opens no scope, so every\n"
+                    + "acquisition hands out the connection in autocommit and settle has nothing to end.\n")
+                .build())
             .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, ClassName.get(Throwable.class)), "handled",
                     Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("$T.synchronizedList(new $T<>())", ClassName.get("java.util", "Collections"), ARRAY_LIST)
@@ -131,6 +136,14 @@ final class MutationFieldScopeEmitter {
                 .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, ClassName.get(String.class)),
                         "rollbackEvents", Modifier.PRIVATE)
                     .addJavadoc("The events {@link #onRollback} writes, named when they cannot be written.\n")
+                    .build())
+                .addField(FieldSpec.builder(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "onSuccess", Modifier.PRIVATE)
+                    .addJavadoc("What runs after a field whose service owns its transactions settled succeeded, or\n"
+                        + "{@code null}; guarded by this object's monitor.\n")
+                    .build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, ClassName.get(String.class)),
+                        "successEvents", Modifier.PRIVATE)
+                    .addJavadoc("The events {@link #onSuccess} writes, named when they cannot be written.\n")
                     .build());
         }
         return builder
@@ -312,7 +325,23 @@ final class MutationFieldScopeEmitter {
             .addStatement("first = true")
             .endControlFlow()
             .endControlFlow()
-            .beginControlFlow("if (first)")
+            .beginControlFlow("if (first && field.serviceControlled)")
+            .addComment("The field's service owns its transactions: the key is recorded, so settle knows the")
+            .addComment("field's own connection for its messages, and no scope opens on it.")
+            .beginControlFlow("try")
+            .beginControlFlow("if (commitPolicy == $T.ROLLBACK_ONLY && entry.pinned.connection().getAutoCommit())",
+                provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME))
+            .addComment("Dev mode discards the operation: the operation transaction starts here even when no")
+            .addComment("field opened it, so a write the service makes outside a transaction of its own is")
+            .addComment("discarded with the rest, and a transaction it opens is a savepoint inside it.")
+            .addStatement("entry.pinned.connection().setAutoCommit(false)")
+            .endControlFlow()
+            .addStatement("opening.done.complete(null)")
+            .nextControlFlow("catch ($T | $T e)", SQL_EXCEPTION, RuntimeException.class)
+            .addStatement("opening.done.completeExceptionally(e)")
+            .addStatement("throw e")
+            .endControlFlow()
+            .nextControlFlow("else if (first)")
             .beginControlFlow("try")
             .addStatement("$T opened = entry.provider.open()", scope)
             .beginControlFlow("synchronized (field)")
@@ -340,7 +369,9 @@ final class MutationFieldScopeEmitter {
                 + "key is reserved under the field's monitor and opened outside it, so a stalled open\n"
                 + "never blocks another worker or the settle; any other acquirer of the key waits until\n"
                 + "the open has finished. A failed open propagates to every acquirer, which fails the\n"
-                + "field; an acquisition after the field settled is refused.\n")
+                + "field; an acquisition after the field settled is refused. A field whose service owns\n"
+                + "its transactions records the key and opens nothing, handing out the connection in\n"
+                + "autocommit.\n")
             .build();
     }
 
@@ -392,6 +423,8 @@ final class MutationFieldScopeEmitter {
         if (failureMessages) {
             builder.addStatement("$T write", self.nestedClass(FIELD_ROLLBACK_CLASS_NAME))
                 .addStatement("$T<$T> events", LIST, String.class)
+                .addStatement("$T success", self.nestedClass(FIELD_ROLLBACK_CLASS_NAME))
+                .addStatement("$T<$T> successEvents", LIST, String.class)
                 .addStatement("$T own", optionalKey);
         }
         builder.beginControlFlow("synchronized (field)")
@@ -401,6 +434,8 @@ final class MutationFieldScopeEmitter {
             builder.addComment("The field's own connection is the first it opened: its fetcher acquires it first.")
                 .addStatement("write = field.onRollback")
                 .addStatement("events = field.rollbackEvents")
+                .addStatement("success = field.serviceControlled ? field.onSuccess : null")
+                .addStatement("successEvents = field.successEvents")
                 .addStatement("own = field.opened.isEmpty() ? null : field.opened.keySet().iterator().next()");
         }
         builder
@@ -578,6 +613,11 @@ final class MutationFieldScopeEmitter {
                 .addComment("The field's transaction rolled back: its failure messages are written now, on the")
                 .addComment("connection what happened to its own leaves, or not at all and logged.")
                 .addStatement("afterRollback(field, write, events, own, ownRollbackFailed, ownLost)")
+                .endControlFlow()
+                .beginControlFlow("if (!rollBack && success != null)")
+                .addComment("A field whose service owns its transactions succeeded: its success messages follow the")
+                .addComment("field's outcome, written now in a transaction of their own on its connection.")
+                .addStatement("afterRollback(field, success, successEvents, own, false, $T.of())", LIST)
                 .endControlFlow();
         }
         return builder
@@ -793,6 +833,48 @@ final class MutationFieldScopeEmitter {
             .build();
     }
 
+    /** {@code public static void markFieldServiceControlled(DataFetchingEnvironment env)}. */
+    static MethodSpec markFieldServiceControlled(ClassName self) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        return MethodSpec.methodBuilder("markFieldServiceControlled")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("$T field = runningField(env)", fieldScope)
+            .beginControlFlow("if (field == null)")
+            .addStatement("return")
+            .endControlFlow()
+            .beginControlFlow("synchronized (field)")
+            .beginControlFlow("if (!field.opened.isEmpty())")
+            .addStatement("throw new $T($S + field.path + $S)", IllegalStateException.class,
+                "Mutation field ", " already opened its transaction; its service cannot own one")
+            .endControlFlow()
+            .addStatement("field.serviceControlled = true")
+            .endControlFlow()
+            .addJavadoc("Hands the running top-level mutation field's transactions to its {@code @service}\n"
+                + "({@code transactionControl: SERVICE}): from here on the field opens no scope, so the\n"
+                + "service runs on the connection in autocommit and a transaction it opens is its own,\n"
+                + "committing as it leaves it. The field's fetcher calls this before anything acquires a\n"
+                + "connection. Lenient as {@link #markFieldFailed} is.\n"
+                + "@param env the field's environment, or {@code null}\n"
+                + "@throws IllegalStateException when the field already opened its transaction\n")
+            .build();
+    }
+
+    /** {@code public static boolean isServiceControlled(DataFetchingEnvironment env)}. */
+    static MethodSpec isServiceControlled(ClassName self) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        return MethodSpec.methodBuilder("isServiceControlled")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("$T field = runningField(env)", fieldScope)
+            .addStatement("return field != null && field.serviceControlled")
+            .addJavadoc("Whether {@code env} is at or under a running top-level mutation field whose\n"
+                + "{@code @service} owns its transactions, so its failure rolled nothing back.\n"
+                + "@param env the field's environment, or {@code null}\n")
+            .build();
+    }
+
     /**
      * {@code private static FieldScope runningField(DataFetchingEnvironment env)}: the running
      * top-level mutation field {@code env} is at or under, or {@code null}.
@@ -868,6 +950,44 @@ final class MutationFieldScopeEmitter {
                 + "@param env the field's environment\n"
                 + "@param events the events {@code write} writes, named in the log when they cannot be\n"
                 + "@param write the field's failure messages\n")
+            .build();
+    }
+
+    /**
+     * {@code public static void onFieldSuccess(DataFetchingEnvironment env, List<String> events,
+     * FieldRollback write)}: the success messages of a field whose service owns its transactions.
+     */
+    static MethodSpec onFieldSuccess(ClassName self) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        var stringList = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
+        return MethodSpec.methodBuilder("onFieldSuccess")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(stringList, "events")
+            .addParameter(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "write")
+            .addStatement("$T field = runningField(env)", fieldScope)
+            .beginControlFlow("if (field == null || !field.serviceControlled)")
+            .addStatement("return false")
+            .endControlFlow()
+            .beginControlFlow("synchronized (field)")
+            .beginControlFlow("if (field.onSuccess == null)")
+            .addStatement("field.onSuccess = write")
+            .addStatement("field.successEvents = $T.copyOf(events)", LIST)
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return true")
+            .addJavadoc("Registers what a running top-level mutation field whose {@code @service} owns its\n"
+                + "transactions writes once it settled succeeded, its {@code @outbox} success messages. They\n"
+                + "follow the field's outcome and not what the service committed: the carrier runs\n"
+                + "{@code write} when the field settles succeeded, in a transaction of its own on the field's\n"
+                + "connection, so a process that stops between the service's commit and the write loses\n"
+                + "them. The fetcher calls this after its service returned, and writes the messages itself\n"
+                + "where nothing was registered: without a carrier (the escape hatch) there is no settle.\n"
+                + "@param env the field's environment\n"
+                + "@param events the events {@code write} writes, named in the log when they cannot be\n"
+                + "@param write the field's success messages\n"
+                + "@return whether the carrier took them, {@code false} where no such field is running\n")
             .build();
     }
 

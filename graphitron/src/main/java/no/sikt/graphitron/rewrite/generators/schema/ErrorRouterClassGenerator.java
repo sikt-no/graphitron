@@ -148,6 +148,14 @@ public final class ErrorRouterClassGenerator {
     }
 
     /**
+     * What a failed field's message starts with when its {@code @service} owned its transactions
+     * ({@code transactionControl: SERVICE}): graphitron rolled nothing back, so the client learns that
+     * what the service committed stands.
+     */
+    static final String SERVICE_FAILED_PREFIX =
+        "The service failed; graphitron rolled nothing back, so what it committed stands. ";
+
+    /**
      * The emitted {@code OwnedConnections} carrier, whose {@code isRequestRejection} predicate the
      * router asks so that it never names {@code RequestRejectedException} itself.
      */
@@ -201,7 +209,7 @@ public final class ErrorRouterClassGenerator {
                 + "privacy property the rewrite preserves at the fetcher catch site (see\n"
                 + "{@code error-handling-parity.md} §3 \"No top-level handler\").\n",
                 DATA_FETCHER_RESULT)
-            .addCode(redactBody(fetcherErrorResponseClass(outputPackage)))
+            .addCode(redactBody(fetcherErrorResponseClass(outputPackage), ownedConnectionsClass(outputPackage)))
             .build();
 
         var fetcherErrorLog = fetcherErrorLogClass(outputPackage);
@@ -1249,12 +1257,17 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    private static CodeBlock redactBody(ClassName fetcherErrorResponse) {
+    private static CodeBlock redactBody(ClassName fetcherErrorResponse, ClassName ownedConnections) {
         return CodeBlock.builder()
             .addStatement("$T reference = $L(thrown, env, $S)", STRING_CN, REPORT_UNMATCHED, UNMATCHED_IN_FETCHER)
             .addStatement("$T message = answer(configured(env, $T.class),"
                 + " response -> response.unmatchedMessage(thrown, reference, env), () -> $S + reference)",
                 STRING_CN, fetcherErrorResponse, "reference = ")
+            .add("// A field whose service owns its transactions rolled nothing back: what the service\n")
+            .add("// committed before it failed stands, and the client is told so.\n")
+            .beginControlFlow("if ($T.isServiceControlled(env))", ownedConnections)
+            .addStatement("message = $S + message", SERVICE_FAILED_PREFIX)
+            .endControlFlow()
             .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
             .add("    .data(null)\n")
             .add("    .error($T.newError(env)\n", GRAPHQL_ERROR_BUILDER)
