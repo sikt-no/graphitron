@@ -182,15 +182,6 @@ public record TenantBindingIndex(
                 + " class-, record-, or nesting-backed type, where the fanned"
                 + " fetcher boundary is deferred in v1. Move the field to a root or"
                 + " @table-backed parent, or remove the directive."),
-        new TenancyMarker(BuildContext.DIR_GLOBAL_DATA, false,
-            coordinate -> "'" + coordinate + "' declares @globalData, but this build configures no"
-                + " <tenantColumn>: every field already runs on the one database. Remove the"
-                + " directive.",
-            coordinate -> "'" + coordinate + "' declares @globalData, but the coordinate never"
-                + " reached the tenant-binding classification: either the field failed"
-                + " classification on its own (see its error), or it is an interface field or a"
-                + " field of a nesting type. @globalData is supported on root @service fields"
-                + " only; remove the directive."),
         // Dropped: no ladder records a verdict for it, so every application is rejected, in any
         // build, by the same text.
         new TenancyMarker(BuildContext.DIR_DEFAULT_TENANT, true,
@@ -436,7 +427,7 @@ public record TenantBindingIndex(
         /**
          * The classification-rejected edges both ancestor folds count as handing a tenant down,
          * computed once in {@link #run} beside {@link #countedSites}: an in-domain
-         * {@link #classificationRejected} edge that is not {@code @globalData}-marked and whose
+         * {@link #classificationRejected} edge whose
          * {@link #sdlReachesTenantTable SDL reach} holds a tenant-scoped table. The edge-level
          * sibling of {@link #handsDownAsIfFixed}: a rejected field has no site, so no reach,
          * reading or offered fix to argue from, but its SDL return type still answers whether its
@@ -605,8 +596,7 @@ public record TenantBindingIndex(
                 }
             }
             for (FieldCoordinates coord : classificationRejected) {
-                if (edgeTargets.containsKey(coord) && !globalMarked(coord)
-                        && sdlReachesTenantTable(coord)) {
+                if (edgeTargets.containsKey(coord) && sdlReachesTenantTable(coord)) {
                     countedRejectedEdges.add(coord);
                 }
             }
@@ -834,30 +824,16 @@ public record TenantBindingIndex(
             String coordinate = coord.getTypeName() + "." + coord.getFieldName();
             // A tenancy marker routes through its own ladder ahead of everything below, so a
             // marked field always gets a marker-specific verdict or rejection, never the generic
-            // cross-scope or noTenantBinding message. The ladders serve flat sites only: a nesting
-            // type's field is deferred for both markers, so a nested site carrying one gets no arm
+            // cross-scope or noTenantBinding message. The ladder serves flat sites only: a nesting
+            // type's field is deferred for the marker, so a nested site carrying it gets no arm
             // and records no verdict, and the unreached-marker sweep rejects it.
             boolean fanMarked = fanMarked(coord);
-            boolean globalMarked = globalMarked(coord);
-            if (site.nested() && (fanMarked || globalMarked)) {
+            if (site.nested() && fanMarked) {
                 return new Verdict.Rejected(List.of());
-            }
-            if (fanMarked && globalMarked) {
-                recordMarkerVerdict(BuildContext.DIR_TENANT_FAN_OUT, coordinate);
-                recordMarkerVerdict(BuildContext.DIR_GLOBAL_DATA, coordinate);
-                return Verdict.rejected(markerRejection(
-                    List.of(BuildContext.DIR_GLOBAL_DATA, BuildContext.DIR_TENANT_FAN_OUT), coordinate,
-                    "'" + coordinate + "' combines @globalData with @tenantFanOut: one says the"
-                        + " field's data is global and runs on the default source, the other unions"
-                        + " it across every tenant. Remove one of the directives."));
             }
             if (fanMarked) {
                 recordMarkerVerdict(BuildContext.DIR_TENANT_FAN_OUT, coordinate);
                 return fanOutArmOf(site);
-            }
-            if (globalMarked) {
-                recordMarkerVerdict(BuildContext.DIR_GLOBAL_DATA, coordinate);
-                return globalDataArmOf(site);
             }
             // Every table the field's own SQL touches, not just a Record-shaped return target:
             // multi-table polymorphic fields hit their participant tables and pivot fields their
@@ -958,7 +934,7 @@ public record TenantBindingIndex(
             }
             if (connectionService) {
                 // The service fix, not the generic one: whatever the reach, what routes the call
-                // is a tenant in its arguments, or the author's statement that its data is global.
+                // is a tenant in its arguments, or taking no connection.
                 return Verdict.rejected(new ValidationError(coordinate,
                     Rejection.unroutedServiceCall(coordinate, scopes.columnName(), List.of(),
                         direct.evidence()),
@@ -1058,8 +1034,9 @@ public record TenantBindingIndex(
          * {@link #siteEstablishesContext} and {@link #siteDivinesTenant}, whatever its own verdict:
          * the field carries neither tenancy marker, its own statement {@link #needsTenant needs a
          * tenant}, that statement does not span tenant-scoped and global tables, its reading is not
-         * {@link Reading.Guaranteed} (which both folds count on its own), and the
-         * {@code @globalData} ladder would not accept the marker on it ({@link #acceptsGlobalData}).
+         * {@link Reading.Guaranteed} (which both folds count on its own), and it is not a root
+         * service that would run on the default source by taking no connection
+         * ({@link #runsOnDefaultSourceWithoutConnection}).
          * {@link #run} computes the answer once per site into {@link #countedSites}, which both
          * folds and {@link #checkedArmOf} read.
          *
@@ -1077,10 +1054,9 @@ public record TenantBindingIndex(
          * <ul>
          *   <li>A cross-scope statement offers no tenant fix at all; restructuring the field may
          *   leave it global.</li>
-         *   <li>{@code @globalData} hands nothing down: a root connection service that reaches no
+         *   <li>Taking no connection hands nothing down: a root connection service that reaches no
          *   table and names no tenant is offered it, and after taking it its subtree really has no
-         *   tenant, so its children's errors are real now. Asked of the ladder rather than of the
-         *   message, which also offers the marker where the ladder refuses it.</li>
+         *   tenant, so its children's errors are real now.</li>
          *   <li>A marked field takes its verdict from the marker's ladder, and a field that needs
          *   no tenant runs on the default source; neither subtree gets one.</li>
          * </ul>
@@ -1098,7 +1074,7 @@ public record TenantBindingIndex(
          * {@link #checkedArmOf} throws if a counted site ends in a fourth verdict.
          */
         private boolean handsDownAsIfFixed(Site site) {
-            if (fanMarked(site.coord()) || globalMarked(site.coord())) {
+            if (fanMarked(site.coord())) {
                 return false;
             }
             List<TableRef> reach = reachedTables(site.field());
@@ -1107,16 +1083,23 @@ public record TenantBindingIndex(
             return needsTenant(site, reach)
                 && !crossScope
                 && !(directBinding(site).reading() instanceof Reading.Guaranteed)
-                && !acceptsGlobalData(site);
+                && !runsOnDefaultSourceWithoutConnection(site);
         }
 
         /**
-         * Whether the {@code @globalData} ladder would accept the marker on this field, asked of
-         * the ladder itself, as {@link #acceptsFanOut} asks its own. A nesting type's field is
-         * turned away from both marker ladders before either runs, so it never qualifies.
+         * Whether a field is a root {@code @service} handed a connection that reaches no table and
+         * whose arguments name no tenant and carry no tenant-scoped value: the one shape whose
+         * rejection offers it to take no connection, after which it runs on the default source and
+         * hands no tenant down. A nesting type's field never qualifies.
          */
-        private boolean acceptsGlobalData(Site site) {
-            return !site.nested() && globalDataArmOf(site) instanceof Verdict.Arm;
+        private boolean runsOnDefaultSourceWithoutConnection(Site site) {
+            if (site.nested() || !roots.contains(site.coord().getTypeName())
+                    || !(site.field() instanceof ServiceField) || !bindsConnection(site.field())
+                    || !reachedTables(site.field()).isEmpty()) {
+                return false;
+            }
+            var direct = directBinding(site);
+            return direct.reading() instanceof Reading.Unbound && direct.evidence().isEmpty();
         }
 
         /**
@@ -1158,7 +1141,7 @@ public record TenantBindingIndex(
         private TenantBinding.ParentRowBound parentRowBinding(Site site) {
             if (!(site.field() instanceof ChildField.BatchedTableField field)
                     || field.sourceShape() != SourceShape.Table
-                    || fanMarked(site.coord()) || globalMarked(site.coord())) {
+                    || fanMarked(site.coord())) {
                 return null;
             }
             String column = rowTenantColumn(site.coord().getTypeName() + "." + site.coord().getFieldName());
@@ -1203,82 +1186,6 @@ public record TenantBindingIndex(
                     + field.sourceKey().columns() + "; got " + slot);
             }
             return new TenantBinding.ParentRowBound(fk.parentKeyOwnerTable(), slot);
-        }
-
-        // ===== The @globalData arm =====
-
-        /** Whether the coordinate's SDL field definition carries the {@code @globalData} marker. */
-        private boolean globalMarked(FieldCoordinates coord) {
-            GraphQLFieldDefinition def = fieldDefinition(coord);
-            return def != null && def.hasAppliedDirective(BuildContext.DIR_GLOBAL_DATA);
-        }
-
-        /**
-         * The {@code @globalData} rejection ladder, closed and validate-time: a marked field
-         * either survives every rung and classifies {@link TenantBinding.Untenanted.DefaultSource}, or rejects
-         * with a marker-specific message; the first rung that applies wins. The marker is
-         * accepted exactly where an unrouted connection-binding root service would otherwise
-         * reject. The reach and argument rungs refuse it wherever the build can see tenant data,
-         * so what it vouches for is only the service's own SQL, the one thing the build cannot
-         * see. Computes reach itself, so a cross-scope field gets a rung's text rather than the
-         * generic cross-scope rejection.
-         */
-        private Verdict globalDataArmOf(Site site) {
-            FieldCoordinates coord = site.coord();
-            OutputField out = site.field();
-            String coordinate = coord.getTypeName() + "." + coord.getFieldName();
-            String declares = "'" + coordinate + "' declares @globalData, but ";
-            if (!roots.contains(coord.getTypeName())) {
-                return rejectGlobalData(coordinate, declares + "@globalData is supported on root"
-                    + " fields only; a child service runs on its parent's tenant. Remove the"
-                    + " directive.");
-            }
-            if (!(out instanceof ServiceField)) {
-                return rejectGlobalData(coordinate, declares + "only a @service field's SQL is"
-                    + " opaque to the build; graphitron decides this field's source from the tables"
-                    + " it reads. Remove the directive.");
-            }
-            if (!bindsConnection(out)) {
-                return rejectGlobalData(coordinate, declares + "the service is handed no"
-                    + " connection, so there is nothing to route; remove the directive.");
-            }
-            List<TableRef> reach = reachedTables(out);
-            String returned = GraphQLTypeUtil.unwrapAll(fieldDefinition(coord).getType()).getName();
-            var tenantTable = reach.stream().filter(this::tenantScoped).findFirst();
-            if (tenantTable.isPresent()) {
-                return rejectGlobalData(coordinate, declares + "the field returns tenant-scoped"
-                    + " @table type '" + returned + "' (table '" + tenantTable.get().tableName()
-                    + "'); its rows cannot be re-read on the default source.");
-            }
-            if (!reach.isEmpty()) {
-                return rejectGlobalData(coordinate, declares + "the field returns global @table"
-                    + " type '" + returned + "', which already runs on the default source; the"
-                    + " structure decides this field, remove the directive.");
-            }
-            var direct = directBinding(site);
-            if (!(direct.reading() instanceof Reading.Unbound)) {
-                String named = direct.slots().isEmpty()
-                    ? "tenant column '" + scopes.columnName() + "', through a shape that cannot"
-                        + " route the call"
-                    : direct.slots().stream().map(TenantBinding.BoundSlot::slotName).distinct()
-                        .collect(java.util.stream.Collectors.joining(", "));
-                return rejectGlobalData(coordinate, declares + "the arguments name a tenant ("
-                    + named + "), which contradicts @globalData. Remove the directive.");
-            }
-            if (!direct.evidence().isEmpty()) {
-                return rejectGlobalData(coordinate, declares + "the arguments carry tenant-scoped"
-                    + " values (" + String.join(", ", direct.evidence()) + "), so the service"
-                    + " works on tenant data. Take the node table's jOOQ record with"
-                    + " @nodeId(typeName:), or bind a jOOQ record field to '" + scopes.columnName()
-                    + "', or mark the scalar argument or input field that holds the tenant with"
-                    + " @tenant, and remove the directive.");
-            }
-            return new Verdict.Arm(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        }
-
-        private static Verdict rejectGlobalData(String coordinate, String reason) {
-            return Verdict.rejected(
-                markerRejection(List.of(BuildContext.DIR_GLOBAL_DATA), coordinate, reason));
         }
 
         // ===== The @tenantFanOut arm =====
@@ -1654,8 +1561,8 @@ public record TenantBindingIndex(
          * <p>{@code evidence} names the argument values typed by a tenant-scoped table that bound
          * no slot (a {@code FilmRecord} bound only to {@code title}, a decode of a tenant-scoped
          * node type whose key misses the tenant column). It routes nothing; an unrouted
-         * connection-binding service's rejection names it, and the {@code @globalData} ladder
-         * refuses the marker over it.
+         * connection-binding service's rejection names it, and a service carrying it is not
+         * offered to take no connection.
          */
         private record DirectBinding(List<TenantBinding.BoundSlot> slots, List<String> declines,
                                      List<String> evidence) {

@@ -45,9 +45,9 @@ import static org.jooq.impl.DSL.val;
  * <p>Seventeen directive names reach this site and six of them get a relation here.
  * {@code @service}'s is its transaction control alone, the code it names being the code-reference
  * decode's. {@code @externalField} and {@code @pivot} get none, nothing reading a decode of them:
- * each application and its arguments stand in the {@code graphql_ast_} relations. {@code @splitQuery}, {@code @tenantFanOut} and
- * {@code @globalData} declare no argument, and {@code @multitableReference} is rejected before anything reads its one argument, so a row for
- * any of the four would carry its key and nothing else, which is what the applied-directive row
+ * each application and its arguments stand in the {@code graphql_ast_} relations. {@code @splitQuery} and {@code @tenantFanOut}
+ * declare no argument, and {@code @multitableReference} is rejected before anything reads its one argument, so a row for
+ * any of the three would carry its key and nothing else, which is what the applied-directive row
  * already says. {@code @reference} and {@code @referenceFor} are the path family's, written for
  * every site at once by {@link GraphitronReferencePathEntries}, {@code @field} and
  * {@code @nodeId} by {@link GraphitronBindingEntries}, and {@code @defaultOrder} by

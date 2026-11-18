@@ -43,8 +43,6 @@ The build rejects the marker where it decides nothing, naming each field that re
 * on a service whose result is a global `@table` type, which runs on the default source;
 * on a value whose type is not the tenant key's.
 
-A field marked xref:globalData.adoc[`@globalData`] whose arguments carry a `@tenant` value is rejected too: the value names a tenant, which contradicts the statement that the data is global.
-
 == `$tenant` says the same
 
 The service's `argMapping` names the same value with `$tenant: <path>`, which is the preferred form, this directive being due for removal;

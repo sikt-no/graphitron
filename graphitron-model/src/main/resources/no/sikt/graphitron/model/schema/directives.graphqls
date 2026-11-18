@@ -286,18 +286,6 @@ are queried; omitted, every tenant the request may see is.
 directive @tenantFanOut on FIELD_DEFINITION
 
 """
-Declares that a root `@service` field's service works only on global data, so it runs on the
-default source. Multi-tenant builds only (`<tenantColumn>` must be configured). Without it, a root
-service that is handed a `DSLContext` or `$session` and whose arguments name no tenant is a build
-error, because the build cannot see which tables the service's own SQL touches. Rejected at build
-time where it decides nothing or contradicts what the build can see: on non-root fields, on fields
-that are not a `@service`, on services handed no connection, on fields returning a `@table` type,
-on fields whose arguments name a tenant or carry a tenant-scoped table's record, and beside
-`@tenantFanOut`.
-"""
-directive @globalData on FIELD_DEFINITION
-
-"""
 No longer supported: every application is rejected at build time. A request names no default
 tenant, so a representation whose `@key` lacks the tenant column cannot name the tenant to fetch
 from. Remove the directive and add the tenant column to the key, or mark the alternative

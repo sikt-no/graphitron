@@ -222,16 +222,6 @@ type Query {
     endorsements(note: String! @field(name: "note")): [FilmEndorsement!]!
     # Untenanted root over the global bookmarks, whose children route on each row or answer empty.
     bookmarks(note: String! @field(name: "note")): [FilmBookmark!]!
-    # @globalData: a root service handed a connection whose arguments name no tenant. Unmarked
-    # it would be a build error; the marker states its SQL touches only global data, so it runs on
-    # the default source.
-    globalServedBy: String @globalData @service(service: {
-        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
-        method: "globalServedBy"})
-    # A @globalData producer whose payload re-projects a global row on its own coordinate.
-    globalLanguage: GlobalLanguagePayload @globalData @service(service: {
-        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
-        method: "globalLanguage"})
     node(id: ID!): Node
     nodes(ids: [ID!]!): [Node]!
 }
@@ -329,13 +319,6 @@ type RatedFilmsLanguagePayload {
 type GlobalLanguage implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
     id: ID! @nodeId
     name: String
-}
-
-# A default-source producer's payload: servedBy is the database the @globalData service ran on,
-# and language is a global read like any other, on the same empty key.
-type GlobalLanguagePayload {
-    servedBy: String
-    language: Language
 }
 
 # A polymorphic root over global participants only.

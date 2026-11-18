@@ -14,7 +14,8 @@ type Film @table(name: "film") @node {
 }
 
 # Handed film's records with no connection, under a type no table binds: the records are read as
-# handed, nothing re-reads a tenant's rows, and the call needs no tenant.
+# handed, nothing re-reads a tenant's rows, and the call needs no tenant. The same service handed a
+# connection, titlesOnConnection, is unrouted: its own SQL is opaque, and no mark says it is global.
 type FilmTitles { title: String }
 
 type Query {
@@ -40,6 +41,9 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById", argMapping: "id: id"})
   filmsMarked(filmId: Int @tenant @field(name: "film_id")): [Film!]!
+  titlesOnConnection(ids: [Int!]!): [FilmTitles!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
   filmTitles: [FilmTitles!]! @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
   filmsOnCondition(filmId: Int): [Film!]! @condition(condition: {
@@ -52,6 +56,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   code,                         coordinate,                   detail
   UNROUTED_SERVICE_CALL,        Query.filmUnrouted,
   UNROUTED_SERVICE_CALL,        Query.filmTwice,
+  UNROUTED_SERVICE_CALL,        Query.titlesOnConnection,
   TENANT_SLOTS_OPTIONAL_ONLY,   Query.filmOptional,
   TENANT_NAMED_TWICE,           Query.filmTwice,              Query.filmTwice(id:)
   TENANT_VALUE_TYPE_DISAGREES,  Query.filmMistyped,           java.lang.String where the tenant column is java.lang.Integer

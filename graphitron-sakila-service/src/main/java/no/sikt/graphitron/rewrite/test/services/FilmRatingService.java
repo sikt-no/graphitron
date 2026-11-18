@@ -87,24 +87,12 @@ public final class FilmRatingService {
         return payload(dsl, ratings.stream().map(FilmIdAndFilmRating::filmId).toList());
     }
 
-    /** A root over global data only, marked {@code @globalData}: reports the database it ran on. */
-    public static String globalServedBy(DSLContext dsl) {
-        return database(dsl);
-    }
-
     /** {@link #rateFilms} whose payload also hands back a global row, keyed on language 1. */
     public static RatedFilmsLanguagePayload rateFilmsWithLanguage(DSLContext dsl, List<FilmRating> ratings) {
         var payload = rateFilms(dsl, ratings);
         return new RatedFilmsLanguagePayload(payload.ranOn(), payload.films(), languageKey(1));
     }
 
-    /**
-     * {@link #globalServedBy} whose payload also hands back a global row, keyed on language 1: the
-     * payload of a default-source producer.
-     */
-    public static GlobalLanguagePayload globalLanguage(DSLContext dsl) {
-        return new GlobalLanguagePayload(database(dsl), languageKey(1));
-    }
 
     /**
      * A root over global data returning the language rows its connection holds; graphitron re-reads

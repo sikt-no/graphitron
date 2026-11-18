@@ -398,11 +398,8 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                     + " (a bean member, a parameter, or a top-level argument), or bind a jOOQ"
                     + " record field to '" + tenantColumn + "', or mark the scalar argument or"
                     + " input field that holds the tenant with @tenant.";
-                // Tenant evidence is what @globalData rejects, so the marker is suggested only
-                // where it would be accepted.
                 return evidence.isEmpty()
-                    ? fixes + " If the service works only on global data, mark the field"
-                        + " @globalData."
+                    ? fixes + " If the service works only on global data, take no connection."
                     : fixes + " Its arguments carry tenant-scoped values that bind no tenant: "
                         + String.join(", ", evidence) + ".";
             }

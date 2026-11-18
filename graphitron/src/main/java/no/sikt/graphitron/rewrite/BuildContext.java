@@ -117,7 +117,6 @@ class BuildContext {
     static final String DIR_EXTERNAL_FIELD      = "externalField";
     static final String DIR_LOOKUP_KEY          = no.sikt.graphitron.facts.LookupFactVisitor.DIR_LOOKUP_KEY;
     static final String DIR_TENANT_FAN_OUT      = no.sikt.graphitron.facts.DeliveryFactVisitor.DIR_TENANT_FAN_OUT;
-    static final String DIR_GLOBAL_DATA         = "globalData";
     static final String DIR_DEFAULT_TENANT      = "defaultTenant";
     static final String DIR_TENANT              = "tenant";
     static final String DIR_ORDER_BY            = no.sikt.graphitron.facts.OrderByFactVisitor.DIR_ORDER_BY;

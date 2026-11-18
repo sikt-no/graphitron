@@ -116,12 +116,7 @@ class TenantServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    /** A connection-bound root over global data whose payload carries a global row. */
-    public static GlobalLanguagePayload globalLanguage(DSLContext dsl) {
-        throw new UnsupportedOperationException();
-    }
-
-    /** A root handed a connection with no arguments at all, as a service over global data is. */
+    /** A root handed a connection with no arguments at all, reaching no table graphitron reads. */
     public static Boolean refreshLanguages(DSLContext dsl) {
         throw new UnsupportedOperationException();
     }

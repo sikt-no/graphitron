@@ -695,18 +695,6 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(DEFAULT_OPENED.get()).isEqualTo(1);
     }
 
-    @Test
-    void globalDataService_runsOnTheDefaultSource_touchingNoTenantDatabase() {
-        var result = execute("{ globalServedBy }");
-        assertThat(result.getErrors()).isEmpty();
-        assertThat(((Map<String, Object>) result.getData()).get("globalServedBy"))
-            .as("the marked service is handed the default source's connection")
-            .isEqualTo(dsl.fetchValue(DSL.field("current_database()", String.class)));
-        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
-            .as("a @globalData service acquires only the default source")
-            .isZero();
-    }
-
     // ===== The empty key: every global read and write runs on the pool the source picks for it =====
 
     @Test
@@ -746,7 +734,7 @@ class TenantDivinedRoutingExecutionTest {
 
     @Test
     void emptyKey_servicesAndGlobalReadsShareOneConnection() {
-        var result = executeWithEmptyKeyOn("{ languages { name servedBy } globalServedBy }", byTenant.get(2),
+        var result = executeWithEmptyKeyOn("{ languages { name servedBy } }", byTenant.get(2),
             "test-user");
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         var data = (Map<String, Object>) result.getData();
@@ -754,9 +742,6 @@ class TenantDivinedRoutingExecutionTest {
             .as("the child service on a global parent runs on the empty key, as its parent does")
             .isNotEmpty()
             .allSatisfy(l -> assertThat(l.get("servedBy")).isEqualTo(SakilaDatabase.tenantName("tenant_2")));
-        assertThat(data.get("globalServedBy"))
-            .as("@globalData runs on the empty key too")
-            .isEqualTo(SakilaDatabase.tenantName("tenant_2"));
         assertThat(TENANT_2_OPENED.get()).as("one connection for the empty key").isEqualTo(1);
         assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
     }
