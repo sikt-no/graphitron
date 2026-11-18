@@ -397,10 +397,8 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     code if one fits and the reference page that states it.
   * The facets types are wired to `util.Facets`, a record per facets type (one component per facet)
     and per facet value type (`Object value`, `int count`: a facet value type is shared by columns
-    of different Java types). Rendered from a facets command row the plan produces off each faceted
-    connection's facet specs, the source the facets delegate reads too, since the store's facet
-    relations are views over views today; the command row goes when the store holds the facets
-    derivation and a store-reading emitter writes the records. The per-connection facets delegate builds the record from
+    of different Java types). Rendered from a facets command row the plan fills from the store's per-occurrence facets
+    (`ConnectionsQuery`); the command row goes when a store-reading emitter writes the records. The per-connection facets delegate builds the record from
     the helper's buckets, and its registrations arm, its schema-shape planner arm and its
     compile-graph edges leave with the connection units.
   * `ConnectionHelper.totalCount(env)` is generated wiring, not consumer API: `runtime-api.adoc`
@@ -472,53 +470,59 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     `ConnectionProducersExecutionTest` calls the generated root, batched and union producers
     directly over `scenarios/connection-producers`. The schema-free emitted-
     text tests of connection fetchers went, each named covering test recorded in the commit.
-  * **`@asFacet` works behind any connection type, and the producers' agreement is the store's**
-    `open`.
-    `@asFacet` does not need `@asConnection` (Alf, 2026-11-13): a facet on a filter of any field
-    returning a connection contributes to that connection type's facets, and using `@asFacet` hands
-    the facets shape to graphitron, which mints the facets type and the connection type's `facets`
-    field as it does for a synthesised connection, an authored one included (Alf, 2026-11-13). This
-    node absorbs R606 (Alf, 2026-11-13): the facets derivation is stored rather than left a stack of
-    views, and the emitted facets record reads it, so the classifier's per-type facets go.
-    * The carriers. A stored relation at field grain holds every field returning a connection: the
-      `@asConnection` carriers and the fields returning an authored connection type, read from the
-      transcribed SDL rather than the merged `graphitron_field` (which includes the minted set, a
-      cycle). The facets mint keys off it.
-    * The facet list. `graphitron_facet_binding` and `graphitron_connection_facet` are stored, the
-      latter at the `@asConnection` carrier's grain. What fills a connection's `totalCount` and
-      `facets` is the producing occurrence's (Alf, 2026-11-18), so the facets an occurrence surfaces,
-      from its own filter arguments, and whether it counts are stated per connection-producing
-      occurrence, for every field returning a connection, and the type contributes only the shape
-      they must fill.
-    * The agreement. Every producer of one connection type must state the same facets: facet name,
-      value type, nullability and position, what the minted type states; the filter argument and
-      the column are the producer's own and not compared (working default). The occurrence-producers
-      stage states the disagreement as a defect at the producing occurrence, flagging every producer
-      of the type, not those differing from a first one (working default). A producer with no facets
-      for a faceted type disagrees too.
-    * Authored `facets` fields. An authored connection declaring a `facets` field is refused, with
-      `@asFacet` producers (graphitron owns the shape) and without (nothing backs it; it reaches the
-      generator's facet-plan throw today) (working default). The walk's "`@asFacet` has no effect"
-      refusal becomes a store defect for a filter no connection-returning field consumes; the walk's
-      root-only refusal of a batched faceted producer (`facetMisuseReason`) becomes a store defect
-      too (working default).
-    * The generator's facet-plan throw and the batched producer's null facets go; a refused graph
-      never reaches the emitter. `ConnectionsQuery.byField`'s disagreement guard stays, as the grain
-      ruling in `fact-model.adoc` has the coarser reader fail where occurrences disagree.
-    * `asFacet.adoc` (which says `@asConnection` carriers only and that an authored connection never
-      gains a `facets` field), `connections.adoc` and `diagnostics-glossary.adoc` change.
-    * From R606, for this node's Spec: where the derived types live, a derived type being no
-      declaration anyone wrote; whether the first-occurrence-wins dedup of a duplicate facet name
-      across a carrier's filter inputs (`ConnectionPromoter.facetSpecsFor`) becomes a detection; and
-      the derived stratum's provenance, the capture-side macro domains carrying no FACET value.
-    Found by probe (2026-11-13): the store unioned differing facet sets into one facets type and
-    marked every producer of a faceted type faceted; the classifier alone refused a disagreement.
+  * What fills a connection is stated per producing occurrence, and the facet refusals are the
+    store's. `graphitron_occurrence_producer_connection` (the CONNECTION subtype of the producer
+    result, the shape pinned by its key) states the connection type each connection-producing
+    occurrence builds and whether it fills a count and facets of its own, read from the count and
+    facets producers under it, not from the type's positions; `graphitron_occurrence_producer_facet`
+    states the facets it surfaces from its own filter arguments (Alf, 2026-11-18). This node absorbs
+    R606 (Alf, 2026-11-13). `ConnectionsQuery.byField` collapses them onto the declared field,
+    failing where occurrences disagree; the facets records and the producers' facets closures read
+    it, and the generator's facet-plan throw and the batched producer's null facets went. The store
+    states `CONNECTION_FACETS_DISAGREE` (producers of one connection type surfacing different facets:
+    name, value type, nullability, position, the filter argument and column being each producer's
+    own; every producer flagged), `FACETED_CONNECTION_UNSUPPORTED` (the walk's root-only refusal),
+    `FACET_SURFACED_NOWHERE` (the walk's "@asFacet has no effect") and
+    `CONNECTION_FACETS_FIELD_DECLARED` (an authored `facets` field on a connection type no
+    `@asConnection` mints), each with a `defects/` document; a `feat!`, the declared `facets` field
+    being a new refusal. `SharedFacetedConnectionExecutionTest` calls two producers of one faceted
+    connection type with different arguments and gets different counts and buckets.
+  * **`@asFacet` behind an authored connection type** `blocked`, on emitting the schema's types and
+    their registrations from the store.
+    `@asFacet` does not need `@asConnection`, and using it hands the facets shape to graphitron,
+    which mints the facets type and the connection type's `facets` field, an authored connection
+    type included (Alf, 2026-11-13). The store can mint them, but the runtime schema-shape classes
+    (`SchemaShapePlanner`), the fetcher registrations and the facet specs (`FacetPlan`'s groupings,
+    condition fragments) are still built from the classified schema, where an authored connection's
+    structural arm has no facets; minting in the store alone would leave the type unwired, and
+    extending the classifier grows what is retiring. Shipped without it (Alf, 2026-11-18);
+    `asFacet.adoc` says authored connections do not gain facets yet. With it goes
+    `CONNECTION_FACETS_FIELD_DECLARED`'s restriction to types no `@asConnection` mints. Until then an `@asFacet` filter taken only by fields returning authored
+    connection types is `AUTHORED_CONNECTION_FACET_UNSUPPORTED`, a deferral, not
+    `FACET_SURFACED_NOWHERE` (Alf, 2026-11-18); the deferral goes with this node. Open from the former R606: where derived types
+    live, and the derived stratum's provenance; first-occurrence-wins dedup of a duplicate facet
+    name stays the walk's refusal, the store counting a facet reached before dedup.
+  * **The facet plans read the store's per-occurrence facets** `open`.
+    A producer's facet groupings and condition fragments (`LauncherCommands`' facet plan,
+    `ConditionCommands`' facet bindings, `RootLauncherRenderer.facetBindings`) are built from the
+    classifier's facet specs, held per connection type (`ConnectionSynthesisRelation.facetsAt`). Two
+    fields sharing a connection type whose facets differ only in filter argument or column are
+    therefore still refused by the walk (`ConnectionPromoter`'s `MintedShape` compares whole facet
+    specs), though the filter argument and the column are each producer's own and the store accepts
+    them: a valid schema refused, until this node. They read `graphitron_occurrence_producer_facet`
+    instead, per producing occurrence (its filter argument, and the column the binding resolves,
+    which the stored binding must carry), the condition and launcher producers taking the store;
+    then the walk's facet comparison is deleted, not relaxed: the classifier is dissolving and does
+    not grow per-field facet specs (Alf, 2026-11-18). Pinned by a scenario of three fields sharing one
+    faceted connection type with `filter:`, `where:` and a different column, called directly, each
+    leaving its own facet's filter out of its buckets and grouping by its own column.
   * **The runtime connection vocabulary goes** `open`.
     `RESULT_EXPRESSION` and `ResultShape.Connection` go, with the retirement sweep, as does the
     store answer's carriage on `LauncherRelation` and `TypeFetcherEmissionContext` where the
-    producer renderers read the store rather than `LauncherCommand` rows. The facets record is still
-    built from the classified type's facet specs while `ConnectionsQuery` reads the facets type
-    from the store; it reads the store with the facets derivation (the `@asFacet` node below).
+    producer renderers read the store rather than `LauncherCommand` rows. The facets records and the
+    producers' facets closures read the store through the plan's facets command; the facet plans'
+    groupings and condition fragments are still built from the classifier's facet specs (the next
+    node).
 
 **What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
 The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
