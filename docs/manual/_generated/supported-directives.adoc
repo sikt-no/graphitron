@@ -76,3 +76,7 @@ The following directives have argument-shape changes between legacy and rewrite.
 * + legacyKeyColumns: [String!]  (rewrite only)
 * + resolvable: Boolean = true  (rewrite only)
 
+==== `@service`
+
+* + transactionControl: TransactionControl = GRAPHITRON  (rewrite only)
+

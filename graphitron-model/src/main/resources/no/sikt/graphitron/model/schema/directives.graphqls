@@ -99,8 +99,26 @@ The signature of the method must match the inputs of the mutation or query.
 Available values are set in the plugin configuration.
 
 Context arguments must be added to the GraphQLContext at run-time.
+
+`transactionControl` says who owns the transaction a mutation field's service runs in: graphitron's
+one transaction for the field, or the service's own. It may be `SERVICE` only on a mutation field.
 """
-directive @service(service: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
+directive @service(service: ExternalCodeReference!, contextArguments: [String!], transactionControl: TransactionControl = GRAPHITRON) on FIELD_DEFINITION
+
+"""Who owns the transaction a mutation field's `@service` runs in."""
+enum TransactionControl {
+  """
+  Graphitron: the service runs in the field's one transaction, which commits when the field succeeds
+  and rolls back when it fails, and a transaction the service opens joins it.
+  """
+  GRAPHITRON
+  """
+  The service: it runs on the connection the field would use, in autocommit, so a transaction it
+  opens is its own and commits as the service leaves it. Graphitron rolls back nothing when the field
+  fails.
+  """
+  SERVICE
+}
 
 """
 The @error directive serves to map specific Java exceptions to GraphQL errors.

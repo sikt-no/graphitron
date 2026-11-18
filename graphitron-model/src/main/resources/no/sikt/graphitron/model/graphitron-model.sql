@@ -2667,6 +2667,27 @@ COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref IS 'the table argument
 COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref_name_part IS 'the table half of the same';
 
+CREATE TABLE graphitron_ast_service_entry (
+  graph_name          VARCHAR NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT     NOT NULL,
+  source_column       INT     NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  transaction_control VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_service_entry IS 'What a @service application says beyond the code it names: who owns the transaction the service runs in, as written. For example createFilm(in: FilmInput!): Film @service(service: {className: "FilmService", method: "create"}, transactionControl: SERVICE) gives one row reading SERVICE.';
+COMMENT ON COLUMN graphitron_ast_service_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_service_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_service_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_service_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry';
+COMMENT ON COLUMN graphitron_ast_service_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place';
+COMMENT ON COLUMN graphitron_ast_service_entry.transaction_control IS 'the transactionControl argument as the author spelled it, an enum token kept as its own text, or NULL where the author wrote none; the definition''s own default of GRAPHITRON stands in graphql_directive_argument.default_value_sdl rather than being filled in here';
+
 CREATE TABLE graphitron_ast_routine_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -12520,6 +12541,24 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
   JOIN graphitron_connection ce
     ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
  WHERE da.directive_name = 'mutation' AND da.ordinal = 0 AND da.source_name IS NOT NULL
+UNION ALL
+-- A @service whose service owns its transaction, at the @service, on a field that is no root
+-- mutation field: only a top-level mutation field has a transaction of its own for the service to
+-- step out of. A field under a mutation's payload is not one.
+SELECT se.graph_name, se.source_name, se.source_line, se.source_column,
+       'SERVICE_TRANSACTION_OUTSIDE_MUTATION', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_ast_service_entry se
+  -- The application's parent entry is the field definition it was written on.
+  JOIN graphql_ast_entry e
+    ON e.graph_name = se.graph_name AND e.source_name = se.source_name
+   AND e.source_line = se.source_line AND e.source_column = se.source_column
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = e.graph_name AND d.source_name = e.source_name
+   AND d.source_line = e.parent_line AND d.source_column = e.parent_column
+ WHERE se.transaction_control = 'SERVICE'
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                    WHERE ro.graph_name = d.graph_name AND ro.operation = 'MUTATION'
+                      AND ro.type_name = d.type_name)
 UNION ALL
 -- A field reading a member off what a write hands back, at the field: an insert, update, delete or
 -- @routine write hands back its keys and not an object of a class, so a field under the object type
@@ -29160,6 +29199,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A mutation field carrying @routine writes, and neither write shape has a filter or an ordering to resolve a @condition or an @orderBy against, so the generator emits nothing for one written here.'),
   ('MULTIPLE_ROUTINE_NODES', 'error', 'GRAPHITRON', 'GRAPHITRON_MULTIPLE_ROUTINE_NODES',
    'A mutation field carrying more than one @routine writes more than once, and the generator emits one write per field.'),
+  ('SERVICE_TRANSACTION_OUTSIDE_MUTATION', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_TRANSACTION_OUTSIDE_MUTATION',
+   'A @service says its service owns its transaction, with transactionControl: SERVICE, on a field that is not a field of the root mutation type, and only a top-level mutation field runs in a transaction the service could step out of: remove the argument, or move the service onto a mutation field.'),
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
    'A write re-reads its committed rows by the keys it returned, which is not a page, so the generator emits nothing for a write @asConnection rewrote.'),
   ('LIST_OVER_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_OVER_ONE_VALUE',
@@ -31027,6 +31068,10 @@ INSERT INTO meta_relation VALUES
    'What a @mutation application says: which write the field performs, over how many rows, against which table, as written.',
    'For example deleteFilm(input:): Boolean @mutation(typeName: DELETE, multiRow: true, table: "film") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The operation is kept as the token the author typed and never checked against the vocabulary the definition declares: nothing upstream has validated it, so a CHECK would turn a typo into a constraint violation, and membership is a detection over this column. The table name is split by the grammar that cuts it and nothing more; what an omitted table resolves to is a resolution over the field''s own chain and belongs where that chain is walked.'),
+  ('graphitron_ast_service_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @service application says beyond the code it names: who owns the transaction the service runs in, as written.',
+   'For example createFilm(in: FilmInput!): Film @service(service: {className: "FilmService", method: "create"}, transactionControl: SERVICE) gives one row reading SERVICE.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The code the service names is graphitron_ast_code_reference_entry''s, at the object value it was written in, and its argMapping the pair entries'', so this row carries only what neither holds. An omitted transactionControl is NULL and the definition''s default stands where the definition is captured.'),
   ('graphitron_ast_routine_entry', 'sdl-declaration-site', 'graphitron',
    'What a @routine application says: the database routine backing the field and the mapping binding its parameters, as written.',
    'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',

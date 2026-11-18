@@ -133,6 +133,7 @@ class RelationRegistrationGateTest {
             "graphitron_ast_field_condition_entry",
             "graphitron_ast_connection_entry",
             "graphitron_ast_mutation_entry",
+            "graphitron_ast_service_entry",
             "graphitron_ast_routine_entry", "graphitron_ast_outbox_entry", "graphitron_ast_issue_entry", "graphitron_ast_issue_vouched_for_entry",
             "graphitron_ast_accept_entry", "graphitron_ast_accept_vouched_for_entry", "graphitron_ast_accept_key_entry",
             // Every Java code reference a document writes, read off the vocabulary's types rather

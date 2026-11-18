@@ -1,0 +1,24 @@
+# A @service says who owns the transaction its service runs in. Each application is one row, the
+# argument as written: SERVICE where the service runs in autocommit and opens its own transactions,
+# GRAPHITRON where the author wrote the default out, and nothing where the author wrote none, the
+# definition's default of GRAPHITRON standing where the definition is captured.
+
+type Film @table(name: "film") { title: String }
+
+type Query { films: [Film] }
+
+type Mutation {
+  writeOwn(marker: String!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "writeOne"}, transactionControl: SERVICE)
+  writeInField(marker: String!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "writeOne"}, transactionControl: GRAPHITRON)
+  writeDefault(marker: String!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "writeOne"})
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_service_entry", rows: """
+  source_line, transaction_control
+  12,          SERVICE
+  14,          GRAPHITRON
+  16,
+  """)

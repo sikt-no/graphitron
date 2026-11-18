@@ -1,0 +1,36 @@
+# Only a top-level mutation field runs in a transaction of its own, so only there may a @service
+# say its service owns its transaction. transactionControl: SERVICE on a query field, or on a field
+# of a type a query or a mutation returns, draws SERVICE_TRANSACTION_OUTSIDE_MUTATION at the
+# @service. The same argument on a mutation field draws nothing, and neither does GRAPHITRON written
+# out on a query field, which is what every field gets anyway.
+
+type Film @table(name: "film") {
+  title: String
+  titleUpper: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"}, transactionControl: SERVICE)
+}
+
+type Query {
+  films: [Film]
+  readOwn(marker: String!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "queryNestedFailureIsCaught"}, transactionControl: SERVICE)
+  readInField(marker: String!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "queryNestedFailureIsCaught"}, transactionControl: GRAPHITRON)
+}
+
+type Mutation {
+  writeOwn(marker: String!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "writeOne"}, transactionControl: SERVICE)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                                 coordinate
+  SERVICE_TRANSACTION_OUTSIDE_MUTATION, Film.titleUpper
+  SERVICE_TRANSACTION_OUTSIDE_MUTATION, Query.readOwn
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                                 coordinate
+  SERVICE_TRANSACTION_OUTSIDE_MUTATION, Query.readInField
+  SERVICE_TRANSACTION_OUTSIDE_MUTATION, Mutation.writeOwn
+  """)

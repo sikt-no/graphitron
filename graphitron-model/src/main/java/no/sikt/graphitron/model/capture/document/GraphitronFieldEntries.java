@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
@@ -46,10 +47,10 @@ import static org.jooq.impl.DSL.val;
  * how the walk this replaces routed them, and it follows from the key: an entry references the AST
  * row it decodes, and those rows are in different relations.
  *
- * <p>Seventeen directive names reach this site and five of them get a relation here.
- * {@code @service}, {@code @externalField} and {@code @pivot} get none,
- * nothing reading a decode of them: each application and its arguments stand in the
- * {@code graphql_ast_} relations. {@code @splitQuery}, {@code @tenantFanOut} and
+ * <p>Seventeen directive names reach this site and six of them get a relation here.
+ * {@code @service}'s is its transaction control alone, the code it names being the code-reference
+ * decode's. {@code @externalField} and {@code @pivot} get none, nothing reading a decode of them:
+ * each application and its arguments stand in the {@code graphql_ast_} relations. {@code @splitQuery}, {@code @tenantFanOut} and
  * {@code @globalData} declare no argument, and {@code @multitableReference} is rejected before anything reads its one argument, so a row for
  * any of the four would carry its key and nothing else, which is what the applied-directive row
  * already says. {@code @reference} and {@code @referenceFor} are the path family's, written for
@@ -72,6 +73,7 @@ final class GraphitronFieldEntries {
         conditions(dsl, graph, touchedAt, naming(applied(applications, "condition"), "condition"));
         connections(dsl, graph, touchedAt, applied(applications, "asConnection"));
         mutations(dsl, graph, touchedAt, token(applied(applications, "mutation"), "typeName"));
+        services(dsl, graph, touchedAt, applied(applications, "service"));
 
         var routineApplications = wrote(applied(applications, "routine"), "name");
         routines(dsl, graph, touchedAt, routineApplications);
@@ -94,6 +96,7 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_FIELD_CONDITION_ENTRY,
         GRAPHITRON_AST_CONNECTION_ENTRY,
         GRAPHITRON_AST_MUTATION_ENTRY,
+        GRAPHITRON_AST_SERVICE_ENTRY,
         GRAPHITRON_AST_ROUTINE_ENTRY, GRAPHITRON_AST_OUTBOX_ENTRY,
         GRAPHITRON_AST_ISSUE_ENTRY,
         GRAPHITRON_AST_ISSUE_VOUCHED_FOR_ENTRY,
@@ -177,6 +180,25 @@ final class GraphitronFieldEntries {
                 .set(t.TABLE_REF, excluded(t.TABLE_REF))
                 .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
                 .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));
+    }
+
+    private static void services(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                 List<Directive> applications) {
+        var t = GRAPHITRON_AST_SERVICE_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(token(application, "transactionControl"), t.TRANSACTION_CONTROL)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.TRANSACTION_CONTROL)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.TRANSACTION_CONTROL, excluded(t.TRANSACTION_CONTROL)));
     }
 
     private static void routines(DSLContext dsl, String graph, LocalDateTime touchedAt,
