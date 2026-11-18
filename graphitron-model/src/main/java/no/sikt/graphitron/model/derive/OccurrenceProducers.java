@@ -10,7 +10,11 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT_RULE;
@@ -40,7 +44,8 @@ import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes {@code graphitron_occurrence_producer} and its subtypes, the start, the call and the result: which
+ * Writes {@code graphitron_occurrence_producer} and its subtypes, the start, the call and the result,
+ * the result's connection subtype and its facets with it: which
  * occurrences execute something and produce a result, from the rule view beside each, marking what
  * this reading states; and {@code graphitron_occurrence_call} for each producer's call, the supertype
  * the call is a subtype of too.
@@ -132,10 +137,20 @@ public final class OccurrenceProducers {
 
     /**
      * States what the producers produce, after their calls are pinned and filled: a service's result
-     * reads the method its call pinned.
+     * reads the method its call pinned. Then, off the results just written, what fills each
+     * connection a result builds, and the facets each faceted one surfaces.
      */
     private static void writeResults(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        // A result's shape is updated in place, and a connection row naming the old shape would hold
+        // the update back. Only the facets reference the connection rows, and the same stage states
+        // both again right after the results, so the graph's go first.
+        var c = GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
+        dsl.deleteFrom(c).where(c.GRAPH_NAME.eq(graph)).execute();
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT_RULE,
+            graph, null, touchedAt);
+        refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION, GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION_RULE,
+            graph, null, touchedAt);
+        refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_FACET, GRAPHITRON_OCCURRENCE_PRODUCER_FACET_RULE,
             graph, null, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY, GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY_RULE,
             graph, null, touchedAt);
@@ -148,7 +163,8 @@ public final class OccurrenceProducers {
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE,
                 GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE,
-                GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT,
+                GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY, GRAPHITRON_OCCURRENCE_PRODUCER_FACET,
+                GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT,
                 GRAPHITRON_OCCURRENCE_PRODUCER)) {
             dsl.deleteFrom(t)
                 .where(t.field("GRAPH_NAME", String.class).eq(graph))

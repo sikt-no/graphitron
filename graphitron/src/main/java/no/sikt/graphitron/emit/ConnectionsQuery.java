@@ -10,9 +10,11 @@ import java.util.TreeMap;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static org.jooq.impl.DSL.exists;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
@@ -29,12 +31,12 @@ import static org.jooq.impl.DSL.select;
  * {@code FACETS}, the facets type its facets field names, whose record {@code util.Facets} holds.
  * An edge two connections share is one row.
  *
- * <p>{@link #byField} reads the same facts at the grain of the field that returns a connection, which
- * is what a producer building the class needs: the class it names and whether its type counts and
- * carries facets, so the constructor it calls takes a count exactly where the class has a count
- * member and facets exactly where it has a facets member. Both are the positions the type fills, read
- * here off the field's wrapper rather than restated per field: the class and its producers read one
- * fact.
+ * <p>{@link #byField} reads what fills each connection at the grain of the field that returns it,
+ * which is what a producer building the class needs: the class it names, whether it fills a count and
+ * facets, and the facets it surfaces from its own filter arguments. What fills a connection is a fact
+ * of the producing occurrence ({@code graphitron_occurrence_producer_connection} and
+ * {@code graphitron_occurrence_producer_facet}); the producers render per declared field, so this
+ * collapses a field's occurrences onto it and fails where they disagree rather than choosing one.
  */
 public final class ConnectionsQuery {
 
@@ -75,12 +77,30 @@ public final class ConnectionsQuery {
     }
 
     /**
+     * One facet a producer surfaces, in its place: the argument its filter value rides in, the facet's
+     * name, the column its counts group by as written, the value type and whether a value may be null,
+     * and whether a {@code @reference} puts the column on the table a path ends at.
+     */
+    public record Facet(String filterArgumentName, String name, String columnName, String valueTypeName,
+            boolean valueNullable, boolean referenceBound) {}
+
+    /**
      * A field returning a connection: the field's coordinate, the connection type it returns, which
-     * names the class its producer builds, whether that class counts what it pages through (its type
-     * fills {@code TOTAL_COUNT}) and whether it carries facets (its type fills {@code FACETS}).
+     * names the class its producer builds, whether the producer fills a count and whether it fills
+     * facets, and the facets it surfaces in component order, empty where it fills none.
      */
     public record FieldConnection(String parentTypeName, String fieldName, String connectionTypeName,
-            boolean counts, boolean faceted) {}
+            boolean counts, boolean faceted, List<Facet> facets) {
+        public FieldConnection {
+            facets = List.copyOf(facets);
+        }
+
+        /** A field filling no facets. */
+        public FieldConnection(String parentTypeName, String fieldName, String connectionTypeName,
+                boolean counts, boolean faceted) {
+            this(parentTypeName, fieldName, connectionTypeName, counts, faceted, List.of());
+        }
+    }
 
     /** The graph's connection-returning fields, keyed by coordinate ({@code Type.field}). */
     public record FieldConnections(Map<String, FieldConnection> byCoordinate) {
@@ -110,25 +130,45 @@ public final class ConnectionsQuery {
     private ConnectionsQuery() {}
 
     /**
-     * Every field of the graph returning a connection, with the connection type it returns and
-     * ({@code graphitron_field_target}'s wrapper) and whether that type fills {@code TOTAL_COUNT} and
-     * {@code FACETS}.
+     * Every field of the graph returning a connection, with what its producing occurrences fill: the
+     * connection type, whether they count, whether they carry facets and the facets they surface. A
+     * field reached at several places has an occurrence per place; they are collapsed onto the field,
+     * which is what a producer renders, and occurrences of one field that disagree are a generator bug
+     * rather than a choice to make here.
      */
     public static FieldConnections byField(StoreHandle store) {
-        var t = GRAPHITRON_FIELD_TARGET;
-        var p = GRAPHITRON_FIELD_POSITION;
+        var c = GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
+        var o = GRAPHITRON_OCCURRENCE;
+        var f = GRAPHITRON_FIELD;
+        var pf = GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
+        var b = GRAPHITRON_FACET_BINDING;
         var rows = store.dsl()
-            .select(t.TYPE_NAME, t.FIELD_NAME, t.WRAPPER_TYPE_NAME,
-                field(exists(select(p.POSITION).from(p).where(p.GRAPH_NAME.eq(t.GRAPH_NAME),
-                    p.TYPE_NAME.eq(t.WRAPPER_TYPE_NAME), p.POSITION.eq("TOTAL_COUNT")))),
-                field(exists(select(p.POSITION).from(p).where(p.GRAPH_NAME.eq(t.GRAPH_NAME),
-                    p.TYPE_NAME.eq(t.WRAPPER_TYPE_NAME), p.POSITION.eq("FACETS")))))
-            .from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()), t.WRAPPER_TYPE_NAME.isNotNull())
-            .fetch(r -> new FieldConnection(r.value1(), r.value2(), r.value3(), r.value4(), r.value5()));
+            .select(c.COORDINATE, f.TYPE_NAME, f.FIELD_NAME, c.CONNECTION_TYPE_NAME, c.COUNTS, c.FACETED,
+                multiset(select(pf.FILTER_ARGUMENT_NAME, pf.FACET_NAME, b.COLUMN_NAME, b.VALUE_TYPE_NAME,
+                        b.VALUE_NULLABLE, b.REFERENCE_BOUND)
+                    .from(pf)
+                    .join(b).on(b.GRAPH_NAME.eq(pf.GRAPH_NAME), b.TYPE_NAME.eq(pf.FACET_TYPE_NAME),
+                        b.FIELD_NAME.eq(pf.FACET_NAME))
+                    .where(pf.GRAPH_NAME.eq(c.GRAPH_NAME), pf.COORDINATE.eq(c.COORDINATE))
+                    .orderBy(pf.POSITION))
+                    .convertFrom(r -> r.map(x -> new Facet(x.value1(), x.value2(), x.value3(), x.value4(),
+                        x.value5(), x.value6()))))
+            .from(c)
+            .join(o).on(o.GRAPH_NAME.eq(c.GRAPH_NAME), o.COORDINATE.eq(c.COORDINATE))
+            .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .where(c.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(c.COORDINATE)
+            .fetch();
         var byCoordinate = new TreeMap<String, FieldConnection>();
-        for (var row : rows) {
-            byCoordinate.put(row.parentTypeName() + "." + row.fieldName(), row);
+        for (var r : rows) {
+            var row = new FieldConnection(r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7());
+            var key = row.parentTypeName() + "." + row.fieldName();
+            var held = byCoordinate.putIfAbsent(key, row);
+            if (held != null && !held.equals(row)) {
+                throw new IllegalStateException("Graphitron generator bug: the occurrences of connection field '"
+                    + key + "' disagree on what fills the connection, at " + r.value1() + ": " + held
+                    + " against " + row);
+            }
         }
         return new FieldConnections(byCoordinate);
     }

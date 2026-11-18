@@ -3912,11 +3912,28 @@ COMMENT ON VIEW graphitron_type_authored IS 'One of the two sets graphitron_type
 
 CREATE VIEW graphitron_facet_binding_rule
   (graph_name, type_name, field_name, ordinal, column_name, value_type_name, value_nullable,
-   source_name, source_line, source_column) AS
+   reference_bound, source_name, source_line, source_column) AS
 SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
        fb.name_ref,
        f.named_type,
        CASE WHEN f.is_list THEN NOT f.item_non_null ELSE TRUE END,
+       -- A @reference written beside the facet marker, asked of the marker's siblings for the
+       -- reason the exclusions below are.
+       EXISTS (SELECT 1
+                 FROM graphql_ast_entry mark
+                 JOIN graphql_ast_entry de
+                   ON de.graph_name = mark.graph_name
+                  AND de.source_name = mark.source_name
+                  AND de.parent_line = mark.parent_line
+                  AND de.parent_column = mark.parent_column
+                 JOIN graphql_ast_directive_application_entry d
+                   ON d.graph_name = de.graph_name AND d.source_name = de.source_name
+                  AND d.source_line = de.source_line AND d.source_column = de.source_column
+                WHERE mark.graph_name = fc.graph_name
+                  AND mark.source_name = fc.source_name
+                  AND mark.source_line = fc.source_line
+                  AND mark.source_column = fc.source_column
+                  AND d.name = 'reference'),
        fc.source_name, fc.source_line, fc.source_column
   -- The field's first @asFacet, and the name its first @field binds.
   FROM graphql_directive_application fc
@@ -3977,6 +3994,7 @@ COMMENT ON VIEW graphitron_facet_binding_rule IS 'One row the facet binding rule
 -- COMMENT ON COLUMN graphitron_facet_binding_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_facet_binding.column_name';
 -- COMMENT ON COLUMN graphitron_facet_binding_rule.value_type_name IS 'the value_type_name of a row of this rule, which the stage writes into graphitron_facet_binding.value_type_name';
 -- COMMENT ON COLUMN graphitron_facet_binding_rule.value_nullable IS 'the value_nullable of a row of this rule, which the stage writes into graphitron_facet_binding.value_nullable';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.reference_bound IS 'the reference_bound of a row of this rule, which the stage writes into graphitron_facet_binding.reference_bound';
 -- COMMENT ON COLUMN graphitron_facet_binding_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_facet_binding.source_name';
 -- COMMENT ON COLUMN graphitron_facet_binding_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_facet_binding.source_line';
 -- COMMENT ON COLUMN graphitron_facet_binding_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_facet_binding.source_column';
@@ -3989,6 +4007,7 @@ CREATE TABLE graphitron_facet_binding (
   column_name     VARCHAR,
   value_type_name VARCHAR   NOT NULL,
   value_nullable  BOOLEAN   NOT NULL,
+  reference_bound BOOLEAN   NOT NULL,
   source_name     VARCHAR   NOT NULL,
   source_line     INT       NOT NULL,
   source_column   INT       NOT NULL,
@@ -4004,6 +4023,7 @@ COMMENT ON COLUMN graphitron_facet_binding.ordinal IS 'the field''s declaration 
 COMMENT ON COLUMN graphitron_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on, the consuming carrier''s table or the table a @reference path on the field ends at, is resolved against the catalog at the use site and is not here';
 COMMENT ON COLUMN graphitron_facet_binding.value_type_name IS 'the named type a facet key carries, the filter field''s leaf; a scalar or an enum, an input object being a decline above';
 COMMENT ON COLUMN graphitron_facet_binding.value_nullable IS 'whether a facet key may be null: the list element''s nullability where the filter field is a list, TRUE otherwise. With value_type_name it decides both the synthesized FacetValue type the counts surface through and whether the aggregate scrubs a null key';
+COMMENT ON COLUMN graphitron_facet_binding.reference_bound IS 'whether a @reference is written beside the marker, so the column sits on the table the path ends at rather than on the consuming connection''s own table';
 COMMENT ON COLUMN graphitron_facet_binding.source_name IS 'the @asFacet application''s own file; the position a diagnostic would carry';
 COMMENT ON COLUMN graphitron_facet_binding.source_line IS 'source line of the application, 1-based';
 COMMENT ON COLUMN graphitron_facet_binding.source_column IS 'source column of the application, 1-based';
@@ -21347,6 +21367,8 @@ CREATE TABLE graphitron_occurrence_producer_result (
   class_source_ref  VARCHAR,
   class_name_ref    VARCHAR,
   PRIMARY KEY (graph_name, coordinate),
+  -- The key with the shape, which a shaped subtype's foreign key names.
+  UNIQUE (graph_name, coordinate, shape),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
   -- The class, through the row's own copy of its key, where one of the graph's entries declares it.
@@ -21371,6 +21393,148 @@ COMMENT ON COLUMN graphitron_occurrence_producer_result.table_name IS 'that tabl
 COMMENT ON COLUMN graphitron_occurrence_producer_result.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_source_ref IS 'the classpath entry half of the class''s code_class key, the first of the graph''s own entries by name where two declare it, so a reader joins the class''s members on their key; nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
+
+-- What fills a connection a producing occurrence builds: the CONNECTION subtype of the producer
+-- result. The connection type gives the shape, the class and the positions it fills; what fills its
+-- count and its facets is the occurrence's own, since two fields returning one connection type can
+-- take different arguments and so run different count and facet queries. Read off the occurrence's
+-- own children: a field under it whose fetcher counts, or buckets facets, over its statement.
+CREATE VIEW graphitron_occurrence_producer_connection_rule
+  (graph_name, coordinate, shape, connection_type_name, counts, faceted) AS
+SELECT r.graph_name, r.coordinate, r.shape, ft.wrapper_type_name,
+       EXISTS (SELECT 1 FROM graphitron_occurrence c
+                 JOIN graphitron_field cf ON cf.graph_name = c.graph_name AND cf.coordinate = c.element_coordinate
+                 JOIN graphitron_producer cp
+                   ON cp.graph_name = cf.graph_name AND cp.type_name = cf.type_name
+                  AND cp.field_name = cf.field_name
+                WHERE c.graph_name = r.graph_name AND c.parent_coordinate = r.coordinate
+                  AND cp.kind = 'COUNT'),
+       EXISTS (SELECT 1 FROM graphitron_occurrence c
+                 JOIN graphitron_field cf ON cf.graph_name = c.graph_name AND cf.coordinate = c.element_coordinate
+                 JOIN graphitron_producer cp
+                   ON cp.graph_name = cf.graph_name AND cp.type_name = cf.type_name
+                  AND cp.field_name = cf.field_name
+                WHERE c.graph_name = r.graph_name AND c.parent_coordinate = r.coordinate
+                  AND cp.kind = 'FACETS')
+  FROM graphitron_occurrence_producer_result r
+  JOIN graphitron_occurrence o ON o.graph_name = r.graph_name AND o.coordinate = r.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+ WHERE r.shape = 'CONNECTION' AND ft.wrapper_type_name IS NOT NULL;
+COMMENT ON VIEW graphitron_occurrence_producer_connection_rule IS 'One row the producer connection rule computes, in the shape graphitron_occurrence_producer_connection stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_connection, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_connection_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_connection.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_connection_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_connection.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_connection_rule.shape IS 'the shape of a row of this rule, which the stage writes into graphitron_occurrence_producer_connection.shape';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_connection_rule.connection_type_name IS 'the connection_type_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_connection.connection_type_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_connection_rule.counts IS 'the counts of a row of this rule, which the stage writes into graphitron_occurrence_producer_connection.counts';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_connection_rule.faceted IS 'the faceted of a row of this rule, which the stage writes into graphitron_occurrence_producer_connection.faceted';
+
+CREATE TABLE graphitron_occurrence_producer_connection (
+  graph_name           VARCHAR   NOT NULL,
+  coordinate           VARCHAR   NOT NULL,
+  shape                VARCHAR   NOT NULL,
+  connection_type_name VARCHAR   NOT NULL,
+  counts               BOOLEAN   NOT NULL,
+  faceted              BOOLEAN   NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  -- The producer's result, of which this is the CONNECTION subtype, held to that shape by the
+  -- supertype's own key with the shape.
+  FOREIGN KEY (graph_name, coordinate, shape)
+    REFERENCES graphitron_occurrence_producer_result (graph_name, coordinate, shape) ON DELETE CASCADE,
+  -- The connection type it builds, whose class it constructs.
+  FOREIGN KEY (graph_name, connection_type_name)
+    REFERENCES graphitron_connection (graph_name, type_name) ON DELETE CASCADE,
+  CHECK (shape = 'CONNECTION')
+);
+COMMENT ON TABLE graphitron_occurrence_producer_connection IS 'A producer whose result is a connection, the connection type it builds and whether it fills that type''s count and facets, each produced from this occurrence''s own facts: one row per connection-producing occurrence. For example Query.films returning FilmsConnection, which declares totalCount, counts and carries no facets, and a nested type''s connection field has a row per place it is reached.';
+COMMENT ON COLUMN graphitron_occurrence_producer_connection.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_connection.coordinate IS 'the producing occurrence, the whole key: one connection per producer whose result is shaped CONNECTION';
+COMMENT ON COLUMN graphitron_occurrence_producer_connection.shape IS 'always CONNECTION, pinned so the foreign key holds the row to a result of that shape';
+COMMENT ON COLUMN graphitron_occurrence_producer_connection.connection_type_name IS 'the connection type the occurrence''s declared field returns, graphitron_field_target''s wrapper, which names the class util.Connections holds for it: the shape the occurrence fills';
+COMMENT ON COLUMN graphitron_occurrence_producer_connection.counts IS 'whether the occurrence fills a count: an occurrence under it is of a field whose fetcher is a COUNT producer, counting the occurrence''s own statement';
+COMMENT ON COLUMN graphitron_occurrence_producer_connection.faceted IS 'whether the occurrence fills facets: an occurrence under it is of a field whose fetcher is a FACETS producer, bucketing the occurrence''s own statement by the facets graphitron_occurrence_producer_facet lists for it';
+COMMENT ON COLUMN graphitron_occurrence_producer_connection.touched_at IS 'the reading that last wrote this row; the stage rewrites the graph''s rows each reading, after the results they subtype';
+
+-- The facets a faceted connection-producing occurrence surfaces, each from an @asFacet field of an
+-- input its own arguments take: one hop, the facet field declared on the type an argument names,
+-- as the expansion reaches it. A name reached through two of them is kept at the first, argument
+-- order then field order, a backstop the walk's duplicate refusal stands in front of.
+CREATE VIEW graphitron_occurrence_producer_facet_rule
+  (graph_name, coordinate, facet_name, position, filter_argument_name, filter_coordinate,
+   facet_type_name) AS
+WITH reached (graph_name, coordinate, facet_name, argument_ordinal, facet_ordinal,
+              filter_argument_name, filter_coordinate, facet_type_name) AS (
+  SELECT pc.graph_name, pc.coordinate, fb.field_name, a.ordinal, fb.ordinal, ao.name,
+         io.coordinate, fb.type_name
+    FROM graphitron_occurrence_producer_connection pc
+    JOIN graphitron_occurrence ao
+      ON ao.graph_name = pc.graph_name AND ao.parent_coordinate = pc.coordinate
+     AND ao.kind = 'FIELD_ARGUMENT'
+    JOIN graphitron_argument a ON a.graph_name = ao.graph_name AND a.coordinate = ao.element_coordinate
+    JOIN graphitron_occurrence io
+      ON io.graph_name = ao.graph_name AND io.parent_coordinate = ao.coordinate
+     AND io.kind = 'INPUT_FIELD'
+    JOIN graphitron_field inf ON inf.graph_name = io.graph_name AND inf.coordinate = io.element_coordinate
+    JOIN graphitron_facet_binding fb
+      ON fb.graph_name = inf.graph_name AND fb.type_name = inf.type_name AND fb.field_name = inf.field_name
+   WHERE pc.faceted
+),
+kept AS (
+  SELECT r.* FROM reached r
+   WHERE NOT EXISTS (SELECT 1 FROM reached e
+                      WHERE e.graph_name = r.graph_name AND e.coordinate = r.coordinate
+                        AND e.facet_name = r.facet_name
+                        AND (e.argument_ordinal, e.facet_ordinal) < (r.argument_ordinal, r.facet_ordinal))
+)
+-- Placed by how many of the occurrence's kept facets come before it, argument first: dense from one.
+SELECT k.graph_name, k.coordinate, k.facet_name,
+       CAST(1 + (SELECT COUNT(*) FROM kept b
+                  WHERE b.graph_name = k.graph_name AND b.coordinate = k.coordinate
+                    AND (b.argument_ordinal, b.facet_ordinal) < (k.argument_ordinal, k.facet_ordinal)) AS INT),
+       k.filter_argument_name, k.filter_coordinate, k.facet_type_name
+  FROM kept k;
+COMMENT ON VIEW graphitron_occurrence_producer_facet_rule IS 'One row the producer facet rule computes, in the shape graphitron_occurrence_producer_facet stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_facet, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_facet_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_facet.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_facet_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_facet.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_facet_rule.facet_name IS 'the facet_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_facet.facet_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_facet_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_producer_facet.position';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_facet_rule.filter_argument_name IS 'the filter_argument_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_facet.filter_argument_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_facet_rule.filter_coordinate IS 'the filter_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_facet.filter_coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_facet_rule.facet_type_name IS 'the facet_type_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_facet.facet_type_name';
+
+CREATE TABLE graphitron_occurrence_producer_facet (
+  graph_name           VARCHAR   NOT NULL,
+  coordinate           VARCHAR   NOT NULL,
+  facet_name           VARCHAR   NOT NULL,
+  position             INT       NOT NULL,
+  filter_argument_name VARCHAR   NOT NULL,
+  filter_coordinate    VARCHAR   NOT NULL,
+  facet_type_name      VARCHAR   NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, facet_name),
+  -- One facet per place in the occurrence's facets.
+  UNIQUE (graph_name, coordinate, position),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence_producer_connection (graph_name, coordinate) ON DELETE CASCADE,
+  -- The filter field occurrence the facet's values arrive through, under the occurrence's argument.
+  FOREIGN KEY (graph_name, filter_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  -- The @asFacet application it surfaces, whose binding says the column and the value type.
+  FOREIGN KEY (graph_name, facet_type_name, facet_name)
+    REFERENCES graphitron_facet_binding (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (position >= 1)
+);
+COMMENT ON TABLE graphitron_occurrence_producer_facet IS 'One facet a faceted connection-producing occurrence surfaces from its own filter arguments: one row per such occurrence and facet name. For example Query.films(filter: FilmFilter) surfaces rating at position 1 through Query.films(filter.rating:), and a second field returning the same connection type with a filter of its own states its own rows.';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.coordinate IS 'the producing occurrence, a faceted row of graphitron_occurrence_producer_connection';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.facet_name IS 'the facet''s name, the @asFacet field''s own: the label its counts surface under on the facets type, and with the occurrence the key';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.position IS 'the facet''s place among the occurrence''s facets, 1-based and dense: argument declaration order, then facet field declaration order. The component order of the facets record the occurrence fills';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.filter_argument_name IS 'the occurrence''s argument the facet''s filter value rides in, the producer''s own and not part of the shape it fills';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.filter_coordinate IS 'the input field occurrence the facet''s filter value arrives through, such as Query.films(filter.rating:)';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.facet_type_name IS 'the input object type declaring the @asFacet field; with facet_name, graphitron_facet_binding''s key, which states the column, the value type and its nullability';
+COMMENT ON COLUMN graphitron_occurrence_producer_facet.touched_at IS 'the reading that last wrote this row; the stage rewrites the graph''s rows each reading, after the connections they hang under';
 
 -- The occurrence-producers stage's defects: a root @routine's parameter nothing fills, at the
 -- @routine, once per routine, the detail the first such parameter. A parameter an argMapping entry
@@ -28600,6 +28764,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift_accessor'),
   ('occurrence-bindings', 'graphitron_entry_defect_key_column'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_connection'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_facet'),
   ('occurrence-producers', 'graphitron_occurrence_producer_result'),
   ('occurrence-producers', 'graphitron_occurrence_producer_empty'),
   ('occurrence-producers', 'graphitron_occurrence_producer_routine'),
@@ -28879,6 +29045,8 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_written', 'graphitron_occurrence_call_parameter_written_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer', 'graphitron_occurrence_producer_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_empty', 'graphitron_occurrence_producer_empty_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_connection', 'graphitron_occurrence_producer_connection_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_facet', 'graphitron_occurrence_producer_facet_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_result', 'graphitron_occurrence_producer_result_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_routine', 'graphitron_occurrence_producer_routine_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_service', 'graphitron_occurrence_producer_service_rule'),
@@ -29477,6 +29645,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence-participant',
    'one type the rows of one polymorphic occurrence may be, in one graph',
    'graph_name, coordinate, participant_type', 'sdl'),
+  ('graph-occurrence-facet',
+   'one facet one connection-producing occurrence surfaces, in one graph',
+   'graph_name, coordinate, facet_name', 'sdl'),
   ('graph-occurrence-connection-part',
    'one part of the key one producer''s connection is keyed by, in one graph',
    'graph_name, coordinate, part', 'sdl'),
@@ -30322,6 +30493,22 @@ INSERT INTO meta_relation VALUES
    'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_result, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_connection', 'graph-occurrence', 'graphitron',
+   'A producer whose result is a connection, the connection type it builds and whether it fills that type''s count and facets, each produced from this occurrence''s own facts: one row per connection-producing occurrence.',
+   'For example Query.films returning FilmsConnection, which declares totalCount, counts and carries no facets, and a nested type''s connection field has a row per place it is reached.',
+   'A connection type''s shape, its class and the positions it fills, is a fact of the type; what fills a connection''s totalCount and facets is a fact of the producing occurrence, since two fields returning one connection type can take different arguments and so run different count and facet queries (Alf, 2026-11-18). So it is stated here, at the finest grain it holds at, and a reader wanting the declared field''s answer collapses the occurrences itself. Read off the occurrences under it whose fields count or bucket facets, rather than off the type''s positions, so the occurrence states what it fills. The CONNECTION subtype of the result, held to that shape by a key with the shape; written by occurrence-producers after the results, which it rewrites each reading because a result''s shape is updated in place.'),
+  ('graphitron_occurrence_producer_connection_rule', 'graph-occurrence', 'graphitron',
+   'One row the producer connection rule computes, in the shape graphitron_occurrence_producer_connection stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_connection, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_facet', 'graph-occurrence-facet', 'graphitron',
+   'One facet a faceted connection-producing occurrence surfaces from its own filter arguments: one row per such occurrence and facet name.',
+   'For example Query.films(filter: FilmFilter) surfaces rating at position 1 through Query.films(filter.rating:), and a second field returning the same connection type with a filter of its own states its own rows.',
+   'The facets a connection fills are the producing occurrence''s, read from its own filter arguments (Alf, 2026-11-18), where graphitron_connection_facet states them only per @asConnection carrier for the mint. Every producer of one connection type fills the facets record that type''s facets field names, so the producers must agree on the names, value types, nullability and order, which this relation lets the stage compare and refuse where they do not; the argument and the filter field are the producer''s own and not compared. The value type, its nullability and the column are the binding''s, read through its key rather than restated. A name reached twice keeps its first place, a backstop behind the walk''s duplicate refusal.'),
+  ('graphitron_occurrence_producer_facet_rule', 'graph-occurrence-facet', 'graphitron',
+   'One row the producer facet rule computes, in the shape graphitron_occurrence_producer_facet stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_facet, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it; its order is counted rather than ranked, no window in a rule view.'),
   ('graphitron_occurrence_binding', 'graph-occurrence-binding', 'graphitron',
    'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place.',
    'For example Film.title binds the column title at public.film, and Query.film(id:), written @nodeId, binds the node identity it unpacks into film_id.',

@@ -54,3 +54,20 @@ extend schema @expectEquals(relation: "graphitron_connection", where: "type_name
   FilmsConnection, FilmsEdge
   FilmsPage,       FilmsEdge
   """)
+
+# What fills each connection is the producing occurrence's: whether a COUNT producer and a FACETS
+# producer hang under it, and the facets it surfaces from its own filter arguments.
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_connection", rows: """
+  coordinate,         connection_type_name,        counts, faceted
+  Film.actors,        ActorsConnection,            TRUE,   FALSE
+  Query.languages,    QueryLanguagesConnection,    TRUE,   FALSE
+  Query.filmsByTitle, QueryFilmsByTitleConnection, TRUE,   TRUE
+  Query.filmsPage,    FilmsPage,                   FALSE,  FALSE
+  Query.films,        FilmsConnection,             TRUE,   FALSE
+  Query.people,       QueryPeopleConnection,       TRUE,   FALSE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_facet", rows: """
+  coordinate,         facet_name, position, filter_argument_name, filter_coordinate,                 facet_type_name
+  Query.filmsByTitle, title,      1,        filter,               Query.filmsByTitle(filter.title:), FilmFilter
+  """)
