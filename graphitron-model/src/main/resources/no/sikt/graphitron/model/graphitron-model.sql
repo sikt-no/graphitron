@@ -22080,14 +22080,17 @@ UNION ALL
 SELECT fb.graph_name, fb.source_name, fb.source_line, fb.source_column,
        'FACET_SURFACED_NOWHERE', fb.type_name, 'occurrence-producers'
   FROM graphitron_facet_binding fb
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence io
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_field bf
+                     JOIN graphitron_occurrence io
+                       ON io.graph_name = bf.graph_name AND io.element_coordinate = bf.coordinate
+                      AND io.kind = 'INPUT_FIELD'
                      JOIN graphitron_occurrence ao
                        ON ao.graph_name = io.graph_name AND ao.coordinate = io.parent_coordinate
                       AND ao.kind = 'FIELD_ARGUMENT'
                      JOIN graphitron_occurrence_producer_connection pc
                        ON pc.graph_name = ao.graph_name AND pc.coordinate = ao.parent_coordinate
-                    WHERE io.graph_name = fb.graph_name AND io.kind = 'INPUT_FIELD'
-                      AND io.element_coordinate = fb.type_name || '.' || fb.field_name
+                    WHERE bf.graph_name = fb.graph_name AND bf.type_name = fb.type_name
+                      AND bf.field_name = fb.field_name
                       AND pc.faceted);
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';

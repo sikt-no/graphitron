@@ -25,8 +25,9 @@ import java.util.Set;
  * value type and shared by facets over columns of different Java types, so the class cannot know the
  * value's class; the column's own type decodes it and the scalar or enum coerces it.
  *
- * <p>Renders the facets command row the plan produces off the classified facets types; a
- * store-reading emitter takes it over with the generated connection classes.
+ * <p>Renders the facets command row the plan produces from the store's facets: each faceted
+ * connection type's record, under the facets type name the store holds, takes a component per facet
+ * its producers surface, read through the plan's facets command.
  */
 public final class FacetsClassGenerator {
 
