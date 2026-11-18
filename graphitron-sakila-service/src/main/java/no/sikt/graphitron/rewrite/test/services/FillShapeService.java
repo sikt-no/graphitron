@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.services;
 import org.jooq.DSLContext;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Signatures whose parameters take each kind of fill a call can be given, for the fact documents the
@@ -28,6 +29,11 @@ public final class FillShapeService {
 
     /** A scalar read through one list of input objects, and through two. */
     public static String listed(List<Integer> ids, List<List<Integer>> groups) {
+        return null;
+    }
+
+    /** A list argument, a list input field and a list of enum constants, each taken as a set. */
+    public static String asSets(Set<Integer> ids, Set<Integer> inner, Set<FilmMood> moods) {
         return null;
     }
 

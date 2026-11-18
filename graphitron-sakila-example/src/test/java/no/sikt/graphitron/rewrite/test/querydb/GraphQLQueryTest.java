@@ -8373,6 +8373,16 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsByIdSet_aListArgumentIsCopiedIntoTheSetTheServiceTakesInTheListsOrder() {
+        // The service takes a Set<Integer>; graphql-java hands the argument over as a List, which the
+        // fill copies into a LinkedHashSet, so the repeated 2 collapses and the order holds.
+        Map<String, Object> data = execute("{ filmsByIdSet(ids: [2, 1, 2]) { title } }");
+        assertThat((List<Map<String, Object>>) data.get("filmsByIdSet"))
+            .extracting(f -> f.get("title"))
+            .containsExactly("ACE GOLDFINGER", "ACADEMY DINOSAUR");
+    }
+
+    @Test
     void copiesAtStores_handsEachFilmTheSecondKeyColumnOfEachCompositeId() {
         // argMapping "storeIds: units.store_id": store_id is the second of InventoryUnit's
         // (inventory_id, store_id) key, so each id hands the child service the store it names. The

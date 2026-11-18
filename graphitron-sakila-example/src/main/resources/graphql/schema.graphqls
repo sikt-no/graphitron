@@ -264,6 +264,11 @@ type Query {
         method: "filmsByIds",
         argMapping: "ids: ids.film_id"
     })
+    # A list argument into the Set<Integer> filmsByIdSet takes: copied into a set in the list's order.
+    filmsByIdSet(ids: [Int!]!): [Film!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+        method: "filmsByIdSet"
+    })
     filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
         method: "filmsByIds"

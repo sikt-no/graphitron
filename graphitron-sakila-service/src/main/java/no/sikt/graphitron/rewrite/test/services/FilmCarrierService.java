@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Execution-tier fixture: an {@code @service}-backed mutation that returns the
@@ -45,6 +46,14 @@ public final class FilmCarrierService {
             if (r != null) ordered.add(r);
         }
         return ordered;
+    }
+
+    /**
+     * The ids as a set: a list argument arrives as a {@code java.util.List} and is copied into one,
+     * in the list's order.
+     */
+    public static List<FilmRecord> filmsByIdSet(Set<Integer> ids, DSLContext dsl) {
+        return filmsByIds(ids == null ? null : List.copyOf(ids), dsl);
     }
 
     /** ONE arm: returns a single film by its ID, or {@code null} when the ID is unknown. */

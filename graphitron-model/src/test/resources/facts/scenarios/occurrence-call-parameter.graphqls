@@ -84,6 +84,9 @@ type Query {
   callListed(input: FilmIdsListedInput): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FillShapeService",
       method: "listed", argMapping: "ids: input.items.id, groups: input.groups.items.id"})
+  callSets(ids: [Int!], input: EveryFillInput, moods: [FilmMood!]): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FillShapeService",
+      method: "asSets", argMapping: "inner: input.ids"})
   callMoodsThroughList(input: FilmMoodItemsInput): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FillShapeService",
       method: "moodsThroughList", argMapping: "moods: input.items.mood"})

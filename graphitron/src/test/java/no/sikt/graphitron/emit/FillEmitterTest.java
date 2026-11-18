@@ -16,6 +16,7 @@ import no.sikt.graphitron.rewrite.test.services.FilmKeySummary;
 import no.sikt.graphitron.rewrite.test.services.FilmMood;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.jooq.DSLContext;
 import org.jooq.Record1;
 import org.jooq.SQLDialect;
@@ -87,6 +88,7 @@ class FillEmitterTest {
             .addMethod(probe("enums", row("Query.callMoods"), Optional.empty()))
             .addMethod(probe("listed", row("Query.callListed"), Optional.empty()))
             .addMethod(probe("moodsThroughList", row("Query.callMoodsThroughList"), Optional.empty()))
+            .addMethod(probe("sets", row("Query.callSets"), Optional.empty()))
             .addMethod(probe("child", row("Film.titleUppercase"), Optional.of(KEYS)))
             .build();
         var dir = Files.createTempDirectory("fill");
@@ -193,6 +195,19 @@ class FillEmitterTest {
             env(Map.of("input", Map.of("items", List.of(Map.of("mood", "HAPPY"), Map.of("mood", "SAD"))))),
             DSL.using(SQLDialect.POSTGRES));
         assertThat(values[0]).isEqualTo(List.of("HAPPY", "SAD"));
+    }
+
+    @Test
+    void aListIntoASetParameterIsCopiedIntoASetInTheListsOrder() throws Exception {
+        var arguments = Map.<String, Object>of("ids", List.of(3, 1, 3),
+            "input", Map.of("ids", List.of(2, 1), "count", 0), "moods", List.of("SAD", "HAPPY"));
+        var values = (Object[]) probes.get("sets").invoke(null, env(arguments), DSL.using(SQLDialect.POSTGRES));
+        assertThat(values[0]).isInstanceOf(Set.class).asInstanceOf(InstanceOfAssertFactories.ITERABLE)
+            .containsExactly(3, 1);
+        assertThat(values[1]).isInstanceOf(Set.class).asInstanceOf(InstanceOfAssertFactories.ITERABLE)
+            .containsExactly(2, 1);
+        assertThat(values[2]).isInstanceOf(Set.class).asInstanceOf(InstanceOfAssertFactories.ITERABLE)
+            .containsExactly(FilmMood.SAD, FilmMood.HAPPY);
     }
 
     @Test

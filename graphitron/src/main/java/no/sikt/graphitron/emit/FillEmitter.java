@@ -46,6 +46,8 @@ public final class FillEmitter {
 
     private static final ClassName MAP = ClassName.get("java.util", "Map");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName SET = ClassName.get("java.util", "Set");
+    private static final ClassName LINKED_HASH_SET = ClassName.get("java.util", "LinkedHashSet");
     private static final ClassName STRING = ClassName.get("java.lang", "String");
     /** The landing types a fill reads as they arrive: an enum arrives as its runtime value's string. */
     private static final Set<String> SCALAR_OR_ENUM = Set.of("SCALAR", "ENUM");
@@ -211,14 +213,21 @@ public final class FillEmitter {
                                     + " " + String.join(".", landing.path())
                                     + ", which is built into " + type);
                     }
-                    if ("ENUM".equals(landing.typeKind()) && !STRING.equals(innermost(type))) {
-                        statements.addAll(enumValue(type, local, landing.path()));
+                    // A list arrives as a java.util.List, so a Set parameter is read as a list of its
+                    // elements and copied into a set keeping the list's order.
+                    var asList = listOfSetElements(type);
+                    var readType = asList.orElse(type);
+                    var readLocal = asList.isPresent() ? local + "Elements" : local;
+                    if ("ENUM".equals(landing.typeKind()) && !STRING.equals(innermost(readType))) {
+                        statements.addAll(enumValue(readType, readLocal, landing.path()));
                     } else {
                         statements.add(liftsThroughList(landing)
-                            ? declare(type, local, lifted(elementsOf(type, landing), landing, 0,
+                            ? declare(readType, readLocal, lifted(elementsOf(readType, landing), landing, 0,
                                 CodeBlock.of("env.getArgument($S)", landing.path().getFirst()), new int[]{0}))
-                            : argument(type, local, landing.path()));
+                            : argument(readType, readLocal, landing.path()));
                     }
+                    asList.ifPresent(list -> statements.add(CodeBlock.of("$T $L = $L == null ? null : new $T<>($L)",
+                        type, local, readLocal, LINKED_HASH_SET, readLocal)));
                     arguments.add(CodeBlock.of("$L", local));
                 }
                 default -> throw new IllegalStateException("no fill " + fill.fill() + " at "
@@ -246,6 +255,13 @@ public final class FillEmitter {
         return liftsThroughList(landing) && (landing.nodeId()
             || !("SCALAR".equals(landing.typeKind())
                  || "ENUM".equals(landing.typeKind()) && STRING.equals(innermost(type))));
+    }
+
+    /** {@code List<E>} where {@code type} is {@code Set<E>}, which a list argument is read as before it is copied. */
+    private static Optional<TypeName> listOfSetElements(TypeName type) {
+        return type instanceof ParameterizedTypeName set && SET.equals(set.rawType())
+            ? Optional.of(ParameterizedTypeName.get(LIST, set.typeArguments().getFirst()))
+            : Optional.empty();
     }
 
     /** A type with every {@code List} peeled off. */
