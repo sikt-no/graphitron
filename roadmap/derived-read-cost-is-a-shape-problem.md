@@ -1177,8 +1177,7 @@ static method needs no holder.
   produced by both a DML write and a `@service`; a `Sources` of another table's records under a
   `@table` parent; a list service's re-fetch key wider than jOOQ's typed `Row22`; an `argMapping` left
   side naming no Java parameter, today caught only as `PARAMETER_UNFILLED` on the real one; `@tenant`
-  on a child service's argument; `@tenant` beside `@nodeId`; `@globalData`'s service rungs (no
-  connection, a tenant-scoped or global return, argument evidence); and the `@splitQuery` redundancy
+  on a child service's argument; `@tenant` beside `@nodeId`; and the `@splitQuery` redundancy
   lint on a service child or carrier, which `lint_rule` lists and only `FieldBuilder` emits. One
   more shape is checked here rather than assumed: a `@service` child of a plain object nested in a
   `@table` type (`City.names: CityNames`, `CityNames.lowercase @service`), which the walk defers at

@@ -22,7 +22,7 @@ The directive carries no arguments. It is your statement, at the field, about th
 
 == Build-time rejections
 
-The build rejects the marker where it decides nothing or contradicts what the build can see: in a build without `<tenantColumn>`, on a non-root field, on a field that is not a `@service`, on a service that is handed no connection, on a field returning a `@table` type (tenant-scoped rows cannot be read from the default source, and global ones already are), on a field whose arguments name a tenant or carry a tenant-scoped table's record, and beside xref:tenantFanOut.adoc[`@tenantFanOut`].
+The build rejects the marker where it decides nothing or contradicts what the build can see: in a build without `<tenantColumn>`, on a non-root field, on a field that is not a `@service`, on a service that is handed no connection, on a field returning a `@table` type (tenant-scoped rows cannot be read from the default source, and global ones already are), on a field whose arguments name a tenant or carry a tenant-scoped table's record, and beside xref:tenantFanOut.adoc[`@tenantFanOut`]. A service handed no connection, or returning a global `@table` type, is refused as `GLOBAL_DATA_REDUNDANT`; one returning a tenant-scoped `@table` type, or whose arguments name or carry a tenant, as `GLOBAL_DATA_ON_TENANT_DATA`.
 
 See xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping] for how a service that does work on tenant data names its tenant instead.
 

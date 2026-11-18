@@ -1,7 +1,8 @@
 # Which connection each root @service call and routine write runs on under the tenant column film_id.
 # A required value names the tenant, so a call cannot come without one. A list argument names it per
 # element, and a call given an empty list answers the field's own empty list without a connection.
-# @globalData says the call runs on the request's own connection. A child service under film rows runs
+# @globalData says the call runs on the request's own connection: here a service handed one, whose film
+# records a type with no table reads as handed, re-reading no tenant's rows. A child service under film rows runs
 # on the key its parent handed down; one under language rows, which no tenant column scopes, on the key
 # with an empty tenant part. A routine write re-reading rental rows, which no tenant column scopes,
 # runs on the key with an empty tenant part too: it names no tenant and needs none.
@@ -13,6 +14,8 @@ type Film @table(name: "film") {
   servedBy: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
     method: "servedBy"})
 }
+
+type FilmTitle { title: String }
 
 type Language @table(name: "language") {
   name: String
@@ -31,9 +34,9 @@ type Query {
   filmsByIds(ids: [Int!]!): [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmsByIds", argMapping: "ids: ids, $tenant: ids"})
-  filmGlobal(id: Int!): Film @globalData
+  filmGlobal(ids: [Int!]!): [FilmTitle!]! @globalData
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
-      method: "filmById"})
+      method: "filmsByIds"})
 }
 
 type Mutation {
@@ -63,4 +66,5 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_empty",
     where: "coordinate LIKE 'Query.film%'", rows: """
   coordinate,       empty
   Query.filmsByIds, LIST
+  Query.filmGlobal, LIST
   """)

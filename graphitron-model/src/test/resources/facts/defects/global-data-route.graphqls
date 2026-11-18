@@ -1,0 +1,37 @@
+# @globalData on a root @service whose route facts contradict it, at the @globalData. Redundant where
+# the service is handed no connection, or re-reads a global table's rows; on tenant data where it
+# re-reads a tenant's rows, or a tenant slot names the tenant. A service handed a connection whose film
+# records a type with no table reads as handed is the mark's own case, and draws neither.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") { title: String }
+type Language @table(name: "language") { name: String }
+type FilmTitle { title: String }
+
+type Query {
+  titlesUnhanded: [FilmTitle!]! @globalData
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+      method: "films"})
+  languagesGlobal: [Language!]! @globalData
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+      method: "languagesOnConnection"})
+  filmTenant(id: Int!): Film @globalData
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById"})
+  titlesNamed(ids: [Int!]!): [FilmTitle!]! @globalData
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds", argMapping: "ids: ids, $tenant: ids"})
+  titlesGlobal(ids: [Int!]!): [FilmTitle!]! @globalData
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'GLOBAL_DATA%'", rows: """
+  code,                       coordinate,            detail
+  GLOBAL_DATA_REDUNDANT,      Query.titlesUnhanded,  CONNECTION
+  GLOBAL_DATA_REDUNDANT,      Query.languagesGlobal, RESULT
+  GLOBAL_DATA_ON_TENANT_DATA, Query.filmTenant,      RESULT
+  GLOBAL_DATA_ON_TENANT_DATA, Query.titlesNamed,     ARGUMENT
+  """)

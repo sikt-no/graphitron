@@ -21769,6 +21769,44 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_connection oc
                     WHERE oc.graph_name = p.graph_name AND oc.coordinate = p.coordinate)
 UNION ALL
+-- A root @service of a graph with a tenant column marked @globalData where the route facts contradict
+-- the mark, at the @globalData: redundant where the service is handed no connection or re-reads a global
+-- table's rows, which already run on the default source; on tenant data where it re-reads a tenant's
+-- rows or a tenant slot names the tenant. Each code where it holds, both where both do; the detail the
+-- first rung broken, CONNECTION, RESULT or ARGUMENT.
+SELECT DISTINCT g.graph_name, g.source_name, g.source_line, g.source_column, k.code,
+       CASE WHEN k.code = 'GLOBAL_DATA_REDUNDANT'
+            THEN CASE WHEN NOT g.bound THEN 'CONNECTION' ELSE 'RESULT' END
+            ELSE CASE WHEN g.result_scope = 'TENANT' THEN 'RESULT' ELSE 'ARGUMENT' END END,
+       'occurrence-routes'
+  FROM (SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+               CASE WHEN pr.table_name IS NULL THEN 'NONE'
+                    WHEN rtc.table_name IS NOT NULL THEN 'TENANT' ELSE 'GLOBAL' END AS result_scope,
+               EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
+                        WHERE cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate
+                          AND cp.call = 'producer' AND cp.fill IN ('DSL_CONTEXT', 'SESSION', 'SESSION_MEMBER'))
+                 OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer_service ps
+                             WHERE ps.graph_name = p.graph_name AND ps.coordinate = p.coordinate
+                               AND ps.constructor_descriptor = '(Lorg/jooq/DSLContext;)V') AS bound,
+               EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
+                        WHERE s.graph_name = p.graph_name AND s.call_coordinate = p.coordinate
+                          AND s.call = 'producer') AS any_slot
+          FROM graphitron_occurrence_producer p
+          JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
+          JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+          JOIN graphql_directive_application da
+            ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+           AND da.directive_name = 'globalData'
+          LEFT JOIN graphitron_occurrence_producer_result pr
+            ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate
+          LEFT JOIN graphitron_tenant_column rtc
+            ON rtc.graph_name = pr.graph_name AND rtc.source_name = pr.table_source_name
+           AND rtc.table_schema = pr.table_schema AND rtc.table_name = pr.table_name
+         WHERE p.start = 'ROOT' AND p.kind = 'SERVICE') g
+  JOIN (VALUES ('GLOBAL_DATA_REDUNDANT'), ('GLOBAL_DATA_ON_TENANT_DATA')) k (code)
+    ON k.code = 'GLOBAL_DATA_REDUNDANT' AND (NOT g.bound OR g.result_scope = 'GLOBAL')
+    OR k.code = 'GLOBAL_DATA_ON_TENANT_DATA' AND (g.result_scope = 'TENANT' OR g.any_slot)
+UNION ALL
 -- A field of a nesting type, one with no table of its own, whose path from where it is nested starts
 -- with a key fanning out by the parent row's tenant, at the field: routing it by that row's tenant
 -- waits on a nesting start being stated per occurrence, so it is refused until then (Alf, 2026-11-15).
@@ -29275,6 +29313,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A root @service in a database-per-tenant build is handed a connection, or re-reads rows a tenant''s database holds, and nothing in its arguments names the tenant, so it would run on the default source whatever its own SQL touches: name the tenant with $tenant in its argMapping, take the node table''s record or a jOOQ record carrying the tenant column, or mark it @globalData where it touches only global data.'),
   ('ROUTINE_WRITE_TENANT_SCOPED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_TENANT_SCOPED',
    'A @routine mutation in a database-per-tenant build re-reads rows a tenant''s database holds, and a routine write names no tenant, so it runs on the default source and cannot reach that tenant''s rows: return rows of a table no tenant column scopes, or write through a @service that names its tenant with $tenant.'),
+  ('GLOBAL_DATA_REDUNDANT', 'error', 'GRAPHITRON', 'GRAPHITRON_GLOBAL_DATA_REDUNDANT',
+   'A root @service in a database-per-tenant build is marked @globalData, and is handed no connection or re-reads a global table''s rows, which run on the default source already, so the mark says nothing: remove it.'),
+  ('GLOBAL_DATA_ON_TENANT_DATA', 'error', 'GRAPHITRON', 'GRAPHITRON_GLOBAL_DATA_ON_TENANT_DATA',
+   'A root @service in a database-per-tenant build is marked @globalData, and re-reads a tenant''s rows or its arguments name a tenant or carry a tenant''s values, so its data is not global: remove the mark, and name the tenant instead, or drop the tenant input.'),
   ('TENANT_SLOTS_OPTIONAL_ONLY', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_SLOTS_OPTIONAL_ONLY',
    'Every value a root @service''s tenant is read from may be left out, so a call can name none and nothing says where it runs: make one of them required.'),
   ('TENANT_NAMED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_NAMED_TWICE',
