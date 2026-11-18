@@ -70,6 +70,7 @@ input FilmRecordDecodeTwiceInput {
 input FilmRecordListGroupInput { title: String @field(name: "title"), extras: [FilmRecordAkaInput!] }
 input FilmSurveyTwiceInput { count: Int, tally: Int @field(name: "count") }
 input FilmDraftBlankNameInput { title: String @field(name: "") }
+input PrivateDraftInput { title: String }
 
 type Query {
   periodsByEmbeddable(in: [PeriodByEmbeddable!]!): String
@@ -139,6 +140,9 @@ type Query {
   # count and tally both fill FilmSurvey's count through its setter.
   countSurveyTwice(in: FilmSurveyTwiceInput!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmSurveyService", method: "count", argMapping: "survey: in"})
+  # PrivateDraftService.PrivateDraft is package-private: no generated code can construct it.
+  countPrivateDraft(in: PrivateDraftInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.PrivateDraftService", method: "count", argMapping: "draft: in"})
   # title's @field names no member: the name is empty.
   countBlankNameDraft(in: [FilmDraftBlankNameInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
@@ -154,6 +158,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   """, rows: """
   coordinate,                          code,                       detail
   Query.countAbstractDraft(in:),       BUILT_CLASS_UNBUILDABLE,    no.sikt.graphitron.rewrite.test.services.AbstractFilmDraft
+  Query.countPrivateDraft(in:),        BUILT_CLASS_UNBUILDABLE,    no.sikt.graphitron.rewrite.test.services.PrivateDraftService$PrivateDraft
   Query.filmsByRecord(by:),            CONDITION_PARAMETER_RECORD, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   FilmDraftExtraInput.subtitle,        MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmDraft
   FilmSearchMisspeltInput.Length,      MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.conditions.FilmSearchFilter

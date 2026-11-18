@@ -9,6 +9,11 @@
 # joining the slot's table and the node's infers the path there, whichever table declares it; none or
 # several leaves it empty, which the rule judges. A self-referencing key is never inferred at an
 # argument: a node on the slot's own table is its own rows.
+# Ids built into records whose keys are not the plain case: xlat_child's one key to xlat_parent
+# references its alternate unique column, not the node's key, so a node id has nothing to land in;
+# reordered_fk_child's composite key lists the parent's key columns in another order, and the id's
+# positions land on the child's columns in the node key's order; studierett's two keys to
+# studieprogram are told apart by the one the path names.
 
 interface Node { id: ID! }
 
@@ -69,6 +74,22 @@ input FilmRecordTwinIdsInput {
   otherFilmId: ID @nodeId(typeName: "Film")
 }
 
+type XlatParent implements Node @table(name: "xlat_parent") @node { id: ID! }
+type ReorderedPkParent implements Node @table(name: "nodeidfixture.reordered_pk_parent") @node { id: ID! }
+type Studieprogram implements Node @table(name: "idreffixture.studieprogram") @node { id: ID! }
+
+input XlatChildRecordInput {
+  note: String @field(name: "note")
+  parent: ID @nodeId(typeName: "XlatParent") @reference(path: [{key: "xlat_child_parent_alt_key_fkey"}])
+}
+input ReorderedChildRecordInput {
+  parent: ID @nodeId(typeName: "ReorderedPkParent") @reference(path: [{key: "reordered_fk_child_parent_fkey"}])
+}
+input StudierettRecordInput {
+  registrar: ID @nodeId(typeName: "Studieprogram")
+    @reference(path: [{key: "studierett_registrar_studieprogram_fkey"}])
+}
+
 type FilmDraftsCountedPayload { count: Int }
 
 type Query {
@@ -99,6 +120,15 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
   languages: [Language!]!
   actors: [Actor!]!
+  describeXlatChild(in: XlatChildRecordInput!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.KeyedRecordInputService", method: "describeXlatChild"})
+  describeReorderedChild(in: ReorderedChildRecordInput!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.KeyedRecordInputService", method: "describeReorderedChild"})
+  describeStudierett(in: StudierettRecordInput!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.KeyedRecordInputService", method: "describeStudierett"})
+  xlatParents: [XlatParent!]!
+  reorderedParents: [ReorderedPkParent!]!
+  studieprogrammer: [Studieprogram!]!
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
@@ -114,6 +144,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.films(languageId:),  NODE_ID_LANDS_ON_TABLE, public.film
   Query.filmsByActor(actorId:), NODE_ID_LANDS_ON_TABLE, public.language
   Query.filmsByActorId(actorId:), NODE_ID_LANDS_ON_TABLE, public.film
+  XlatChildRecordInput.parent,    NODE_ID_LANDS_ON_TABLE, public.xlat_child
   """)
 
 # No key or several leave the slot's path empty, ending where it starts; one key infers it, ending on
@@ -184,4 +215,14 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape", whe
   coordinate,                            decode_shape
   Query.countRecordRefs(in.filmId:),      OWN_RECORD
   Query.countRecordRefs(in.languageRef:), REFERENCING_RECORD
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot_record_column", where: """
+  coordinate LIKE 'Query.describeReorderedChild%' OR coordinate LIKE 'Query.describeStudierett%'
+  """, rows: """
+  coordinate,                              bound,                              key_position, column_name
+  Query.describeReorderedChild(in.parent:), nodeidfixture.reordered_pk_parent, 0,            fk_a
+  Query.describeReorderedChild(in.parent:), nodeidfixture.reordered_pk_parent, 1,            fk_b
+  Query.describeReorderedChild(in.parent:), nodeidfixture.reordered_pk_parent, 2,            fk_c
+  Query.describeStudierett(in.registrar:), idreffixture.studieprogram,       0,            registrar_studieprogram
   """)
