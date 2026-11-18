@@ -9629,7 +9629,9 @@ UNION ALL
 -- name, capitalised, among the class's slots or graphql-java's contract, a bare accessor or a public
 -- field not being read, since a handler's class is no record, returning what
 -- the field's scalar is where the field is one scalar of a known class and no @nodeId, which encodes
--- what the accessor yields into the id rather than handing it over as it is. Each handler's class is read
+-- what the accessor yields into the id rather than handing it over as it is. A scalar's class is its
+-- input arrival's exact class; an enum is not compared, since a getter may hand graphql-java the
+-- enum's name or a constant of any Java enum, which it writes by its name. Each handler's class is read
 -- off graphitron_error_handler_source; a handler resolving to no class is judged nowhere. The detail
 -- is the class.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
@@ -9660,10 +9662,10 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                                        AND nid.directive_name = 'nodeId')
                          OR NOT EXISTS (SELECT 1 FROM graphitron_type_arrival x
                                          WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
-                                           AND x.arrival_kind = 'EXACT')
+                                           AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR')
                          OR EXISTS (SELECT 1 FROM graphitron_type_arrival x
                                      WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
-                                       AND x.arrival_kind = 'EXACT' AND x.arrival_class = COALESCE(s.erased_class, s.slot_type))))
+                                       AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR' AND x.arrival_class = COALESCE(s.erased_class, s.slot_type))))
    AND NOT EXISTS (SELECT 1 FROM code_contract_slot c
                     WHERE hs.kind = 'CONTRACT' AND c.class_name = hs.class_name
                       AND c.method_name IN ('get' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
@@ -9674,10 +9676,10 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                                        AND nid.directive_name = 'nodeId')
                          OR NOT EXISTS (SELECT 1 FROM graphitron_type_arrival x
                                          WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
-                                           AND x.arrival_kind = 'EXACT')
+                                           AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR')
                          OR EXISTS (SELECT 1 FROM graphitron_type_arrival x
                                      WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
-                                       AND x.arrival_kind = 'EXACT' AND x.arrival_class = c.erased_class)));
+                                       AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR' AND x.arrival_class = c.erased_class)));
 COMMENT ON VIEW graphitron_code_reference_entry_defect_rule IS 'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.';
 
 CREATE VIEW graphitron_scalar_class_rule (graph_name, type_name, kind, java_class) AS

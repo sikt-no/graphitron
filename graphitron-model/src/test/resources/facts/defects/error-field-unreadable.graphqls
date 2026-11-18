@@ -6,6 +6,9 @@
 # getSqlState; its getErrorCode, an int, fills an Int. GraphQLError offers path and extensions and no
 # bogus. FilmLookupCodedException answers code through a bare code() and hint through a public field,
 # neither of which is read: an extra field reads a get or is getter.
+# FilmLookupRatedException's getters return a Java enum, a list of one and a plain class for fields
+# typed as a GraphQL enum, nullable or not, a list of it and an object: graphql-java writes an enum
+# constant by its name, so each is read, and only bogusRating, which no getter answers, is refused.
 
 type Film @table(name: "film") { title: String }
 
@@ -22,6 +25,20 @@ type FilmCoded @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitr
   message: String!
   code: String
   hint: String
+}
+
+enum FilmRating { G PG }
+
+type FilmLookupDetail { title: String }
+
+type FilmRated @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.FilmLookupRatedException"}]) {
+  path: [String!]!
+  message: String!
+  rating: FilmRating!
+  maybeRating: FilmRating
+  ratings: [FilmRating!]!
+  detail: FilmLookupDetail
+  bogusRating: FilmRating
 }
 
 type RateOverflow @error(handlers: [{handler: DATABASE, sqlState: "22003"}]) {
@@ -47,6 +64,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   ERROR_FIELD_UNREADABLE, FilmNotFound.stackTrace,       no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
   ERROR_FIELD_UNREADABLE, FilmCoded.code,                no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException
   ERROR_FIELD_UNREADABLE, FilmCoded.hint,                no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException
+  ERROR_FIELD_UNREADABLE, FilmRated.bogusRating,        no.sikt.graphitron.rewrite.test.services.FilmLookupRatedException
   ERROR_FIELD_UNREADABLE, RateOverflow.sqlState,         java.sql.SQLException
   ERROR_FIELD_UNREADABLE, Invalid.bogus,                 graphql.GraphQLError
   """)
