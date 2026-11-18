@@ -5487,6 +5487,16 @@ type Mutation {
             argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
         )
 
+    # A write that finds nothing to write: rent_film_when_stocked returns no row for an inventory id
+    # the inventory does not hold. The field still succeeds, its payload holding no rental and its
+    # errors null. An errors field may not be declared non-null (ERRORS_FIELD_NON_NULL), so null is
+    # the only answer it gives on success.
+    rentFilmWhenStocked(inventoryId: Int!, customerId: Int!): RentFilmPayload
+        @routine(
+            name: "rent_film_when_stocked"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+
     # The same write with its arguments moved inside a wrapper input: argMapping binds each
     # routine IN parameter through a dot-path into the input object. Proves the descent end to
     # end: parse, schema walk, emit, and the post-commit re-read all agree.

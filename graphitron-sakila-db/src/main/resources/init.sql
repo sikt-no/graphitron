@@ -1122,6 +1122,21 @@ AS $$
     RETURNING rental.rental_id
 $$;
 
+-- Routine-write fixture: rents the copy only where the inventory holds it, so an unknown inventory id
+-- writes nothing and the routine returns no row, rather than failing on the foreign key.
+CREATE OR REPLACE FUNCTION public.rent_film_when_stocked(
+    p_inventory_id INTEGER,
+    p_customer_id  INTEGER
+) RETURNS TABLE(rental_id INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
+    SELECT now(), inventory.inventory_id, p_customer_id, 1
+    FROM inventory
+    WHERE inventory.inventory_id = p_inventory_id
+    RETURNING rental.rental_id
+$$;
+
 -- Routine-write fixture: rents the lowest-numbered copy of a film. Takes a film and a customer,
 -- two integer keys a caller can swap without a type error, so a binding that hands either
 -- parameter the other's key writes a visibly wrong rental.

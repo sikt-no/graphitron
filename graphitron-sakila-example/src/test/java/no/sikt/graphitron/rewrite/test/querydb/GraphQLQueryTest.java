@@ -7815,6 +7815,25 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void rentFilmWhenStocked_aWriteReturningNoRowAnswersAPayloadWithNoRentalAndNullErrors() {
+        // The routine writes nothing for an inventory id the inventory does not hold and returns no
+        // row: the field succeeds, the payload holds no rental, and its nullable errors field is null.
+        var result = executeRaw("""
+            mutation {
+                rentFilmWhenStocked(inventoryId: 999999, customerId: 3) {
+                    rental { rentalId }
+                    errors { __typename }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("rentFilmWhenStocked", as(MAP));
+        payload.containsEntry("rental", null);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void rentFilmPayload_failingRoutine_routesThroughErrorChannel() {
         // Outcome (a): the routine raised (FK violation: inventory 999999 does not exist). The
