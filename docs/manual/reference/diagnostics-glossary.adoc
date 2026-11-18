@@ -323,11 +323,31 @@ Both fields draw the code, not only the one that differs from the first. A field
 [#facet-surfaced-nowhere]
 === An `@asFacet` field no connection surfaces (`FACET_SURFACED_NOWHERE`)
 
-*What it says.* `An @asFacet filter field counts its values for the connections that take its input type as an argument, and no field returning a connection whose facets graphitron generates takes it`, at the `@asFacet`, naming the input type in the detail.
+*What it says.* `An @asFacet filter field counts its values for the connections that take its input type as an argument, and no field returning a connection takes it`, at the `@asFacet`, naming the input type in the detail.
 
-*Cause.* A facet's counts surface on the `facets` field of the connections whose filter argument takes the input type. Where only list fields, or only connection types you declared yourself, take it, the counts would surface nowhere.
+*Cause.* A facet's counts surface on the `facets` field of the connections whose filter argument takes the input type. Where no field returning a connection takes it, only list fields or none at all, the counts would surface nowhere. An input taken only by fields returning a connection type you declared yourself is valid, and is the deferral xref:#authored-connection-facet-unsupported[`AUTHORED_CONNECTION_FACET_UNSUPPORTED`] instead.
 
 *Next step.* Use the input as the filter of an `@asConnection` field, or remove `@asFacet`.
+
+[#authored-connection-facet-unsupported]
+=== An `@asFacet` field only a declared connection type takes (`AUTHORED_CONNECTION_FACET_UNSUPPORTED`)
+
+*What it says.* `An @asFacet filter field is taken only by fields returning a connection type declared in the schema, which is valid, and graphitron does not yet generate the facets field on a connection type it did not generate`, at the `@asFacet`, naming the input type in the detail. A deferral: the schema is valid, and the build stops until graphitron generates the shape.
+
+*Cause.* A facet's counts surface on a `facets` field graphitron generates onto the connection type, with its facets type. It generates them only onto a connection type `@asConnection` generates; a connection type you declare yourself does not gain one yet. Where every field returning a connection that takes the input returns such a declared type, the counts have nowhere to surface for now:
+
+[source,graphql]
+----
+input FilmFilter { title: [String!] @field(name: "title") @asFacet }
+
+type Query {
+  films(filter: FilmFilter, first: Int, after: String): FilmsPage
+}
+----
+
+with `FilmsPage` a connection type declared in the schema.
+
+*Next step.* Return an `@asConnection` connection from a field taking the filter, which gains the facets, or remove `@asFacet` until graphitron generates facets onto declared connection types.
 
 [#lookup-key-refusals]
 === A `@lookupKey` that names no key of the field's rows
