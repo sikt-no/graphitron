@@ -414,6 +414,11 @@ routine returning a table cannot keep the contract, since nothing ties its rows 
 `@lookupKey` is what declares a field plural identifying; an insert or a delete whose schema has
 that shape, a list argument and one answer per element, is taken to want the same order without it
 (Alf, 2026-11-18).
+A mutation of that shape is held to the contract whatever writes it, a routine included, since a
+consumer reads the contract off the schema (Alf, 2026-11-18). Graphitron cannot know what a
+routine does, but it does know a routine returning a table has no order of its own: such a routine
+behind a plural mutation must be given an order, and is refused without one, the refusal naming the
+plural identifying field it fails to keep.
 
 A field returning a `@table` type on its parent's own table is refused unless the schema says how
 it is reached: a nesting type, with no table of its own, or a `@reference` keyed on the table's
