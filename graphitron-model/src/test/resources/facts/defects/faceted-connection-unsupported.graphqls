@@ -1,0 +1,23 @@
+# A faceted connection graphitron does not generate facets for yet. Store.customers is a connection
+# under a table-bound type, fetched in a batch over its stores, and its filter declares a facet, so it
+# draws FACETED_CONNECTION_UNSUPPORTED at the field. Query.customers takes the same filter at the root
+# over a @table-bound type, and is the near miss.
+
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+
+input CustomerFilter { firstName: [String!] @field(name: "first_name") @asFacet }
+
+type Store @table(name: "store") {
+  customers(filter: CustomerFilter): [Customer!]!
+    @asConnection @splitQuery @defaultOrder(primaryKey: true)
+}
+
+type Query {
+  store: Store
+  customers(filter: CustomerFilter): [Customer!]! @asConnection @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'FACETED_CONNECTION_UNSUPPORTED'", rows: """
+  code,                           coordinate
+  FACETED_CONNECTION_UNSUPPORTED, Store.customers
+  """)

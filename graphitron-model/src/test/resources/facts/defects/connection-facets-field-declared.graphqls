@@ -1,0 +1,23 @@
+# A connection type an author declared with a facets field of its own. The facets field and the
+# facets type are graphitron's, generated from @asFacet filters, so FilmsConnection.facets draws
+# CONNECTION_FACETS_FIELD_DECLARED at its declaration, naming the connection type; its one producer,
+# which surfaces no facets for it, draws CONNECTION_FACETS_DISAGREE too, which
+# connection-facets-disagree pins. FilmsPage is the near miss: the same connection without the field.
+
+type Film @table(name: "film") { title: String }
+
+type FilmsConnection { edges: [FilmsEdge!]! pageInfo: PageInfo! facets: FilmsFacets }
+type FilmsPage { edges: [FilmsEdge!]! pageInfo: PageInfo! }
+type FilmsEdge { cursor: String! node: Film! }
+type FilmsFacets { title: [String!] }
+type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+
+type Query {
+  films(first: Int, after: String): FilmsConnection @defaultOrder(primaryKey: true)
+  filmsPage(first: Int, after: String): FilmsPage @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'CONNECTION_FACETS_FIELD_DECLARED'", rows: """
+  code,                             coordinate,             detail
+  CONNECTION_FACETS_FIELD_DECLARED, FilmsConnection.facets, FilmsConnection
+  """)

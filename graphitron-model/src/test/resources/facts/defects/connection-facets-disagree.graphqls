@@ -1,0 +1,32 @@
+# Two fields returning one connection type fill one facets record, the type's. Query.filmsFaceted and
+# Query.filmsPlain name one connection through connectionName, and only the first takes a filter
+# declaring a facet: the type gains a facets field, which the second fills with nothing, so both
+# fields draw CONNECTION_FACETS_DISAGREE, naming the connection type. Every producer of the type is
+# flagged, not only the one differing from the first. Query.languages is the near miss: the only
+# producer of its connection, faceted, and no defect.
+
+type Film @table(name: "film") { title: String }
+type Language @table(name: "language") { name: String }
+
+input FilmFilter { title: [String!] @field(name: "title") @asFacet }
+input LanguageFilter { name: [String!] @field(name: "name") @asFacet }
+
+type Query {
+  filmsFaceted(filter: FilmFilter): [Film!]!
+    @asConnection(connectionName: "SharedFilmsConnection") @defaultOrder(primaryKey: true)
+  filmsPlain: [Film!]!
+    @asConnection(connectionName: "SharedFilmsConnection") @defaultOrder(primaryKey: true)
+  languages(filter: LanguageFilter): [Language!]! @asConnection @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'CONNECTION_FACETS_DISAGREE'", rows: """
+  code,                       coordinate,         detail
+  CONNECTION_FACETS_DISAGREE, Query.filmsFaceted, SharedFilmsConnection
+  CONNECTION_FACETS_DISAGREE, Query.filmsPlain,   SharedFilmsConnection
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_facet", rows: """
+  coordinate,         facet_name, position, filter_argument_name
+  Query.filmsFaceted, title,      1,        filter
+  Query.languages,    name,       1,        filter
+  """)

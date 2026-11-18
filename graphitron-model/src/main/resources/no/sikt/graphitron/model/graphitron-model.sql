@@ -3708,6 +3708,9 @@ COMMENT ON COLUMN graphitron_connection_carrier.touched_at IS 'when the reading 
 CREATE INDEX graphitron_connection_carrier_coordinate_ix
   ON graphitron_connection_carrier (graph_name, coordinate);
 COMMENT ON INDEX graphitron_connection_carrier_coordinate_ix IS 'A minted name''s candidate rows name the carrier that coined it by its coordinate, and the contested-name defect reaches the carrier''s @asConnection position through it, which the primary key, the type and field names, does not serve.';
+CREATE INDEX graphitron_connection_carrier_connection_ix
+  ON graphitron_connection_carrier (graph_name, connection_name);
+COMMENT ON INDEX graphitron_connection_carrier_connection_ix IS 'A connection type is asked whether some carrier mints it, which CONNECTION_FACETS_FIELD_DECLARED asks of every declared facets field, and the primary key, the carrier''s type and field names, does not serve.';
 
 CREATE VIEW graphitron_connection_carrier_rule
   (graph_name, type_name, field_name, coordinate, connection_name, edge_name,
@@ -20709,6 +20712,20 @@ SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
   JOIN graphitron_connection ce
     ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
 UNION ALL
+-- A facets field an author declared on a connection type no @asConnection mints, at the field's
+-- declaration: a connection's facets field and its facets type are graphitron's, generated from the
+-- @asFacet filters of the fields returning it, and a declared one names a facets record nothing
+-- builds. A declaration standing in for a type @asConnection mints is checked against the mint by
+-- MINTED_TYPE_DECLARED_SHORT instead. The detail is the connection type.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'CONNECTION_FACETS_FIELD_DECLARED', fp.type_name, 'macro-expansion'
+  FROM graphitron_field_position fp
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = fp.graph_name AND el.coordinate = fp.type_name || '.' || fp.field_name
+ WHERE fp.position = 'FACETS'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier c
+                    WHERE c.graph_name = fp.graph_name AND c.connection_name = fp.type_name)
+UNION ALL
 -- A connection carrier whose resolved first default is larger than the build's maximum page size,
 -- so the schema advertises a default no request can receive. Reported where the author wrote the
 -- default: at the first argument's declaration where the carrier declares first itself, and
@@ -21988,7 +22005,90 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                               AND b.declared_via = 'BOUND_TABLE'))
         OR f.is_list AND p.start = 'CHILD' AND m.result_erased_class IN ('java.util.List', 'org.jooq.Result')
            AND NOT EXISTS (SELECT 1 FROM code_delivery_container c
-                            WHERE c.container_class = m.result_first_argument_class AND c.multiplies));
+                            WHERE c.container_class = m.result_first_argument_class AND c.multiplies))
+UNION ALL
+-- Producers of one connection type filling different facets, at each producing field: the facets
+-- record is the type's, so every producer must fill the same one, facet by facet the same name,
+-- value type and nullability in the same place. A producer's filter argument and column are its own
+-- and not compared. Every producer of a type that has a disagreement is flagged, not those differing
+-- from a first one, and so is one that surfaces no facets where its type's facets field asks for
+-- them. The detail is the connection type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'CONNECTION_FACETS_DISAGREE', pc.connection_type_name, 'occurrence-producers'
+  FROM graphitron_occurrence_producer_connection pc
+  JOIN graphitron_occurrence o ON o.graph_name = pc.graph_name AND o.coordinate = pc.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE (pc.faceted
+        AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_facet pf
+                         WHERE pf.graph_name = pc.graph_name AND pf.coordinate = pc.coordinate))
+    OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer_connection qc
+                WHERE qc.graph_name = pc.graph_name
+                  AND qc.connection_type_name = pc.connection_type_name
+                  AND qc.coordinate <> pc.coordinate
+                  AND (EXISTS (SELECT 1 FROM graphitron_occurrence_producer_facet pf
+                                 JOIN graphitron_facet_binding pb
+                                   ON pb.graph_name = pf.graph_name AND pb.type_name = pf.facet_type_name
+                                  AND pb.field_name = pf.facet_name
+                                WHERE pf.graph_name = pc.graph_name AND pf.coordinate = pc.coordinate
+                                  AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_facet qf
+                                                    JOIN graphitron_facet_binding qb
+                                                      ON qb.graph_name = qf.graph_name
+                                                     AND qb.type_name = qf.facet_type_name
+                                                     AND qb.field_name = qf.facet_name
+                                                   WHERE qf.graph_name = qc.graph_name
+                                                     AND qf.coordinate = qc.coordinate
+                                                     AND qf.position = pf.position
+                                                     AND qf.facet_name = pf.facet_name
+                                                     AND qb.value_type_name = pb.value_type_name
+                                                     AND qb.value_nullable = pb.value_nullable))
+                       OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer_facet qf
+                                   WHERE qf.graph_name = qc.graph_name AND qf.coordinate = qc.coordinate
+                                     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_facet pf
+                                                      WHERE pf.graph_name = pc.graph_name
+                                                        AND pf.coordinate = pc.coordinate
+                                                        AND pf.position = qf.position))))
+UNION ALL
+-- A faceted connection graphitron does not generate facets for yet, at the producing field: facets
+-- are bucketed by the root Query launcher over the rows of one table, so a faceted child connection,
+-- batched over its parents, and one over an interface or a union are refused until then. A routine's
+-- rows are its own table's.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'FACETED_CONNECTION_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer_connection pc
+  JOIN graphitron_occurrence o ON o.graph_name = pc.graph_name AND o.coordinate = pc.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_producer_facet pf
+                WHERE pf.graph_name = pc.graph_name AND pf.coordinate = pc.coordinate)
+   AND (NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                     WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                       AND ro.operation = 'QUERY')
+        OR NOT (EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                          JOIN graphitron_type t
+                            ON t.graph_name = tt.graph_name AND t.type_name = tt.type_name
+                         WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+                           AND t.kind = 'OBJECT')
+                OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer rp
+                            WHERE rp.graph_name = pc.graph_name AND rp.coordinate = pc.coordinate
+                              AND rp.kind = 'ROUTINE')))
+UNION ALL
+-- An @asFacet field no faceted connection reaches through its own arguments, at the @asFacet: its
+-- counts would surface nowhere. A field reached and then dropped as a repeated name is reached, the
+-- walk's duplicate refusal saying why.
+SELECT fb.graph_name, fb.source_name, fb.source_line, fb.source_column,
+       'FACET_SURFACED_NOWHERE', fb.type_name, 'occurrence-producers'
+  FROM graphitron_facet_binding fb
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence io
+                     JOIN graphitron_occurrence ao
+                       ON ao.graph_name = io.graph_name AND ao.coordinate = io.parent_coordinate
+                      AND ao.kind = 'FIELD_ARGUMENT'
+                     JOIN graphitron_occurrence_producer_connection pc
+                       ON pc.graph_name = ao.graph_name AND pc.coordinate = ao.parent_coordinate
+                    WHERE io.graph_name = fb.graph_name AND io.kind = 'INPUT_FIELD'
+                      AND io.element_coordinate = fb.type_name || '.' || fb.field_name
+                      AND pc.faceted);
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
@@ -30351,6 +30451,14 @@ INSERT INTO graphitron_defect_type VALUES
    'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',
    'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
+  ('CONNECTION_FACETS_FIELD_DECLARED', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_FACETS_FIELD_DECLARED',
+   'A connection type declares a facets field, which is graphitron''s to generate from the @asFacet fields of the filters of an @asConnection field returning the connection; a connection type an author declared does not gain one yet. Remove the facets field, or let @asConnection generate the connection.'),
+  ('CONNECTION_FACETS_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_FACETS_DISAGREE',
+   'Fields returning one connection type fill one facets record, the type''s, so each must surface the same facets from its own filter arguments: the same names, with the same value types and nullability, in the same order. Give each field the same @asFacet filter fields, or return a connection type of its own; a field returning a type whose facets field asks for facets must surface some.'),
+  ('FACETED_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_FACETED_CONNECTION_UNSUPPORTED',
+   'A connection with @asFacet filter fields is generated only as a root Query field over a @table-bound object type: a faceted connection under another type, fetched in a batch over its parents, or one over an interface or a union, is not generated yet. Move the connection to the root, or remove @asFacet from its filter.'),
+  ('FACET_SURFACED_NOWHERE', 'error', 'GRAPHITRON', 'GRAPHITRON_FACET_SURFACED_NOWHERE',
+   'An @asFacet filter field counts its values for the connections that take its input type as an argument, and no field returning a connection whose facets graphitron generates takes it: the counts would surface nowhere. Use the input as the filter of an @asConnection field, or remove @asFacet.'),
   ('MINTED_NAME_CONTESTED', 'error', 'GRAPHITRON', 'GRAPHITRON_MINTED_NAME_CONTESTED',
    'A name @asConnection would mint is coined more than one way, a type in two roles or a field or argument in two shapes, so graphitron mints none of them: give the connections distinct names, or their carriers one element type.'),
   ('MINTED_TYPE_DECLARED_SHORT', 'error', 'GRAPHITRON', 'GRAPHITRON_MINTED_TYPE_DECLARED_SHORT',

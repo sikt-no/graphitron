@@ -1,0 +1,20 @@
+# An @asFacet field whose counts no connection surfaces. FilmFilter is taken only by a list field, so
+# its facet draws FACET_SURFACED_NOWHERE at the @asFacet, naming the input type. LanguageFilter is the
+# near miss: a list field takes it too, and so does a connection, which surfaces its facet.
+
+type Film @table(name: "film") { title: String }
+type Language @table(name: "language") { name: String }
+
+input FilmFilter { title: [String!] @field(name: "title") @asFacet }
+input LanguageFilter { name: [String!] @field(name: "name") @asFacet }
+
+type Query {
+  films(filter: FilmFilter): [Film!]!
+  languageList(filter: LanguageFilter): [Language!]!
+  languages(filter: LanguageFilter): [Language!]! @asConnection @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'FACET_SURFACED_NOWHERE'", rows: """
+  code,                   coordinate,       detail
+  FACET_SURFACED_NOWHERE, FilmFilter.title, FilmFilter
+  """)

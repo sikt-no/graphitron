@@ -1198,12 +1198,11 @@ public class GraphitronSchemaBuilder {
      * definition-keyed / use-keyed axis: the binding checks (a facet must be a plain
      * {@code @field}-bound scalar/enum column, optionally through {@code @reference};
      * {@code @condition} / {@code @nodeId} bindings and {@code ID} fields are unsupported) are
-     * authored-directive facts at the input type's member coordinate, while the reachability
-     * check (the enclosing
-     * input type must be a filter input on at least one {@code @asConnection} field, else the
-     * {@code facets} expansion would be dead schema) is a derived join over the consuming
-     * coordinates. An input type shared by connection and non-connection consumers is fine:
-     * {@code @asFacet} surfaces facets at the connection use sites and is inert at the others.
+     * authored-directive facts at the input type's member coordinate. Whether a facet surfaces
+     * anywhere, and whether the connection surfacing it is one the facet aggregate is generated
+     * for, are the store's defects ({@code FACET_SURFACED_NOWHERE},
+     * {@code FACETED_CONNECTION_UNSUPPORTED}), judged per producing occurrence and stopping the
+     * build before this walk runs.
      *
      * <p>Rejecting {@code ID} fields outright, rather than only {@code @nodeId} co-occurrence,
      * keeps the rule readable off the SDL: an {@code ID} field is where a node-id reading can arise
@@ -1225,19 +1224,11 @@ public class GraphitronSchemaBuilder {
      * {@link GraphitronSchemaValidator} drains; it demotes no verdict.
      */
     private static void rejectFacetMisuse(BuildContext ctx, ConnectionSynthesisRelation connectionSynthesis) {
-        // Per input type: consumed by any directive-driven @asConnection carrier at all; and
-        // consumed by a carrier the v1 facet emitter does not serve (only root Query connections
-        // over a @table-backed object element bind a facet plan; a faceted child/@splitQuery or
-        // interface/union carrier would expose a facets field whose resolver always returns
-        // null, a green build with a dead surface). Structural rows never gain facets, since the
-        // promoter's structural arm synthesises nothing, so @asFacet is inert there per the
-        // spec's "inert at the others" rule; they contribute neither reached nor unsupported: an
-        // input consumed ONLY by structural carriers still lands in the dead-schema rejection
-        // below, while sharing with a served root carrier stays legal.
+        // Per directive-driven carrier the facet aggregate is generated for: its facet names and
+        // its reference facets. A carrier it is not generated for is the store's
+        // FACETED_CONNECTION_UNSUPPORTED, so its reference facets are not judged here.
         String queryRootName = ctx.schema.getQueryType() != null
             ? ctx.schema.getQueryType().getName() : null;
-        var connectionFilterInputs = new LinkedHashSet<String>();
-        var unsupportedCarrierConsumers = new LinkedHashMap<String, String>();
         for (var row : connectionSynthesis.rows().values()) {
             if (!(row instanceof no.sikt.graphitron.rewrite.model.ConnectionSynthesis.DirectiveDriven)) {
                 continue;
@@ -1253,10 +1244,6 @@ public class GraphitronSchemaBuilder {
                 var filterParamNameCounts = new LinkedHashMap<String, Integer>();
                 for (var arg : field.getArguments()) {
                     if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType in) {
-                        connectionFilterInputs.add(in.getName());
-                        if (unsupportedReason != null) {
-                            unsupportedCarrierConsumers.putIfAbsent(in.getName(), unsupportedReason);
-                        }
                         // Facet labels must be unique per carrier: each becomes one field on the
                         // synthesised <ConnName>Facets object (the promoter keeps the first and
                         // drops repeats so synthesis cannot crash; this is the named rejection).
@@ -1311,8 +1298,7 @@ public class GraphitronSchemaBuilder {
             if (!(type instanceof GraphQLInputObjectType input)) continue;
             for (var field : input.getFieldDefinitions()) {
                 if (!field.hasAppliedDirective(DIR_AS_FACET)) continue;
-                String reason = facetMisuseReason(field, input.getName(), connectionFilterInputs,
-                    unsupportedCarrierConsumers);
+                String reason = FacetFieldValidation.definitionKeyedRejection(field);
                 if (reason == null) continue;
                 String coordinate = input.getName() + "." + field.getName();
                 ctx.addDiagnostic(ValidationError.forField(coordinate,
@@ -1350,7 +1336,7 @@ public class GraphitronSchemaBuilder {
     /**
      * Why a served carrier cannot count a {@code @reference}-bound facet on its filter argument
      * {@code arg}, or {@code null} when it can (or the field is not a well-formed reference facet;
-     * a malformed one is reported by {@link #facetMisuseReason}). The facet's counts join its path
+     * a malformed one is reported by {@link #rejectFacetMisuse}). The facet's counts join its path
      * onto the carrier's table and count distinct carrier rows by its primary key, along the join
      * path its own filter term carries; a carrier lacking any of the three cannot serve it.
      */
@@ -1385,36 +1371,6 @@ public class GraphitronSchemaBuilder {
             return "a @reference facet takes its join path from its own generated filter; consumer '"
                 + carrierCoordinate + "' carries @condition(override: true) " + where + ", which "
                 + "replaces that filter. Remove @reference or @asFacet, or the override";
-        }
-        return null;
-    }
-
-    /**
-     * The rejection reason for one {@code @asFacet} application, or {@code null} when it is well
-     * formed. Definition-keyed binding checks first (actionable at the field), then the use-keyed
-     * reachability checks.
-     */
-    private static String facetMisuseReason(
-            graphql.schema.GraphQLInputObjectField field, String inputTypeName,
-            Set<String> connectionFilterInputs,
-            Map<String, String> unsupportedCarrierConsumers) {
-        // Definition-keyed half: the shared predicate the promoter's synthesis walk also gates
-        // on, so what the reduction rejects and what the promoter skips cannot drift.
-        String definitionKeyed = FacetFieldValidation.definitionKeyedRejection(field);
-        if (definitionKeyed != null) {
-            return definitionKeyed;
-        }
-        if (!connectionFilterInputs.contains(inputTypeName)) {
-            return "@asFacet has no effect: input type '" + inputTypeName + "' is not used as a "
-                + "filter input on any @asConnection field, so the facets expansion would be dead "
-                + "schema; move the directive to a connection filter input or remove it";
-        }
-        String unsupportedCarrier = unsupportedCarrierConsumers.get(inputTypeName);
-        if (unsupportedCarrier != null) {
-            return "v1 emits the facet aggregate only for root Query connections over a "
-                + "@table-backed object element; " + unsupportedCarrier + ", so its facets field "
-                + "would always resolve to null. Facets on child (@splitQuery) and interface/union "
-                + "connections are a follow-up; remove @asFacet or move the connection to the root";
         }
         return null;
     }

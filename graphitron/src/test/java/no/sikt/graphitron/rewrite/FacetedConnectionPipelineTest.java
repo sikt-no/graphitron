@@ -227,29 +227,6 @@ class FacetedConnectionPipelineTest {
     }
 
     @Test
-    void asFacetOnInterfaceConnection_rejected() {
-        // The reference page advertises interface/union rejection alongside the @splitQuery
-        // child case; this pins the interface arm of the carrier-scope check.
-        var schema = TestSchemaHelper.buildSchema("""
-            interface Watchable { title: String }
-            type Film implements Watchable @table(name: "film") { title: String }
-            input WatchableFilter {
-                title: [String!] @field(name: "title") @asFacet
-            }
-            type Query {
-                watchables(filter: WatchableFilter): [Watchable!]!
-                    @asConnection @defaultOrder(primaryKey: true)
-            }
-            """);
-
-        assertThat(schema.diagnostics())
-            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
-                && e.message().contains("WatchableFilter.title")
-                && e.message().contains("root Query connections")
-                && e.message().contains("@table-backed object element"));
-    }
-
-    @Test
     void asFacetInputSharedWithStructuralConnection_notRejected() {
         // A structural connection carrier (declared Connection return type, @asConnection
         // alongside) never gains facets, so @asFacet is inert there per the spec's "inert at
@@ -327,30 +304,6 @@ class FacetedConnectionPipelineTest {
     }
 
     @Test
-    void asFacetOnChildConnection_rejected() {
-        // The v1 facet plan is built only by the root Query connection fetcher; a faceted
-        // @splitQuery child carrier would expose a facets field whose resolver always returns
-        // null, so the combination is rejected rather than shipped dead.
-        var schema = TestSchemaHelper.buildSchema("""
-            type Customer @table(name: "customer") { firstName: String }
-            input CustomerFilter {
-                firstName: [String!] @field(name: "first_name") @asFacet
-            }
-            type Store @table(name: "store") {
-                customers(filter: CustomerFilter): [Customer!]!
-                    @asConnection @splitQuery @defaultOrder(primaryKey: true)
-            }
-            type Query { store: Store }
-            """);
-
-        assertThat(schema.diagnostics())
-            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
-                && e.message().contains("CustomerFilter.firstName")
-                && e.message().contains("root Query connections")
-                && e.message().contains("Store.customers"));
-    }
-
-    @Test
     void facetNameCollidingWithSiblingArgFilterField_rejected() {
         // A non-facet filter field on a sibling input arg shares the facet's name. The facet
         // fragments and the generated condition method both
@@ -400,25 +353,7 @@ class FacetedConnectionPipelineTest {
                 && e.message().contains("duplicate facet field name 'title'"));
     }
 
-    // ===== Rejection (use-keyed reachability check) =====
-
-    @Test
-    void asFacetOnInputNotReachedViaAnyConnection_rejected() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Film @table(name: "film") { title: String }
-            input FilmFilter {
-                title: [String!] @field(name: "title") @asFacet
-            }
-            type Query {
-                films(filter: FilmFilter): [Film!]!
-            }
-            """);
-
-        assertThat(schema.diagnostics())
-            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
-                && e.message().contains("FilmFilter.title")
-                && e.message().contains("dead schema"));
-    }
+    // ===== A non-connection consumer leaves the facet inert =====
 
     @Test
     void asFacetOnInputSharedWithNonConnectionConsumer_notRejected() {

@@ -14,7 +14,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
  * The single home of the definition-keyed {@code @asFacet} well-formedness predicate. The
  * synthesis walk ({@code ConnectionPromoter.facetSpecsFor}) includes a field iff
  * {@link #definitionKeyedRejection} returns {@code null}; the misuse reduction
- * ({@code GraphitronSchemaBuilder.facetMisuseReason}) surfaces the same non-null reason as the
+ * ({@code GraphitronSchemaBuilder.rejectFacetMisuse}) surfaces the same non-null reason as the
  * build diagnostic. One predicate, two consumers, so the passes cannot drift (a facet the
  * promoter synthesises is by construction one the reduction accepts, and vice versa). The
  * use-keyed checks (reachability, override, carrier scope, duplicate labels) stay in the
