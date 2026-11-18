@@ -1168,7 +1168,7 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **A root call's routing refusal is a defect written before its connection** `open`, E's, off the
+* **A root call's routing refusal is a defect written before its connection, claimed by B** `open`, off the
   critical path. `graphitron_occurrence_route_entry_defect_rule` reads the refusal off
   `graphitron_occurrence_connection_rule`, a view reading a view, which Alf and B ruled out on
   2026-11-14: a rule view reads stored tables, a defect is written first, and the rule raising it
