@@ -9457,6 +9457,26 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void countDistinctFilmDrafts_aListOfInputObjectsIsBuiltIntoTheSetTheServiceTakes() {
+        // The service takes a Set<FilmDraft>: the drafts are built as a list, validated, and copied
+        // into a set, so the two equal drafts count once.
+        var rawResult = executeRaw("""
+            mutation {
+                countDistinctFilmDrafts(in: [{ title: "ONE" }, { title: "TWO" }, { title: "ONE" }]) {
+                    count
+                    errors { __typename }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countDistinctFilmDrafts", as(MAP));
+        payload.containsEntry("count", 2);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void countFilmDrafts_emptyList_runsTheServiceWithNoErrors() {
         // An empty list has no element to validate, so the pre-step finds nothing and the service runs.
         var rawResult = executeRaw("mutation { countFilmDrafts(in: []) { count errors { __typename } } }");

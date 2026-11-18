@@ -5929,6 +5929,14 @@ type Mutation {
             method: "count", argMapping: "drafts: in"
         })
 
+    # The same list of input objects built into the Set<FilmDraft> countDistinct takes, each draft
+    # validated before it is copied into the set. Pinned by GraphQLQueryTest's countDistinctFilmDrafts_*.
+    countDistinctFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService",
+            method: "countDistinct", argMapping: "drafts: in"
+        })
+
     # The same channel over one input bound to a record through a grouping input, a list member and
     # a class-level constraint: what a validation error's path names in each case. Pinned by
     # GraphQLQueryTest's countFilmBundleDraft_* cases; see FilmBundleDraftService.

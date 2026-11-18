@@ -187,13 +187,18 @@ public final class FillEmitter {
                     if (!landing.nodeId() && "INPUT_OBJECT".equals(landing.typeKind())) {
                         var build = builds.get(fill.position());
                         var helper = "build" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
+                        // A Set parameter is built as a list of its elements, which validation walks, and
+                        // copied into a set keeping the list's order.
+                        var asList = listOfSetElements(type);
+                        var madeType = asList.orElse(type);
+                        var madeLocal = asList.isPresent() ? local + "Elements" : local;
                         if (build instanceof BuildQuery.Result.Built made) {
                             helpers.addAll(BuildEmitter.helpers(made.build(), helper, runtime.decode()));
-                            built.add(new Result.Built(local, landing.path(), isList(type),
+                            built.add(new Result.Built(madeLocal, landing.path(), isList(madeType),
                                 new Result.Into.AClass(made.build())));
                         } else if (build instanceof BuildQuery.Result.Columns columns) {
                             helpers.add(BuildEmitter.recordHelper(columns.build(), helper, runtime.decode()));
-                            built.add(new Result.Built(local, landing.path(), isList(type),
+                            built.add(new Result.Built(madeLocal, landing.path(), isList(madeType),
                                 new Result.Into.ARecord(columns.build())));
                         } else {
                             return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
@@ -201,8 +206,10 @@ public final class FillEmitter {
                                     : "nothing says how input object " + String.join(".", landing.path())
                                         + " is made into " + type);
                         }
-                        statements.add(argument(ClassName.get(Object.class), local + "Wire", landing.path()));
-                        statements.add(made(type, local, helper, helpers));
+                        statements.add(argument(ClassName.get(Object.class), madeLocal + "Wire", landing.path()));
+                        statements.add(made(madeType, madeLocal, helper, helpers));
+                        asList.ifPresent(list -> statements.add(CodeBlock.of("$T $L = $L == null ? null : new $T<>($L)",
+                            type, local, madeLocal, LINKED_HASH_SET, madeLocal)));
                         arguments.add(CodeBlock.of("$L", local));
                         continue;
                     }

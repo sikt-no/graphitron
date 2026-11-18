@@ -25,6 +25,11 @@ public final class FilmDraftService {
         return new FilmDraftsCountedPayload(drafts.size(), List.of());
     }
 
+    /** The distinct drafts: a list of input objects built into a set, equal drafts counting once. */
+    public static FilmDraftsCountedPayload countDistinct(Set<FilmDraft> drafts) {
+        return new FilmDraftsCountedPayload(drafts.size(), List.of());
+    }
+
     /**
      * A child service counting each film's drafts, its outcome validating what it builds: validation
      * under an object, which the store-fed fetcher does not generate yet; never called.
