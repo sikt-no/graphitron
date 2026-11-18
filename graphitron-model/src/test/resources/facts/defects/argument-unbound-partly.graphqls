@@ -18,7 +18,21 @@ type FilmReviewPayload {
   reviewId: Int
 }
 
-type Query { x: String }
+# An overriding condition takes an argument in part the same way: filmsByNested's method reads
+# filter.titlePrefix, so FilmNestedFilter.inner and FilmNestedFilter.titles are ARGUMENT_UNBOUND, the
+# list once as the list, and nothing is reported at the fields inside them.
+type Film @table(name: "film") { title: String }
+
+input FilmNestedFilter { titlePrefix: String inner: FilmInnerFilter titles: [FilmTitleFilter!] }
+input FilmInnerFilter { description: String length: Int }
+input FilmTitleFilter { title: String }
+
+type Query {
+  filmsByNested(filter: FilmNestedFilter): [Film!]! @defaultOrder(primaryKey: true)
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition", argMapping: "titlePrefix: filter.titlePrefix"}, override: true)
+}
 
 type Mutation {
   reviewPartly(review: Review!): FilmReviewPayload @service(service: {
@@ -34,6 +48,8 @@ type Mutation {
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,             coordinate
   ARGUMENT_UNBOUND, Review.note
+  ARGUMENT_UNBOUND, FilmNestedFilter.inner
+  ARGUMENT_UNBOUND, FilmNestedFilter.titles
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
@@ -44,4 +60,9 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   ARGUMENT_UNBOUND, Mutation.reviewWhole(review:)
   ARGUMENT_UNBOUND, ReviewCore.filmId
   ARGUMENT_UNBOUND, ReviewCore.rating
+  ARGUMENT_UNBOUND, Query.filmsByNested(filter:)
+  ARGUMENT_UNBOUND, FilmNestedFilter.titlePrefix
+  ARGUMENT_UNBOUND, FilmInnerFilter.description
+  ARGUMENT_UNBOUND, FilmInnerFilter.length
+  ARGUMENT_UNBOUND, FilmTitleFilter.title
   """)
