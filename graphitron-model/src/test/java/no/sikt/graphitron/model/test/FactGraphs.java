@@ -135,7 +135,7 @@ public final class FactGraphs implements AutoCloseable {
      * capture runs some 560, and a store of some seventy graphs, its claims' and readers'
      * statements beside its captures', some 1200.
      */
-    public static final int STATEMENT_TEXTS = 10_000;
+    public static final int STATEMENT_TEXTS = 20_000;
 
     private static final ExtensionContext.Namespace NAMESPACE =
         ExtensionContext.Namespace.create(FactGraphs.class);
