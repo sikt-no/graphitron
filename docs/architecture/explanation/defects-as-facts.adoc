@@ -58,7 +58,9 @@ A schema graphitron cannot generate yet, though it is valid, is a deferral: a de
 `basis` `UNSUPPORTED`, stored and reported like any other, so the editor shows what the build refuses.
 That holds for the generator's own gaps too: "the generator cannot emit this yet" is a deferral in the
 store, never a refusal the generator raises in Java at generate time (Alf, 2026-11-13). A deferral is
-shed when the generator learns the shape, its code going with it.
+shed when the generator learns the shape, its code going with it. A deferral is not owed to a shape
+the walk merely never supported: where stating the gap costs about as much as supporting the shape,
+writing the deferral is a choice made against supporting it, not a default (Alf, 2026-11-18).
 
 `graphitron_defect_type` declares each code once:
 
