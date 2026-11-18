@@ -103,7 +103,7 @@ Each parameter of the method is filled once, by the first of these that reaches 
 
 A parameter an `argMapping` entry names is that entry's, even where the entry's path lands nowhere;
 the entry's own error reports it, and nothing else stands in. Five refusals name the parameter at
-the `@service`:
+the `@service`, and one names what the client sends:
 
 * *Unfilled*: nothing above reaches it. Name it after its argument, or bind it in `argMapping` or
   `contextArguments`.
@@ -121,6 +121,11 @@ the `@service`:
   names no constant the enum declares, its `@field(name:)` or else its own name, so `Enum.valueOf`
   would throw when a client sends it. An input bean's enum member is judged the same way, at its
   input field. Take the value as a `String` to read it by name instead.
+* *Left behind* (`ARGUMENT_UNBOUND`): an argument, or an input field inside one, that nothing takes.
+  An argument no parameter takes, itself or anything inside it, is reported at the argument. Where
+  `argMapping` paths take an argument in part, as `fra: range.fraVerdi` does, an input field none of
+  them reaches, `range.tilVerdi`, is reported at that field, once, at the outermost such field: the
+  value a client sends there would go nowhere. Bind it, or remove it.
 * *Taken as a map* (`SERVICE_INPUT_AS_MAP`): an input object it takes as a `Map`, an `Object` or a
   list of either. A map at the service boundary is a permanent anti-pattern: take a typed bean, a
   record or a class with a public no-arg constructor mirroring the input object, or, for open-ended

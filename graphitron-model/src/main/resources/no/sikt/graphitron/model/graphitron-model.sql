@@ -19546,6 +19546,44 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                       AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
                     WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
 UNION ALL
+-- An input field under an argument of a @service field that the argMapping paths taking the
+-- argument leave behind, at the input field: something under the argument is taken, by a dotted
+-- path, but nothing takes this field or anything inside it, and no step above it takes it whole.
+-- Reported once, at the outermost such field: its parent has something under it taken. A field
+-- whose input object is built into a class or a record is judged member by member, MEMBER_UNKNOWN's.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ARGUMENT_UNBOUND', CAST(NULL AS VARCHAR), 'occurrence-tenants'
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence a ON a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = a.graph_name AND p.coordinate = a.parent_coordinate AND p.kind = 'SERVICE'
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE o.kind = 'INPUT_FIELD'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
+                WHERE m.graph_name = p.graph_name AND m.coordinate = p.coordinate AND m.call = 'producer')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+   -- Nothing at or under it is taken.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                      AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
+   -- No step above it takes it whole.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                      AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate
+                      AND s.step_coordinate <> o.coordinate)
+   -- The outermost: its parent has something under it taken.
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                 JOIN graphitron_occurrence_taken t
+                   ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                  AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate)
+UNION ALL
 -- An input field nothing takes, under the class its input object is built into (Alf, 2026-11-17):
 -- neither it nor anything inside it is taken (graphitron_occurrence_taken), a member of that class
 -- by the name the class matches on, exactly, case included, among them. Its value would reach
@@ -29905,7 +29943,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('TABLE_INTERFACE_PARTICIPANT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_INTERFACE_PARTICIPANT_UNBOUND',
    'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.'),
   ('ARGUMENT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGUMENT_UNBOUND',
-   'An argument nothing binds: no call takes it as a parameter, itself or anything inside it, and graphitron reads it for no filter, ordering or page, so the value a client sends goes nowhere. Bind it in the call''s argMapping, or remove it.'),
+   'An argument or input field nothing binds: no call takes it as a parameter, itself or anything inside it, and graphitron reads it for no filter, ordering or page, so the value a client sends goes nowhere. An input field is reported where the call takes the argument in part, by argMapping paths that leave it behind. Bind it in the call''s argMapping, or remove it.'),
   ('PARAMETER_NAMES_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_NAMES_MISSING',
    'A method a @service or a @condition calls has a parameter nothing fills by its type, and its class was compiled without -parameters, so the parameter has no name an argument, an argMapping entry or a context key could bind: compile the class with -parameters, as <parameters>true</parameters> on maven-compiler-plugin does.'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',

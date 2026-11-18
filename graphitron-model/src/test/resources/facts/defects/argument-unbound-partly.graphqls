@@ -1,0 +1,47 @@
+# A @service argument the argMapping paths take only in part leaves the rest behind: the value a
+# client sends there goes nowhere. reviewPartly maps review.filmId and review.rating to the method's
+# parameters and leaves review.note, which is ARGUMENT_UNBOUND at the input field Review.note declares. reviewWhole leaves
+# nothing behind, and neither field draws anything at the argument, which is taken in part.
+
+input Review {
+  filmId: Int
+  rating: Int
+  note: String
+}
+
+input ReviewCore {
+  filmId: Int
+  rating: Int
+}
+
+type FilmReviewPayload {
+  reviewId: Int
+}
+
+type Query { x: String }
+
+type Mutation {
+  reviewPartly(review: Review!): FilmReviewPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+      method: "submit",
+      argMapping: "filmId: review.filmId, rating: review.rating"})
+  reviewWhole(review: ReviewCore!): FilmReviewPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+      method: "submit",
+      argMapping: "filmId: review.filmId, rating: review.rating"})
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,             coordinate
+  ARGUMENT_UNBOUND, Review.note
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,             coordinate
+  ARGUMENT_UNBOUND, Mutation.reviewPartly(review:)
+  ARGUMENT_UNBOUND, Review.filmId
+  ARGUMENT_UNBOUND, Review.rating
+  ARGUMENT_UNBOUND, Mutation.reviewWhole(review:)
+  ARGUMENT_UNBOUND, ReviewCore.filmId
+  ARGUMENT_UNBOUND, ReviewCore.rating
+  """)
