@@ -459,6 +459,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_target_rule", Arm.DERIVED);
         registrations.put("graphitron_fetcher", Arm.DERIVED);
         registrations.put("graphitron_producer", Arm.DERIVED);
+        registrations.put("graphitron_producer_candidate", Arm.DERIVED);
         registrations.put("graphitron_binding_claim", Arm.DERIVED);
         registrations.put("graphitron_binding_claim_container", Arm.DERIVED);
         registrations.put("graphitron_binding_claim_container_rule", Arm.DERIVED);
@@ -468,11 +469,14 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_producer_claim", Arm.DERIVED);
         registrations.put("graphitron_producer_claim_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_rule", Arm.DERIVED);
+        registrations.put("graphitron_producer_candidate_rule", Arm.DERIVED);
         registrations.put("graphitron_result", Arm.DERIVED);
         registrations.put("graphitron_result_table", Arm.DERIVED);
         registrations.put("graphitron_result_pivot", Arm.DERIVED);
         registrations.put("graphitron_result_class", Arm.DERIVED);
         registrations.put("graphitron_result_rule", Arm.DERIVED);
+        registrations.put("graphitron_type_schema_reach", Arm.DERIVED);
+        registrations.put("graphitron_type_schema_reach_rule", Arm.DERIVED);
         registrations.put("graphitron_reader", Arm.DERIVED);
         registrations.put("graphitron_reader_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_write", Arm.DERIVED);

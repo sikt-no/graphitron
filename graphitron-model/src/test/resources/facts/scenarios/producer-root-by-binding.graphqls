@@ -1,7 +1,9 @@
 # Membership of a root operation is read off the binding and never off the name. Api is the query
 # root here, so a field of it that returns a table-bound type selects with nothing written on it;
-# Query is a type bound to no slot, so the same field there is no root's, and no result reaches
-# Query to hand on, so it is fetched by nothing. A @service runs wherever it is written.
+# Query is a type bound to no slot, so the same field there is no root's, and nothing in the schema
+# reaches Query, no field returning it, so it is fetched by nothing. A @service on a type nothing in
+# the schema reaches runs nothing either (Alf, 2026-11-19): Query.rated is a SERVICE candidate only,
+# with no producer and no fetcher, as notRoot has none.
 
 schema { query: Api }
 
@@ -21,7 +23,21 @@ extend schema @expectEquals(relation: "graphitron_producer", where: "type_name I
   type_name, field_name, kind
   Api,       films,      SERVICE
   Api,       allFilms,   SELECT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_producer_candidate", where: "type_name IN ('Api', 'Query')", rows: """
+  type_name, field_name, kind
+  Api,       films,      SERVICE
+  Api,       allFilms,   SELECT
   Query,     rated,      SERVICE
   """)
 
+extend schema @expectEquals(relation: "graphitron_type_schema_reach", rows: """
+  type_name
+  Api
+  Film
+  """)
+
 extend schema @assertEmpty(relation: "graphitron_fetcher", where: "type_name = 'Query' AND field_name = 'notRoot'")
+
+extend schema @assertEmpty(relation: "graphitron_fetcher", where: "type_name = 'Query' AND field_name = 'rated'")

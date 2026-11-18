@@ -1,0 +1,48 @@
+# A type no field returns is still one the schema leads to where a federation router enters it by
+# its entity key through _entities: City, whose @key the author wrote, resolvable by default, and
+# Address, a node the graph mints an id key for. Each is reached, and with it what its fields return,
+# so City's @service child keeps its producer and its fetcher. CityHidden's key says resolvable:
+# false, so no router enters it and nothing else leads there: it is not reached, and its @service child
+# has no fetcher. Node is reached as the interface a reached member implements. Query reaches Film only.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+interface Node { id: ID! }
+
+type Film @table(name: "film") { title: String }
+
+type City @table(name: "city") @key(fields: "cityId") {
+  cityId: Int! @field(name: "city_id")
+  cityUppercase: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityUppercase"})
+}
+
+type CityHidden @table(name: "city") @key(fields: "cityId", resolvable: false) {
+  cityId: Int! @field(name: "city_id")
+  cityLowercase: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityLowercase"})
+}
+
+type Address implements Node @table(name: "address") @node {
+  id: ID!
+}
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_type_schema_reach", rows: """
+  type_name
+  Address
+  City
+  Film
+  Node
+  Query
+  """)
+
+extend schema @assertContains(relation: "graphitron_fetcher", rows: """
+  type_name, field_name,    side
+  City,      cityUppercase, PRODUCER
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_fetcher", where: """
+  type_name = 'CityHidden' AND field_name = 'cityLowercase'
+  """)

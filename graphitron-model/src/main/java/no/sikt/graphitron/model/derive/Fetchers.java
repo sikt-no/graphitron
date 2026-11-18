@@ -16,11 +16,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_SERVICE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_HOLDER;
@@ -29,6 +30,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_SCHEMA_REACH;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
@@ -38,6 +40,12 @@ import static org.jooq.impl.DSL.val;
  * errors fields a root producer's outcome catches into, the results they make through
  * {@link Results}, and the reader side that reads them, from the rule views
  * beside each, marking what this reading states and sweeping what it no longer does.
+ *
+ * <p>First the types the schema reaches, through {@link TypeSchemaReach}: a field nothing reaches is one
+ * nothing in the schema leads to, and has no producer and no fetcher, whatever is written on it. The
+ * producers are written from their candidates, {@code graphitron_producer_candidate}, which are
+ * stored next: the producer each field would have if anything reached it. The producers on a type
+ * the schema does not reach make no result, and are pruned before the readers are written.
  *
  * <p>The rules read the field targets, the resolved bindings and the type backings the stages before
  * it write, and each subtype rule reads the producers this stage has just written. Last, the
@@ -53,9 +61,19 @@ public final class Fetchers {
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var fetcher = GRAPHITRON_FETCHER;
         var producer = GRAPHITRON_PRODUCER;
-        var rule = GRAPHITRON_PRODUCER_RULE;
+        var rule = GRAPHITRON_PRODUCER_CANDIDATE;
         var reader = GRAPHITRON_READER;
         var readerRule = GRAPHITRON_READER_RULE;
+
+        // The types the schema reaches, a fact of the types the result rule, the producer rule and
+        // the prune below read, so it comes before anything they gate.
+        TypeSchemaReach.derive(dsl, graph, touchedAt);
+
+        // The producer each field would have if anything reached it, stored once so the writes
+        // below and the producer rule read a table rather than evaluating the rule again.
+        refresh(dsl, GRAPHITRON_PRODUCER_CANDIDATE, GRAPHITRON_PRODUCER_CANDIDATE_RULE,
+            GRAPHITRON_PRODUCER_CANDIDATE.GRAPH_NAME, GRAPHITRON_PRODUCER_CANDIDATE.TOUCHED_AT, graph,
+            touchedAt);
 
         // The errors fields, a fact of the field whoever returns its type, ahead of the outcomes.
         refresh(dsl, GRAPHITRON_ERRORS_FIELD, GRAPHITRON_ERRORS_FIELD_RULE,
@@ -137,6 +155,21 @@ public final class Fetchers {
 
         // The results the producers make, flowing down through the fields that read them.
         Results.derive(dsl, graph, touchedAt);
+
+        // A producer nothing reaches runs nothing: the producer rule's reach, applied to the rows
+        // written from the candidates. Its type is not one the schema reaches, the roots being
+        // reached; deleting its fetcher cascades the producer and what its kind runs. The type reach
+        // is swept by now, so every row left is this reading's. Only the stored reach is read, so
+        // this could follow the producer writes; it stays after the results, which never seed from
+        // these producers anyway.
+        var reach = GRAPHITRON_TYPE_SCHEMA_REACH;
+        dsl.deleteFrom(fetcher)
+            .where(fetcher.GRAPH_NAME.eq(graph))
+            .and(fetcher.SIDE.eq(PRODUCER))
+            .andNotExists(dsl.selectOne().from(reach)
+                .where(reach.GRAPH_NAME.eq(fetcher.GRAPH_NAME))
+                .and(reach.TYPE_NAME.eq(fetcher.TYPE_NAME)))
+            .execute();
 
         // Every other field of a type holding a result reads it.
         dsl.insertInto(fetcher)

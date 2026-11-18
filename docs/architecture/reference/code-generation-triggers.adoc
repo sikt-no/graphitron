@@ -322,6 +322,30 @@ produces nothing. A connection carries two more, `COUNT` for its `totalCount` an
 facets, each run only when a client asks for it; `graphitron_producer` states them for the field
 today, and the occurrence will once the connection model lands.
 
+A field nothing reaches has no producer and no fetcher, whatever is written on it, a `@service`
+included (Alf, 2026-11-19). Nothing reaches a field when nothing in the schema leads to its type: the
+type is no entrance, and no field of a reached type returns it, itself or as a member of a union or
+interface the field returns. An entrance is an operation root, or an entity a federation router enters
+through _entities by a resolvable key, the author's @key or the one graphitron mints for a node or an
+accepting type, whether or not any field returns it. Reach is a fact of the types, `graphitron_type_schema_reach`, stored before the
+results flow; a field's producer is a candidate only, a row of `graphitron_producer_candidate`, and
+`graphitron_producer` keeps the candidates on a type the schema reaches. This is not the same as a
+result arriving. Given
+
+[source,graphql]
+----
+type Film @table(name: "film") { extras: Extras }
+union Extras = Note | Tag
+type Note { text: String @service(...) }
+type Tag { name: String }
+----
+
+`Film.extras` lands nowhere and gets no fetcher, so no result ever reaches Note; but a field of a
+reached type returns Note as a member of the Extras union, so Note is reached, and `Note.text` keeps its
+producer and its fetcher, which is never called. An earlier reading the same day counted a type as
+reached when a result reached it; it was superseded for the cost of gating the producers inside the
+result rounds, where the type-level fact is known before the first round.
+
 What a producer produces is `graphitron_occurrence_producer_result`: its shape, one record, a list
 of records, a connection page, an object or a scalar, with the class its values are where one is
 named and, for records, the table they are rows of. The occurrences under a producer bind into that

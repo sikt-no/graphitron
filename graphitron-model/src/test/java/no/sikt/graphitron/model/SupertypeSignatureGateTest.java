@@ -170,9 +170,12 @@ class SupertypeSignatureGateTest {
         // references rather than restates. A claimed table carries the kind beside the table its rule
         // claims; the source claim itself also carries its rule's priority, and so leaves the set.
         // A payload's data field carries its kind alone too, at another grain: a field of a type,
-        // stated once whoever returns the type, where a binding is an occurrence's.
+        // stated once whoever returns the type, where a binding is an occurrence's. So does a
+        // producer candidate, the kind a field would run if anything reached it, keyed to the field
+        // because it is stated before reachability decides whether the field has a fetcher at all.
         Set.of("graphitron_occurrence_binding", "graphitron_occurrence_node_id_slot_member",
-            "graphitron_occurrence_source_claim_table", "graphitron_payload_data_field"),
+            "graphitron_occurrence_source_claim_table", "graphitron_payload_data_field",
+            "graphitron_producer_candidate"),
         // A call and the methods it could make, whose payload is the call's kind alone: a candidate is
         // stated before the pin that decides which call exists, so it cannot key into the call, and
         // the call keeps the kind its subtypes key on. Two grains, not one fact under two keys.

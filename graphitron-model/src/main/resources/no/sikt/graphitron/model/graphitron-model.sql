@@ -5553,6 +5553,27 @@ COMMENT ON COLUMN graphitron_producer.side IS 'always PRODUCER, carried so the f
 COMMENT ON COLUMN graphitron_producer.kind IS 'what the fetcher runs. SELECT, the rows a condition matches; LOOKUP, the rows for an ordered list of keys; COUNT and FACETS, aggregates over the statement of the producer whose connection they sit on; INSERT, UPDATE and DELETE, a write; ROUTINE, SQL around a database routine; SERVICE, a Java method. Neither the root the field sits on nor the type it produces is a column: the first is a join to graphql_root_operation and the second is graphitron_field_target';
 COMMENT ON COLUMN graphitron_producer.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The producer each field would have if anything reached it, whether or not the schema does.
+-- graphitron_producer keeps the candidates on a type the schema reaches; the rest run nothing.
+CREATE TABLE graphitron_producer_candidate (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (kind IN ('SELECT', 'LOOKUP', 'COUNT', 'FACETS', 'INSERT', 'UPDATE', 'DELETE',
+                  'ROUTINE', 'SERVICE'))
+);
+COMMENT ON TABLE graphitron_producer_candidate IS 'The producer a field has wherever anything reaches it, and what kind of thing it runs: one row per field. For example Query.films with nothing written is a SELECT, and Query.rated in a schema whose query root is another type is a SERVICE candidate that nothing reaches, so it has no producer.';
+COMMENT ON COLUMN graphitron_producer_candidate.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_producer_candidate.type_name IS 'the object type declaring the field';
+COMMENT ON COLUMN graphitron_producer_candidate.field_name IS 'the field; with the type, a graphitron_field key';
+COMMENT ON COLUMN graphitron_producer_candidate.kind IS 'what the fetcher would run, a graphitron_producer kind: SELECT, LOOKUP, COUNT, FACETS, INSERT, UPDATE, DELETE, ROUTINE or SERVICE';
+COMMENT ON COLUMN graphitron_producer_candidate.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- The kinds an element can claim, by the family a reader picks among them in.
 CREATE TABLE graphitron_claim_kind (
   kind   VARCHAR NOT NULL,
@@ -9471,7 +9492,7 @@ COMMENT ON COLUMN graphitron_type_member.member_kind IS 'OBJECT, or INTERFACE fo
 COMMENT ON COLUMN graphitron_type_member.position IS 'the member''s place as its declaration states it: in the union''s list, or the interface''s place in the implementing type''s list, as graphql_union_member and graphql_implements_interface number them';
 COMMENT ON COLUMN graphitron_type_member.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
 CREATE INDEX graphitron_type_member_member_ix ON graphitron_type_member (graph_name, member_type_name);
-COMMENT ON INDEX graphitron_type_member_member_ix IS 'A reader holding a type asks which unions and interfaces admit it, and the primary key, which leads with the container, serves none of that: graphitron_producer_rule lands a bound member on each polymorphic type it belongs to.';
+COMMENT ON INDEX graphitron_type_member_member_ix IS 'A reader holding a type asks which unions and interfaces admit it, and the primary key, which leads with the container, serves none of that: graphitron_producer_candidate_rule lands a bound member on each polymorphic type it belongs to.';
 
 CREATE VIEW graphitron_type_member_rule
   (graph_name, container_name, container_kind, member_type_name, member_kind, position) AS
@@ -9497,6 +9518,87 @@ COMMENT ON VIEW graphitron_type_member_rule IS 'One row the type member rule com
 -- COMMENT ON COLUMN graphitron_type_member_rule.member_type_name IS 'the member_type_name of a row of this rule, which the stage writes into graphitron_type_member.member_type_name';
 -- COMMENT ON COLUMN graphitron_type_member_rule.member_kind IS 'the member_kind of a row of this rule, which the stage writes into graphitron_type_member.member_kind';
 -- COMMENT ON COLUMN graphitron_type_member_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_type_member.position';
+
+-- A type the schema leads to, whatever runs on it (Alf, 2026-11-19): a field nothing reaches is one
+-- nothing in the schema leads to, its type no root and returned by no field of a reached type, itself
+-- or as a member of a union or interface the field returns. A fact of the types, stated before the
+-- results, so the producers and the results read it rather than each other.
+CREATE TABLE graphitron_type_schema_reach (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name)
+    REFERENCES graphitron_type (graph_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_type_schema_reach IS 'A type the schema leads to from an entrance: one row per object, interface or union type an operation root or a resolvable federation entity is, or a field of a reached type returns, itself or as a union''s or interface''s member or the container of a reached member. For example under schema { query: Api } with Api.allFilms: [Film!]!, Api and Film are reached, and Query, which no field returns, is not.';
+COMMENT ON COLUMN graphitron_type_schema_reach.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_type_schema_reach.type_name IS 'the type reached, an object, interface or union type; with the graph, the grain';
+COMMENT ON COLUMN graphitron_type_schema_reach.touched_at IS 'the reading that last reached this row: the mark the rule steps from, so a type only an earlier reading reached hands nothing on, and the sweep deletes the rows an older reading wrote';
+
+-- One round of the type reach rule: the roots, and one step from what this reading has already
+-- reached. A field nothing reaches is one nothing in the schema leads to (Alf, 2026-11-19): its type
+-- is no root and no field of a reached type returns it, itself or as a member of a union or interface
+-- it returns. The fill merges the round until nothing changes, as the results' does, which a view
+-- cannot state and H2 evaluates badly as a recursive view.
+CREATE VIEW graphitron_type_schema_reach_rule (graph_name, type_name) AS
+WITH
+-- The types this reading has reached so far, marked with the reading's own instant. A row only an
+-- earlier reading reached is no step: the sweep removes it. In a reading's first round none carries
+-- the instant yet, so that round is the roots' alone.
+reached (graph_name, type_name) AS (
+  SELECT x.graph_name, x.type_name
+    FROM graphitron_type_schema_reach x
+    JOIN store_graph g ON g.graph_name = x.graph_name AND g.last_captured = x.touched_at
+),
+-- The entrances, what is reached, and one step from it: the type a field of a reached type returns
+-- and the connection it is unwrapped from, a reached container's members, and a reached member's
+-- containers. An entrance is an operation root, or an entity a federation router enters by its key
+-- through _entities, whether or not any field returns it: a table-bound type carrying a @key whose
+-- resolvable is not false, the author's or one graphitron mints for a node or an accepting type, the
+-- same entities graphitron_result_rule hands a row.
+-- Query.node's Node members arrive through the interface, as a reached container's members. An
+-- authored @key seeds in a graph with no federation @link too, where no router enters it: that keeps a
+-- fetcher nothing calls, which is accepted rather than read off the link.
+step (graph_name, type_name) AS (
+  SELECT ro.graph_name, ro.type_name FROM graphql_root_operation ro
+  UNION
+  SELECT da.graph_name, da.coordinate
+    FROM graphitron_directive_application da
+    JOIN graphitron_tabletype b ON b.graph_name = da.graph_name AND b.type_name = da.coordinate
+   WHERE da.directive_name = 'key'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application_arg a
+                      WHERE a.graph_name = da.graph_name AND a.coordinate = da.coordinate
+                        AND a.directive_name = da.directive_name AND a.ordinal = da.ordinal
+                        AND a.directive_argument_name = 'resolvable' AND a.value_sdl = 'false')
+  UNION
+  SELECT r.graph_name, r.type_name FROM reached r
+  UNION
+  SELECT ft.graph_name, ft.target_type_name
+    FROM reached r
+    JOIN graphitron_field_target ft ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name
+  UNION
+  SELECT ft.graph_name, ft.wrapper_type_name
+    FROM reached r
+    JOIN graphitron_field_target ft ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name
+   WHERE ft.wrapper_type_name IS NOT NULL
+  UNION
+  SELECT m.graph_name, m.member_type_name
+    FROM reached r
+    JOIN graphitron_type_member m ON m.graph_name = r.graph_name AND m.container_name = r.type_name
+  UNION
+  SELECT m.graph_name, m.container_name
+    FROM reached r
+    JOIN graphitron_type_member m ON m.graph_name = r.graph_name AND m.member_type_name = r.type_name
+)
+-- A scalar, an enum or an input type is no type a field is fetched on.
+SELECT s.graph_name, s.type_name
+  FROM step s
+  JOIN graphitron_type t ON t.graph_name = s.graph_name AND t.type_name = s.type_name
+ WHERE t.kind IN ('OBJECT', 'INTERFACE', 'UNION');
+COMMENT ON VIEW graphitron_type_schema_reach_rule IS 'One round of the type reach rule: the entrances, operation roots and resolvable federation entities, and one step from what graphitron_type_schema_reach already holds this reading, in the shape graphitron_type_schema_reach stores. For example the graphitron anchor merges this view''s rows into graphitron_type_schema_reach until a round adds nothing, which is the closure.';
+-- COMMENT ON COLUMN graphitron_type_schema_reach_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_type_schema_reach_rule.type_name IS 'the type reached, an object, interface or union type';
 
 CREATE TABLE graphitron_scalar_class (
   graph_name VARCHAR   NOT NULL,
@@ -12286,15 +12388,16 @@ COMMENT ON COLUMN graphitron_payload_data_field.touched_at IS 'the reading that 
 -- reader it was taken from. A payload with two such fields has a row for each; a reader wanting
 -- exactly one counts.
 CREATE VIEW graphitron_payload_data_field_rule (graph_name, type_name, field_name, kind) AS
--- A type a statement lands on, resolved or written, as graphitron_producer_rule's bound states it.
+-- A type a statement lands on, resolved or written, as graphitron_producer_candidate_rule's bound
+-- states it.
 WITH bound (graph_name, type_name) AS (
   SELECT graph_name, type_name FROM graphitron_tabletype
   UNION
   SELECT graph_name, coordinate FROM graphitron_directive_application WHERE directive_name = 'table'
 ),
--- graphitron_producer_rule's re-read arm, each field for which it yields LOOKUP: a field of a type
--- with no table of its own that a write, a routine or a service returns, that field holding no other
--- producer claim, and the field's target bound.
+-- graphitron_producer_candidate_rule's re-read arm, each field for which it yields LOOKUP: a field of
+-- a type with no table of its own that a write, a routine or a service returns, that field holding no
+-- other producer claim, and the field's target bound.
 re_read (graph_name, type_name, field_name) AS (
   SELECT f.graph_name, f.type_name, f.field_name
     FROM graphitron_field f
@@ -12535,10 +12638,11 @@ SELECT k.graph_name, k.element_coordinate, k.target_type, k.constraint_source_na
    AND f.constraint_name = k.constraint_name AND f.parent_on_key_table = k.fk_on_from;
 COMMENT ON VIEW graphitron_field_tenant_fan_out_rule IS 'One row the field tenant fan-out rule computes, in the shape graphitron_field_tenant_fan_out stores: the rule itself, evaluated on demand rather than read off disk. For example the path-claims stage inserts this view''s rows for one graph into graphitron_field_tenant_fan_out.';
 
--- Which kind of producer each field is: its one claim where it has exactly one, and otherwise what
--- its position and its target make it. A field with two claims is no producer here and a defect
+-- Which kind of producer each field would be if anything reached it, the candidates
+-- graphitron_producer_candidate stores: its one claim where it has exactly one, and otherwise what
+-- its position and its target make it. A field with two claims is no candidate here and a defect
 -- path-claims raises; @lookupKey with @routine is deferred and has no row either.
-CREATE VIEW graphitron_producer_rule (graph_name, type_name, field_name, kind) AS
+CREATE VIEW graphitron_producer_candidate_rule (graph_name, type_name, field_name, kind) AS
 WITH claim_count (graph_name, type_name, field_name, claims, kind) AS (
   SELECT f.graph_name, f.type_name, f.field_name, COUNT(DISTINCT c.kind), MIN(c.kind)
     FROM graphitron_claim c
@@ -12679,7 +12783,24 @@ SELECT graph_name, type_name, field_name, kind
                           AND c.field_name = f.field_name)
   ) unclaimed
  WHERE kind IS NOT NULL;
-COMMENT ON VIEW graphitron_producer_rule IS 'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_producer_candidate_rule IS 'One row the producer candidate rule computes, in the shape graphitron_producer_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_candidate, which the producer rule reads.';
+-- COMMENT ON COLUMN graphitron_producer_candidate_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_producer_candidate_rule.type_name IS 'the object type declaring the field';
+-- COMMENT ON COLUMN graphitron_producer_candidate_rule.field_name IS 'the field';
+-- COMMENT ON COLUMN graphitron_producer_candidate_rule.kind IS 'what its fetcher would run, a graphitron_producer kind';
+
+-- A field nothing reaches has no producer and no fetcher, a service or not, whatever is written on
+-- it (Alf, 2026-11-19): nothing reaches it when nothing in the schema leads to its type, which is no
+-- root and returned by no field of a reached type, itself or as a member of a union or interface the
+-- field returns. A candidate is kept where graphitron_type_schema_reach holds its type, the roots included;
+-- the fetchers stage writes the candidates and deletes the producers on types the schema does not
+-- reach.
+CREATE VIEW graphitron_producer_rule (graph_name, type_name, field_name, kind) AS
+SELECT c.graph_name, c.type_name, c.field_name, c.kind
+  FROM graphitron_producer_candidate c
+ WHERE EXISTS (SELECT 1 FROM graphitron_type_schema_reach r
+                WHERE r.graph_name = c.graph_name AND r.type_name = c.type_name);
+COMMENT ON VIEW graphitron_producer_rule IS 'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor keeps this view''s rows for one graph in graphitron_producer, the candidates on a type the schema reaches, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_producer_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_producer_rule.type_name IS 'the object type declaring the field';
 -- COMMENT ON COLUMN graphitron_producer_rule.field_name IS 'the field';
@@ -25422,7 +25543,9 @@ parent (graph_name, type_name, shape, table_source_name, table_schema, table_nam
    WHERE x.shape = 'OBJECT'
 ),
 -- What a field hands the type it returns: a producer its result, a reader what its parent holds,
--- and either the row of the function its path ends on.
+-- and either the row of the function its path ends on. A producer seeds where the schema reaches its
+-- type, graphitron_type_schema_reach stating that before the results, so every such producer seeds from the
+-- first round: a producer nothing reaches makes nothing.
 edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       table_source_name, table_schema, table_name, pivot_type_name, pivot_field_name,
       producer_kind) AS (
@@ -25438,9 +25561,12 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
     LEFT JOIN graphitron_routine_result re
       ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
+   WHERE EXISTS (SELECT 1 FROM graphitron_type_schema_reach r
+                  WHERE r.graph_name = p.graph_name AND r.type_name = p.type_name)
   UNION ALL
   -- A producer @asConnection wraps hands its element what the field would hand it unwrapped, the
-  -- carrier only paging it.
+  -- carrier only paging it, and seeds only where the arm above does: a producer nothing reaches
+  -- makes nothing.
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate, ft.target_type_name, FALSE,
          CASE WHEN re.table_name IS NOT NULL THEN 'ROW' END,
          re.table_source_name, re.table_schema, re.table_name,
@@ -25453,6 +25579,8 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
      AND ft.wrapper_type_name IS NOT NULL
     LEFT JOIN graphitron_routine_result re
       ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
+   WHERE EXISTS (SELECT 1 FROM graphitron_type_schema_reach r
+                  WHERE r.graph_name = p.graph_name AND r.type_name = p.type_name)
   UNION ALL
   -- An @externalField hands down what its method's Field evaluates to, a value of the class the
   -- Field carries and never the parent's row.
@@ -25573,7 +25701,8 @@ SELECT h.graph_name, h.member,
     OR h.producer_kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'FACETS')
 UNION
 -- A federation entity holds its table's row, resolved through _entities; graphitron resolves only
--- table-bound entities.
+-- table-bound entities, and a key whose resolvable is false is one no router enters by, so it hands
+-- nothing, as graphitron_type_schema_reach_rule's entrances say.
 SELECT da.graph_name, da.coordinate, 'ROW',
        b.table_source_name,
        b.table_schema,
@@ -25582,7 +25711,11 @@ SELECT da.graph_name, da.coordinate, 'ROW',
   FROM graphitron_directive_application da
   JOIN graphitron_tabletype b
     ON b.graph_name = da.graph_name AND b.type_name = da.coordinate
- WHERE da.directive_name = 'key';
+   WHERE da.directive_name = 'key'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application_arg a
+                      WHERE a.graph_name = da.graph_name AND a.coordinate = da.coordinate
+                        AND a.directive_name = da.directive_name AND a.ordinal = da.ordinal
+                        AND a.directive_argument_name = 'resolvable' AND a.value_sdl = 'false');
 COMMENT ON VIEW graphitron_result_rule IS 'One round of the result rule: the results the producers seed and the ones a reader hands on from what graphitron_result already holds, in the shape graphitron_result and its two row subtypes store. For example the graphitron anchor merges this view''s rows into graphitron_result until a round adds nothing, which is the closure.';
 -- COMMENT ON COLUMN graphitron_result_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_result_rule.type_name IS 'the object type the result reaches';
@@ -25621,8 +25754,8 @@ SELECT f.graph_name, f.type_name, f.field_name,
                     WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate)
    -- A union or interface under a row is fetched per table-bound participant, so one with none
    -- reads nothing off the row and nothing fetches it: the field is left without a fetcher. Its own
-   -- @table does not count, as graphitron_producer_rule's landing says. Under an object its value
-   -- is read off the object. A participant is bound with a table resolved or written.
+   -- @table does not count, as graphitron_producer_candidate_rule's landing says. Under an object its
+   -- value is read off the object. A participant is bound with a table resolved or written.
    AND NOT (r.shape = 'ROW' AND tt.kind IN ('INTERFACE', 'UNION')
             AND NOT EXISTS (SELECT 1 FROM graphitron_type_member m
                               JOIN graphitron_tabletype b
@@ -29241,6 +29374,7 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_errors_field'),
   ('fetchers', 'graphitron_fetcher'),
   ('fetchers', 'graphitron_producer'),
+  ('fetchers', 'graphitron_producer_candidate'),
   ('fetchers', 'graphitron_producer_outcome'),
   ('fetchers', 'graphitron_producer_routine'),
   ('fetchers', 'graphitron_producer_service'),
@@ -29251,6 +29385,7 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_result_pivot'),
   ('fetchers', 'graphitron_result_table'),
   ('fetchers', 'graphitron_service_holder'),
+  ('fetchers', 'graphitron_type_schema_reach'),
   ('fetchers', 'graphitron_entry_defect'),
   ('occurrence-lists', 'graphitron_occurrence_list_element'),
   ('occurrence-lists', 'graphitron_occurrence_optional'),
@@ -29475,6 +29610,7 @@ INSERT INTO meta_stage_rule VALUES
   ('fetchers', 'graphitron_fetcher', 'graphitron_producer_rule'),
   ('fetchers', 'graphitron_fetcher', 'graphitron_reader_rule'),
   ('fetchers', 'graphitron_producer', 'graphitron_producer_rule'),
+  ('fetchers', 'graphitron_producer_candidate', 'graphitron_producer_candidate_rule'),
   ('fetchers', 'graphitron_producer_outcome', 'graphitron_producer_outcome_rule'),
   ('fetchers', 'graphitron_producer_routine', 'graphitron_producer_routine_rule'),
   ('fetchers', 'graphitron_producer_service', 'graphitron_producer_service_rule'),
@@ -29484,6 +29620,7 @@ INSERT INTO meta_stage_rule VALUES
   ('fetchers', 'graphitron_result_pivot', 'graphitron_result_rule'),
   ('fetchers', 'graphitron_result_table', 'graphitron_result_rule'),
   ('fetchers', 'graphitron_service_holder', 'graphitron_service_holder_rule'),
+  ('fetchers', 'graphitron_type_schema_reach', 'graphitron_type_schema_reach_rule'),
   ('field-targets', 'graphitron_entry_defect', 'graphitron_field_target_entry_defect_rule'),
   ('field-targets', 'graphitron_field_many', 'graphitron_field_many_rule'),
   ('field-targets', 'graphitron_field_target', 'graphitron_field_target_rule'),
@@ -33092,7 +33229,11 @@ INSERT INTO meta_relation VALUES
   ('graphitron_producer', 'graph-field', 'graphitron',
    'A field whose fetcher runs something, and what kind of thing it runs: one row per field.',
    'For example Query.films with nothing written is a SELECT, Mutation.addFilm @mutation(typeName: INSERT) an INSERT, and the totalCount of the connection a field returns a COUNT over that field''s statement.',
-   'The payload, the carrier and the error channel are facts about a producer, and each was restated by a relation that folded the producer away. Stated once here, at the field, from what was written and where; the rule is graphitron_producer_rule and the anchor inserts its rows.'),
+   'The payload, the carrier and the error channel are facts about a producer, and each was restated by a relation that folded the producer away. Stated once here, at the field, from what was written and where; the rule is graphitron_producer_rule, and the anchor inserts the candidates and deletes those on a type the schema does not reach.'),
+  ('graphitron_producer_candidate', 'graph-field', 'graphitron',
+   'The producer a field has wherever anything reaches it, and what kind of thing it runs: one row per field.',
+   'For example Query.films with nothing written is a SELECT, and Query.rated in a schema whose query root is another type is a SERVICE candidate that nothing reaches, so it has no producer.',
+   'The producer a field has whether or not the schema reaches its type. Stored so the reachable producer rule reads a table rather than a view, and so the candidate rule is evaluated once per reading rather than once per read of the producer rule.'),
   ('graphitron_producer_write', 'graph-field', 'graphitron',
    'What a write producer writes: its @mutation application, the table it mutates and, for an identifying write, how many rows one input may match; one row per write whose table resolved.',
    'For example Mutation.dropFilms @mutation(typeName: DELETE, multiRow: true, table: "film") deletes from public.film, matching MANY.',
@@ -33153,6 +33294,14 @@ INSERT INTO meta_relation VALUES
    'One round of the result rule: the results the producers seed and the ones a reader hands on from what graphitron_result already holds, in the shape graphitron_result and its two row subtypes store.',
    'For example the graphitron anchor merges this view''s rows into graphitron_result until a round adds nothing, which is the closure.',
    'The rule as a view beside its tables, so what the closure stores stays checkable against one round of it.'),
+  ('graphitron_type_schema_reach', 'expanded-type', 'graphitron',
+   'A type the schema leads to from an entrance: one row per object, interface or union type an operation root or a resolvable federation entity is, or a field of a reached type returns, itself or as a union''s or interface''s member or the container of a reached member.',
+   'For example under schema { query: Api } with Api.allFilms: [Film!]!, Api and Film are reached, and Query, which no field returns, is not.',
+   'Whether anything reaches a field is a fact of the schema, decided before the results flow (Alf, 2026-11-19): a field on a type nothing leads to has no producer and no fetcher. Stated once at type grain, so the producer rule, the result rule and the fetchers'' prune read one table rather than each restating the reach, and the result rounds gate on a stored fact rather than on their own progress. Filled in the graphitron anchor by merging graphitron_type_schema_reach_rule until a round adds nothing.'),
+  ('graphitron_type_schema_reach_rule', 'expanded-type', 'graphitron',
+   'One round of the type reach rule: the entrances, operation roots and resolvable federation entities, and one step from what graphitron_type_schema_reach already holds this reading, in the shape graphitron_type_schema_reach stores.',
+   'For example the graphitron anchor merges this view''s rows into graphitron_type_schema_reach until a round adds nothing, which is the closure.',
+   'The rule as a view beside its table, so what the closure stores stays checkable against one round of it.'),
   ('graphitron_reader', 'graph-field', 'graphitron',
    'A field whose fetcher reads from the result its parent holds, and how: one row per field.',
    'For example Film.title reads a COLUMN of film''s row, and a connection''s edges reads its page through an ACCESSOR.',
@@ -33195,7 +33344,11 @@ INSERT INTO meta_relation VALUES
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_producer_rule', 'graph-field', 'graphitron',
    'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer, which is the name every reader spells.',
+   'For example the graphitron anchor keeps this view''s rows for one graph in graphitron_producer, the candidates on a type the schema reaches, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist. It reads the stored candidates and graphitron_type_schema_reach, never the candidate rule, so no view reads a view.'),
+  ('graphitron_producer_candidate_rule', 'graph-field', 'graphitron',
+   'One row the producer candidate rule computes, in the shape graphitron_producer_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_candidate, which the producer rule reads.',
    'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_field_many', 'graph-field', 'graphitron',
    'A field that returns many of its target: one row per field returning a list or a connection.',
