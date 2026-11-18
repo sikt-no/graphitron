@@ -1,0 +1,19 @@
+"Two root fields returning one faceted connection type with different arguments. The type gives the shape both fill, one class with a count and a facets record of one component, originalLanguageId; what fills them is each field's own. Query.films counts and buckets every film under its filter, and Query.filmsById under its filter and the films it is handed, so the same page class carries different counts and different facet buckets per producer. Both surface the same facet, so the producers agree and nothing is refused."
+type Film @table(name: "film") { title: String }
+
+input FilmFilter { originalLanguageId: [Int] @field(name: "original_language_id") @asFacet }
+
+type Query {
+  films(filter: FilmFilter): [Film!]!
+    @asConnection(connectionName: "FilmsByLanguageConnection") @defaultOrder(primaryKey: true)
+  filmsById(filter: FilmFilter, filmIds: [Int!] @field(name: "film_id")): [Film!]!
+    @asConnection(connectionName: "FilmsByLanguageConnection") @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_facet", rows: """
+  coordinate,      facet_name,         position, filter_argument_name, filter_coordinate
+  Query.films,     originalLanguageId, 1,        filter,               Query.films(filter.originalLanguageId:)
+  Query.filmsById, originalLanguageId, 1,        filter,               Query.filmsById(filter.originalLanguageId:)
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: "code IN ('CONNECTION_FACETS_DISAGREE', 'MINTED_NAME_CONTESTED')")

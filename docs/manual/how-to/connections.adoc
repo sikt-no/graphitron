@@ -38,6 +38,8 @@ The deprecated `connectionName:` override coalesces multiple carriers onto one t
 * *Issued as a separate `SELECT count(*)`.* The page query and the count query are independent SQL passes. The count uses the same `Table<?>` and `Condition` the page used (the root connection fetcher builds its connection with a count over them), so the count matches the page's predicate; it does not duplicate the page's projection or `seek/limit`.
 * *One grouped count per batch on nested connections.* A connection nested under a list of parents, such as `Film.actorsConnection` under `filmById`, or a connection over a union nested under a list, is fetched for all parents in one batched page statement. Selecting `totalCount` there adds one more statement for the batch, `count(*)` grouped by parent, however many parents the batch holds; each parent reports its own count, independent of `first` and the cursor.
 
+* *Each field counts its own result set.* The type gives the shape; what fills `totalCount`, and `facets` where the connection has them, is the field's own count and facet queries, over its own arguments. Two fields sharing one connection type through `connectionName:` share the class, not the numbers: each counts, and buckets its facets, under the filter its own arguments build. They must still surface the same facets, which xref:../reference/directives/asFacet.adoc#constraints[`@asFacet` constraints] states.
+
 The performance consequence: keep `totalCount` available in the schema for clients that need it, but do not assume it costs nothing per query. A client that always asks for `totalCount` doubles the round trip count; for high-RPS reads, prefer not selecting it.
 
 == Page size: the default and the maximum
