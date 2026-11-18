@@ -19619,9 +19619,10 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
 UNION ALL
 -- A filter's argument or input field that names no column, at the @field where one is written and at
 -- the declaration otherwise: under a field whose rows a filter reads, so no @service, write or
--- routine, and returning a table-bound type, it binds no column or node id, nothing at or under it is
--- taken, by its own @condition among the rest, and no step above it takes it, an overriding condition
--- or a call reading the object; so no predicate compares it and the value a client sends goes nowhere.
+-- routine, and returning a table-bound type or a connection of one, it binds no column or node id,
+-- nothing at or under it is taken, by its own @condition among the rest, and no step above it takes
+-- it, an overriding condition or a call reading the object; so no predicate compares it and the value
+-- a client sends goes nowhere.
 -- Its leaves only: an input object is judged by its fields. One built into a class or record is judged
 -- member by member, and a @lookupKey argument by the lookup's own rules. The detail is the spelling.
 SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
@@ -19634,7 +19635,10 @@ SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
     ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
   JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
   JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
-  JOIN graphitron_tabletype tt ON tt.graph_name = ff.graph_name AND tt.type_name = ff.named_type
+  -- The type the field's rows are of, unwrapped from a connection where it returns one.
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = ff.graph_name AND ft.type_name = ff.type_name AND ft.field_name = ff.field_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
   LEFT JOIN graphitron_binding_claim cl
     ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
   LEFT JOIN graphitron_directive_application da
