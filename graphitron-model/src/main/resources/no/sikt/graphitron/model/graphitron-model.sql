@@ -26173,7 +26173,31 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_lift l
                     WHERE l.graph_name = p.graph_name AND l.coordinate = p.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                    WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name);
+                    WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name)
+UNION ALL
+-- A routine write handing back one record whose path takes a step reaching many rows, at the field:
+-- one written row could answer as several. A step whose reach the store does not state, one joining
+-- by no columns, is not judged. The detail is the table the first such step arrives at.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ROUTINE_WRITE_PATH_FANS_OUT', s.to_table, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_join_path_step_to_one t
+    ON t.graph_name = p.graph_name AND t.coordinate = p.coordinate
+   AND t.target_type = ft.target_type_name AND NOT t.to_one
+  JOIN graphitron_join_path_step s
+    ON s.graph_name = t.graph_name AND s.coordinate = t.coordinate AND s.target_type = t.target_type
+   AND s.position = t.position
+ WHERE p.kind = 'ROUTINE' AND NOT f.is_list
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_to_one e
+                    WHERE e.graph_name = t.graph_name AND e.coordinate = t.coordinate
+                      AND e.target_type = t.target_type AND NOT e.to_one AND e.position < t.position);
 COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
 
 CREATE VIEW graphitron_occurrence_source_claim_declaring_table_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
@@ -29381,6 +29405,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.'),
   ('SERVICE_PAYLOAD_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_PAYLOAD_IN_A_LIST',
    'A @service hands back a list of table records, or of the class a payload''s data field is read off, under a list of payloads whose field taking them is a list too, and each element fills one payload: make the payload''s field a single one, return one payload, or hand back the payloads themselves.'),
+  ('ROUTINE_WRITE_PATH_FANS_OUT', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_PATH_FANS_OUT',
+   'A routine write handing back one record reads it along a path with a step that reaches many rows, so one written row could answer as several: return a list, or read the record along a path whose every step reaches one row.'),
   ('OUTCOME_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTCOME_IN_A_LIST',
    'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.'),
   ('WRITE_RESULT_HOLDS_ONLY_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_RESULT_HOLDS_ONLY_KEYS',

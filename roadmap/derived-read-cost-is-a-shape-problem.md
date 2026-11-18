@@ -3332,6 +3332,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   refused for filling no member. In FS-plattform sis, the two `aktivInnenforPeriode` filter fields,
   which Graphitron 9 drops silently today: rename the setter or the field to match.
 
+* **Breaking: a single-record routine write whose path reaches many rows is refused** ("breaking: a
+  single-record routine write whose path reaches many rows is refused, unused in FS-plattform"). A
+  mutation `@routine` answering one record, read along a path with a step that can reach many rows,
+  fails the build as `ROUTINE_WRITE_PATH_FANS_OUT`, the detail the table that step reaches: one
+  written row could answer as several. Return a list, or read the record along a path whose every
+  step reaches one row.
+
 ## Retired vocabulary
 
 **A parameter's table fit is held only for a method a call names** (2026-11-16). Which catalog tables a

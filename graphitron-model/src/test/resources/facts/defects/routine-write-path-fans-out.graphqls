@@ -1,0 +1,39 @@
+# A @routine write handing back one record reads it along its path, and every step of that path has to
+# reach one row: a step reaching many could answer one written row as several. rent_film's rental
+# reaches its payments along payment's foreign key read from the side it references, so a single
+# Payment read that way draws the defect at the field, the detail the table that step arrives at. A
+# single Rental read off the routine's result alone takes no such step, and a list of payments along
+# the same path has a list to hold them, so neither draws it.
+
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+type Payment @table(name: "payment") { paymentId: Int! @field(name: "payment_id") }
+
+type Query {
+  rentals: [Rental]
+  payments: [Payment]
+}
+
+type Mutation {
+  rentFilmPayment(inventoryId: Int!, customerId: Int!): Payment
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}, {table: "payment"}])
+  rentFilmSingle(inventoryId: Int!, customerId: Int!): Rental
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentFilmPayments(inventoryId: Int!, customerId: Int!): [Payment!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}, {table: "payment"}])
+}
+
+extend schema @assertContains(relation: "graphitron_join_path_step_to_one", rows: """
+  coordinate,               target_type, position, to_one
+  Mutation.rentFilmPayment, Payment,     0,        TRUE
+  Mutation.rentFilmPayment, Payment,     1,        FALSE
+  Mutation.rentFilmSingle,  Rental,      0,        TRUE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'ROUTINE_WRITE_PATH_FANS_OUT'", rows: """
+  code,                        coordinate,               detail
+  ROUTINE_WRITE_PATH_FANS_OUT, Mutation.rentFilmPayment, payment
+  """)
