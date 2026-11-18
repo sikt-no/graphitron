@@ -20943,9 +20943,12 @@ shaped (graph_name, coordinate, kind, shape, element_class, table_source_name, t
   SELECT graph_name, coordinate, kind,
          CASE WHEN connection THEN 'CONNECTION'
               WHEN target_kind IN ('SCALAR', 'ENUM') THEN 'SCALAR'
-              -- A service hands back what its method declares: records of a table, or an object.
+              -- A service hands back what its method declares: records of a table, lifted onto it
+              -- where the field's type is, as a @table type, members on tables, or a payload whose
+              -- data field re-reads them; under any other type an object, read as handed.
               WHEN kind = 'SERVICE' THEN
-                CASE WHEN element_table IS NULL THEN 'OBJECT'
+                CASE WHEN element_table IS NULL
+                          OR NOT (bound_table IS NOT NULL OR polymorphic OR payload) THEN 'OBJECT'
                      WHEN delivery = 'MANY' THEN 'RECORD_LIST' ELSE 'SINGLE_RECORD' END
               -- A select, a lookup and a routine produce rows, as a write does onto a table-bound
               -- type; a write's or a routine's payload is an object.
@@ -20954,13 +20957,15 @@ shaped (graph_name, coordinate, kind, shape, element_class, table_source_name, t
                 THEN CASE WHEN is_list THEN 'RECORD_LIST' ELSE 'SINGLE_RECORD' END
               ELSE 'OBJECT' END,
          element_class,
-         CASE WHEN kind = 'SERVICE' THEN element_source_name
+         -- A service's table is its type's where one is bound, the records' own under a payload or
+         -- across members.
+         CASE WHEN kind = 'SERVICE' THEN COALESCE(bound_source_name, element_source_name)
               WHEN kind = 'ROUTINE' THEN COALESCE(routine_source_name, bound_source_name)
               ELSE bound_source_name END,
-         CASE WHEN kind = 'SERVICE' THEN element_schema
+         CASE WHEN kind = 'SERVICE' THEN COALESCE(bound_schema, element_schema)
               WHEN kind = 'ROUTINE' THEN COALESCE(routine_schema, bound_schema)
               ELSE bound_schema END,
-         CASE WHEN kind = 'SERVICE' THEN element_table
+         CASE WHEN kind = 'SERVICE' THEN COALESCE(bound_table, element_table)
               WHEN kind = 'ROUTINE' THEN COALESCE(routine_table, bound_table)
               ELSE bound_table END
     FROM produced

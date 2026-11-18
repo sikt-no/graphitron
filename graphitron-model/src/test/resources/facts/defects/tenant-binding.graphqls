@@ -13,6 +13,10 @@ type Film @table(name: "film") @node {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
 }
 
+# Handed film's records with no connection, under a type no table binds: the records are read as
+# handed, nothing re-reads a tenant's rows, and the call needs no tenant.
+type FilmTitles { title: String }
+
 type Query {
   filmTwice(id: Int! @tenant, org: Int!): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
@@ -36,6 +40,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById", argMapping: "id: id"})
   filmsMarked(filmId: Int @tenant @field(name: "film_id")): [Film!]!
+  filmTitles: [FilmTitles!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
   filmsOnCondition(filmId: Int): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmIdKeyEquals", argMapping: "$tenant: filmId"}, override: true)
