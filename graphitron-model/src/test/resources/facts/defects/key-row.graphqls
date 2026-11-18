@@ -3,7 +3,7 @@
 # no key row for it the service is refused at its definition, the detail the parent's class. A
 # selection's keyless field is no-key-from-parent's and many-keys-into-one's. Rows keyed by a table's
 # primary key need one: a batch's keys, and the records a @service hands back, which are read back
-# from their table by it, at a root and under an object alike.
+# from their table by it, at a root and under an object alike, from Query and Mutation alike.
 
 type Stint @table(name: "stint") { personId: Int @field(name: "person_id") }
 
@@ -42,6 +42,11 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "filmList"})
 }
 
+type Mutation {
+  touchListings: [FilmListing!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "filmList"})
+}
+
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                          coordinate
   NO_KEY_FROM_PARENT,            FilmBlurbHolder.keyCensus
@@ -49,4 +54,5 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   KEY_TABLE_WITHOUT_PRIMARY_KEY, StintBatch.stints
   KEY_TABLE_WITHOUT_PRIMARY_KEY, Film.listings
   KEY_TABLE_WITHOUT_PRIMARY_KEY, Query.listings
+  KEY_TABLE_WITHOUT_PRIMARY_KEY, Mutation.touchListings
   """)

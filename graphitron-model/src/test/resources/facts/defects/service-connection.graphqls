@@ -1,5 +1,9 @@
 # A @service whose field returns a connection: the service answers film rows and graphitron would page
 # them, which is not generated for a service yet.
+#
+# A field with more than this wrong is refused for each defect beside this one, none masking another;
+# which an author reads first is the report's to order. Each defect is pinned once, in its own
+# document, so the combinations are not pinned again here.
 
 type Film @table(name: "film") {
   title: String

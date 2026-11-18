@@ -1,12 +1,19 @@
 # A @service under an object type is fetched for many parents at once, so its method takes their
 # keys and answers by them. One taking none would be called once per parent, a query per row, which
 # is refused: SampleQueryService.filmCount takes only the jOOQ context, so under FilmBlurbHolder,
-# which a service hands back, its keys have nowhere to go.
+# which a service hands back, its keys have nowhere to go. What the method hands back does not
+# change that: SampleQueryService.filmByServiceUnchecked answers a film record by an id argument,
+# and under the holder it is still called once per parent.
+
+type Film @table(name: "film") { title: String }
 
 type FilmBlurbHolder {
   filmCount: Int @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmCount"})
+  film(id: Int): Film @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmByServiceUnchecked"})
 }
 
 type Query {
@@ -17,4 +24,5 @@ type Query {
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                     coordinate
   SOURCE_PARAMETER_MISSING, FilmBlurbHolder.filmCount
+  SOURCE_PARAMETER_MISSING, FilmBlurbHolder.film
   """)

@@ -1,6 +1,6 @@
 # A @table spelling the catalog cannot settle, reported at the @table with the spelling written: a
 # name no table carries is unresolved, and a name two schemas declare is ambiguous until it is
-# qualified.
+# qualified. A spelling is folded as the catalog folds it, so FILM is film's.
 
 type Missing @table(name: "no_such_table") { title: String }
 
@@ -8,10 +8,13 @@ type Event @table(name: "event") { id: ID }
 
 type QualifiedEvent @table(name: "multischema_a.event") { id: ID }
 
+type UpperFilm @table(name: "FILM") { title: String }
+
 type Query {
   missing: Missing
   event: Event
   qualifiedEvent: QualifiedEvent
+  upperFilm: UpperFilm
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
@@ -20,4 +23,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code,             type_name, detail
   TABLE_UNRESOLVED, Missing,   no_such_table
   TABLE_AMBIGUOUS,  Event,     event
+  """)
+
+extend schema @assertContains(relation: "graphitron_spelled_table", rows: """
+  spelling, table_schema, table_name, candidates
+  FILM,     public,       film,       1
   """)
