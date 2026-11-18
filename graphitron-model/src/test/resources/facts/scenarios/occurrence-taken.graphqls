@@ -1,0 +1,39 @@
+# What takes each argument and input field. A column a filter compares is taken by the comparison;
+# an @orderBy argument and a connection's page arguments graphitron reads itself, and they cover
+# what is under them. An input object is not taken for its own sake, only through its fields.
+
+type Film @table(name: "film") {
+    filmId: Int! @field(name: "film_id")
+    title: String
+}
+
+enum MpaaRating { G PG PG_13 R NC_17 }
+
+input FilmFilter {
+    title: String
+}
+
+input FilmOrderBy {
+    field: FilmSort!
+    direction: SortDirection
+}
+
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+type Query {
+    films(filter: FilmFilter, rating: MpaaRating @field(name: "rating")): [Film!]!
+    filmsPaged(order: [FilmOrderBy] @orderBy, first: Int, after: String): [Film!]!
+        @asConnection @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_taken", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate,                        taken_by, covers_below
+  Query.films(filter.title:),        COMPARED, FALSE
+  Query.films(rating:),              COMPARED, FALSE
+  Query.filmsPaged(order:),          ORDER,    TRUE
+  Query.filmsPaged(first:),          PAGE,     TRUE
+  Query.filmsPaged(after:),          PAGE,     TRUE
+  """)

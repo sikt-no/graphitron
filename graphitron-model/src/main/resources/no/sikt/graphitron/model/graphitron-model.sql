@@ -19308,6 +19308,93 @@ COMMENT ON VIEW graphitron_occurrence_tenant_slot_node_id_key_rule IS 'One row t
 
 -- The occurrence-tenants stage's own defects, off the pairs, the directive applications and the
 -- bindings it has just written.
+CREATE TABLE graphitron_occurrence_taken (
+  graph_name   VARCHAR   NOT NULL,
+  coordinate   VARCHAR   NOT NULL,
+  taken_by     VARCHAR   NOT NULL,
+  covers_below BOOLEAN GENERATED ALWAYS AS (taken_by IN ('ORDER', 'PAGE')) NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, taken_by),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (taken_by IN ('MEMBER', 'PARAMETER', 'TENANT', 'OUTBOX', 'CONDITION', 'COMPARED', 'ORDER', 'PAGE'))
+);
+COMMENT ON TABLE graphitron_occurrence_taken IS 'One binder that takes one argument or input-field occurrence: one row per occurrence and kind of binder taking it directly, whatever takes the occurrences under it. For example Query.films(filter.title:), a column the filter compares, has one COMPARED row, and Query.films(orderBy:) one ORDER row, which covers its fields.';
+COMMENT ON COLUMN graphitron_occurrence_taken.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_taken.coordinate IS 'the argument or input-field occurrence taken';
+COMMENT ON COLUMN graphitron_occurrence_taken.taken_by IS 'what takes it: MEMBER, a member of the class its parent is built into; PARAMETER, a call''s parameter; TENANT, a call''s tenant; OUTBOX, an @outbox message''s key; CONDITION, its own @condition; COMPARED, a column or node id a filter compares, so not under an overriding condition or a @service; ORDER, an @orderBy argument; PAGE, a connection''s page argument';
+COMMENT ON COLUMN graphitron_occurrence_taken.covers_below IS 'whether the binder takes everything under the occurrence as well: only one that builds nothing from it, an ordering or a page argument; a parameter or member taking an input object whole builds it, and its fields are judged member by member';
+COMMENT ON COLUMN graphitron_occurrence_taken.touched_at IS 'when the occurrence-tenants stage last wrote the row; rows it no longer writes are swept';
+
+CREATE INDEX graphitron_occurrence_argument_step_step_ix
+  ON graphitron_occurrence_argument_step (graph_name, step_coordinate, coordinate);
+COMMENT ON INDEX graphitron_occurrence_argument_step_step_ix IS 'A rule holding an argument or input field asks whether anything at or under it is taken, reaching the occurrences under it by their step, which the primary key, leading with the occurrence below, serves none of.';
+
+CREATE VIEW graphitron_occurrence_taken_rule (graph_name, coordinate, taken_by) AS
+-- A member of the class the occurrence's parent is built into, by the name the class matches on.
+SELECT DISTINCT bm.graph_name, bm.coordinate, 'MEMBER'
+  FROM graphitron_occurrence_binding_member bm
+  JOIN graphitron_occurrence o ON o.graph_name = bm.graph_name AND o.coordinate = bm.coordinate
+  JOIN graphitron_occurrence_built_class pr
+    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate AND pr.class_name = bm.class_name
+UNION
+-- A call's parameter, a condition's, a service's or a write's.
+SELECT bp.graph_name, bp.coordinate, 'PARAMETER' FROM graphitron_occurrence_binding_parameter bp
+UNION
+-- A call's tenant, named by the author or read off a record or a node id.
+SELECT bt.graph_name, bt.coordinate, 'TENANT' FROM graphitron_occurrence_binding_tenant bt
+UNION
+SELECT ts.graph_name, ts.coordinate, 'TENANT' FROM graphitron_occurrence_tenant_slot ts
+UNION
+-- An @outbox message's key.
+SELECT l.graph_name, l.landing_coordinate, 'OUTBOX'
+  FROM graphitron_argmapping_landing l
+ WHERE l.directive_name = 'outbox'
+UNION
+-- Its own @condition.
+SELECT o.graph_name, o.coordinate, 'CONDITION'
+  FROM graphitron_occurrence o
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND EXISTS (SELECT 1 FROM graphitron_directive_application d
+                WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                  AND d.directive_name = 'condition')
+UNION
+-- A column or node id a filter compares: not where an overriding condition stands in for the
+-- predicate, and not under a @service, which composes with no filter.
+SELECT o.graph_name, o.coordinate, 'COMPARED'
+  FROM graphitron_occurrence o
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND (EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                 WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                    WHERE n.graph_name = o.graph_name AND n.coordinate = o.coordinate))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence a
+                     JOIN graphitron_occurrence_producer sp
+                       ON sp.graph_name = a.graph_name AND sp.coordinate = a.parent_coordinate
+                      AND sp.kind = 'SERVICE'
+                    WHERE a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate)
+UNION
+-- An @orderBy argument, which graphitron reads itself.
+SELECT o.graph_name, o.coordinate, 'ORDER'
+  FROM graphitron_occurrence o
+ WHERE o.kind = 'FIELD_ARGUMENT'
+   AND EXISTS (SELECT 1 FROM graphitron_directive_application d
+                WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                  AND d.directive_name = 'orderBy')
+UNION
+-- A connection's page argument, which graphitron reads itself.
+SELECT o.graph_name, o.coordinate, 'PAGE'
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence po ON po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
+  JOIN graphitron_field f ON f.graph_name = po.graph_name AND f.coordinate = po.element_coordinate
+ WHERE o.kind = 'FIELD_ARGUMENT' AND o.name IN ('first', 'last', 'after', 'before')
+   AND EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                WHERE cc.graph_name = f.graph_name AND cc.type_name = f.type_name
+                  AND cc.field_name = f.field_name);
+COMMENT ON VIEW graphitron_occurrence_taken_rule IS 'One row the taken rule computes, in the shape graphitron_occurrence_taken stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this views rows for one graph into graphitron_occurrence_taken, which is the name every reader spells.';
+
 CREATE VIEW graphitron_occurrence_tenant_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A call a $tenant pair and a @tenant name different values for, at the pair. The detail is the
@@ -19411,12 +19498,12 @@ SELECT t.graph_name, t.source_name, t.source_line, t.source_column, 'TENANT_MARK
                 WHERE n.graph_name = t.graph_name AND n.coordinate = t.coordinate
                   AND n.directive_name = 'nodeId')
 UNION ALL
--- An argument of a @service field nothing binds, at the argument: a service composes with no filter,
--- so an argument nothing binds, itself or anything under it, has nowhere to go: no call's parameter,
--- no tenant, no @outbox message's key. Raised here, the first stage holding every binder's facts,
--- the tenant's last, and only where the service's method resolved, an unresolved one being its
--- reference's defect. The arguments graphitron reads itself go to no call: an @orderBy, and a
--- connection's page arguments; the ones expansion mints are written nowhere and so are not reached.
+-- An argument of a @service field nothing takes, at the argument: a service composes with no filter,
+-- so an argument nothing takes, itself or anything under it (graphitron_occurrence_taken), has
+-- nowhere to go. Raised here, where the taken fact is written, and only where the service's method
+-- resolved, an unresolved one being its reference's defect. The arguments graphitron reads itself, an
+-- @orderBy and a connection's page arguments, are taken by it; the ones expansion mints are written
+-- nowhere and so are not reached.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'ARGUMENT_UNBOUND', CAST(NULL AS VARCHAR), 'occurrence-tenants'
   FROM graphitron_occurrence o
@@ -19425,41 +19512,24 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON p.graph_name = po.graph_name AND p.coordinate = po.coordinate AND p.kind = 'SERVICE'
   JOIN graphql_ast_element_entry el
     ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
-  JOIN graphitron_field f ON f.graph_name = po.graph_name AND f.coordinate = po.element_coordinate
  WHERE o.kind = 'FIELD_ARGUMENT'
    AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
                 WHERE m.graph_name = po.graph_name AND m.coordinate = po.coordinate AND m.call = 'producer')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence u
-                     JOIN graphitron_occurrence_binding_parameter b
-                       ON b.graph_name = u.graph_name AND b.coordinate = u.coordinate
-                    WHERE u.graph_name = o.graph_name AND u.argument_coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence u
-                     JOIN graphitron_occurrence_binding_tenant b
-                       ON b.graph_name = u.graph_name AND b.coordinate = u.coordinate
-                    WHERE u.graph_name = o.graph_name AND u.argument_coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                     JOIN graphitron_occurrence u
-                       ON u.graph_name = l.graph_name AND u.coordinate = l.landing_coordinate
-                    WHERE l.graph_name = o.graph_name AND l.call_coordinate = po.coordinate
-                      AND l.directive_name = 'outbox' AND u.argument_coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application d
-                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
-                      AND d.directive_name = 'orderBy')
-   AND NOT (o.name IN ('first', 'last', 'after', 'before')
-            AND EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
-                         WHERE cc.graph_name = f.graph_name AND cc.type_name = f.type_name
-                           AND cc.field_name = f.field_name))
+   -- Taken by what a call or graphitron reads: a parameter, the tenant, an @outbox key, the ordering
+   -- or the page.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                      AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
 UNION ALL
 -- An input field nothing takes, under the class its input object is built into (Alf, 2026-11-17):
--- it fills no member of that class by the name the class matches on, exactly, case included, and
--- nothing inside it fills one, is a column a filter compares, a call's parameter or tenant, an
--- @outbox message's key, or carries its own @condition. Its value would reach nothing. Reported once,
--- at the outermost such field: a nested input object none of whose fields binds is the misspelt
--- member, and its fields are not reported. A column binds only where a predicate compares it, so not
--- under an overriding condition and not under a @service, which composes with no filter. A list of
--- input objects is GROUPING_LIST's, and an input object closing a cycle INPUT_CYCLE_EXPANDED's. Here,
--- the first stage holding every binder's facts, the tenant's last; at the input field, the detail the
--- class.
+-- neither it nor anything inside it is taken (graphitron_occurrence_taken), a member of that class
+-- by the name the class matches on, exactly, case included, among them. Its value would reach
+-- nothing. Reported once, at the outermost such field: a nested input object none of whose fields
+-- is taken is the misspelt member, and its fields are not reported. A list of input objects is
+-- GROUPING_LIST's, and an input object closing a cycle INPUT_CYCLE_EXPANDED's. Here, where the taken
+-- fact is written; at the input field, the detail the class.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
        'MEMBER_UNKNOWN', MIN(pr.class_name), 'occurrence-tenants'
   FROM graphitron_occurrence o
@@ -19472,73 +19542,18 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT (t.kind = 'INPUT_OBJECT' AND f.is_list)
    AND pr.record_table IS NULL
    AND pr.constructible
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence u
-                    WHERE u.graph_name = o.graph_name AND u.argument_coordinate = o.argument_coordinate
-                      AND (u.coordinate = o.coordinate
-                           OR SUBSTRING(u.coordinate, 1, CHAR_LENGTH(o.coordinate) - 1)
-                              = SUBSTRING(o.coordinate, 1, CHAR_LENGTH(o.coordinate) - 2) || '.')
-                      AND (EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member bm
-                                    WHERE bm.graph_name = u.graph_name AND bm.coordinate = u.coordinate
-                                      AND (u.coordinate <> o.coordinate OR bm.class_name = pr.class_name))
-                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_parameter bp
-                               WHERE bp.graph_name = u.graph_name AND bp.coordinate = u.coordinate)
-                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_tenant bt
-                               WHERE bt.graph_name = u.graph_name AND bt.coordinate = u.coordinate)
-                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot ts
-                               WHERE ts.graph_name = u.graph_name AND ts.coordinate = u.coordinate)
-                   OR EXISTS (SELECT 1 FROM graphitron_argmapping_landing ol
-                               WHERE ol.graph_name = u.graph_name AND ol.landing_coordinate = u.coordinate
-                                 AND ol.directive_name = 'outbox')
-                   OR EXISTS (SELECT 1 FROM graphitron_directive_application dc
-                               WHERE dc.graph_name = u.graph_name AND dc.coordinate = u.element_coordinate
-                                 AND dc.directive_name = 'condition')
-                   OR ((EXISTS (SELECT 1 FROM graphitron_occurrence_column cc
-                                 WHERE cc.graph_name = u.graph_name AND cc.coordinate = u.coordinate)
-                        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                                    WHERE ni.graph_name = u.graph_name AND ni.coordinate = u.coordinate))
-                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
-                                        WHERE ov.graph_name = u.graph_name AND ov.coordinate = u.coordinate)
-                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence ar
-                                         JOIN graphitron_occurrence_producer sp
-                                           ON sp.graph_name = ar.graph_name AND sp.coordinate = ar.parent_coordinate
-                                          AND sp.kind = 'SERVICE'
-                                        WHERE ar.graph_name = u.graph_name AND ar.coordinate = u.argument_coordinate))))
-   -- The outermost only: a field whose parent is itself a grouping nothing inside takes is reported
-   -- at that grouping.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken tk
+                       ON tk.graph_name = s.graph_name AND tk.coordinate = s.coordinate
+                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
+   -- The outermost only: a field whose parent is itself a grouping nothing at or under takes is
+   -- reported at that grouping. The grouping's own member does not count here.
    AND NOT (pr.declared_via = 'GROUPING'
-            AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po2
-                              JOIN graphitron_occurrence u
-                                ON u.graph_name = po2.graph_name AND u.argument_coordinate = po2.argument_coordinate
-                      AND (u.coordinate = po2.coordinate
-                           OR SUBSTRING(u.coordinate, 1, CHAR_LENGTH(po2.coordinate) - 1)
-                              = SUBSTRING(po2.coordinate, 1, CHAR_LENGTH(po2.coordinate) - 2) || '.')
-                             WHERE po2.graph_name = o.graph_name AND po2.coordinate = o.parent_coordinate
-                               AND (EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member bm
-                                    WHERE bm.graph_name = u.graph_name AND bm.coordinate = u.coordinate
-                                      AND (u.coordinate <> po2.coordinate OR bm.class_name = '-'))
-                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_parameter bp
-                               WHERE bp.graph_name = u.graph_name AND bp.coordinate = u.coordinate)
-                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_tenant bt
-                               WHERE bt.graph_name = u.graph_name AND bt.coordinate = u.coordinate)
-                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot ts
-                               WHERE ts.graph_name = u.graph_name AND ts.coordinate = u.coordinate)
-                   OR EXISTS (SELECT 1 FROM graphitron_argmapping_landing ol
-                               WHERE ol.graph_name = u.graph_name AND ol.landing_coordinate = u.coordinate
-                                 AND ol.directive_name = 'outbox')
-                   OR EXISTS (SELECT 1 FROM graphitron_directive_application dc
-                               WHERE dc.graph_name = u.graph_name AND dc.coordinate = u.element_coordinate
-                                 AND dc.directive_name = 'condition')
-                   OR ((EXISTS (SELECT 1 FROM graphitron_occurrence_column cc
-                                 WHERE cc.graph_name = u.graph_name AND cc.coordinate = u.coordinate)
-                        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                                    WHERE ni.graph_name = u.graph_name AND ni.coordinate = u.coordinate))
-                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
-                                        WHERE ov.graph_name = u.graph_name AND ov.coordinate = u.coordinate)
-                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence ar
-                                         JOIN graphitron_occurrence_producer sp
-                                           ON sp.graph_name = ar.graph_name AND sp.coordinate = ar.parent_coordinate
-                                          AND sp.kind = 'SERVICE'
-                                        WHERE ar.graph_name = u.graph_name AND ar.coordinate = u.argument_coordinate)))))
+            AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                              JOIN graphitron_occurrence_taken tk
+                                ON tk.graph_name = s.graph_name AND tk.coordinate = s.coordinate
+                             WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate
+                               AND NOT (s.coordinate = o.parent_coordinate AND tk.taken_by = 'MEMBER')))
    AND NOT (t.kind = 'INPUT_OBJECT'
             AND EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
                          WHERE ch.graph_name = o.graph_name AND ch.coordinate = o.coordinate
@@ -28245,6 +28260,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-tenants', 'graphitron_entry_defect'),
   ('occurrence-tenants', 'graphitron_occurrence_binding'),
   ('occurrence-tenants', 'graphitron_occurrence_binding_tenant'),
+  ('occurrence-tenants', 'graphitron_occurrence_taken'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_authored'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_node_id_key'),
@@ -28629,6 +28645,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_root_routine_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_tenant_entry_defect_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_tenant_rule'),
+  ('occurrence-tenants', 'graphitron_occurrence_taken', 'graphitron_occurrence_taken_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot', 'graphitron_occurrence_tenant_slot_authored_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot', 'graphitron_occurrence_tenant_slot_node_id_key_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot', 'graphitron_occurrence_tenant_slot_record_column_rule'),
@@ -28916,6 +28933,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('occurrence-taken',
+   'one binder that takes one argument or input-field occurrence, in one graph',
+   'graph_name, coordinate, taken_by', 'sdl'),
   ('path-need-claim',
    'one rule''s claim that one occurrence must reach one type, in one graph',
    'graph_name, coordinate, target_type, rule', 'sdl'),
@@ -31958,6 +31978,14 @@ INSERT INTO meta_relation VALUES
    'One occurrence of an element, a use of a declared field, argument or input field reached along a chain: one row per nested coordinate.',
    'For example Emne.navn.en is en on the type Emne.navn returns, which has no table of its own, and Query.films(filter.cast.firstName:) an input field under the argument filter.',
    'A field of a type with no table of its own, an argument and an input field mean something different under each parent: which table they read, where their path starts, what their parent holds. Stated once per parent chain at a coordinate, every fact that depends on the parent has one row per occurrence, and a reader reads it without choosing among the tables a declaration-keyed row carries. Stored rather than a view because its population is a walk with a first-visit guard over a graph that can cycle, which a view cannot state safely, and because the parent-dependent relations key into it.'),
+  ('graphitron_occurrence_taken', 'occurrence-taken', 'graphitron',
+   'One binder that takes one argument or input-field occurrence: one row per occurrence and kind of binder taking it directly, whatever takes the occurrences under it.',
+   'For example Query.films(filter.title:), a column the filter compares, has one COMPARED row, and Query.films(orderBy:) one ORDER row, which covers its fields.',
+   'The one fact every rule asking whether an input reaches anything reads: a field nothing takes is MEMBER_UNKNOWN or ARGUMENT_UNBOUND by where it stands, rather than each rule listing the binders again. Kinds of binder, not places: a parameter or a member taking an input object whole takes the object, and its fields are judged on their own; only an ordering or a page argument, which build nothing, cover what is under them.'),
+  ('graphitron_occurrence_taken_rule', 'occurrence-taken', 'graphitron',
+   'One row the taken rule computes, in the shape graphitron_occurrence_taken stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-tenants stage writes this views rows for one graph into graphitron_occurrence_taken, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_occurrence_overridden', 'occurrence-overridden', 'graphitron',
    'An occurrence at or under a @condition written with override: true, whose generated predicates that condition stands in for: one row per occurrence carrying one, and per argument or input-field occurrence under one.',
    'For example Query.films(filter:) @condition(..., override: true) on the field draws rows for Query.films, Query.films(filter:) and every input field under filter, and none for a field nested under Query.films.',

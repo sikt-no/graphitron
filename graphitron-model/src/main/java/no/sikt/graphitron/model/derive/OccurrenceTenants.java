@@ -14,6 +14,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TENA
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_OPTIONAL;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TAKEN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TAKEN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_AUTHORED_RULE;
@@ -35,7 +37,8 @@ import static org.jooq.impl.DSL.val;
  * The {@code occurrence-tenants} stage: the call each {@code $tenant} pair or {@code @tenant} names the
  * tenant of, into {@code graphitron_occurrence_binding_tenant}, then every value each call's tenant is
  * read from, into {@code graphitron_occurrence_tenant_slot} and the subtype naming what the slot rests
- * on, then the stage's own defects; each marked and swept.
+ * on, then what takes each argument and input field, into {@code graphitron_occurrence_taken}, then the
+ * stage's own defects; each marked and swept.
  *
  * <p>Runs after {@link OccurrenceBuilds}, off the landings, the column and node id bindings and the
  * classes the inputs are built into, all upstream of it.
@@ -59,7 +62,27 @@ public final class OccurrenceTenants {
         dsl.deleteFrom(s).where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.ne(touchedAt)).execute();
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         dsl.deleteFrom(b).where(b.GRAPH_NAME.eq(graph), b.KIND.eq(TENANT), b.TOUCHED_AT.ne(touchedAt)).execute();
+        taken(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.TENANTS);
+    }
+
+    /**
+     * What takes each argument and input field, the tenant bindings and slots above among the binders,
+     * so it is written after them and before the defects read it.
+     */
+    private static void taken(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_OCCURRENCE_TAKEN;
+        var r = GRAPHITRON_OCCURRENCE_TAKEN_RULE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.TAKEN_BY, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.TAKEN_BY, val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph)))
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.TAKEN_BY)
+            .doUpdate()
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph), t.TOUCHED_AT.ne(touchedAt)).execute();
     }
 
     /** The {@code TENANT} binding of each value an author names a call's tenant by, and its supertype row. */
