@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -50,10 +51,20 @@ public final class FilmCarrierService {
 
     /**
      * The ids as a set: a list argument arrives as a {@code java.util.List} and is copied into one,
-     * in the list's order.
+     * in the list's order; an argument read through a list cannot fill it, since each list it reads
+     * through arrives as a {@code java.util.List}.
      */
     public static List<FilmRecord> filmsByIdSet(Set<Integer> ids, DSLContext dsl) {
         return filmsByIds(ids == null ? null : List.copyOf(ids), dsl);
+    }
+
+    /** The films rated any of {@code ratings}, by the rating's name; a collection, for the same reason. */
+    public static List<FilmRecord> filmsByRatingNames(Collection<String> ratings, DSLContext dsl) {
+        if (ratings == null || ratings.isEmpty()) return List.of();
+        return dsl.selectFrom(Tables.FILM)
+            .where(Tables.FILM.TEXT_RATING.in(ratings))
+            .orderBy(Tables.FILM.FILM_ID)
+            .fetch();
     }
 
     /** ONE arm: returns a single film by its ID, or {@code null} when the ID is unknown. */

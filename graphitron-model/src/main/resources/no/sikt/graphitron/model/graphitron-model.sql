@@ -22785,7 +22785,10 @@ UNION ALL
 -- A @service parameter filled from an argument read through a list above its last step, landing on a
 -- node id, an input object, or an enum the parameter takes as its Java constant, at the value it lands
 -- on: each element's value is read for a scalar, or an enum taken by its name, a String once every
--- list is peeled, only, so the rest is refused until such a read is generated.
+-- list is peeled, only, so the rest is refused until such a read is generated. So is a parameter
+-- whose containers are not a java.util.List for each list read through, since each arrives as one:
+-- the store states a parameter's outer container and its first type argument, so a read through more
+-- than two lists is refused too.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'SERVICE_ARGUMENT_PATH_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-bindings'
   FROM graphitron_occurrence_call_parameter c
@@ -22808,7 +22811,27 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                    AND EXISTS (SELECT 1 FROM code_method_parameter mp
                                 WHERE mp.source_name = m.method_source_name AND mp.class_name = m.method_class_name
                                   AND mp.method_name = m.method_name AND mp.descriptor = m.method_descriptor
-                                  AND mp.position = c.position AND mp.element_class = 'java.lang.String')));
+                                  AND mp.position = c.position AND mp.element_class = 'java.lang.String'))
+        OR EXISTS (SELECT 1 FROM code_method_parameter mp
+                    WHERE mp.source_name = m.method_source_name AND mp.class_name = m.method_class_name
+                      AND mp.method_name = m.method_name AND mp.descriptor = m.method_descriptor
+                      AND mp.position = c.position
+                      AND (mp.erased_class IS DISTINCT FROM 'java.util.List'
+                           OR mp.first_argument_class IS DISTINCT FROM 'java.util.List'
+                              AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                                           WHERE st.graph_name = c.graph_name AND st.coordinate = c.landing_coordinate
+                                             AND st.is_list
+                                             AND st.depth < (SELECT MAX(st2.depth) FROM graphitron_occurrence_argument_step st2
+                                                              WHERE st2.graph_name = st.graph_name
+                                                                AND st2.coordinate = st.coordinate)
+                                           GROUP BY st.graph_name, st.coordinate HAVING COUNT(*) > 1)
+                           OR EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                                       WHERE st.graph_name = c.graph_name AND st.coordinate = c.landing_coordinate
+                                         AND st.is_list
+                                         AND st.depth < (SELECT MAX(st2.depth) FROM graphitron_occurrence_argument_step st2
+                                                          WHERE st2.graph_name = st.graph_name
+                                                            AND st2.coordinate = st.coordinate)
+                                       GROUP BY st.graph_name, st.coordinate HAVING COUNT(*) > 2))));
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
 -- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
@@ -29722,7 +29745,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('SERVICE_CHILD_VALIDATION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CHILD_VALIDATION_UNSUPPORTED',
    'A @service whose outcome claims validation runs under an object, or answers participants on tables of their own, where its arguments are not validated yet: validation runs once per fetch of a root @service lifting onto at most one table. Move the call to a root field, or drop the VALIDATION handler.'),
   ('SERVICE_ARGUMENT_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_ARGUMENT_PATH_UNSUPPORTED',
-   'A @service parameter is filled from an argument path that steps through a list above its last name and lands on a node id, an input object, or an enum the parameter takes as its Java constant, where each element is read for a scalar or an enum''s name only: hand the parameter the list itself, take the enum by name, or land the path on a scalar.'),
+   'A @service parameter is filled from an argument path that steps through a list above its last name and lands on a node id, an input object, or an enum the parameter takes as its Java constant, or the parameter collects the elements in a container other than a java.util.List for each list the path steps through, where each element is read for a scalar or an enum''s name only and each list arrives as a java.util.List: hand the parameter the list itself, take the enum by name, land the path on a scalar, or declare the parameter a List.'),
   ('SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED',
    'A @service on a type with no table of its own is reached from more than one place, each a producer of its own, and the field has one fetcher, which serves one place only so far: declare the service on a type reached from one place, or give the type a @table.'),
   ('SERVICE_BATCH_SHAPE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_BATCH_SHAPE_UNSUPPORTED',

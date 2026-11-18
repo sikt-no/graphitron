@@ -1,20 +1,38 @@
-# A @service parameter filled through a list to a node id: argMapping reads in.film for each element
-# of the list in, and an element's value is read for a scalar only, so a node id there is not read
-# yet.
+# A @service parameter filled through a list: argMapping reads a field of each element of the list
+# in, and an element's value is read for a scalar, or an enum taken by its name, only, so a node id
+# there is not read yet. Each list read through arrives as a java.util.List, so a parameter collecting
+# the elements as a Set or a Collection is refused as well, whatever the element; the same read into
+# a List<Integer> is not.
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
 
+enum FilmRatingName { G PG }
+
 input FilmPickInput { film: ID @nodeId(typeName: "Film") }
+input FilmIdSetInput { id: Int }
+input FilmIdListInput { id: Int }
+input FilmRatingPickInput { rating: FilmRatingName }
 
 type Query {
   filmsPicked(in: [FilmPickInput!]!): [Film!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds",
     argMapping: "ids: in.film"})
+  filmsBySet(in: [FilmIdSetInput!]!): [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIdSet",
+    argMapping: "ids: in.id"})
+  filmsByRatings(in: [FilmRatingPickInput!]!): [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByRatingNames",
+    argMapping: "ratings: in.rating"})
+  filmsByList(in: [FilmIdListInput!]!): [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds",
+    argMapping: "ids: in.id"})
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_ARGUMENT_PATH_UNSUPPORTED'", rows: """
   code,                              coordinate
+  SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmIdSetInput.id
   SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmPickInput.film
+  SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmRatingPickInput.rating
   """)

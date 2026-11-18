@@ -1105,13 +1105,18 @@ static method needs no holder.
     reads today.
   * **Every service verdict is emitted or a stored deferral** `open`, E's. The service flip completes by refusal (Alf, 2026-11-15:
     "we refuse it so we can flip"): every verdict `ServiceEmission.verdict` returns other than
-    `EMITTED` is a stored defect of basis `UNSUPPORTED` with a code of its own, raised by the first
-    stage holding its facts: the row-tenant fan-out of a child service (`graphitron_field_tenant_fan_out`,
-    at fetchers), a connection page (a branch of occurrence-producers' rule view), several occurrences,
-    a discriminated target, incomplete fills, an argument path and a value still to be built, with
-    `DiscriminatedQuery.Row.refusal`. A refused build under a service is stored, or impossible on what
-    the store writes and thrown as a generator bug, and an inferred node id is slotted as a written one.
-    It closes when, on any graph the store's verdict accepts, the verdict can only be `EMITTED`; then
+    `EMITTED` follows a stored error defect, of an existing code or one of its own, raised by the
+    first stage holding its facts, or is impossible on what the store writes and thrown as a generator
+    bug. Landed: several occurrences, a connection, a row-tenant fan-out, a discriminated target, a
+    polymorphic or validating child, a list of node ids or one of several types built, a batch shape,
+    a key off an object, and an argument path to a node id, an input object or a Java enum. What
+    remains, each an arm of an existing code: an argument path into a container other than a `List`;
+    a root service whose result names no class at a table-bound target (`SERVICE_RETURN_MISMATCH`);
+    a discriminated field with an outcome, to pin; a child service under a type nested in a `@table`
+    type or under an object of an unread class (B's, with `City.names`); an input field another binder
+    takes in a bean with no member for it, which is emitted rather than refused, after
+    `graphitron_occurrence_taken`; the refusals no accepted graph reaches, thrown; and a gate that on
+    every fact graph a service not emitted carries an error defect. It closes when, on any graph the store's verdict accepts, the verdict can only be `EMITTED`; then
     the walk's fallback for the fields `ServiceEmission.emits` refuses goes, and
     `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes` go in the same commit.
     Until then a `@service(transactionControl: SERVICE)` field `ServiceEmission.emits` refuses falls

@@ -249,12 +249,26 @@ public final class FillEmitter {
      * Whether {@code landing} is read through a list to something not read here: a node id, an input
      * object, or an enum a parameter of {@code type} takes as its Java constant, under a list above the
      * last step. An enum taken by its name, a {@code String} once every list is peeled, arrives as that
-     * name and is read as a scalar is.
+     * name and is read as a scalar is. So is any value whose parameter does not collect it in a
+     * {@code List} for each list read through, each of which arrives as one, or that is read through
+     * more than two lists, past the containers the store states of a parameter.
      */
     public static boolean unreadThroughList(FillQuery.Landing landing, TypeName type) {
         return liftsThroughList(landing) && (landing.nodeId()
             || !("SCALAR".equals(landing.typeKind())
-                 || "ENUM".equals(landing.typeKind()) && STRING.equals(innermost(type))));
+                 || "ENUM".equals(landing.typeKind()) && STRING.equals(innermost(type)))
+            || !listedForEachLift(landing, type));
+    }
+
+    /** Whether {@code type} is a {@code List} for each of at most two lists {@code landing} is read through. */
+    private static boolean listedForEachLift(FillQuery.Landing landing, TypeName type) {
+        long lifts = landing.lists().stream().filter(i -> i < landing.path().size() - 1).count();
+        var level = type;
+        for (long i = 0; i < lifts; i++) {
+            if (elementOf(level).equals(level)) return false;
+            level = elementOf(level);
+        }
+        return lifts <= 2;
     }
 
     /** {@code List<E>} where {@code type} is {@code Set<E>}, which a list argument is read as before it is copied. */

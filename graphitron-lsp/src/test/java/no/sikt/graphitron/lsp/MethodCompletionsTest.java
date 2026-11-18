@@ -51,7 +51,7 @@ class MethodCompletionsTest {
         var items = run(source, cursor, "service");
 
         assertThat(items).extracting(i -> i.getLabel())
-            .containsExactlyInAnyOrder("filmsByIds", "filmById", "filmsByIdSet");
+            .containsExactlyInAnyOrder("filmsByIds", "filmById", "filmsByIdSet", "filmsByRatingNames");
         var byIds = items.stream().filter(i -> i.getLabel().equals("filmsByIds")).findFirst().orElseThrow();
         assertThat(byIds.getDetail()).isEqualTo("List<FilmRecord> filmsByIds(List<Integer> ids, DSLContext dsl)");
     }
@@ -63,7 +63,7 @@ class MethodCompletionsTest {
 
         var items = run(source, cursor, "condition");
 
-        assertThat(items).hasSize(3);
+        assertThat(items).hasSize(4);
     }
 
     @Test
