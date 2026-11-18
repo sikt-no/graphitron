@@ -1,7 +1,10 @@
 # An argument nothing binds has nowhere to go. A @service composes with no filter, so an argument its
 # method takes no parameter for is ARGUMENT_UNBOUND, at the argument: Query.filmsWithExtra's extra.
 # Its ids is bound by the method's parameter, as Query.filmsByService's only argument is, and those
-# draw nothing.
+# draw nothing. Under @condition(override: true) the condition stands in for every argument's
+# predicate, so filmsByPrefixAndExtra's extra, which the method takes no parameter for, is
+# ARGUMENT_UNBOUND too, while its titlePrefix, which the method reads, and filmsByPrefix's draw
+# nothing.
 
 type Film @table(name: "film") { title: String }
 
@@ -17,12 +20,21 @@ type Query {
   filmsWithExtra(ids: [Int!]!, extra: String): [Film!]! @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByService"})
+  filmsByPrefix(titlePrefix: String): [Film!]! @defaultOrder(primaryKey: true)
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
+  filmsByPrefixAndExtra(titlePrefix: String, extra: String): [Film!]! @defaultOrder(primaryKey: true)
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,             coordinate
   ARGUMENT_UNBOUND, Query.filmsFirstByService(first:)
   ARGUMENT_UNBOUND, Query.filmsWithExtra(extra:)
+  ARGUMENT_UNBOUND, Query.filmsByPrefixAndExtra(extra:)
   """)
 
 # The bound arguments bind the method's parameter; the unbound one binds nothing.
@@ -31,4 +43,6 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter",
   Query.filmsFirstByService(ids:), Query.filmsFirstByService, producer, 1,  SERVICE
   Query.filmsByService(ids:),    Query.filmsByService, producer, 1,        SERVICE
   Query.filmsWithExtra(ids:),    Query.filmsWithExtra, producer, 1,        SERVICE
+  Query.filmsByPrefix(titlePrefix:),         Query.filmsByPrefix,         condition:public.film, 1, CONDITION
+  Query.filmsByPrefixAndExtra(titlePrefix:), Query.filmsByPrefixAndExtra, condition:public.film, 1, CONDITION
   """)

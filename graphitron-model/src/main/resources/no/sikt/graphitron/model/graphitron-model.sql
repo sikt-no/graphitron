@@ -19584,6 +19584,39 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                   AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
                 WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate)
 UNION ALL
+-- An argument or input field an overriding condition suppresses the predicate of that nothing reads,
+-- at the slot: the condition stands in for its column's predicate, and no parameter of any condition
+-- or call takes it, itself or anything under it, nor does its own @condition or the tenant. Reported
+-- once, at the outermost such slot: an argument, or a field whose parent has something under it
+-- taken. A slot whose input object is built into a class or record is judged member by member,
+-- MEMBER_UNKNOWN's.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ARGUMENT_UNBOUND', CAST(NULL AS VARCHAR), 'occurrence-tenants'
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_overridden ov ON ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+   -- Nothing at or under it is taken.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
+   -- No step above it takes it whole.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate
+                      AND s.step_coordinate <> o.coordinate)
+   -- The outermost: an argument, or a field whose parent has something under it taken.
+   AND (o.kind = 'FIELD_ARGUMENT'
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate))
+UNION ALL
 -- A filter's argument or input field that names no column, at the @field where one is written and at
 -- the declaration otherwise: under a field whose rows a filter reads, so no @service, write or
 -- routine, and returning a table-bound type, it binds no column or node id, nothing at or under it is
