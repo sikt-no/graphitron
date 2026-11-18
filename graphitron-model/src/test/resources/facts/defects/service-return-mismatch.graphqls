@@ -50,6 +50,10 @@ type Query {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
   languagesAsFilmIds: FilmIdsPayload @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesAsFilms"})
+  filmsIntoOneId: FilmIdPayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+  oneFilmIntoIds: FilmIdsPayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "oneAsFilms"})
 }
 
 # A result naming no class once its containers are peeled, a type variable, a raw list or an array,
@@ -65,10 +69,15 @@ extend type Query {
 }
 
 # A payload encoding the records a service hands back into Film ids: film records encode, language
-# records would name language rows as films.
+# records would name language rows as films, and a list of records into one id, or one record into a
+# list of ids, has no one record per id.
 type FilmIdsPayload {
   ids: [ID!] @nodeId(typeName: "Film")
 }
+type FilmIdPayload {
+  id: ID @nodeId(typeName: "Film")
+}
+
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_RETURN_MISMATCH'", rows: """
@@ -78,6 +87,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   SERVICE_RETURN_MISMATCH, Query.filmArray,          FilmRecord[]
   SERVICE_RETURN_MISMATCH, Query.languagesAsFilms,     org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
   SERVICE_RETURN_MISMATCH, Query.languagesAsFilmIds,   org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
+  SERVICE_RETURN_MISMATCH, Query.filmsIntoOneId,       java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>
+  SERVICE_RETURN_MISMATCH, Query.oneFilmIntoIds,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   SERVICE_RETURN_MISMATCH, Query.filmCountText,        java.lang.Integer
   SERVICE_RETURN_MISMATCH, Film.lengthText,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, java.lang.Integer>"
   SERVICE_RETURN_MISMATCH, Query.filmsAsOne,           java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>

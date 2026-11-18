@@ -1175,21 +1175,7 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **The walk's service refusals are stored** `open`, E's. Ten refusals the walk raises for a service
-  field have no code in the store, and the walk code raising them goes with the service path, so each
-  becomes a stored defect first: the record class behind an output `[ID] @nodeId` service payload
-  that its node's table does not back; a list carrier whose data field is a list; one payload type
-  produced by both a DML write and a `@service`; a `Sources` of another table's records under a
-  `@table` parent; a list service's re-fetch key wider than jOOQ's typed `Row22`; an `argMapping` left
-  side naming no Java parameter, today caught only as `PARAMETER_UNFILLED` on the real one; `@tenant`
-  on a child service's argument; `@tenant` beside `@nodeId`; and the `@splitQuery` redundancy
-  lint on a service child or carrier, which `lint_rule` lists and only `FieldBuilder` emits. One
-  more shape is checked here rather than assumed: a `@service` child of a plain object nested in a
-  `@table` type (`City.names: CityNames`, `CityNames.lowercase @service`), which the walk defers at
-  generate as `ServiceRecordField is not yet supported under NestingField`. The store either emits it,
-  its key read off the outer row as a split field under a nesting type is, or refuses it with a stored
-  code; it never meets it silently.
-* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "The walk's service refusals are stored". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
 * **A record component no field fills is refused in the store** `open`, off the critical path.

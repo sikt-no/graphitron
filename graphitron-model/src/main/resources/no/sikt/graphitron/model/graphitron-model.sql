@@ -21529,7 +21529,8 @@ UNION ALL
 -- A @service whose payload's data field encodes the records it hands back into ids of a node,
 -- @nodeId(typeName:) written, and the records are another table's than the node's: an id is encoded
 -- from the node table's own record, so the keys read off another table's would name rows of the wrong
--- type. Read off the payload's data field and the @nodeId as written, which an earlier stage states
+-- type. At a root, too, one record for a list of ids or many for one id: each id is encoded from one
+-- record the call hands back. Read off the payload's data field and the @nodeId as written, which an earlier stage states
 -- than the node id this stage would otherwise wait for. The detail is the declared result type.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'SERVICE_RETURN_MISMATCH', m.result_type, 'occurrence-producers'
@@ -21555,7 +21556,8 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON st.source_name = nt.table_source_name AND st.table_schema = nt.table_schema
    AND st.table_name = nt.table_name
  WHERE p.kind = 'SERVICE' AND m.result_element_class IS NOT NULL
-   AND m.result_element_class <> st.record_class_fqn
+   AND (m.result_element_class <> st.record_class_fqn
+        OR p.start = 'ROOT' AND df.is_list <> (m.result_delivery = 'MANY'))
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
                     WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
                       AND po.field_name = f.field_name)
@@ -29854,7 +29856,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',
-   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one. Where the field''s payload encodes the records into ids of a node, @nodeId(typeName:) written, answer that node table''s records. A result naming no class, a type variable, a raw container or an array, states no records at a field bound to a table: declare the table''s record.'),
+   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one. Where the field''s payload encodes the records into ids of a node, @nodeId(typeName:) written, answer that node table''s records, one for an id and a list for a list of ids. A result naming no class, a type variable, a raw container or an array, states no records at a field bound to a table: declare the table''s record.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('UNROUTED_CHILD', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_CHILD',
