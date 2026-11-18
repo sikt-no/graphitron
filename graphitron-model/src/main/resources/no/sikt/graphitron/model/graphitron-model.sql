@@ -19341,10 +19341,25 @@ UNION
 -- A call's parameter, a condition's, a service's or a write's.
 SELECT bp.graph_name, bp.coordinate, 'PARAMETER' FROM graphitron_occurrence_binding_parameter bp
 UNION
+-- A routine's parameter its argMapping binds, a child routine's step among them, which runs as a
+-- join rather than a call of its own.
+SELECT l.graph_name, l.landing_coordinate, 'PARAMETER'
+  FROM graphitron_argmapping_landing l
+ WHERE l.directive_name = 'routine'
+UNION
 -- A call's tenant, named by the author or read off a record or a node id.
 SELECT bt.graph_name, bt.coordinate, 'TENANT' FROM graphitron_occurrence_binding_tenant bt
 UNION
 SELECT ts.graph_name, ts.coordinate, 'TENANT' FROM graphitron_occurrence_tenant_slot ts
+UNION
+-- A value bound to the graph's tenant column, which routes the statement to the tenant's database
+-- whether or not a predicate compares it, an overriding condition standing in for that predicate.
+SELECT c.graph_name, c.coordinate, 'TENANT'
+  FROM graphitron_occurrence_column c
+ WHERE EXISTS (SELECT 1 FROM graphitron_tenant_column tc
+                WHERE tc.graph_name = c.graph_name AND tc.source_name = c.table_source_name
+                  AND tc.table_schema = c.table_schema AND tc.table_name = c.table_name
+                  AND tc.column_name = c.column_name)
 UNION
 -- An @outbox message's key.
 SELECT l.graph_name, l.landing_coordinate, 'OUTBOX'
@@ -19384,15 +19399,23 @@ SELECT o.graph_name, o.coordinate, 'ORDER'
                 WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                   AND d.directive_name = 'orderBy')
 UNION
--- A connection's page argument, which graphitron reads itself.
+-- A page argument, which graphitron reads itself: a connection's, on a field @asConnection expands or
+-- one returning a connection type its author declared, and a list field's first, which limits the
+-- query graphitron writes; a @service hands back its own list, which nothing limits.
 SELECT o.graph_name, o.coordinate, 'PAGE'
   FROM graphitron_occurrence o
   JOIN graphitron_occurrence po ON po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
   JOIN graphitron_field f ON f.graph_name = po.graph_name AND f.coordinate = po.element_coordinate
  WHERE o.kind = 'FIELD_ARGUMENT' AND o.name IN ('first', 'last', 'after', 'before')
-   AND EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
-                WHERE cc.graph_name = f.graph_name AND cc.type_name = f.type_name
-                  AND cc.field_name = f.field_name);
+   AND (EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                 WHERE cc.graph_name = f.graph_name AND cc.type_name = f.type_name
+                   AND cc.field_name = f.field_name)
+        OR EXISTS (SELECT 1 FROM graphitron_connection ce
+                    WHERE ce.graph_name = f.graph_name AND ce.type_name = f.named_type)
+        OR (o.name = 'first' AND f.is_list
+            AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer sp
+                             WHERE sp.graph_name = po.graph_name AND sp.coordinate = po.coordinate
+                               AND sp.kind = 'SERVICE')));
 COMMENT ON VIEW graphitron_occurrence_taken_rule IS 'One row the taken rule computes, in the shape graphitron_occurrence_taken stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this views rows for one graph into graphitron_occurrence_taken, which is the name every reader spells.';
 
 CREATE VIEW graphitron_occurrence_tenant_entry_defect_rule

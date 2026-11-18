@@ -6,6 +6,11 @@
 type Film @table(name: "film") { title: String }
 
 type Query {
+  # A @service hands back its own list, which nothing limits, so a first its method takes no
+  # parameter for is ARGUMENT_UNBOUND too, where a table read would be limited by it.
+  filmsFirstByService(ids: [Int!]!, first: Int): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByService"})
   filmsByService(ids: [Int!]!): [Film!]! @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByService"})
@@ -16,12 +21,14 @@ type Query {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,             coordinate
+  ARGUMENT_UNBOUND, Query.filmsFirstByService(first:)
   ARGUMENT_UNBOUND, Query.filmsWithExtra(extra:)
   """)
 
 # The bound arguments bind the method's parameter; the unbound one binds nothing.
 extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter", rows: """
   coordinate,                    call_coordinate,      call,     position, call_kind
+  Query.filmsFirstByService(ids:), Query.filmsFirstByService, producer, 1,  SERVICE
   Query.filmsByService(ids:),    Query.filmsByService, producer, 1,        SERVICE
   Query.filmsWithExtra(ids:),    Query.filmsWithExtra, producer, 1,        SERVICE
   """)
