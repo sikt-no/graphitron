@@ -52,6 +52,18 @@ type Query {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesAsFilms"})
 }
 
+# A result naming no class once its containers are peeled, a type variable, a raw list or an array,
+# where the field's type is bound to a table: nothing in it says which records a lift would read.
+
+extend type Query {
+  anyFilms: [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.UnclassedResultService", method: "anyFilms"})
+  rawFilms: [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.UnclassedResultService", method: "rawFilms"})
+  filmArray: [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.UnclassedResultService", method: "filmArray"})
+}
+
 # A payload encoding the records a service hands back into Film ids: film records encode, language
 # records would name language rows as films.
 type FilmIdsPayload {
@@ -61,6 +73,9 @@ type FilmIdsPayload {
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_RETURN_MISMATCH'", rows: """
   code,                    coordinate,                 detail
+  SERVICE_RETURN_MISMATCH, Query.anyFilms,           java.util.List<T>
+  SERVICE_RETURN_MISMATCH, Query.rawFilms,           java.util.List
+  SERVICE_RETURN_MISMATCH, Query.filmArray,          FilmRecord[]
   SERVICE_RETURN_MISMATCH, Query.languagesAsFilms,     org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
   SERVICE_RETURN_MISMATCH, Query.languagesAsFilmIds,   org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
   SERVICE_RETURN_MISMATCH, Query.filmCountText,        java.lang.Integer
