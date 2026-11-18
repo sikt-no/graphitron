@@ -91,7 +91,7 @@ The walk's read path is gone
 │   │   └── A single child is looked up by its keys, claimed by G
 │   ├── A narrowed inline list is emitted from the store
 │   ├── A nesting field's leaves state how they're read
-│   ├── A plain input filter's unbound leaf and its cycle are entry defects, claimed by H
+│   ├── A plain input filter's cycle is an entry defect, claimed by H
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
     └── The service fields are emitted from the store
@@ -863,14 +863,18 @@ static method needs no holder.
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
     argument, and the line closes with it.
-  * **A plain input filter's unbound leaf and its cycle are entry defects, claimed by H** `open`. The walk refuses
-    a scalar or enum leaf under a plain input argument of a table-bound field that binds no column of
-    the landing table and has no `@condition`, and a circular plain filter input (`input A { b: B }`,
-    `input B { a: A }` under `films(filter: A)`); the store states neither, since `COLUMN_UNRESOLVED`'s
-    input arm and `INPUT_CYCLE_EXPANDED` read only inputs built into a class
-    (`graphitron_occurrence_built_class`). A third arm of `COLUMN_UNRESOLVED` and
-    `INPUT_CYCLE_EXPANDED` widened past `SERVICE` state them, so the read path's stand-down owes no
-    walk-only refusal here.
+  * **A plain input filter's cycle is an entry defect, claimed by H** `open`. The walk refuses a circular plain filter
+    input (`input A { b: B }`, `input B { a: A }` under `films(filter: A)`) wherever it classifies a
+    table-bound field's inputs, whatever overrides it or binds a column; the store states it only
+    under a class a `@service` or a `@condition` builds. A third arm of `INPUT_CYCLE_EXPANDED`, in
+    `occurrence-producers` beside the `@service` arm, states it for an input object reached again in
+    its own `graphitron_occurrence_chain` under a field whose producer reads, looks up or counts, at
+    the input field that reaches it again, the detail the type; the site view collapses it with a bean
+    arm's at the same position. Pinned by `defects/input-cycle-expanded` with a filter pair and a self
+    reference beside near misses, and stated in the diagnostics glossary, which names the code nowhere
+    yet, and on the filter's page. A cycle under a routine chain's root stays the walk's until the
+    store states how a routine's arguments are read. The unbound leaf half is the store's since
+    95259039f, read off `graphitron_occurrence_taken` (principles review at take-up, 2026-11-18).
   * **Every list states its order or is refused, claimed by F** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a
