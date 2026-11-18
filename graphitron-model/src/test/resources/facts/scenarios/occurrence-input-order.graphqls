@@ -1,0 +1,34 @@
+# A producer owing its answer in the order of its input: a list argument naming one item per element,
+# answered with one item per element. A root lookup whose @lookupKey argument is a list declares it, and so
+# does a bulk insert on the mutation root taking one list argument and returning a list, by its shape
+# alone. A list argument without @lookupKey on a query field is a filter, which promises no such
+# order, and declares nothing.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmInput {
+  title: String
+  languageId: Int @field(name: "language_id")
+}
+
+type Query {
+  filmsByKey(film_id: [Int!] @lookupKey): [Film]!
+  filmsFiltered(film_id: [Int!]): [Film!]!
+}
+
+type Mutation {
+  createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT)
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_input_order", rows: """
+  coordinate,           argument_coordinate,           declared_by
+  Mutation.createFilms, Mutation.createFilms(in:),     WRITE_SHAPE
+  Query.filmsByKey,     Query.filmsByKey(film_id:),    LOOKUP_KEY
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_input_order", rows: """
+  coordinate
+  Query.filmsFiltered
+  """)

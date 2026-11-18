@@ -8054,6 +8054,40 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void rentFilmsInOrder_aPluralWriteAnswersInTheOrderOfItsInput() {
+        // rent_films_in_order writes one rental per inventory id and delivers them last position
+        // first. The field states its order on the routine's position column, so the rentals answer
+        // in the order the ids were given, 3, 1, 2, and not in the order delivered or by key.
+        int before = maxRentalId();
+        try {
+            var result = executeRaw("""
+                mutation {
+                    rentFilmsInOrder(inventoryIds: [3, 1, 2], customerId: 2) {
+                        rentalId inventoryId customerId
+                    }
+                }
+                """);
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            var rentals = (List<Map<String, Object>>) ((Map<String, Object>) result.getData())
+                .get("rentFilmsInOrder");
+            assertThat(rentals)
+                .extracting(r -> r.get("inventoryId"), r -> r.get("customerId"))
+                .as("one rental per inventory id, in the order of the input")
+                .containsExactly(tuple(3, 2), tuple(1, 2), tuple(2, 2));
+            assertThat(rentals)
+                .extracting(r -> (Integer) r.get("rentalId"))
+                .doesNotHaveDuplicates()
+                .allSatisfy(id -> assertThat(id).isGreaterThan(before));
+            assertThat(rentalsAfter(before))
+                .as("the one call committed all three rentals")
+                .containsExactlyInAnyOrder(List.of(3, 2), List.of(1, 2), List.of(2, 2));
+        } finally {
+            deleteRentalsAfter(before);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void rentFilmCopy_anAuthoredAndAnInferredNodeIdEachReachTheirOwnParameter() {
         // filmId spells film_id past its node id; customerId stops on its node id and the build
         // infers customer_id. Film 3 and customer 2 are both valid keys of the other kind too, so

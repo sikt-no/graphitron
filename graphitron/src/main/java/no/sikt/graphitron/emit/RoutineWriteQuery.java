@@ -22,10 +22,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_ORDER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
@@ -72,12 +76,12 @@ import static org.jooq.impl.DSL.selectOne;
  * query does not read them. A closed list of shapes the store states but the emitter does not render
  * yet is named by {@link Unrendered} and never reaches the rows.
  *
- * <p>Three statements at their grains, which is the rule and not a tuning. The occurrence statement
+ * <p>Four statements at their grains, which is the rule and not a tuning. The occurrence statement
  * reads every routine-write occurrence with its call, its routine arguments, its join path's anchor
  * and its re-reading children, the lists as correlated {@code MULTISET}s, which is what admission is
- * decided from. The anchor's captured pairing and a re-reading child's are their own statements,
- * paired back on keys the store declares and narrowed to the admitted coordinates, read once here
- * instead of once per coordinate. Every catalog name is captured rather than derived
+ * decided from. The anchor's captured pairing, a re-reading child's, and a plural identifying
+ * write's stated order are their own statements, paired back on keys the store declares and narrowed
+ * to the admitted coordinates, read once here instead of once per coordinate. Every catalog name is captured rather than derived
  * ({@code sql_table.class_fqn}, {@code sql_schema.tables_class_fqn} and {@code keys_class_fqn},
  * {@code sql_constraint.jooq_name}), so a row is built with no live catalog.
  *
@@ -117,6 +121,16 @@ public final class RoutineWriteQuery {
 
     /** One cell of a key pairing: the departing side's column and the arriving side's. */
     public record Pair(Column source, Column target) {}
+
+    /**
+     * One key of the order a plural identifying write's capture reads its rows in: a column of the
+     * routine's own result, and whether it sorts descending.
+     */
+    public record OrderKey(Column column, boolean descending) {
+        public OrderKey {
+            Objects.requireNonNull(column, "column");
+        }
+    }
 
     /**
      * One IN parameter of the routine, in declaration order. {@code path} is where the value is read
@@ -169,16 +183,21 @@ public final class RoutineWriteQuery {
      *
      * @param capturedPairs the routine result's column of each name beside the anchor's primary-key
      *                      column of that name, as the path's first step pairs them
+     * @param statedOrder   for a plural identifying write, a list argument answered one item per
+     *                      element, the default order stated on the routine's result, which the
+     *                      capture reads its rows in; empty for any other write, whose capture reads
+     *                      them in the order the routine delivered them
      */
     public record RecordsResult(String typeName, String fieldName, String returnTypeName,
                                 boolean listReturn, Call call, Table liftTable, Table anchor,
-                                List<Pair> capturedPairs)
+                                List<Pair> capturedPairs, List<OrderKey> statedOrder)
             implements Row {
 
         public RecordsResult {
             Objects.requireNonNull(liftTable, "liftTable");
             Objects.requireNonNull(anchor, "anchor");
             capturedPairs = List.copyOf(capturedPairs);
+            statedOrder = List.copyOf(statedOrder);
             if (capturedPairs.isEmpty()) {
                 throw new IllegalStateException(
                     "the routine write at " + typeName + "." + fieldName + " produces records of "
@@ -377,13 +396,15 @@ public final class RoutineWriteQuery {
         var records = occurrences.stream().filter(RoutineWriteQuery::admittedAsRecords).toList();
         var objects = occurrences.stream().filter(RoutineWriteQuery::admittedAsObject).toList();
         var anchorPairs = anchorPairs(store, records);
+        var statedOrders = statedOrders(store, records);
         var reReadPairs = reReadPairs(store, objects);
         var rows = new ArrayList<Row>();
         for (var o : occurrences) {
             if (records.contains(o)) {
                 rows.add(new RecordsResult(o.typeName(), o.fieldName(), o.returnTypeName(),
                     o.listReturn(), o.call(), o.liftTable(), o.anchor(),
-                    anchorPairs.getOrDefault(o.typeName() + "." + o.fieldName(), List.of())));
+                    anchorPairs.getOrDefault(o.typeName() + "." + o.fieldName(), List.of()),
+                    statedOrders.getOrDefault(o.typeName() + "." + o.fieldName(), List.of())));
             } else if (objects.contains(o)) {
                 rows.add(new ObjectResult(o.typeName(), o.fieldName(), o.returnTypeName(),
                     o.listReturn(), o.call(),
@@ -704,7 +725,51 @@ public final class RoutineWriteQuery {
     }
 
     // -------------------------------------------------------------------------------------
-    // Statement three: an object result's captured pairing.
+    // Statement three: a plural identifying write's stated order.
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Each admitted records result that is a plural identifying write, keyed by its
+     * {@code Type.field} coordinate: the keys of the default order stated on its routine's result, in
+     * order. A write is plural identifying where {@code graphitron_occurrence_input_order} holds a
+     * {@code WRITE_SHAPE} row for it; its default order's keys are read where
+     * {@code graphitron_occurrence_sort_key_column} resolves them on the routine's function table. A
+     * write with no such row, or one stating no order there, has no entry, and its capture keeps the
+     * order the routine delivered.
+     */
+    private static Map<String, List<OrderKey>> statedOrders(StoreHandle store, List<Occurrence> admitted) {
+        var io = GRAPHITRON_OCCURRENCE_INPUT_ORDER;
+        var pr = GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
+        var r = GRAPHITRON_OCCURRENCE_ORDER;
+        var k = GRAPHITRON_OCCURRENCE_SORT_KEY;
+        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var c = SQL_COLUMN;
+        var coordinates = admitted.stream().map(o -> o.typeName() + "." + o.fieldName()).toList();
+        var byKey = new LinkedHashMap<String, List<OrderKey>>();
+        store.dsl()
+            .select(io.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, k.DIRECTION)
+            .from(io)
+            .join(pr).on(pr.GRAPH_NAME.eq(io.GRAPH_NAME), pr.COORDINATE.eq(io.COORDINATE))
+            .join(r).on(r.GRAPH_NAME.eq(io.GRAPH_NAME), r.COORDINATE.eq(io.COORDINATE), r.KIND.eq("DEFAULT"))
+            .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.COORDINATE.eq(r.COORDINATE), k.BOUND.eq(r.BOUND),
+                k.CHOICE.eq(r.CHOICE))
+            .join(kc).on(kc.GRAPH_NAME.eq(k.GRAPH_NAME), kc.COORDINATE.eq(k.COORDINATE), kc.BOUND.eq(k.BOUND),
+                kc.CHOICE.eq(k.CHOICE), kc.POSITION.eq(k.POSITION),
+                kc.TABLE_SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME), kc.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA),
+                kc.TABLE_NAME.eq(pr.ROUTINE_NAME))
+            .join(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
+            .where(io.GRAPH_NAME.eq(store.graphName()), io.DECLARED_BY.eq("WRITE_SHAPE"),
+                io.COORDINATE.in(coordinates))
+            .orderBy(io.COORDINATE, k.POSITION)
+            .forEach(row -> byKey.computeIfAbsent(row.value1(), key -> new ArrayList<>())
+                .add(new OrderKey(new Column(row.value2(), row.value3(), row.value4()),
+                    "DESC".equals(row.value5()))));
+        return byKey;
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Statement four: an object result's captured pairing.
     // -------------------------------------------------------------------------------------
 
     /**

@@ -71,6 +71,34 @@ Index-based with descending direction:
 include::examples/defaultOrder.graphqls[tag=IndexDescending]
 ----
 
+[#plural-routine-write]
+== On a plural mutation backed by a routine
+
+A mutation field taking a list argument and returning a list answers one item per element of that argument, in the order of the input. A field of that shape behind a `@routine` that returns a table reads the routine's result, and the rows of a table have no order of their own. On such a field, `@defaultOrder` states the order the routine's result keeps: `fields:` names columns of the routine's result, not of the table the field's type is bound to, and each `name` resolves against those columns.
+
+[source,graphql]
+----
+type Mutation {
+    rentFilmsInOrder(inventoryIds: [Int!]!, customerId: Int!): [Rental!]!
+        @routine(
+            name: "rent_films_in_order"
+            argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}])
+        @defaultOrder(fields: [{name: "input_index"}])
+}
+----
+
+Here `rent_films_in_order` returns `TABLE(rental_id INTEGER, input_index INTEGER)`, `input_index` being each rental's place in `inventoryIds`. The written rows are read back from `rental` in the order of `input_index`, so the answer follows the input. Which column keeps the input's order is the routine's to say; the column of the bound table, such as `rental_id`, cannot say which element a row answers.
+
+Only arguments that are lists count toward the shape, so scalar arguments beside the list, `customerId` here, leave it a plural mutation.
+
+* Only `fields:` applies. A routine's result has no primary key and no index, so `primaryKey: true` fails the build with `ORDER_PRIMARY_KEY_MISSING` and `index:` with `ELEMENT_UNRESOLVED`.
+* A `name` that is not a column of the routine's result fails the build with `COLUMN_UNRESOLVED`, naming it.
+* A `fields` element with a `method:` or a `path:` names no column of the routine's result and fails the build with `ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN`.
+* A field of this shape with no `@defaultOrder` fails the build with `ROUTINE_WRITE_PLURAL_UNORDERED`, naming the list argument.
+* An xref:orderBy.adoc[`@orderBy`] argument is not accepted on a `@routine` mutation field (`READ_SURFACE_ON_WRITE`): a client-chosen order would break the order the schema states.
+
 [#constraints]
 == Constraints
 

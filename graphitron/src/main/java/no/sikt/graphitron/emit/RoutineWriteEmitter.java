@@ -2,10 +2,12 @@ package no.sikt.graphitron.emit;
 
 import no.sikt.graphitron.emit.RoutineWriteQuery.Column;
 import no.sikt.graphitron.emit.RoutineWriteQuery.ObjectResult;
+import no.sikt.graphitron.emit.RoutineWriteQuery.OrderKey;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Pair;
 import no.sikt.graphitron.emit.RoutineWriteQuery.RecordsResult;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Row;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Table;
+import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
@@ -32,7 +34,8 @@ import java.util.List;
  * post-commit query under the caller's identity, and the two result shapes differ only there: a
  * {@link RecordsResult} hands the captured keys, typed as its anchor's key fields, to its lift,
  * {@link LiftEmitter#lift}, which reads the type the path lands on along the path from the anchor in
- * the order the routine delivered the keys; an {@link ObjectResult} returns the captured keys, typed
+ * the order the keys were captured, the routine's delivered order or, for a plural identifying write,
+ * the order stated on its result; an {@link ObjectResult} returns the captured keys, typed
  * as the re-read table's key fields, and leaves the re-read to the field under it that takes them.
  * The routine never appears in the follow-up {@code FROM}: re-invoking it would re-execute the write.
  * An error in the routine rolls back at the {@code transactionResult} boundary; an error in the
@@ -50,6 +53,7 @@ public final class RoutineWriteEmitter {
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
 
@@ -96,9 +100,9 @@ public final class RoutineWriteEmitter {
         builder.addCode(captureTransaction(
             isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType,
             row.capturedPairs().stream().map(Pair::source).toList(),
-            keyFields(row.anchor(), anchorKeyColumns), isList, transactionProvider));
+            keyFields(row.anchor(), anchorKeyColumns), isList, row.statedOrder(), transactionProvider));
         // The post-commit read: the lift reads the path from the anchor, keyed by the captured
-        // values, in the order the routine delivered them.
+        // values, in the order they were captured.
         return builder.addStatement("return $T.$L(env, dsl, keys)", lift.host(), lift.method()).build();
     }
 
@@ -118,7 +122,7 @@ public final class RoutineWriteEmitter {
         // field identity rather than by jOOQ's name-lookup fallback.
         builder.addCode(captureTransaction(valueType,
             reRead.capturedPairs().stream().map(Pair::source).toList(),
-            keyFields(reRead.table(), targetKeyColumns), isList, transactionProvider));
+            keyFields(reRead.table(), targetKeyColumns), isList, List.of(), transactionProvider));
         builder.addCode(nullKeysGuard(isList));
 
         return builder.addStatement("return keys").build();
@@ -132,11 +136,27 @@ public final class RoutineWriteEmitter {
             ProjectedKeyReads keys) {
         var call = row.call();
         var args = CodeBlock.join(call.arguments().stream()
-            .map(a -> RoutineCallEmitter.envArgumentRead(a.segments(),
-                CatalogRefs.decodeBindingType(a.javaTypeName()), argHelpers, keys))
+            .map(a -> {
+                var type = CatalogRefs.decodeBindingType(a.javaTypeName());
+                return type instanceof ArrayTypeName array && a.segments().size() == 1
+                    ? arrayArgumentRead(array, a.segments().getFirst())
+                    : RoutineCallEmitter.envArgumentRead(a.segments(), type, argHelpers, keys);
+            })
             .toList(), ", ");
         return CodeBlock.of("$T.$L($L)", CatalogRefs.className(call.routinesClassName()),
             call.methodName(), args);
+    }
+
+    /**
+     * An array parameter's value off a list argument: graphql-java hands a list argument over as a
+     * {@code java.util.List}, which the routine's array parameter does not take, so the elements are
+     * copied into an array of the parameter's component type, in the list's order. A null argument
+     * stays null.
+     */
+    private static CodeBlock arrayArgumentRead(ArrayTypeName array, String slot) {
+        var element = array.componentType();
+        return CodeBlock.of("$T.ofNullable(env.<$T>getArgument($S)).map(elements -> elements.toArray(new $T[0]))"
+            + ".orElse(null)", OPTIONAL, ParameterizedTypeName.get(LIST, element), slot, element);
     }
 
     /** {@code public static <valueType> <bodyName>(DataFetchingEnvironment env, DSLContext dsl)}. */
@@ -156,10 +176,28 @@ public final class RoutineWriteEmitter {
      *
      * <p>A list's keys are captured in the order the routine returned its rows: the function's table is
      * read {@code WITH ORDINALITY}, the one order a set-returning function defines, and the capture is
-     * ordered by it, so the lift and every re-read keyed on the captured list keep that order.
+     * ordered by it, so the lift and every re-read keyed on the captured list keep that order. A plural
+     * identifying write, whose answer owes the order of its input, is captured in the order
+     * {@code statedOrder} states on the routine's own result instead, which is the author's statement
+     * of the order that keeps the input's; the capture's position is then that order's.
      */
     private static CodeBlock captureTransaction(TypeName keysType, List<Column> capturedColumns,
-            CodeBlock coerceTo, boolean isList, ClassName transactionProvider) {
+            CodeBlock coerceTo, boolean isList, List<OrderKey> statedOrder,
+            ClassName transactionProvider) {
+        if (isList && !statedOrder.isEmpty()) {
+            return CodeBlock.builder()
+                .add("$T keys = $L$T.using(tx)\n", keysType,
+                    OwnedScope.transactionResult(transactionProvider, "dsl"), DSL).indent()
+                .add(".select($L)\n", CodeBlock.join(capturedColumns.stream()
+                    .map(c -> CodeBlock.of("source.$L", c.javaName())).toList(), ", "))
+                .add(".from(source)\n")
+                .add(".orderBy($L)\n", CodeBlock.join(statedOrder.stream()
+                    .map(k -> CodeBlock.of("source.$L.$L()", k.column().javaName(),
+                        k.descending() ? "desc" : "asc"))
+                    .toList(), ", "))
+                .add(".coerce($L)\n", coerceTo)
+                .add(".fetch());\n").unindent().build();
+        }
         var b = CodeBlock.builder();
         String from = "source";
         if (isList) {

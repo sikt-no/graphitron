@@ -16,8 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Three
- * statements at three grains, and three however many coordinates the graph holds, however many
+ * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Four
+ * statements at four grains, and four however many coordinates the graph holds, however many
  * steps their paths take and however many arguments their routines take.
  *
  * <p>An enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for being
@@ -37,11 +37,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RoutineWriteQueryStatementCountTest {
 
     /**
-     * One per grain: the occurrence, a records result's captured pairing, an object result's
-     * captured pairing. Three rather than four since admission is read off the occurrence
-     * statement's own facts instead of a statement of its own ahead of it.
+     * One per grain: the occurrence, a records result's captured pairing, a plural identifying
+     * write's stated order, an object result's captured pairing. Admission is read off the
+     * occurrence statement's own facts instead of a statement of its own ahead of it.
      */
-    private static final int GRAINS = 3;
+    private static final int GRAINS = 4;
 
     @RegisterExtension
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
@@ -63,7 +63,7 @@ class RoutineWriteQueryStatementCountTest {
 
     @Test
     void aGraphWithNoRoutineWriteCostsTheSame() {
-        // Absence is an answer, and it is the same three statements: nothing here may probe a
+        // Absence is an answer, and it is the same four statements: nothing here may probe a
         // relation at a time to discover that none of them holds a row, and nothing may skip a
         // grain because an earlier one came back empty. Either shape makes the count a function of
         // the corpus in the direction the pin is blind to reading as a saving.

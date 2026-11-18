@@ -3339,6 +3339,15 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   written row could answer as several. Return a list, or read the record along a path whose every
   step reaches one row.
 
+* **Breaking: a plural routine write returning a table states its order** ("breaking: a plural
+  routine write returning a table is refused without @defaultOrder, unused in FS-plattform"). A
+  mutation taking one list argument and answering a list owes its answer in the order of its input.
+  Where a `@routine` returning a table stands behind it, `@defaultOrder(fields:)` on the field names
+  the columns of the routine's result that keep that order; without one the build fails as
+  `ROUTINE_WRITE_PLURAL_UNORDERED`, and an element naming a path or no column of the result as
+  `ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN`. A list argument mapped to an array parameter is
+  passed as an array.
+
 ## Retired vocabulary
 
 **A parameter's table fit is held only for a method a call names** (2026-11-16). Which catalog tables a

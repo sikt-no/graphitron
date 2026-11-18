@@ -1,0 +1,54 @@
+# A mutation taking a list argument and returning a list owes its answer in the order of its input,
+# and a routine returning a table hands back rows with no order of their own, so the field has to
+# state the order its routine's result keeps. rent_films_in_order returns each rental with its
+# element's index: with no @defaultOrder the field draws the defect at the field, the detail the
+# list argument; ordered by input_index, a column of the routine's result, it draws nothing; ordered by
+# rental_date, a column of rental and not of the routine's result, the name resolves to no column
+# there, so the field has no sort key row; its COLUMN_UNRESOLVED is the code ordering-refusals pins.
+# An element with a path: names no column of the routine's result either, and is refused at the
+# field. customerId beside the list is no list, so each field keeps the plural shape.
+
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+
+type Query {
+  rentals: [Rental]
+}
+
+type Mutation {
+  rentFilmsUnordered(inventoryIds: [Int!]!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_films_in_order", argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentFilmsInOrder(inventoryIds: [Int!]!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_films_in_order", argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+    @defaultOrder(fields: [{name: "input_index"}])
+  rentFilmsByRentalDate(inventoryIds: [Int!]!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_films_in_order", argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+    @defaultOrder(fields: [{name: "rental_date"}])
+  rentFilmsByCustomerName(inventoryIds: [Int!]!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_films_in_order", argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+    @defaultOrder(fields: [{name: "last_name", path: [{table: "customer"}]}])
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_input_order", rows: """
+  coordinate,                     argument_coordinate,                          declared_by
+  Mutation.rentFilmsByCustomerName, Mutation.rentFilmsByCustomerName(inventoryIds:), WRITE_SHAPE
+  Mutation.rentFilmsByRentalDate, Mutation.rentFilmsByRentalDate(inventoryIds:), WRITE_SHAPE
+  Mutation.rentFilmsInOrder,      Mutation.rentFilmsInOrder(inventoryIds:),      WRITE_SHAPE
+  Mutation.rentFilmsUnordered,    Mutation.rentFilmsUnordered(inventoryIds:),    WRITE_SHAPE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column",
+    where: "coordinate LIKE 'Mutation.%'", rows: """
+  coordinate,                table_name,          column_name
+  Mutation.rentFilmsInOrder, rent_films_in_order, input_index
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect",
+    where: "code IN ('ROUTINE_WRITE_PLURAL_UNORDERED', 'ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN')", rows: """
+  source_line, code,                                    detail
+  18,          ROUTINE_WRITE_PLURAL_UNORDERED,          inventoryIds
+  29,          ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN, last_name
+  """)

@@ -4,6 +4,8 @@ import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_ORDER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_ORDER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY_RULE;
 import static org.jooq.impl.DSL.excluded;
@@ -12,8 +14,10 @@ import static org.jooq.impl.DSL.val;
 
 /**
  * The {@code occurrence-lookup-keys} stage: the keys a caller narrows each list by, into
- * {@code graphitron_occurrence_lookup_key}, from its rule view over the whole graph, then swept; last,
- * the defects of a {@code @lookupKey} those keys cannot state, from the stage's own rule.
+ * {@code graphitron_occurrence_lookup_key}, from its rule view over the whole graph, then swept; then
+ * the producers owing their answer in the order of their input, into
+ * {@code graphitron_occurrence_input_order}, a list {@code @lookupKey} among them read off the keys just
+ * written; last, the defects of a {@code @lookupKey} those keys cannot state, from the stage's own rule.
  *
  * <p>After {@link OccurrenceBindings}, since a key is an argument's or input field's column or node id
  * binding at the table the list's own binding reads, or a node id {@link OccurrenceNodeIdCarriedColumns}
@@ -47,6 +51,29 @@ public final class OccurrenceLookupKeys {
             .set(k.TOUCHED_AT, excluded(k.TOUCHED_AT))
             .execute();
         dsl.deleteFrom(k).where(k.GRAPH_NAME.eq(graph), k.TOUCHED_AT.ne(touchedAt)).execute();
+        inputOrders(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.LOOKUP_KEYS);
+    }
+
+    /**
+     * The producers owing their answer in the order of their input, off
+     * {@code graphitron_occurrence_input_order_rule}: one row per producer, its list argument and what
+     * declares it restated on conflict, then the rows this reading did not mark swept.
+     */
+    private static void inputOrders(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var io = GRAPHITRON_OCCURRENCE_INPUT_ORDER;
+        var r = GRAPHITRON_OCCURRENCE_INPUT_ORDER_RULE;
+        dsl.insertInto(io)
+            .columns(io.GRAPH_NAME, io.COORDINATE, io.ARGUMENT_COORDINATE, io.DECLARED_BY, io.TOUCHED_AT)
+            .select(select(r.GRAPH_NAME, r.COORDINATE, r.ARGUMENT_COORDINATE, r.DECLARED_BY,
+                    val(touchedAt, io.TOUCHED_AT))
+                .from(r).where(r.GRAPH_NAME.eq(graph)))
+            .onConflict(io.GRAPH_NAME, io.COORDINATE)
+            .doUpdate()
+            .set(io.ARGUMENT_COORDINATE, excluded(io.ARGUMENT_COORDINATE))
+            .set(io.DECLARED_BY, excluded(io.DECLARED_BY))
+            .set(io.TOUCHED_AT, excluded(io.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(io).where(io.GRAPH_NAME.eq(graph), io.TOUCHED_AT.ne(touchedAt)).execute();
     }
 }

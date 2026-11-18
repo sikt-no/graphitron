@@ -1141,6 +1141,30 @@ AS $$
     SELECT written.rental_id FROM written ORDER BY written.rental_id DESC
 $$;
 
+-- Routine-write fixture: one rental per element of an array of inventory ids, each returned with the
+-- element's index in the array, so a caller can read the rentals back in the order it asked for
+-- them. Delivers them last index first, so only an order stated on input_index keeps the input's.
+CREATE OR REPLACE FUNCTION public.rent_films_in_order(
+    p_inventory_ids INTEGER[],
+    p_customer_id   INTEGER
+) RETURNS TABLE(rental_id INTEGER, input_index INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    WITH input AS (
+        SELECT element.inventory_id, element.idx
+        FROM unnest(p_inventory_ids) WITH ORDINALITY AS element(inventory_id, idx)
+    ), written AS (
+        INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
+        SELECT now(), input.inventory_id, p_customer_id, 1
+        FROM input
+        RETURNING rental.rental_id, rental.inventory_id
+    )
+    SELECT written.rental_id, CAST(input.idx AS INTEGER)
+    FROM written
+    JOIN input ON input.inventory_id = written.inventory_id
+    ORDER BY input.idx DESC
+$$;
+
 -- Routine-write fixture: rents the copy only where the inventory holds it, so an unknown inventory id
 -- writes nothing and the routine returns no row, rather than failing on the foreign key.
 CREATE OR REPLACE FUNCTION public.rent_film_when_stocked(

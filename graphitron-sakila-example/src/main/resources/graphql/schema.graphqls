@@ -5591,6 +5591,17 @@ type Mutation {
         )
         @reference(path: [{table: "rental"}])
 
+    # A plural identifying write: one rental per inventory id, answered in the order of the ids. The
+    # routine delivers its rows last index first, and the order stated on its result's input_index
+    # column is what keeps the input's.
+    rentFilmsInOrder(inventoryIds: [Int!]!, customerId: Int!): [Rental!]!
+        @routine(
+            name: "rent_films_in_order"
+            argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}])
+        @defaultOrder(fields: [{name: "input_index"}])
+
     # Composite captured key, in both forms: the chain re-reads email by (mailbox_id, message_no)
     # off the routine's result, the carrier captures both columns for its data field.
     postEmail(mailboxId: Int!, messageNo: Int!, subject: String!): [Email!]!
