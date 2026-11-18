@@ -62,6 +62,13 @@ input FilmRecordRefsInput {
     @reference(path: [{key: "inventory_film_id_fkey"}, {key: "inventory_store_id_fkey"}])
 }
 
+"Two ids of film itself built into its record: both are its own key, decoded into film_id."
+input FilmRecordTwinIdsInput {
+  title: String @field(name: "title")
+  filmId: ID @nodeId(typeName: "Film")
+  otherFilmId: ID @nodeId(typeName: "Film")
+}
+
 type FilmDraftsCountedPayload { count: Int }
 
 type Query {
@@ -87,6 +94,8 @@ type Query {
   countRecordLanguages(in: [FilmRecordLanguageInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
   countRecordRefs(in: [FilmRecordRefsInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  countRecordTwins(in: [FilmRecordTwinIdsInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
   languages: [Language!]!
   actors: [Actor!]!
@@ -161,6 +170,13 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot_record
   coordinate,                            bound,           key_position, column_name
   Query.countRecordRefs(in.filmId:),      public.film,     0,            film_id
   Query.countRecordRefs(in.languageRef:), public.language, 0,            language_id
+  """)
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot_record_column", where: """
+  coordinate LIKE 'Query.countRecordTwins%'
+  """, rows: """
+  coordinate,                              bound,       key_position, column_name
+  Query.countRecordTwins(in.filmId:),      public.film, 0,            film_id
+  Query.countRecordTwins(in.otherFilmId:), public.film, 0,            film_id
   """)
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape", where: """
   coordinate LIKE 'Query.countRecordRefs%'

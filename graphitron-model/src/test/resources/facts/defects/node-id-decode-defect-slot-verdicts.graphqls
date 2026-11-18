@@ -29,6 +29,9 @@ input FilmSurveyNoteInput { note: ID @nodeId(typeName: "Film") }
 "A film id built into a record bean's FilmRecord member, the node's own record."
 input FilmRecordAssignmentInput { film: ID @nodeId(typeName: "Film") }
 
+"A film-actor id built into the same FilmRecord member: another table's record, which holds no film-actor key."
+input FilmActorIntoFilmRecordInput { film: ID @nodeId(typeName: "FilmActor") }
+
 "A composite id an argMapping path hands whole to a parameter, judged there as an argument's is; a one-column id is the column a path projects instead."
 input GreetingByPathInput { userId: ID @nodeId(typeName: "FilmActor") }
 
@@ -125,6 +128,9 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmSurveyService", method: "count"})
   assignByFilm(in: FilmRecordAssignmentInput!): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignFilmRecord"})
+  # ... and another node's id into that member, of a record that is not its own.
+  assignFilmActorIntoFilm(in: FilmActorIntoFilmRecordInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignFilmRecord"})
   # An input field whose root argument feeds a parameter: the value lands inside the bean.
   echo(by: PairingInput): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
@@ -144,6 +150,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.filmImplicit(id:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   FilmSurveyNoteInput.note,       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       note
+  FilmActorIntoFilmRecordInput.film, NODE_ID_KEY_ARITY_EXCEEDS_SLOT,    film
   Query.greetingsByPair(ids:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   GreetingByPathInput.userId,     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.filmsByIds(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids

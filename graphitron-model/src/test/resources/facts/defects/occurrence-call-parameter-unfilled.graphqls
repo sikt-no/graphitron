@@ -10,8 +10,31 @@
 # unlandedFilms names filmIds in a pair whose path lands nowhere: that is the pair's defect, so the parameter has no
 # fill and is not reported unfilled a second time. contextPair fills userId from a $context pair,
 # which this site refuses while the fill itself is still stated.
+#
+# A root has no parent to batch against, so a parameter taking a batch of keys, records or rows, is
+# one nothing fills there, at Query and Mutation alike, whatever the method returns. A list parameter
+# beside a lone input-object argument is no pair for it, list against one value, so nothing fills it
+# either. And a child's parameter nothing fills is refused as a root's is.
+
+input FilmIdInput { filmId: ID }
+
+type Film @table(name: "film") {
+  title: String
+  unfilledChild: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+}
+
+type Mutation {
+  rowsAtRoot: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byRow"})
+}
 
 type Query {
+  films: [Film!]!
+  recordsAtRoot: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBatchShapeService", method: "titlesInOrder"})
+  listForInput(in: FilmIdInput): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitles"})
   unfilledFilms(other: [String!]): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByService"})
@@ -41,6 +64,10 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter_de
   Query.ambiguousFilms, 1,       filmIds,        PARAMETER_AMBIGUOUS
   Query.greetedTwice,  0,        userId,         PARAMETER_FILLED_TWICE
   Query.namelessUnfilled, 0,     ,               PARAMETER_NAMES_MISSING
+  Query.recordsAtRoot, 0,        films,          PARAMETER_UNFILLED
+  Mutation.rowsAtRoot, 0,        keys,           PARAMETER_UNFILLED
+  Query.listForInput,  0,        titles,         PARAMETER_UNFILLED
+  Film.unfilledChild,  0,        title,          PARAMETER_UNFILLED
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defect", rows: """

@@ -15,6 +15,13 @@
 # (the setter is setLength, matched exactly), and its min and max are not reported. A nested input
 # object some of whose fields fill the bean, naming, groups and binds; and a field a non-overriding
 # filter compares as a column, releaseYear, needs no member.
+#
+# A grouping's fields fill the enclosing class as its own would, so a grouped field and a top-level
+# one, or two groupings, filling one member fill it twice; a grouping renamed onto a member the class
+# lacks fills nothing. A record's column written by two live fields, top-level or nested, beside a
+# node id decoded into it or with a deprecated alias beside them, is written twice; the alias is no
+# writer. A list cannot group onto a record either. A setter bean fills a member twice as a record
+# component does. And @field(name:) names a member only when it names one: an empty name is no name.
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -42,6 +49,27 @@ input FilmSearchNamingInput { title: String }
 input FilmLengthRangeInput { min: Int, max: Int }
 input FilmSearchGroupedInput { naming: FilmSearchNamingInput, length: FilmLengthRangeInput }
 input FilmSearchColumnInput { title: String, releaseYear: Int @field(name: "release_year") }
+input FilmBundleLimitsInput { capacity: Int }
+input FilmBundleCapacityTwiceInput { name: String, capacity: Int, limits: FilmBundleLimitsInput }
+input FilmBundleQuotaInput { capacity: Int }
+input FilmBundleTwoGroupsInput { name: String, limits: FilmBundleLimitsInput, quota: FilmBundleQuotaInput }
+input FilmBundleRenamedGroupInput { name: String, limits: FilmBundleLimitsInput @field(name: "noSuchMember") }
+input FilmRecordTwiceInput { title: String @field(name: "title"), name: String @field(name: "title") }
+input FilmRecordAkaInput { aka: String @field(name: "title") }
+input FilmRecordNestedTwiceInput { title: String @field(name: "title"), details: FilmRecordAkaInput }
+input FilmRecordAliasTwiceInput {
+  title: String @field(name: "title")
+  name: String @field(name: "title")
+  formerTitle: String @field(name: "title") @deprecated(reason: "Use title.")
+}
+input FilmRecordDecodeTwiceInput {
+  filmId: ID @nodeId(typeName: "Film")
+  id: Int @field(name: "film_id")
+  key: Int @field(name: "film_id")
+}
+input FilmRecordListGroupInput { title: String @field(name: "title"), extras: [FilmRecordAkaInput!] }
+input FilmSurveyTwiceInput { count: Int, tally: Int @field(name: "count") }
+input FilmDraftBlankNameInput { title: String @field(name: "") }
 
 type Query {
   periodsByEmbeddable(in: [PeriodByEmbeddable!]!): String
@@ -84,6 +112,36 @@ type Query {
   filmsByGroupedSearch(search: FilmSearchGroupedInput): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
       method: "filmSearchBean"}, override: true)
+  # capacity fills FilmBundleDraft's capacity, and so does limits' capacity, grouped onto it.
+  countBundleCapacityTwice(in: FilmBundleCapacityTwiceInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService", method: "count", argMapping: "bundle: in"})
+  # limits and quota both group their capacity onto FilmBundleDraft's.
+  countBundleTwoGroups(in: FilmBundleTwoGroupsInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService", method: "count", argMapping: "bundle: in"})
+  # limits, renamed onto noSuchMember, fills nothing of FilmBundleDraft.
+  countBundleRenamedGroup(in: FilmBundleRenamedGroupInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService", method: "count", argMapping: "bundle: in"})
+  # title and name both write film's title.
+  countRecordTwice(in: [FilmRecordTwiceInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  # title, and details' aka nested below it, both write film's title.
+  countRecordNestedTwice(in: [FilmRecordNestedTwiceInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  # title and name write film's title; formerTitle, deprecated, is no writer.
+  countRecordAliasTwice(in: [FilmRecordAliasTwiceInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  # filmId is decoded into film_id, and id and key both write it too.
+  countRecordDecodeTwice(in: [FilmRecordDecodeTwiceInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  # extras, a list, cannot group onto a FilmRecord.
+  countRecordListGroup(in: [FilmRecordListGroupInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  # count and tally both fill FilmSurvey's count through its setter.
+  countSurveyTwice(in: FilmSurveyTwiceInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmSurveyService", method: "count", argMapping: "survey: in"})
+  # title's @field names no member: the name is empty.
+  countBlankNameDraft(in: [FilmDraftBlankNameInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
   # releaseYear fills no member, but the filter, not overridden, compares it as a column.
   filmsByColumnSearch(search: FilmSearchColumnInput): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
@@ -105,4 +163,14 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   FilmRecordExtraInput.subtitle,       COLUMN_UNRESOLVED,          subtitle
   PeriodLeaves.starts,                 COLUMN_UNRESOLVED,          "starts, under period, named like the embeddable period of embedded_period, which an input does not bind to yet"
   SpanLeaves.starts,                   COLUMN_UNRESOLVED,          starts
+  FilmBundleLimitsInput.capacity,      MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
+  FilmBundleQuotaInput.capacity,       MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
+  FilmBundleRenamedGroupInput.limits,  MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmBundleDraft
+  FilmRecordTwiceInput.title,          MEMBER_FILLED_TWICE,        title
+  FilmRecordNestedTwiceInput.title,    MEMBER_FILLED_TWICE,        title
+  FilmRecordAliasTwiceInput.title,     MEMBER_FILLED_TWICE,        title
+  FilmRecordDecodeTwiceInput.key,      MEMBER_FILLED_TWICE,        film_id
+  FilmRecordListGroupInput.extras,     GROUPING_LIST,              no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  FilmSurveyTwiceInput.tally,          MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmSurvey#count
+  FilmDraftBlankNameInput.title,       MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmDraft
   """)

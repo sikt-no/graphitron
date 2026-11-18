@@ -3,7 +3,9 @@
 # record member for a scalar with no @nodeId. Near misses draw nothing: an Int handed to an int, an
 # enum to a String, any value to an Object, an Int to an Integer member, and a node id decoded onto
 # an Integer. The bean withBean takes is a record nested in ParameterShapeService, so its members
-# are judged as a top-level class's are.
+# are judged as a top-level class's are. A jOOQ record is judged as one value too: a list of input
+# objects into one FilmRecord and one input object into a list of them are each a mismatch. And a
+# String parameter beside a lone input-object argument, paired with it by position, cannot take it.
 
 type Film @table(name: "film") @node { title: String }
 
@@ -16,6 +18,10 @@ input FilmIdInput {
 
 input FilmNumberInput {
   filmId: Int
+}
+
+input FilmRecordInput {
+  title: String @field(name: "title")
 }
 
 type Query {
@@ -40,6 +46,12 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "withNumberBean"})
   decoded(id: ID @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byFilmId"})
+  recordForMany(in: [FilmRecordInput!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecord"})
+  recordsForOne(in: FilmRecordInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecords"})
+  scalarForInput(in: FilmIdInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
@@ -51,4 +63,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   PARAMETER_MISMATCH, Query.longForInt
   PARAMETER_MISMATCH, FilmIdInput.filmId
   PARAMETER_MISMATCH, FilmIdInput.film
+  PARAMETER_MISMATCH, Query.recordForMany
+  PARAMETER_MISMATCH, Query.recordsForOne
+  PARAMETER_MISMATCH, Query.scalarForInput
   """)
