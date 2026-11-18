@@ -1188,7 +1188,12 @@ static method needs no holder.
   side naming no Java parameter, today caught only as `PARAMETER_UNFILLED` on the real one; `@tenant`
   on a child service's argument; `@tenant` beside `@nodeId`; `@globalData`'s service rungs (no
   connection, a tenant-scoped or global return, argument evidence); and the `@splitQuery` redundancy
-  lint on a service child or carrier, which `lint_rule` lists and only `FieldBuilder` emits.
+  lint on a service child or carrier, which `lint_rule` lists and only `FieldBuilder` emits. One
+  more shape is checked here rather than assumed: a `@service` child of a plain object nested in a
+  `@table` type (`City.names: CityNames`, `CityNames.lowercase @service`), which the walk defers at
+  generate as `ServiceRecordField is not yet supported under NestingField`. The store either emits it,
+  its key read off the outer row as a split field under a nesting type is, or refuses it with a stored
+  code; it never meets it silently.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "The walk's service refusals are stored". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
