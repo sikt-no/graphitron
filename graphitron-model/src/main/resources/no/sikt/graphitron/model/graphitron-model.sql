@@ -11463,6 +11463,50 @@ COMMENT ON COLUMN graphitron_join_path_step_matched_key.table_source_ref IS 'the
 COMMENT ON COLUMN graphitron_join_path_step_matched_key.table_schema_ref IS 'the schema half of that key, equal to table_schema while the key stands';
 COMMENT ON COLUMN graphitron_join_path_step_matched_key.table_name_ref IS 'the table half of that key, equal to table_name while the key stands';
 
+CREATE TABLE graphitron_join_path_step_to_one (
+  graph_name  VARCHAR   NOT NULL,
+  coordinate  VARCHAR   NOT NULL,
+  target_type VARCHAR   NOT NULL,
+  position    INT       NOT NULL,
+  to_one      BOOLEAN   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, target_type, position),
+  FOREIGN KEY (graph_name, coordinate, target_type, position)
+    REFERENCES graphitron_join_path_step (graph_name, coordinate, target_type, position)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_join_path_step_to_one IS 'Whether one step of a join path reaches one row of the table it arrives at: one row per step that joins by columns. For example film to language along film_language_id_fkey reaches one language, and language to film along it many films; a step joining by none, a routine''s or a condition method''s alone, has no row and is undecided.';
+COMMENT ON COLUMN graphitron_join_path_step_to_one.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_join_path_step_to_one.coordinate IS 'the occurrence, as on the step';
+COMMENT ON COLUMN graphitron_join_path_step_to_one.target_type IS 'the need''s target type, as on the step';
+COMMENT ON COLUMN graphitron_join_path_step_to_one.position IS 'the step''s position; with the columns before it, the step';
+COMMENT ON COLUMN graphitron_join_path_step_to_one.to_one IS 'TRUE where the step''s graphitron_join_path_step_column to_columns cover every column of some PRIMARY KEY or UNIQUE constraint of its to_table, so a row the step leaves meets at most one row there; FALSE where they cover none, so it can meet many. The pairs are oriented the way the step rode its key, so a foreign key ridden from its declaring table covers the key it references, and one ridden toward it covers a key only where a UNIQUE holds its columns';
+COMMENT ON COLUMN graphitron_join_path_step_to_one.touched_at IS 'when the reading that last took the step ran, as on the step';
+
+-- Whether each step joining by columns covers a primary or unique key of the table it reaches with
+-- the columns it arrives on. A step's pairs all carry its to_table, so one row per step.
+CREATE VIEW graphitron_join_path_step_to_one_rule
+  (graph_name, coordinate, target_type, position, to_one) AS
+SELECT c.graph_name, c.coordinate, c.target_type, c.position,
+       EXISTS (SELECT 1 FROM sql_constraint k
+                WHERE k.source_name = c.to_source_name AND k.table_schema = c.to_schema
+                  AND k.table_name = c.to_table AND k.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+                  AND NOT EXISTS (SELECT 1 FROM sql_constraint_column kc
+                                   WHERE kc.source_name = k.source_name
+                                     AND kc.table_schema = k.table_schema
+                                     AND kc.table_name = k.table_name
+                                     AND kc.constraint_name = k.constraint_name
+                                     AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column t
+                                                      WHERE t.graph_name = c.graph_name
+                                                        AND t.coordinate = c.coordinate
+                                                        AND t.target_type = c.target_type
+                                                        AND t.position = c.position
+                                                        AND t.to_column = kc.column_name)))
+  FROM (SELECT DISTINCT graph_name, coordinate, target_type, position, to_source_name, to_schema,
+               to_table
+          FROM graphitron_join_path_step_column) c;
+COMMENT ON VIEW graphitron_join_path_step_to_one_rule IS 'One row the to-one rule computes, in the shape graphitron_join_path_step_to_one stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_join_path_step_to_one, which is the name every reader spells.';
+
 CREATE TABLE graphitron_join_path_step_method (
   graph_name         VARCHAR   NOT NULL,
   coordinate         VARCHAR   NOT NULL,
@@ -27990,6 +28034,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_join_path_step_parameter'),
   ('occurrence-depths', 'graphitron_join_path_step_primary_key'),
   ('occurrence-depths', 'graphitron_join_path_step_routine'),
+  ('occurrence-depths', 'graphitron_join_path_step_to_one'),
   ('occurrence-depths', 'graphitron_join_path_stop'),
   ('occurrence-lookup-keys', 'graphitron_entry_defect'),
   ('occurrence-lookup-keys', 'graphitron_occurrence_lookup_key'),
@@ -28244,6 +28289,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-depth-defects', 'graphitron_occurrence_list_element_defect', 'graphitron_occurrence_list_element_defect_rule'),
   ('occurrence-depths', 'graphitron_join_path_claimed', 'graphitron_join_path_claimed_rule'),
   ('occurrence-depths', 'graphitron_join_path_step', 'graphitron_join_path_step_rule'),
+  ('occurrence-depths', 'graphitron_join_path_step_to_one', 'graphitron_join_path_step_to_one_rule'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate', 'graphitron_occurrence_producer_lift_candidate_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source', 'graphitron_occurrence_source_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_copy_rule'),
@@ -30299,6 +30345,14 @@ INSERT INTO meta_relation VALUES
    'The primary key a step from a routine''s derived table to a table rode, its columns matched by name among the derived table''s: one row per such step.',
    'For example Actor.films over @routine(name: "films_for_actor") returning [Film] steps from the function table films_for_actor to film on film_pkey, film_id matched by name.',
    'A function''s derived table has no foreign key, so a step leaving it reaches its table by that table''s primary key, each primary-key column matched by name among the derived table''s columns: an inferred routine result, a written {table:} element from a function, and the step after a path ending on a @routine alike. A sibling of graphitron_join_path_step_primary_key, which is the {key:} self-join only; the pairs are graphitron_join_path_step_column''s.'),
+  ('graphitron_join_path_step_to_one', 'path-step', 'graphitron',
+   'Whether one step of a join path reaches one row of the table it arrives at: one row per step that joins by columns.',
+   'For example film to language along film_language_id_fkey reaches one language, and language to film along it many films; a step joining by none, a routine''s or a condition method''s alone, has no row and is undecided.',
+   'Covering a key is set containment over the step''s columns, read by the routine write''s lift and its fan-out defect; stored at the earliest stage holding step_column, per fact-model.adoc.'),
+  ('graphitron_join_path_step_to_one_rule', 'path-step', 'graphitron',
+   'One row the to-one rule computes, in the shape graphitron_join_path_step_to_one stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_join_path_step_to_one, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_join_path_step_method', 'path-step-method', 'graphitron',
    'The condition method a step of a join path joins or filters by: one row per step, the one overload whose two table parameters take the step''s from and to table.',
    'For example Customer.homeAddress, inherited from Person.homeAddress, calls homeAddress(Customer, Address) where Staff.homeAddress calls homeAddress(Staff, Address).',

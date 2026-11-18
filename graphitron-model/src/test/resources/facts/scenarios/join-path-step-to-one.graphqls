@@ -1,0 +1,53 @@
+# Whether a step of a join path reaches one row of the table it arrives at: the columns it arrives
+# on cover a primary or unique key there. A key ridden from its declaring table covers the key it
+# references; ridden toward it, it covers one only where a UNIQUE holds its columns. A step matched
+# by name out of a routine's result lands on its table's primary key. A step joining by a condition
+# method alone has no columns, and so no row: undecided.
+
+type Film @table(name: "film") {
+  title: String
+  # The key on the step's from side: film to language reaches one language.
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+  # A condition alone, no columns.
+  filmActors: [FilmActor!]! @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+    method: "filmToFilmActor"}}])
+}
+
+type Language @table(name: "language") {
+  name: String
+  # The same key on the step's to side: language to film reaches many films.
+  films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
+
+type DivergedRefChild @table(name: "diverged_ref_child") {
+  childName: String @field(name: "child_name")
+  # The key on the to side, its referencing column child_id also UNIQUE: one label per child.
+  labels: [DivergedChildLabel!]! @reference(path: [{key: "diverged_child_label_child_id_fkey"}])
+}
+
+type DivergedChildLabel @table(name: "diverged_child_label") { label: String }
+
+type Query {
+  films: [Film!]!
+  languages: [Language!]!
+  divergedChildren: [DivergedRefChild!]!
+  # The routine's result reaches film by film_pkey's columns matched by name.
+  recentFilmsForActor(actorId: Int!, minLength: Int!): [Film!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+}
+
+extend schema @assertContains(relation: "graphitron_join_path_step_to_one", rows: """
+  coordinate,                target_type,        position, to_one
+  Film.language,             Language,           0,        TRUE
+  Language.films,            Film,               0,        FALSE
+  DivergedRefChild.labels,   DivergedChildLabel, 0,        TRUE
+  Query.recentFilmsForActor, Film,               0,        TRUE
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_join_path_step_to_one", rows: """
+  coordinate
+  Film.filmActors
+  """)

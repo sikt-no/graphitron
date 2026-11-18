@@ -43,6 +43,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_TO_ONE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_TO_ONE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
@@ -205,6 +207,10 @@ public final class Steps {
         }
         inferred(dsl, graph, depth, touchedAt);
         columns(dsl, graph, depth, touchedAt);
+        // The pairs this reading did not mark go before a step's reach is read off its pairs, so an
+        // edited step is judged by the columns it joins on now; the depth's sweep finds none left.
+        sweepColumns(dsl, graph, depth, touchedAt);
+        toOne(dsl, graph, depth, touchedAt);
         methods(dsl, graph, touchedAt, written, defects);
         parameters(dsl, graph, touchedAt, routines, defects);
         paths(dsl, graph, touchedAt, walks.values(), defects);
@@ -636,6 +642,41 @@ public final class Steps {
                 .where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.eq(touchedAt))
                 .and(atDepth(s.GRAPH_NAME, s.COORDINATE, depth)),
             touchedAt);
+    }
+
+    /** The column pairs of the occurrences at {@code depth} this reading did not mark. */
+    private static void sweepColumns(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        var c = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        dsl.deleteFrom(c)
+            .where(c.GRAPH_NAME.eq(graph), c.TOUCHED_AT.ne(touchedAt))
+            .and(OccurrenceProducers.atDepth(c.GRAPH_NAME, c.COORDINATE, depth))
+            .execute();
+    }
+
+    /**
+     * Whether each step this reading took for an occurrence at {@code depth} reaches one row of the
+     * table it arrives at, off {@code graphitron_join_path_step_to_one_rule}: a row per step its
+     * column pairs were just written for, none for a step joining by none.
+     */
+    private static void toOne(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+        var r = GRAPHITRON_JOIN_PATH_STEP_TO_ONE_RULE.as("r");
+        var s = GRAPHITRON_JOIN_PATH_STEP.as("s");
+        var t = GRAPHITRON_JOIN_PATH_STEP_TO_ONE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.TARGET_TYPE, t.POSITION, t.TO_ONE, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.TARGET_TYPE, r.POSITION, r.TO_ONE,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .join(s).on(s.GRAPH_NAME.eq(r.GRAPH_NAME), s.COORDINATE.eq(r.COORDINATE),
+                    s.TARGET_TYPE.eq(r.TARGET_TYPE), s.POSITION.eq(r.POSITION),
+                    s.TOUCHED_AT.eq(touchedAt))
+                .where(r.GRAPH_NAME.eq(graph))
+                .and(atDepth(r.GRAPH_NAME, r.COORDINATE, depth)))
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.TARGET_TYPE, t.POSITION)
+            .doUpdate()
+            .set(t.TO_ONE, excluded(t.TO_ONE))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
     }
 
     /**
@@ -1124,7 +1165,8 @@ public final class Steps {
                 GRAPHITRON_JOIN_PATH_STEP_KEY, GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY, GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_METHOD, GRAPHITRON_JOIN_PATH_STEP_ROUTINE,
-                GRAPHITRON_JOIN_PATH_STEP, GRAPHITRON_JOIN_PATH_STOP, GRAPHITRON_JOIN_PATH_CLAIMED)) {
+                GRAPHITRON_JOIN_PATH_STEP_TO_ONE, GRAPHITRON_JOIN_PATH_STEP, GRAPHITRON_JOIN_PATH_STOP,
+                GRAPHITRON_JOIN_PATH_CLAIMED)) {
             dsl.deleteFrom(t).where(field(t, "GRAPH_NAME", String.class).eq(graph))
                 .and(field(t, "TOUCHED_AT", LocalDateTime.class).ne(touchedAt))
                 .and(OccurrenceProducers.atDepth(field(t, "GRAPH_NAME", String.class),
