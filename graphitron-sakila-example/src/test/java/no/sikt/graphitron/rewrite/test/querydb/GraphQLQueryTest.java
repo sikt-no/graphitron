@@ -8429,6 +8429,21 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void describeFilmRecords_twoShapesOfOneRecord_eachWritesOnlyItsOwnColumns() {
+        // Two list inputs of different shapes build the same FilmRecord: the wide one writes
+        // release_year when sent, the narrow one, which has no such field, never touches it.
+        String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        Map<String, Object> wide = execute(
+            "mutation { describeFilmRecords(in: [{filmId: \"" + filmId3 + "\", title: \"A\", releaseYear: 2001}]) }");
+        assertThat(wide).extractingByKey("describeFilmRecords")
+            .isEqualTo("title[changed=true,val=A] year[changed=true,val=2001]");
+        Map<String, Object> narrow = execute(
+            "mutation { describeFilmRecordTitles(in: [{filmId: \"" + filmId3 + "\", title: \"A\"}]) }");
+        assertThat(narrow).extractingByKey("describeFilmRecordTitles")
+            .isEqualTo("title[changed=true,val=A] year[changed=false,val=null]");
+    }
+
+    @Test
     void modifyFilmRecords_listParam_constructsOneRecordPerElement() {
         // Root list (the consumer's motivating shape): a List<FilmRecord> @service param against
         // [ModifyFilmRecordInput!]!. createFilmRecordList maps the singular createFilmRecord over each

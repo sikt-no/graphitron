@@ -4061,6 +4061,13 @@ input ModifyFilmRecordInput {
     releaseYear: Int @field(name: "release_year")
 }
 
+# The same FilmRecord built from a narrower shape, no release_year: a list of each into the same
+# service writes only the columns its shape carries.
+input FilmRecordTitleOnlyInput {
+    filmId: ID! @nodeId(typeName: "Film")
+    title: String @field(name: "title")
+}
+
 # R336: nested input-object fields flatten onto the param record's column axis. A CustomerRecord @service
 # param whose first_name / last_name come from a nested `details` grouping input, and whose @nodeId
 # identity lives inside a separate nested `identity` group. createCustomerRecord descends each enclosing
@@ -6311,6 +6318,17 @@ type Mutation {
     # R311 root list: a List<FilmRecord> @service input param (the consumer's motivating shape). The
     # list call site routes through createFilmRecordList, which maps the singular createFilmRecord over
     # each [ModifyFilmRecordInput!] element — one construction site, two cardinalities.
+    describeFilmRecords(in: [ModifyFilmRecordInput!]!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+            method: "describeFilmRecords"
+        })
+    describeFilmRecordTitles(in: [FilmRecordTitleOnlyInput!]!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+            method: "describeFilmRecords"
+        })
+
     modifyFilmRecords(in: [ModifyFilmRecordInput!]!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",

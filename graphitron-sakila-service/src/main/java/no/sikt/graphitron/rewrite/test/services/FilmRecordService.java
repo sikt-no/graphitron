@@ -57,6 +57,18 @@ public final class FilmRecordService {
     }
 
     /**
+     * The records' changed flags and values for title and release_year, one per element: two inputs
+     * of different shapes building the same record class each write only the columns they carry.
+     */
+    public static String describeFilmRecords(List<FilmRecord> in) {
+        var t = no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM;
+        return in.stream()
+            .map(f -> "title[changed=" + f.touched(t.TITLE) + ",val=" + f.getTitle() + "]"
+                + " year[changed=" + f.touched(t.RELEASE_YEAR) + ",val=" + f.getReleaseYear() + "]")
+            .collect(Collectors.joining(";"));
+    }
+
+    /**
      * Composite-key root: a jOOQ {@link FilmActorRecord} (composite PK {@code actor_id, film_id})
      * whose {@code @nodeId} identity decodes both key columns in one {@code fromArray} call. Reads
      * both back.
