@@ -12018,6 +12018,137 @@ CREATE INDEX graphitron_type_backing_class_ix ON graphitron_type_backing (graph_
 COMMENT ON INDEX graphitron_type_backing_class_ix IS 'The class is a join key for the readers that go from a class to the types it backs: a generated record read back as its table, and the members a class offers. The primary key puts the type before the class and cannot serve that, so the planner probed the graph''s whole backing once per catalog column. The type closes the index because those readers also filter on it, and without it the planner preferred the primary key for its type list. Measured: the language server''s diagnostics statement over forty bound types scanned twelve thousand rows here through the primary key and eight hundred through this index.';
 COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answered, a closed three-value domain: BOUND_TABLE for the resolved table binding read through its table''s record class, PRODUCER for a class a @service or @externalField method delivers for the field''s type, or for the data element a service''s object passes through to, or takes for an argument''s, ACCESSOR for a class reached by reading a field off a class already backing its parent. Provenance, never a preference: a type the populations answer differently has a row from each, and a reader wanting one filters on this column';
 
+CREATE TABLE graphitron_payload_data_field (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (kind IN ('RECORDS', 'OBJECT', 'NODE_ID'))
+);
+COMMENT ON TABLE graphitron_payload_data_field IS 'A field of a payload that its producer''s values go down to, and how they go: one row per such field. For example RentFilmsPayload.rentals, the payload Mutation.rentFilms @routine(name: "rent_films") returns, re-reads the rentals the routine wrote by their keys as RECORDS.';
+COMMENT ON COLUMN graphitron_payload_data_field.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_payload_data_field.type_name IS 'the payload: an object type a field holding a producer claim returns, which no table binds';
+COMMENT ON COLUMN graphitron_payload_data_field.field_name IS 'the data field; with the type, a graphitron_field key';
+COMMENT ON COLUMN graphitron_payload_data_field.kind IS 'how the producer''s values go down to the field, a closed three-value domain: RECORDS where the field''s target is bound to a table and re-reads the records by their keys, OBJECT where its target is an object type no @table is written on, which the payload''s object passes through to, NODE_ID where it is an ID carrying @nodeId, which encodes the records'' keys. A field both RECORDS and OBJECT would describe is RECORDS';
+COMMENT ON COLUMN graphitron_payload_data_field.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- The fields a payload's producer hands its values down to, each kind stating the condition of the
+-- reader it was taken from. A payload with two such fields has a row for each; a reader wanting
+-- exactly one counts.
+CREATE VIEW graphitron_payload_data_field_rule (graph_name, type_name, field_name, kind) AS
+-- A type a statement lands on, resolved or written, as graphitron_producer_rule's bound states it.
+WITH bound (graph_name, type_name) AS (
+  SELECT graph_name, type_name FROM graphitron_tabletype
+  UNION
+  SELECT graph_name, coordinate FROM graphitron_directive_application WHERE directive_name = 'table'
+),
+-- graphitron_producer_rule's re-read arm, each field for which it yields LOOKUP: a field of a type
+-- with no table of its own that a write, a routine or a service returns, that field holding no other
+-- producer claim, and the field's target bound.
+re_read (graph_name, type_name, field_name) AS (
+  SELECT f.graph_name, f.type_name, f.field_name
+    FROM graphitron_field f
+    JOIN graphitron_type pt
+      ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name AND pt.kind = 'OBJECT'
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name
+     AND ft.field_name = f.field_name
+   WHERE EXISTS (SELECT 1 FROM graphitron_field_target pf
+                   JOIN graphitron_field pff
+                     ON pff.graph_name = pf.graph_name AND pff.type_name = pf.type_name
+                    AND pff.field_name = pf.field_name
+                   JOIN graphitron_claim pc
+                     ON pc.graph_name = pff.graph_name AND pc.coordinate = pff.coordinate
+                    AND pc.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
+                   JOIN graphitron_claim_kind pck ON pck.kind = pc.kind AND pck.family = 'PRODUCER'
+                  WHERE pf.graph_name = f.graph_name AND pf.target_type_name = f.type_name
+                    AND NOT EXISTS (SELECT 1 FROM graphitron_claim pc2
+                                      JOIN graphitron_claim_kind pck2
+                                        ON pck2.kind = pc2.kind AND pck2.family = 'PRODUCER'
+                                     WHERE pc2.graph_name = pc.graph_name
+                                       AND pc2.coordinate = pc.coordinate
+                                       AND pc2.kind <> pc.kind))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype pb
+                      WHERE pb.graph_name = f.graph_name AND pb.type_name = f.type_name)
+     AND EXISTS (SELECT 1 FROM bound b
+                  WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
+     -- Where the arm is reached at all: the producer rule asks only of a field with no producer
+     -- claim of its own, and the arms ahead of it take a root type's fields and a connection's
+     -- wrapper's and edges' fields.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_claim c
+                       JOIN graphitron_claim_kind ck ON ck.kind = c.kind AND ck.family = 'PRODUCER'
+                      WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                      WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target w
+                      WHERE w.graph_name = f.graph_name AND w.wrapper_type_name = f.type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target e
+                      WHERE e.graph_name = f.graph_name AND e.target_type_name = f.type_name
+                        AND EXISTS (SELECT 1 FROM graphitron_field_target w
+                                     WHERE w.graph_name = e.graph_name
+                                       AND w.wrapper_type_name = e.type_name))
+),
+-- graphitron_type_backing_rule's passthrough, its payload: an object type carrying no @table that a
+-- field holding a write's, a routine's or a service's claim returns, not through a connection.
+payload (graph_name, type_name) AS (
+  SELECT DISTINCT pf.graph_name, pf.target_type_name
+    FROM graphitron_field_target pf
+    JOIN graphitron_field pff
+      ON pff.graph_name = pf.graph_name AND pff.type_name = pf.type_name
+     AND pff.field_name = pf.field_name
+    JOIN graphitron_claim pc
+      ON pc.graph_name = pff.graph_name AND pc.coordinate = pff.coordinate
+     AND pc.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
+   WHERE pf.wrapper_type_name IS NULL
+     AND EXISTS (SELECT 1 FROM graphitron_type pt
+                  WHERE pt.graph_name = pf.graph_name AND pt.type_name = pf.target_type_name
+                    AND pt.kind = 'OBJECT')
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
+                      WHERE te.graph_name = pf.graph_name AND te.coordinate = pf.target_type_name
+                        AND te.directive_name = 'table')
+)
+SELECT graph_name, type_name, field_name, 'RECORDS' FROM re_read
+UNION ALL
+-- graphitron_type_backing_rule's passthrough, its candidate data field: a payload's field whose type
+-- is an object carrying no @table. Which of these the passthrough takes, the one a service's class
+-- has no member for, is the passthrough's own. A field the re-read arm takes is RECORDS instead: its
+-- target is bound to a table, resolved or minted, with no @table written, so the producer rule already
+-- re-reads it by key, and a field has one data-field kind, the one its rows are read by.
+SELECT d.graph_name, d.type_name, d.field_name, 'OBJECT'
+  FROM payload p
+  JOIN graphitron_field_target d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_type dt
+                WHERE dt.graph_name = d.graph_name AND dt.type_name = d.target_type_name
+                  AND dt.kind = 'OBJECT')
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
+                    WHERE te.graph_name = d.graph_name AND te.coordinate = d.target_type_name
+                      AND te.directive_name = 'table')
+   AND NOT EXISTS (SELECT 1 FROM re_read r
+                    WHERE r.graph_name = d.graph_name AND r.type_name = d.type_name
+                      AND r.field_name = d.field_name)
+UNION ALL
+-- An ID a payload's producer encodes its records' keys into: a payload's field of named type ID
+-- carrying @nodeId, as its NODE_ID binding claim states. An id with no @nodeId written has no claim.
+SELECT f.graph_name, f.type_name, f.field_name, 'NODE_ID'
+  FROM payload p
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name
+ WHERE f.named_type = 'ID'
+   AND EXISTS (SELECT 1 FROM graphitron_binding_claim bc
+                WHERE bc.graph_name = f.graph_name AND bc.coordinate = f.coordinate
+                  AND bc.kind = 'NODE_ID');
+COMMENT ON VIEW graphitron_payload_data_field_rule IS 'One row the payload data field rule computes, in the shape graphitron_payload_data_field stores: the rule itself, evaluated on demand rather than read off disk. For example the type-backings stage inserts this view''s rows for one graph into graphitron_payload_data_field, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_payload_data_field_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_payload_data_field_rule.type_name IS 'the payload';
+-- COMMENT ON COLUMN graphitron_payload_data_field_rule.field_name IS 'the data field';
+-- COMMENT ON COLUMN graphitron_payload_data_field_rule.kind IS 'RECORDS, OBJECT or NODE_ID, on graphitron_payload_data_field.kind''s terms';
+
 CREATE TABLE graphitron_tenant_column (
   graph_name   VARCHAR   NOT NULL,
   source_name  VARCHAR   NOT NULL,
@@ -12249,29 +12380,11 @@ SELECT graph_name, type_name, field_name, kind
                                                WHERE w.graph_name = e.graph_name
                                                  AND w.wrapper_type_name = e.type_name)))
                THEN NULL
-             -- The re-read on a payload's data field, over the keys its producer returned: a type
-             -- with no table of its own that a write, a routine or a service returns, that field
-             -- claiming nothing else. Probed per field rather than collected beside the claim
-             -- counts, which H2 would collect again for every field it asks about.
-             WHEN EXISTS (SELECT 1 FROM graphitron_field_target pf
-                           JOIN graphitron_field pff
-                             ON pff.graph_name = pf.graph_name AND pff.type_name = pf.type_name
-                            AND pff.field_name = pf.field_name
-                           JOIN graphitron_claim pc
-                             ON pc.graph_name = pff.graph_name AND pc.coordinate = pff.coordinate
-                            AND pc.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
-                           JOIN graphitron_claim_kind pck ON pck.kind = pc.kind AND pck.family = 'PRODUCER'
-                          WHERE pf.graph_name = f.graph_name AND pf.target_type_name = f.type_name
-                            AND NOT EXISTS (SELECT 1 FROM graphitron_claim pc2
-                                              JOIN graphitron_claim_kind pck2
-                                                ON pck2.kind = pc2.kind AND pck2.family = 'PRODUCER'
-                                             WHERE pc2.graph_name = pc.graph_name
-                                               AND pc2.coordinate = pc.coordinate
-                                               AND pc2.kind <> pc.kind))
-              AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype pb
-                               WHERE pb.graph_name = f.graph_name AND pb.type_name = f.type_name)
-              AND EXISTS (SELECT 1 FROM bound b
-                           WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
+             -- The re-read on a payload's data field, over the keys its producer returned: a
+             -- RECORDS row, which graphitron_payload_data_field states with this arm's condition.
+             WHEN EXISTS (SELECT 1 FROM graphitron_payload_data_field d
+                           WHERE d.graph_name = f.graph_name AND d.type_name = f.type_name
+                             AND d.field_name = f.field_name AND d.kind = 'RECORDS')
                THEN 'LOOKUP'
              -- Taken out of the parent's statement: split, fanned out across tenants, a child
              -- connection, which is always split, or routed by its parent row's tenant, written split
@@ -20738,9 +20851,9 @@ WITH produced (graph_name, coordinate, kind, is_list, connection, target_kind, p
                delivery, element_class, element_source_name, element_schema, element_table) AS (
   SELECT p.graph_name, p.coordinate, p.kind, f.is_list, ft.wrapper_type_name IS NOT NULL, tt.kind,
          -- A type with no table that a producer returns and whose data field re-reads is a payload.
-         EXISTS (SELECT 1 FROM graphitron_producer rr
-                  WHERE rr.graph_name = ft.graph_name AND rr.type_name = ft.target_type_name
-                    AND rr.kind = 'LOOKUP'),
+         EXISTS (SELECT 1 FROM graphitron_payload_data_field pd
+                  WHERE pd.graph_name = ft.graph_name AND pd.type_name = ft.target_type_name
+                    AND pd.kind = 'RECORDS'),
          b.table_source_name, b.table_schema, b.table_name,
          EXISTS (SELECT 1 FROM graphitron_type_member pm
                    JOIN graphitron_tabletype mb
@@ -24145,10 +24258,10 @@ WITH seed (graph_name, type_name, class_name) AS (
       OR (s.directive_name = 'externalField' AND m.result_first_argument_class IS NOT NULL)
   UNION
   -- A payload the service's object passes through to its one data field: the class backs the data
-  -- element too, the type its fields are read off, as the generator binds it. The payload is an
-  -- object carrying no @table and no connection; its data field is its one field whose type is an
-  -- object carrying no @table, an errors field being a list of a union or an interface; and the
-  -- object passes through where the class has no member the data field's bound name finds.
+  -- element too, the type its fields are read off, as the generator binds it. The payload and its
+  -- candidate fields are graphitron_payload_data_field's OBJECT rows; the data field is a payload's
+  -- one such field, and the object passes through where the class has no member the data field's
+  -- bound name finds.
   SELECT s.graph_name, d.target_type_name, m.result_element_class
     FROM graphitron_code_reference s
     JOIN code_method m
@@ -24157,35 +24270,16 @@ WITH seed (graph_name, type_name, class_name) AS (
     JOIN graphitron_field_target pf
       ON pf.graph_name = s.graph_name AND pf.type_name = s.type_name AND pf.field_name = s.field_name
      AND pf.wrapper_type_name IS NULL
+    JOIN graphitron_payload_data_field o
+      ON o.graph_name = pf.graph_name AND o.type_name = pf.target_type_name AND o.kind = 'OBJECT'
     JOIN graphitron_field_target d
-      ON d.graph_name = pf.graph_name AND d.type_name = pf.target_type_name
+      ON d.graph_name = o.graph_name AND d.type_name = o.type_name AND d.field_name = o.field_name
     JOIN graphitron_field df
       ON df.graph_name = d.graph_name AND df.type_name = d.type_name AND df.field_name = d.field_name
    WHERE s.directive_name = 'service' AND m.result_element_class IS NOT NULL
-     -- Kind filters on keys rather than joins, so the block stays short of H2's exhaustive join-order
-     -- search.
-     AND EXISTS (SELECT 1 FROM graphitron_type pt
-                  WHERE pt.graph_name = pf.graph_name AND pt.type_name = pf.target_type_name
-                    AND pt.kind = 'OBJECT')
-     AND EXISTS (SELECT 1 FROM graphitron_type dt
-                  WHERE dt.graph_name = d.graph_name AND dt.type_name = d.target_type_name
-                    AND dt.kind = 'OBJECT')
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
-                      WHERE te.graph_name = pf.graph_name AND te.coordinate = pf.target_type_name
-                        AND te.directive_name = 'table')
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
-                      WHERE te.graph_name = d.graph_name AND te.coordinate = d.target_type_name
-                        AND te.directive_name = 'table')
-     AND NOT EXISTS (SELECT 1 FROM graphitron_field_target o
-                       JOIN graphitron_type ot
-                         ON ot.graph_name = o.graph_name AND ot.type_name = o.target_type_name
-                        AND ot.kind = 'OBJECT'
-                      WHERE o.graph_name = d.graph_name AND o.type_name = d.type_name
-                        AND o.field_name <> d.field_name
-                        AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
-                                         WHERE te.graph_name = o.graph_name
-                                           AND te.coordinate = o.target_type_name
-                                           AND te.directive_name = 'table'))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_payload_data_field o2
+                      WHERE o2.graph_name = o.graph_name AND o2.type_name = o.type_name
+                        AND o2.kind = 'OBJECT' AND o2.field_name <> o.field_name)
      -- The class the graph resolves the name to, as hop reads it.
      AND NOT EXISTS (SELECT 1 FROM code_graph_class v
                        JOIN code_read_slot sl
@@ -27547,6 +27641,7 @@ INSERT INTO meta_stage_write VALUES
   ('path-claims', 'graphitron_entry_defect'),
   ('path-claims', 'graphitron_entry_defect_claim'),
   ('path-claims', 'graphitron_entry_defect_path_step'),
+  ('type-backings', 'graphitron_payload_data_field'),
   ('type-backings', 'graphitron_type_backing'),
   ('fetchers', 'graphitron_errors_field'),
   ('fetchers', 'graphitron_fetcher'),
@@ -27987,6 +28082,7 @@ INSERT INTO meta_stage_rule VALUES
   ('table-types', 'graphitron_entry_defect_member', 'graphitron_entry_defect_member_rule'),
   ('tenant-columns', 'graphitron_tenant_column', 'graphitron_tenant_column_rule'),
   ('tenant-columns', 'graphitron_tenant_fan_out_key', 'graphitron_tenant_fan_out_key_rule'),
+  ('type-backings', 'graphitron_payload_data_field', 'graphitron_payload_data_field_rule'),
   ('type-backings', 'graphitron_type_backing', 'graphitron_type_backing_rule'),
   ('type-backings', 'graphitron_type_backing', 'graphitron_type_backing_accessor_rule'),
   ('type-claims', 'graphitron_claim', 'graphitron_type_claim_rule'),
@@ -31413,6 +31509,14 @@ INSERT INTO meta_relation VALUES
    'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds.',
    'For example a graph whose Query.films returns Film draws a row for Query and one for Film, and a type nothing reachable names draws none.',
    'Named for the assertion, not the graph operation, because the seeds are generator policy rather than neutral schema reachability: root operation bindings, @node carriers, types declaring implements Node, authored @key carriers, and the argument types of directive definitions that survive into the emitted schema, where survivorship is read from each definition''s own source (graphitron''s bundled directive vocabulary is build-time only) rather than from a name set held in Java, so the seeds are a function of the captured document throughout. Every seed is an SDL fact, which is what makes this a one-corpus derivation: the node arm seeds on the declaration alone, deliberately over-approximating node inference, whose other two conjuncts (a @table binding, well-formed node metadata on the bound table) decide what nodehood means and never whether the author declared it. Seeding is monotone, so the superset answers membership correctly, and a type declaring the Relay contract over no table or over defective metadata is a member that gains diagnostics instead of vanishing. Materialized, not a view: the closure over cyclic type graphs has no safe H2 view form (a recursive UNION does not terminate on cycles, and the path-guarded form enumerates simple paths), and the descent rule is graphql-java''s own child semantics rather than something SQL should restate edge kind by edge kind. Written once per capture by a step of the derivation gatherer.'),
+  ('graphitron_payload_data_field', 'graph-field', 'graphitron',
+   'A field of a payload that its producer''s values go down to, and how they go: one row per such field.',
+   'For example RentFilmsPayload.rentals, the payload Mutation.rentFilms @routine(name: "rent_films") returns, re-reads the rentals the routine wrote by their keys as RECORDS.',
+   'Stated once because three readers derived it inline: the producer rule''s re-read arm, the producer result''s payload flag and the type backing''s passthrough, each with its own copy of what a payload and its data field are. A derived fact the readers build on is stored at the earliest stage holding its inputs (fact-model.adoc), so it is written first in type-backings, ahead of the passthrough reading it and the fetchers stage after it.'),
+  ('graphitron_payload_data_field_rule', 'graph-field', 'graphitron',
+   'One row the payload data field rule computes, in the shape graphitron_payload_data_field stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the type-backings stage inserts this view''s rows for one graph into graphitron_payload_data_field, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_target_rule''s terms. Each kind states the condition of the reader it was taken from, so a reader moved onto the stored relation reads what it derived before.'),
   ('graphitron_type_backing', 'type-backing', 'graphitron',
    'A Java class stands for a graph''s type, and how the store knows: one row per type, class and population.',
    'For example a type carrying @table(name: "film") is backed by FilmRecord as BOUND_TABLE, a type a @service method returns a FilmDto for is backed by FilmDto as PRODUCER, and the type of a field read off FilmDto.getActors() by ActorDto as ACCESSOR.',

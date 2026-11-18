@@ -4,6 +4,8 @@ import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PAYLOAD_DATA_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PAYLOAD_DATA_FIELD_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING_ACCESSOR_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING_RULE;
@@ -11,8 +13,14 @@ import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * The writer of {@code graphitron_type_backing}: which Java class stands for each of a graph's
+ * The writer of {@code graphitron_payload_data_field} and {@code graphitron_type_backing}: the fields
+ * a payload's producer hands its values down to, and which Java class stands for each of a graph's
  * types, and through which population.
+ *
+ * <p>The payload's data fields come first, from their own rule view: the backing rule's passthrough
+ * reads them, as the producer rule and the producer result rule of later stages do. Every input
+ * they are read from, the claims, the field targets and the table bindings, is written by an
+ * earlier stage.
  *
  * <p>Run by the graphitron gatherer after the anchor writes {@code graphitron_tabletype}, which the
  * bound-table rows read. The table bindings and what producers ground come from the rule view beside
@@ -26,14 +34,19 @@ import static org.jooq.impl.DSL.val;
  * <p>Marked and swept rather than cleared and rewritten: every backing the reading finds is written
  * or touched with the reading's instant, and the graph's backings carrying any other instant are the
  * ones the reading no longer found. A backing that stays true is never deleted, so nothing reading it
- * between two statements sees it missing.
+ * between two statements sees it missing. The payload's data fields are marked and swept the same way.
  */
 public final class TypeBackings {
 
     private TypeBackings() {}
 
-    /** Marks every backing the reading finds, then sweeps the graph's backings it did not. */
+    /**
+     * Marks every payload data field and every backing the reading finds, each relation then swept of
+     * the graph's rows it did not.
+     */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        dataFields(dsl, graphName, touchedAt);
+
         var target = GRAPHITRON_TYPE_BACKING;
         var rule = GRAPHITRON_TYPE_BACKING_RULE;
 
@@ -72,6 +85,28 @@ public final class TypeBackings {
             reached = now;
         }
 
+        dsl.deleteFrom(target)
+            .where(target.GRAPH_NAME.eq(graphName))
+            .and(target.TOUCHED_AT.ne(touchedAt))
+            .execute();
+    }
+
+    /** Marks the graph's payload data fields the reading finds, then sweeps the ones it did not. */
+    private static void dataFields(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        var target = GRAPHITRON_PAYLOAD_DATA_FIELD;
+        var rule = GRAPHITRON_PAYLOAD_DATA_FIELD_RULE;
+        dsl.insertInto(target)
+            .columns(target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME, target.KIND, target.TOUCHED_AT)
+            .select(dsl
+                .select(rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME, rule.KIND,
+                    val(touchedAt, target.TOUCHED_AT))
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graphName)))
+            .onConflict(target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME)
+            .doUpdate()
+            .set(target.KIND, excluded(target.KIND))
+            .set(target.TOUCHED_AT, excluded(target.TOUCHED_AT))
+            .execute();
         dsl.deleteFrom(target)
             .where(target.GRAPH_NAME.eq(graphName))
             .and(target.TOUCHED_AT.ne(touchedAt))

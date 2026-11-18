@@ -1,0 +1,84 @@
+# The fields of a payload its producer's values go down to, and how: a payload is an object type no
+# table binds that a write, a routine or a service returns. A field whose target is bound to a table
+# re-reads the records by their keys (RECORDS), a field whose target is an object no @table is
+# written on is what the payload's object passes through to (OBJECT), and an ID carrying @nodeId
+# encodes the records' keys (NODE_ID). A type no producer returns is no payload, whatever it holds.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  title: String
+  # A plain object under a film row, which no producer returns.
+  details: FilmSplitDetails
+}
+type Language @table(name: "language") { name: String }
+type Actor @table(name: "actor") { lastName: String @field(name: "last_name") }
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+
+# Nested under Film, so no payload: its table-bound field reads off the film row.
+type FilmSplitDetails {
+  language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+# The routine's payload: rentals re-reads the rows rent_films wrote.
+type RentFilmsPayload {
+  rentals: [Rental!]
+}
+
+# The service's payload, whose object passes through to results.
+type FilmsWithActorsPayload {
+  results: [FilmWithActorsResult]
+}
+
+# The data element the object passes through to, backed by the service's class: its table-bound
+# fields are a producer-backed parent's children, not a payload's data fields.
+type FilmWithActorsResult {
+  film: Film! @field(name: "filmRecord")
+  actors: [Actor!] @field(name: "actorRecords")
+}
+
+# A payload whose object field the service's class has a member for: still the payload's OBJECT
+# field, which the type backing's passthrough declines, since the class reads blurb() there.
+type FilmBlurbHolder {
+  blurb: FilmBlurb
+}
+type FilmBlurb { description: String }
+
+# The service's FilmRecords encoded into Film ids.
+type FilmIdsServicePayload {
+  filmIds: [ID!] @nodeId(typeName: "Film")
+}
+
+type Query {
+  films: [Film!]!
+  createFilmsWithActors(filmIds: [Int!]!): FilmsWithActorsPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
+  filmBlurbHolder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  serviceFilmIdsByIdsWithNulls(ids: [Int!]!): FilmIdsServicePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmListGapService", method: "filmsByIdsWithNulls"})
+}
+
+type Mutation {
+  rentFilms(firstInventoryId: Int!, secondInventoryId: Int!, customerId: Int!): RentFilmsPayload
+    @routine(name: "rent_films",
+             argMapping: "pFirstInventoryId: firstInventoryId, pSecondInventoryId: secondInventoryId, pCustomerId: customerId")
+}
+
+extend schema @assertContains(relation: "graphitron_payload_data_field", rows: """
+  type_name,              field_name, kind
+  RentFilmsPayload,       rentals,    RECORDS
+  FilmsWithActorsPayload, results,    OBJECT
+  FilmBlurbHolder,        blurb,      OBJECT
+  FilmIdsServicePayload,  filmIds,    NODE_ID
+  """)
+
+# A nesting type no producer returns, and a producer-backed parent's table-bound children: each
+# re-reads by keys, but none is a payload's data field.
+extend schema @assertAbsent(relation: "graphitron_payload_data_field", rows: """
+  type_name,            field_name
+  FilmSplitDetails,     language
+  FilmWithActorsResult, film
+  FilmWithActorsResult, actors
+  """)
