@@ -396,13 +396,21 @@ the service filled (Alf, 2026-11-18). So a table with no primary key can be retu
 `@service` through a type without `@table`, and is refused only behind one with it. A `@service`
 may hand back a list, a set or any iterable of what its field returns (Alf, 2026-11-18).
 
-A routine write's rows are lifted the same way, in the order the routine returned them (Alf,
-2026-11-18): a row gone by the time it is read leaves a `null` in its slot rather than shortening
+A routine write's rows are lifted the same way, in the order the routine delivers them, which
+is defined only where the routine defines it (Alf, 2026-11-18): a row gone by the time it is read leaves a `null` in its slot rather than shortening
 the list, while a filter on the path drops the row, since the filter says the row is not part of
 the answer. A single-record routine write whose path fans out is a defect. A routine write that
 answers a payload and finds no row answers the payload with `null` data and a `null` errors
 field, as a `@service` does; an errors field that cannot hold `null` is refused at build as
 `ERRORS_FIELD_NON_NULL`, so no other answer arises.
+
+Output that keeps the order of its input is owed only where a list argument names one item per
+element and the answer is one item per element, the plural identifying root field of the Global
+Object Identification specification (Alf, 2026-11-18). A routine can keep that contract in two ways.
+One that takes an array answers an array in the same order, and Graphitron only unnests it; the
+order is the routine's to keep. One that takes a single value is called laterally once per element
+of a derived table built from the argument, and Graphitron orders by that table's position. A
+routine returning a table cannot keep the contract, since nothing ties its rows to the elements.
 
 A field returning a `@table` type on its parent's own table is refused unless the schema says how
 it is reached: a nesting type, with no table of its own, or a `@reference` keyed on the table's
