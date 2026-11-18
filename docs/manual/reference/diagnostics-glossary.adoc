@@ -143,6 +143,12 @@ at that depth, which suggests the near miss.
 
 *Next step.* Correct the segment. xref:directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the form.
 
+The *left*-hand side of an entry at `@service`, `@condition` or `@tableMethod` names a parameter of
+the called method; a name the method has no parameter of is reported as
+`GRAPHITRON_ARGMAPPING_PARAMETER_UNKNOWN` at the entry, its detail the name written, beside the
+`GRAPHITRON_PARAMETER_UNFILLED` of the parameter that name was meant for. A method compiled without
+`-parameters` has no names to compare against and draws `GRAPHITRON_PARAMETER_NAMES_MISSING` instead.
+
 `@routine` adds three rejections on top, because a routine IN parameter is resolved from the
 database catalog rather than by reflection, and `$source.<column>` binds a column of the row the
 routine is applied to:

@@ -10,6 +10,9 @@
 # unlandedFilms names filmIds in a pair whose path lands nowhere: that is the pair's defect, so the parameter has no
 # fill and is not reported unfilled a second time. contextPair fills userId from a $context pair,
 # which this site refuses while the fill itself is still stated.
+# misnamedFilms names filmIdz, which the method has no parameter of: the entry is refused for the name,
+# and the filmIds parameter it was meant for is unfilled beside it. greetedTwice's userId and
+# unlandedFilms' filmIds name real parameters, so neither draws the name's defect.
 #
 # A root has no parent to batch against, so a parameter taking a batch of keys, records or rows, is
 # one nothing fills there, at Query and Mutation alike, whatever the method returns. A list parameter
@@ -53,6 +56,9 @@ type Query {
   unlandedFilms(ids: [Int!]): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByServiceRenamed", argMapping: "filmIds: nowhere"})
+  misnamedFilms(ids: [Int!]): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByServiceRenamed", argMapping: "filmIdz: ids"})
   contextPair: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
       method: "greet", argMapping: "userId: $context.userId"})
@@ -126,4 +132,22 @@ extend schema @assertContains(relation: "graphitron_entry_defect_parameter_rule"
   PARAMETER_UNFILLED,     Query.unfilledFilms,  producer, 1,        ids
   PARAMETER_AMBIGUOUS,    Query.ambiguousFilms, producer, 1,        filmIds
   PARAMETER_FILLED_TWICE, Query.greetedTwice,   producer, 0,        userId
+  """)
+
+# The name no parameter carries is refused at its entry, with the name written.
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                         coordinate
+  ARGMAPPING_PARAMETER_UNKNOWN, Query.misnamedFilms
+  PARAMETER_UNFILLED,           Query.misnamedFilms
+  """)
+
+extend schema @assertContains(relation: "graphitron_argmapping_pair_defect", rows: """
+  position, code,                         detail
+  0,        ARGMAPPING_PARAMETER_UNKNOWN, filmIdz
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                         coordinate
+  ARGMAPPING_PARAMETER_UNKNOWN, Query.greetedTwice
+  ARGMAPPING_PARAMETER_UNKNOWN, Query.unlandedFilms
   """)

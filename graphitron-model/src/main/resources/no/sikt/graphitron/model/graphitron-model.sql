@@ -8851,6 +8851,29 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
     FROM graphitron_ast_argmapping_pair_entry p
    WHERE p.bound_to LIKE '$scope.%'
      AND SUBSTRING(p.bound_to, 8) NOT IN ('coordinate', 'operationName', 'alias')
+  UNION ALL
+  -- A name on an entry's left side that no parameter of the called method carries: the method the
+  -- mapping's code reference, which shares the site's key, resolved to. Silent where the reference
+  -- resolved to no single method, or the method was compiled without parameter names, which
+  -- PARAMETER_NAMES_MISSING and the reference's own defects report; @routine and @outbox name no code
+  -- reference under their mapping and are judged where their names are. The detail is the name written.
+  SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
+         'ARGMAPPING_PARAMETER_UNKNOWN', p.target_name
+    FROM graphitron_ast_argmapping_pair_entry p
+    JOIN graphitron_argmapping_site site
+      ON site.graph_name = p.graph_name AND site.source_name = p.source_name
+     AND site.source_line = p.source_line AND site.source_column = p.source_column
+    JOIN graphitron_code_reference reference
+      ON reference.graph_name = site.graph_name AND reference.coordinate = site.coordinate
+     AND reference.directive_name = site.directive_name AND reference.ordinal = site.ordinal
+     AND reference.owner = site.owner AND reference.method_descriptor IS NOT NULL
+   WHERE p.target_kind = 'NAME'
+     AND NOT EXISTS (SELECT 1 FROM code_method_parameter cp
+                      WHERE cp.source_name = reference.method_source_name
+                        AND cp.class_name = reference.method_class_name
+                        AND cp.method_name = reference.method_name
+                        AND cp.descriptor = reference.method_descriptor
+                        AND (cp.parameter_name = p.target_name OR cp.parameter_name IS NULL))
 )
 -- $tenant names the tenant of a @service's call; anywhere else nothing reads it yet. The detail is
 -- the directive the mapping is written under.
@@ -9004,7 +9027,30 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
        'SCOPE_MEMBER_UNKNOWN', SUBSTRING(p.bound_to, 8)
   FROM graphitron_ast_argmapping_pair_entry p
  WHERE p.bound_to LIKE '$scope.%'
-   AND SUBSTRING(p.bound_to, 8) NOT IN ('coordinate', 'operationName', 'alias');
+   AND SUBSTRING(p.bound_to, 8) NOT IN ('coordinate', 'operationName', 'alias')
+UNION ALL
+-- A name on an entry's left side that no parameter of the called method carries: the method the
+-- mapping's code reference, which shares the site's key, resolved to. Silent where the reference
+-- resolved to no single method, or the method was compiled without parameter names, which
+-- PARAMETER_NAMES_MISSING and the reference's own defects report; @routine and @outbox name no code
+-- reference under their mapping and are judged where their names are. The detail is the name written.
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
+       'ARGMAPPING_PARAMETER_UNKNOWN', p.target_name
+  FROM graphitron_ast_argmapping_pair_entry p
+  JOIN graphitron_argmapping_site site
+    ON site.graph_name = p.graph_name AND site.source_name = p.source_name
+   AND site.source_line = p.source_line AND site.source_column = p.source_column
+  JOIN graphitron_code_reference reference
+    ON reference.graph_name = site.graph_name AND reference.coordinate = site.coordinate
+   AND reference.directive_name = site.directive_name AND reference.ordinal = site.ordinal
+   AND reference.owner = site.owner AND reference.method_descriptor IS NOT NULL
+ WHERE p.target_kind = 'NAME'
+   AND NOT EXISTS (SELECT 1 FROM code_method_parameter cp
+                    WHERE cp.source_name = reference.method_source_name
+                      AND cp.class_name = reference.method_class_name
+                      AND cp.method_name = reference.method_name
+                      AND cp.descriptor = reference.method_descriptor
+                      AND (cp.parameter_name = p.target_name OR cp.parameter_name IS NULL));
 COMMENT ON VIEW graphitron_argmapping_pair_entry_defect_pair_rule IS 'One row the argMapping pairs stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example brukerId: $session.nope on a handle with no such member gives one SESSION_MEMBER_UNKNOWN row at that entry, its detail nope.';
 
 CREATE VIEW graphitron_call_context_key_rule
@@ -28945,6 +28991,8 @@ INSERT INTO graphitron_defect_type VALUES
    'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.'),
   ('ARGMAPPING_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED',
    'An argMapping right-hand side names a path that does not exist: through the call''s arguments and input fields, on a field beginning with one of the field''s arguments, on an argument or an input field with a field of what that opens into, and each further name a field of the input type before it; or, after $result, through the fields of what the field returns.'),
+  ('ARGMAPPING_PARAMETER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PARAMETER_UNKNOWN',
+   'An argMapping entry''s left side names a parameter the called method does not have, so the value it binds reaches nothing: name one of the method''s parameters.'),
   ('SCOPE_MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_SCOPE_MEMBER_UNKNOWN',
    'An argMapping entry reads a member of $scope that the field''s scope does not have: it offers coordinate, operationName and alias.'),
   ('ARGMAPPING_SOURCE_MISFIT', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_SOURCE_MISFIT',
