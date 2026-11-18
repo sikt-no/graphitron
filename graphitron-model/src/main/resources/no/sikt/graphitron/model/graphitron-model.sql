@@ -20965,6 +20965,32 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                       AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position
                       AND kt.fit = 'RECORD')
 UNION ALL
+-- A child @service under a @table type whose source parameter collects records of another table, at
+-- the field: the batch is the parent rows' keys, and nothing turns a row of the parent's table into a
+-- record of another, so no lift is stated and the call has nothing to be handed. The detail is the
+-- record class.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_SOURCES_OTHER_TABLE', mp.element_class, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.type_name
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN graphitron_call_parameter_table kt
+    ON kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
+   AND kt.class_name = cm.method_class_name AND kt.method_name = cm.method_name
+   AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position AND kt.fit = 'RECORD'
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+   AND NOT (kt.table_source_name = tt.table_source_name AND kt.table_schema = tt.table_schema
+            AND kt.table_name = tt.table_name)
+UNION ALL
 -- An input object reached again inside itself under a class a call builds, at the input field that
 -- reaches it again: the occurrences stop there, so building the class would drop the nested value
 -- rather than build it. The detail is the input type.
@@ -29003,6 +29029,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.'),
   ('SERVICE_KEY_TOO_WIDE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_KEY_TOO_WIDE_UNSUPPORTED',
    'A @service hands back records of a table whose primary key has more columns than its records can be read back by: each is lifted through a typed jOOQ record of its key and two more values, and jOOQ types records of at most 22. Return a table with a narrower key, or a type that binds no table.'),
+  ('SERVICE_SOURCES_OTHER_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_SOURCES_OTHER_TABLE',
+   'A child @service under a @table type takes its parents as records of another table, and a parent row is a record of its own table only: take the parent table''s records, or a Row or Record of its key columns.'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
    'Rows graphitron keys by their table''s primary key are of a table that has none: a field fetching its own rows under a parent holding an object is batched by the key table''s, and the records a @service hands back are read back by their own table''s. Give the table a primary key, or fetch the field another way.'),
   ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',
