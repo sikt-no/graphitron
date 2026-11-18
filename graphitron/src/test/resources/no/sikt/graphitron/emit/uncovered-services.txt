@@ -1,0 +1,4 @@
+# The services ServiceVerdictCoverageGateTest finds not emitted and with no error defect at the
+# field, its arguments, their input fields or their types: path | coordinate | verdict | node, the
+# node being the one whose landing deletes the line. It only shrinks.
+scenarios/producer-root-by-binding | Query.rated | NO_FRAME | A field no root reaches has no fetcher (graphitron_fetcher Query.rated side PRODUCER)

@@ -97,6 +97,7 @@ The walk's read path is gone
     └── The service fields are emitted from the store
         ├── A producer's fetcher parts are emitted from the store
         └── Every service verdict is emitted or a stored deferral
+            └── A field no root reaches has no fetcher
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1177,6 +1178,12 @@ static method needs no holder.
     model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
     `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
     `pathLeafDeclaresNodeId`, `resolvePathLeafType`).
+    * **A field no root reaches has no fetcher** `open`, E's, waiting on Alf's ruling.
+      `graphitron_fetcher` states a `PRODUCER` fetcher for `Query.rated` in
+      scenarios/producer-root-by-binding, a `@service` on a type no root reaches, while `Query.notRoot`
+      beside it has none; `ServiceEmission` frames nothing there (`NO_FRAME`), so the coverage gate
+      lists it. A's recommendation to Alf (2026-11-18): no fetcher for a field nothing reaches, a
+      service's included, as `notRoot` is treated. Its landing deletes that line of the gate's roster.
 * **A decode shape references the node id it decodes** `open`, E's, off the critical path. `graphitron_occurrence_node_id_shape` references `graphitron_occurrence_binding`, not the `graphitron_occurrence_node_id` rows the decode reads, which have no key on (coordinate, bound) to reference; that a shape's bound has its node id rows holds by the shape rule's joins, and `BuildQuery.decodeSlot` throws as a generator bug where it does not. A key there, without a column made for it, moves that into the DDL.
 * **A record-class decode reads what its shape row states** `open`, E's, off the critical path. `NodeIdDecodeQuery.resolve` decides a node id's decode into another table's record from its own reads where the store already decided it: it takes the first path at the coordinate from the record's table to the node's, where the shape rule vouches only for a one-step path carrying every key column back, so two stated paths could make it pick one the store did not; and it maps a record class to a table by the first source it reads, where the store resolves one declared in two sources by the least source name. Reading the slot record columns and the record table off the shape row the rule wrote makes the two agree by construction.
 * **A @tenantFanOut scatter is stated as a connection outcome** `open`, off the critical path. A field marked `@tenantFanOut` reads every tenant the request may see, one statement per tenant, a route `graphitron_occurrence_connection` has no outcome for: under a global parent it gets no row, and `UNROUTED_CHILD` leaves it out by the marker rather than by a stated route. Stating the scatter as an outcome beside `ROUTED`, `INHERIT` and `UNSCOPED` lets the exemption go and the emitter read the route off the store; sakila's multitenant `Language.films` is the case that pins it.
