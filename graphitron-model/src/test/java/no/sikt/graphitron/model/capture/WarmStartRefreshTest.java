@@ -239,6 +239,90 @@ class WarmStartRefreshTest {
     }
 
     /**
+     * Two code references swap lines in one edit, each landing on the position the other held, while
+     * both stay alive under the same field: a relation keyed by name moves both rows in one
+     * statement, and holds where a reference was written as a locator only, so neither move has to
+     * wait for the other. Compared with a cold capture of the edited schema.
+     */
+    @Test
+    @DisplayName("code references that swap lines re-capture into a warm store")
+    void codeReferencesSwappingLinesRecaptureIntoAWarmStore(@TempDir Path tmp) {
+        var jooq = new CatalogInput(JOOQ_PACKAGE, TestRunContext.of().codegenLoader());
+        Path directory = tmp.resolve("graphitron-model");
+        String aa = "  aa: String @service(service: {className: \"no.sikt.graphitron.rewrite.test.services"
+            + ".SampleQueryService\", method: \"filmsByService\"}, argMapping: \"ids: aa\")\n";
+        String bb = "  bb: String @service(service: {className: \"no.sikt.graphitron.rewrite.test.services"
+            + ".SampleQueryService\", method: \"filmsByService\"}, argMapping: \"ids: bb\")\n";
+        String before = "type Query {\n" + aa + bb + "}\n";
+        String after = "type Query {\n" + bb + aa + "}\n";
+
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            captureSdl(store.dsl(), tmp, jooq, before);
+        }
+        Map<String, Integer> warm;
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            assertThatCode(() -> captureSdl(store.dsl(), tmp, jooq, after))
+                .as("the swapped references captured into the store the old text left")
+                .doesNotThrowAnyException();
+            warm = census(store.dsl());
+        }
+        Map<String, Integer> cold;
+        try (var store = GraphitronModelStore.open()) {
+            captureSdl(store.dsl(), tmp, jooq, after);
+            cold = census(store.dsl());
+        }
+        assertThat(warm)
+            .as("relations whose row count after the swap differs from a cold capture of it")
+            .isEqualTo(cold);
+    }
+
+    /**
+     * An error handler and a path element written in front of the ones already there move each old
+     * entry one ordinal on and onto a new position, while the new entry takes the old one's ordinal:
+     * entries keyed by where they were written, carrying their application and ordinal as a key of
+     * their own, have to give way to each other in one capture. Compared with a cold capture of the
+     * edited schema.
+     */
+    @Test
+    @DisplayName("an entry written in front of its siblings re-captures into a warm store")
+    void anEntryWrittenInFrontOfItsSiblingsRecapturesIntoAWarmStore(@TempDir Path tmp) {
+        var jooq = new CatalogInput(JOOQ_PACKAGE, TestRunContext.of().codegenLoader());
+        Path directory = tmp.resolve("graphitron-model");
+        String before = """
+            type Query { films: [Film!]! }
+            type Film @table(name: "film") {
+              title: String
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language @table(name: "language") { name: String }
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+            """;
+        String after = before
+            .replace("path: [{key: \"film_language_id_fkey\"}]",
+                "path: [{table: \"language\"}, {key: \"film_language_id_fkey\"}]")
+            .replace("handlers: [{handler: DATABASE}]", "handlers: [{handler: GENERIC}, {handler: DATABASE}]");
+
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            captureSdl(store.dsl(), tmp, jooq, before);
+        }
+        Map<String, Integer> warm;
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            assertThatCode(() -> captureSdl(store.dsl(), tmp, jooq, after))
+                .as("the entries written in front captured into the store the old text left")
+                .doesNotThrowAnyException();
+            warm = census(store.dsl());
+        }
+        Map<String, Integer> cold;
+        try (var store = GraphitronModelStore.open()) {
+            captureSdl(store.dsl(), tmp, jooq, after);
+            cold = census(store.dsl());
+        }
+        assertThat(warm)
+            .as("relations whose row count after the edit differs from a cold capture of it")
+            .isEqualTo(cold);
+    }
+
+    /**
      * A reading every gatherer vouches unchanged derives the rows the statistics were last taken
      * over, so it runs no ANALYZE; one whose configuration moved runs both again, an output package
      * being configuration a derivation reads. The catalog's entry is on the classpath, as a build's

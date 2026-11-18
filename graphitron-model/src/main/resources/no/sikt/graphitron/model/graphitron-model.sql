@@ -2521,8 +2521,6 @@ CREATE TABLE graphitron_argmapping_site (
   -- A mapping is named by its application and what it is written under there, the code reference
   -- whose field it is, or the application itself where it takes the mapping as its own.
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner),
-  -- Where the string was written, for a reader holding a pair entry to find its mapping by.
-  UNIQUE (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
     REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
     ON DELETE CASCADE,
@@ -2535,6 +2533,10 @@ CREATE TABLE graphitron_argmapping_site (
 -- A @routine's mapping is found from the application it is written on.
 CREATE INDEX graphitron_argmapping_site_application_ix
   ON graphitron_argmapping_site (graph_name, coordinate, directive_name, ordinal);
+-- Where it was written locates a row and keys nothing: a reader holding a pair entry finds its mapping by where the string was written, while
+-- the row is named by its application, so an edit moving two rows past each other moves both in one
+-- statement.
+CREATE INDEX graphitron_argmapping_site_position_ix ON graphitron_argmapping_site (graph_name, source_name, source_line, source_column);
 COMMENT ON TABLE graphitron_argmapping_site IS 'Where one written argMapping sits: the directive and its repeat, the element it is written on, the code reference it is a field of and the path element that reference sits in. For example @reference(path: [{table: "film", condition: {className: "no.example.Conditions", method: "byActor", argMapping: "actorId: id"}}]) on Actor.films sits under reference at ordinal 0, on Actor.films, in the condition''s reference, at step 0.';
 COMMENT ON COLUMN graphitron_argmapping_site.graph_name IS 'the owning graph''s partition, carried from the written mapping';
 COMMENT ON COLUMN graphitron_argmapping_site.source_name IS 'the file the mapping was written in; with the line and the column, where the string sits, an attribute a reader holding a pair entry finds its mapping by and a defect points at, unique but no longer the key';
@@ -8553,8 +8555,6 @@ CREATE TABLE graphitron_code_reference (
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner),
   UNIQUE (graph_name, coordinate, directive_name, ordinal, owner, kind),
-  -- One row per written reference, so a reader holding the position finds its reference.
-  UNIQUE (graph_name, source_name, source_line, source_column),
   -- The application the reference is written in, so a reference cannot outlive it.
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
     REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
@@ -8573,6 +8573,10 @@ CREATE TABLE graphitron_code_reference (
   CHECK ((method_name IS NULL) = (method_descriptor IS NULL)),
   CHECK (kind IN ('ROOT', 'PATH_ELEMENT', 'ORDER_FIELD', 'ORDER_FIELD_PATH', 'ROUTE_PATH'))
 );
+-- Where it was written locates a row and keys nothing: a reader holding a written reference's position finds its reference by it, while
+-- the row is named by its application, so an edit moving two rows past each other moves both in one
+-- statement.
+CREATE INDEX graphitron_code_reference_position_ix ON graphitron_code_reference (graph_name, source_name, source_line, source_column);
 COMMENT ON TABLE graphitron_code_reference IS 'One written Java code reference, where it sits and what it names, with the one method it resolves to where the graph''s classpath answers with exactly one. For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws a row naming no method.';
 COMMENT ON COLUMN graphitron_code_reference.graph_name IS 'the owning graph''s partition, carried from the written reference';
 COMMENT ON COLUMN graphitron_code_reference.coordinate IS 'the element the application writing the reference is on: a type, a field, an argument or an input field';
@@ -12619,7 +12623,6 @@ CREATE TABLE graphitron_outbox_message (
   occurrence_coordinate_ref VARCHAR,
   touched_at                TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, ordinal),
-  UNIQUE (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
     REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
     ON DELETE CASCADE,

@@ -1138,6 +1138,12 @@ static method needs no holder.
   refuses the shape as `SERVICE_KEY_OFF_OBJECT_UNSUPPORTED`; the frame reads the keys through that
   member, and the deferral goes.
 * **A getter taking arguments is captured as a read slot** `open`, E's, off the critical path. A class-backed field with arguments reads `getX(args)` or `getX(DataFetchingEnvironment)` in the walk, which `code_read_slot` does not hold, so `MEMBER_UNRESOLVED` leaves such fields unjudged and the store cannot bind them.
+* **A field position is keyed by its role alone** `open`, off the critical path.
+  `graphitron_field_position` is keyed by field name and carries a unique key on its position as
+  well, the shape that crashed a warm recapture of `graphitron_code_reference` when two rows traded
+  places in one statement. Its position is a stable role name rather than where something was
+  written, so the hazard is small; the unique goes, or a test pins that no edit moves two rows past
+  each other.
 * **A routine write's re-read keeps its rows in the order the write returned them** `open`, E's, off the critical path. A routine write's rows are re-read by
   the keys it returned through an unordered `IN`, so they can come back in another order than the
   write handed them; the re-read keeps the write's order. A fix of its own, not a gate on the
