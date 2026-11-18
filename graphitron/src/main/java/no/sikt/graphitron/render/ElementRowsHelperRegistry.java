@@ -67,16 +67,19 @@ public final class ElementRowsHelperRegistry {
 
     private final Map<Key, String> helperNames = new LinkedHashMap<>();
     private final Map<Key, MethodSpec> helpers = new LinkedHashMap<>();
+    private final String outputPackage;
 
-    private ElementRowsHelperRegistry() {}
+    private ElementRowsHelperRegistry(String outputPackage) {
+        this.outputPackage = outputPackage;
+    }
 
     /**
      * Brackets construct-register-drain so a registered helper is never silently dropped: a lost
      * drain would surface as a dangling call in the generated source and a consumer compile error.
      */
-    public static void collectInto(TypeSpec.Builder classBuilder,
+    public static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,
             java.util.function.Consumer<ElementRowsHelperRegistry> body) {
-        var registry = new ElementRowsHelperRegistry();
+        var registry = new ElementRowsHelperRegistry(outputPackage);
         body.accept(registry);
         registry.emit().forEach(classBuilder::addMethod);
     }
@@ -99,8 +102,8 @@ public final class ElementRowsHelperRegistry {
         });
         helperNames.put(key, name);
         helpers.put(key, switch (rows) {
-            case CallSiteExtraction.ElementRows.Whole whole -> buildRowsHelper(tableClass, whole, name);
-            case CallSiteExtraction.ElementRows.Partial partial -> buildMatchHelper(tableClass, partial, name);
+            case CallSiteExtraction.ElementRows.Whole whole -> buildRowsHelper(tableClass, whole, name, outputPackage);
+            case CallSiteExtraction.ElementRows.Partial partial -> buildMatchHelper(tableClass, partial, name, outputPackage);
         });
         return name;
     }
@@ -140,7 +143,7 @@ public final class ElementRowsHelperRegistry {
     }
 
     private static MethodSpec buildRowsHelper(TypeName tableClass, CallSiteExtraction.ElementRows.Whole rows,
-            String name) {
+            String name, String outputPackage) {
         var cells = rows.cells();
         TypeName returnType = rowsType(rows);
         TypeName elementType = ((ParameterizedTypeName) returnType).typeArguments().get(0);
@@ -161,7 +164,7 @@ public final class ElementRowsHelperRegistry {
         body.addStatement("continue");
         body.endControlFlow();
         for (int i = 0; i < cells.size(); i++) {
-            readCell(body, cells.get(i), i + 1);
+            readCell(body, cells.get(i), i + 1, outputPackage);
         }
         if (single) {
             body.addStatement("rows.add(cell1)");
@@ -191,7 +194,7 @@ public final class ElementRowsHelperRegistry {
      * its elements.
      */
     private static MethodSpec buildMatchHelper(TypeName tableClass, CallSiteExtraction.ElementRows.Partial rows,
-            String name) {
+            String name, String outputPackage) {
         var cells = rows.cells();
         TypeName conditions = ParameterizedTypeName.get(LIST, CONDITION);
         boolean anyRequired = cells.stream().anyMatch(CallSiteExtraction.Cell::required);
@@ -207,7 +210,7 @@ public final class ElementRowsHelperRegistry {
             .addStatement("continue")
             .endControlFlow();
         for (int i = 0; i < cells.size(); i++) {
-            readCell(body, cells.get(i), i + 1);
+            readCell(body, cells.get(i), i + 1, outputPackage);
         }
         body.addStatement("$T cells = new $T<>($L)", conditions, ARRAY_LIST, cells.size());
         for (int i = 0; i < cells.size(); i++) {
@@ -252,7 +255,7 @@ public final class ElementRowsHelperRegistry {
      * {@code fields} map down the cell's path. A nested path descends one guarded level at a time,
      * leaving the wire value {@code null} when a level is absent.
      */
-    private static void readCell(CodeBlock.Builder body, CallSiteExtraction.Cell cell, int n) {
+    private static void readCell(CodeBlock.Builder body, CallSiteExtraction.Cell cell, int n, String outputPackage) {
         String wire = "cell" + n + "Wire";
         var path = cell.path();
         if (path.size() == 1) {
@@ -275,8 +278,8 @@ public final class ElementRowsHelperRegistry {
         String local = "cell" + n;
         switch (cell.leaf()) {
             case CallSiteExtraction.JooqConvert jc ->
-                body.addStatement("$T $L = $T.val($L, table.$L.getDataType()).getValue()",
-                    type, local, DSL, wire, jc.columnJavaName());
+                body.addStatement("$T $L = $L", type, local, ColumnValuesRef.fromWire(outputPackage,
+                    CodeBlock.of("table.$L.getDataType()", jc.columnJavaName()), CodeBlock.of("$L", wire)));
             case CallSiteExtraction.EnumValueOf ev -> {
                 var enumClass = ClassName.bestGuess(ev.enumClassName());
                 body.addStatement("$T $L = null", enumClass, local);

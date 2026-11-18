@@ -109,7 +109,8 @@ import java.util.function.Supplier;
  *   <li><b>Numbers in {@code variables} and {@code extensions} are bounded.</b> On either verb, a
  *       number whose plain decimal form has more than a thousand digits is answered {@code 422}
  *       ({@code 200} under legacy {@code application/json}) before the policy, the input supplier
- *       or the engine runs.</li>
+ *       or the engine runs. Only JSON numbers: numeric text in a string, and every literal in the
+ *       document, is bounded where it is parsed (see {@code RequestNumbers}).</li>
  *   <li><b>The two verbs carry their rules differently.</b> POST takes the policy the consumer
  *       selects per request; GET carries the specification's {@code 405} rule unconditionally. That
  *       is why there is one {@code get} and two {@code post}s per way of building the input, and no
@@ -352,7 +353,8 @@ public class GraphqlHttpHandler {
     private Response execute(GraphqlRequest request, OperationPolicy guard, boolean legacy,
                              Supplier<ExecutionInput.Builder> input) {
         // Both verbs decode variables and extensions into arbitrary-precision numbers; bound them
-        // here, before anything downstream can expand one (see RequestNumbers).
+        // here, before anything downstream can expand one. Numeric text and document literals are
+        // not numbers here, and their sinks bound them (see RequestNumbers).
         if (!RequestNumbers.withinBounds(request.variables())
                 || !RequestNumbers.withinBounds(request.extensions())) {
             return requestError(422, "A number in 'variables' or 'extensions' has more than "

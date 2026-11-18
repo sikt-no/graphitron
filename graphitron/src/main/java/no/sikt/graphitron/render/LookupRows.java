@@ -47,18 +47,21 @@ public final class LookupRows {
 
     /**
      * Generates the {@code private static Row<N+1>[] <methodName>(<carrier>, <TargetTable> table)}
-     * helper: one typed {@code DSL.row(DSL.inline(i), DSL.val(v, table.COL.getDataType()), …)}
+     * helper: one typed {@code DSL.row(DSL.inline(i), DSL.val(v, table.COL.getDataType()), …)}, a
+     * plain slot's wire value coerced first through {@code ColumnValues.fromWire}, so an over-large
+     * key is no key rather than text jOOQ parses
      * per input index. Row count is the length of the first list-typed argument, broadcasting
      * scalar arguments across all rows ({@code n = 1} with no list arg); returns a zero-length
      * array when the list arg is null or empty, and callers short-circuit on
      * {@code rows.length == 0}.
      *
-     * <p>{@code clientException} is the generated client-error type an id that does not decode
-     * raises, through {@link NodeIdDecodeFailure}.
+     * <p>{@code outputPackage} locates the generated client-error type an id that does not decode
+     * raises, through {@link NodeIdDecodeFailure}, and the generated {@code ColumnValues}.
      */
     public static MethodSpec buildInputRowsMethod(ColumnMapping cm, String methodName,
             TypeName targetTableClass, ArgSource argSource, String diagnosticName,
-            ClassName clientException) {
+            String outputPackage) {
+        ClassName clientException = NodeIdDecodeFailure.clientException(outputPackage);
         List<Slot> slots = requireSlots(cm, diagnosticName);
         Map<String, RootSource> roots = rootSources(slots);
 
@@ -101,7 +104,7 @@ public final class LookupRows {
             }
         }
 
-        addRowBuildingCore(builder, slots, roots, clientException);
+        addRowBuildingCore(builder, slots, roots, clientException, outputPackage);
         return builder.build();
     }
 
@@ -240,7 +243,7 @@ public final class LookupRows {
      * VALUES set and trims the array), typed-value loop, return.
      */
     private static void addRowBuildingCore(MethodSpec.Builder builder,
-            List<Slot> slots, Map<String, RootSource> roots, ClassName clientException) {
+            List<Slot> slots, Map<String, RootSource> roots, ClassName clientException, String outputPackage) {
         var primaryList = roots.values().stream().filter(RootSource::list).findFirst().orElse(null);
         if (primaryList == null) {
             builder.addStatement("int n = 1");
@@ -289,7 +292,7 @@ public final class LookupRows {
 
         CodeBlock cells = ValuesJoinRowBuilder.cellsCode(
             slots, Slot::targetColumn, CodeBlock.of("$T.inline(i)", DSL), "table",
-            (slot, idx) -> slotValueExpr(slot, roots.get(slot.argName())));
+            (slot, idx) -> slotValueExpr(slot, roots.get(slot.argName()), outputPackage));
         builder.addStatement("rows[i] = $T.row($L)", DSL, cells);
         builder.endControlFlow();
         builder.addStatement("return rows");
@@ -303,22 +306,27 @@ public final class LookupRows {
      * The value expression that reads one lookup column's raw value inside the row-building
      * loop: NodeId-decoded slots read the per-row decode local, composite slots drill into the
      * root's {@code Map} by field name, plain slots read the local directly (element {@code i}
-     * of a list root).
+     * of a list root). A composite or plain slot's value is a client's wire value, so it is coerced
+     * at its column through {@code ColumnValues.fromWire}, which bounds its size before jOOQ parses it.
      */
-    private static CodeBlock slotValueExpr(Slot slot, RootSource root) {
+    private static CodeBlock slotValueExpr(Slot slot, RootSource root, String outputPackage) {
         if (slot.decodeBinding() != null) {
             String recLocal = decodeRecordLocal(root.localName());
             return CodeBlock.of("$L.value$L()", recLocal, slot.decodeBinding().index() + 1);
         }
+        CodeBlock wire;
         if (slot.isComposite()) {
             CodeBlock elem = root.list()
                 ? CodeBlock.of("$L.get(i)", root.localName())
                 : CodeBlock.of("$L", root.localName());
-            return CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, slot.compositeFieldName());
+            wire = CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, slot.compositeFieldName());
+        } else {
+            wire = root.list()
+                ? CodeBlock.of("$L.get(i)", root.localName())
+                : CodeBlock.of("$L", root.localName());
         }
-        return root.list()
-            ? CodeBlock.of("$L.get(i)", root.localName())
-            : CodeBlock.of("$L", root.localName());
+        return ColumnValuesRef.fromWire(outputPackage,
+            CodeBlock.of("table.$L.getDataType()", slot.targetColumn().javaName()), wire);
     }
 
     private static String toCamelCase(String snakeName) {

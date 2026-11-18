@@ -68,6 +68,12 @@ import java.util.Objects;
  *       an offset) falls back to the plain parse, so nothing read before is refused. It is asked
  *       only of a column {@code writtenByDatabase} answers {@code false} for, which has a SQL
  *       type.</li>
+ *   <li>{@code fromWire(type, value)} is the column's own coercion of a client's wire value, the
+ *       one a column-bound {@code ID} argument or input field binds through: jOOQ's
+ *       {@code DSL.val(value, type).getValue()}, so it answers what that answers (a number that
+ *       does not parse is {@code null}), save that a value {@code inRange} refuses is
+ *       {@code null} before jOOQ parses it. It runs no trip and refuses no wrap; it is the
+ *       generated filters' coercion, bounded.</li>
  * </ul>
  *
  * <p>Each first asks {@code inRange(type, value)}, which bounds the work: on a column with a number
@@ -76,7 +82,9 @@ import java.util.Objects;
  * is no value of the column. It is decided from the text's length and the number's scale and bit
  * length before anything parses or rescales the value, since parsing and rescaling cost time that
  * grows with a value's length and exponent. A cursor of the release-candidate form, which does not
- * pass through {@code ColumnValues}, asks {@code inRange} itself.
+ * pass through {@code ColumnValues}, asks {@code inRange} itself. {@code fromWire} asks it too, so
+ * a client's {@code ID} text is bounded on every column-bound filter, lookup key and list-of-input
+ * cell, not only where a node id, cursor or entity key is decoded.
  *
  * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
  * value of the column, so whether that is a skipped slot or a client error stays with the caller.
@@ -177,6 +185,20 @@ public class ColumnValuesClassGenerator {
             .addStatement("return null")
             .endControlFlow()
             .addStatement("return fitsPrecision(type, number) ? trip.canonical : null")
+            .build();
+
+        var fromWire = MethodSpec.methodBuilder("fromWire")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(t)
+            .returns(t)
+            .addParameter(dataTypeOfT, "type")
+            .addParameter(Object.class, "value")
+            .addJavadoc("The value a client's wire {@code value} binds as in a column of {@code type}, by the\n"
+                + "column's own coercion, or {@code null} when {@code value} is {@code null}, when that coercion\n"
+                + "answers {@code null}, or when {@link #inRange} refuses it, which it decides before anything\n"
+                + "parses the value.\n")
+            .addStatement("if (value == null || !inRange(type, value)) return null")
+            .addStatement("return $T.val(value, type).getValue()", DSL)
             .build();
 
         var folded = MethodSpec.methodBuilder("folded")
@@ -567,6 +589,7 @@ public class ColumnValuesClassGenerator {
             .addMethod(inRange)
             .addMethod(exact)
             .addMethod(coerce)
+            .addMethod(fromWire)
             .addMethod(folded)
             .addMethod(fromDatabase)
             .addMethod(databaseValue)

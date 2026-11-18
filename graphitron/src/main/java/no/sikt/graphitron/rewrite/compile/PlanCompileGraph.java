@@ -514,6 +514,9 @@ public final class PlanCompileGraph {
                 // A reached column's EXISTS names its hop tables through the alias scaffold; frozen,
                 // so declaring it for every glue unit is a pruning-harmless superset.
                 declared(glue, require(GlobalUnitKind.TABLE_ALIASES));
+                // An ID filter coerces its wire value through the column trip's bounded coercion;
+                // frozen too, so declaring it for every glue unit costs no recompile.
+                declared(glue, require(GlobalUnitKind.COLUMN_VALUES));
                 if (row.decodesNodeId()) {
                     precise(glue, require(GlobalUnitKind.NODE_ID_ENCODER));
                     precise(glue, require(GlobalUnitKind.CLIENT_EXCEPTION));
@@ -539,6 +542,9 @@ public final class PlanCompileGraph {
                 declared(unit, require(GlobalUnitKind.CLIENT_EXCEPTION));
                 declared(unit, require(GlobalUnitKind.SELECTION_OCCURRENCES));
                 declared(unit, require(GlobalUnitKind.TABLE_ALIASES));
+                // An inline lookup's VALUES rows coerce its key values through the column trip's
+                // bounded coercion; frozen, so the edge costs no recompile.
+                declared(unit, require(GlobalUnitKind.COLUMN_VALUES));
                 for (Contribution contribution : row.contributions()) {
                     switch (contribution) {
                         case Contribution.Call call -> {

@@ -729,7 +729,7 @@ public class TypeFetcherGenerator {
                         builder.addMethod(no.sikt.graphitron.render.LookupRows.buildInputRowsMethod(
                             keyedLookup.mapping(), keyedLookup.inputRows().methodName(),
                             lookupTableClass, no.sikt.graphitron.render.LookupRows.ArgSource.ENV,
-                            qtf.name(), clientExceptionClass(outputPackage)));
+                            qtf.name(), outputPackage));
                         // A list-returning lookup scatters its flat join into one slot per key.
                         // Gated on the list arm because the single arm has one slot by
                         // construction, and emitted once per class however many lookups it holds.
@@ -814,7 +814,7 @@ public class TypeFetcherGenerator {
                         builder.addMethod(no.sikt.graphitron.render.LookupRows.buildInputRowsMethod(
                             lookupChain.mapping(), lookupChain.inputRows().methodName(),
                             lookupTableClass, no.sikt.graphitron.render.LookupRows.ArgSource.ENV,
-                            btf.name(), clientExceptionClass(outputPackage)));
+                            btf.name(), outputPackage));
                     }
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
@@ -1110,7 +1110,7 @@ public class TypeFetcherGenerator {
         var jooqRecordHelperNames = fetchersHelperNames.jooqRecord();
         for (var jr : jooqRecordHelperNames.distinctShapes()) {
             builder.addMethod(JooqRecordInstantiationEmitter.buildSingularHelper(jr, jooqRecordHelperNames,
-                clientExceptionClass(outputPackage)));
+                clientExceptionClass(outputPackage), no.sikt.graphitron.render.ColumnValuesRef.of(outputPackage)));
             builder.addMethod(JooqRecordInstantiationEmitter.buildPluralHelper(jr, jooqRecordHelperNames));
         }
 
@@ -2677,7 +2677,7 @@ public class TypeFetcherGenerator {
         // InputColumnBindingGroup shape the shared lookup-WHERE emitters consume via keyGroupsOf.
         var inputArg = w.inputArg();
         var tableRef = inputArg.table();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, outputPackage);
         String tableLocal = tablesOnly.tableLocalName();
         var deleteRows = w.deleteRows();
         var whereGroups = keyGroupsOf(deleteRows.whereColumns());
@@ -2770,7 +2770,7 @@ public class TypeFetcherGenerator {
                                                           no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         var tia = w.input();
         var tableRef = tia.inputTable();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, outputPackage);
         String tableLocal = tablesOnly.tableLocalName();
 
         var values = tia.list()
@@ -2925,23 +2925,25 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock insertPresentCell(OverlapColumn oc, int ci, List<InsertLeaf> leaves,
             String mapLocal, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var dataType = CodeBlock.of("$L.getDataType()", insertColumnRef(oc, tablesOnly, tableRef));
         CodeBlock value;
         if (oc.shared()) {
+            // The agreement list may hold a plain writer's wire value.
             String listName = INSERT_KEY_PREFIX + "Agree" + ci;
-            value = CodeBlock.of("$L.isEmpty() ? null : $L.get(0)", listName, listName);
+            value = tablesOnly.fromWire(CodeBlock.of("$L.isEmpty() ? null : $L.get(0)", listName, listName), dataType);
         } else {
             var c = oc.contributors().get(0);
             var v = (SetGroupWriter) c.writer();
             String recLocal = INSERT_KEY_PREFIX + "_" + v.index();
             if (!c.writer().decode()) {
-                value = ArgCallEmitter.nestedMapValueExpr(mapLocal, v.group().accessPath());
+                value = tablesOnly.fromWire(ArgCallEmitter.nestedMapValueExpr(mapLocal, v.group().accessPath()), dataType);
             } else if (insertLeafNonNull(leaves.get(v.index()).field())) {
                 value = CodeBlock.of("$L.value$L()", recLocal, c.slot() + 1);
             } else {
                 value = CodeBlock.of("$L == null ? null : $L.value$L()", recLocal, recLocal, c.slot() + 1);
             }
         }
-        return CodeBlock.of("$T.val($L, $L.getDataType())", DSL, value, insertColumnRef(oc, tablesOnly, tableRef));
+        return CodeBlock.of("$T.val($L, $L)", DSL, value, dataType);
     }
 
     /**
@@ -3094,8 +3096,11 @@ public class TypeFetcherGenerator {
                     DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                     DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
                 .nextControlFlow("else")
-                .addStatement("$L = $T.val($L.get(0), $T.$L.$L.getDataType())",
-                    cellName, DSL, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
+                .addStatement("$L = $T.val($L, $T.$L.$L.getDataType())",
+                    cellName, DSL,
+                    tablesOnly.fromWire(CodeBlock.of("$L.get(0)", listName), CodeBlock.of("$T.$L.$L.getDataType()",
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
                 .endControlFlow();
         }
     }
@@ -3506,12 +3511,14 @@ public class TypeFetcherGenerator {
                                 block.endControlFlow();
                             }
                         } else {
+                            var dataType = CodeBlock.of("$T.$L.$L.getDataType()",
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                             block.addStatement(
-                                "$L.put($T.$L.$L, $T.val($L.get($S), $T.$L.$L.getDataType()))",
+                                "$L.put($T.$L.$L, $T.val($L, $L))",
                                 setsLocal,
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                                DSL, innerMap, leafKey,
-                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                                DSL, tablesOnly.fromWire(CodeBlock.of("$L.get($S)", innerMap, leafKey), dataType),
+                                dataType);
                         }
                     }
                 });
@@ -4074,8 +4081,11 @@ public class TypeFetcherGenerator {
                     .endControlFlow();
                 // The gate guarantees a present writer but not a value: when every present writer is
                 // a cleared reference the list is empty and the column is written NULL.
-                block.addStatement("cells.add($T.val($L.isEmpty() ? null : $L.get(0), $T.$L.$L.getDataType()))",
-                    DSL, listName, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                var dataType = CodeBlock.of("$T.$L.$L.getDataType()",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                block.addStatement("cells.add($T.val($L, $L))", DSL,
+                    tablesOnly.fromWire(CodeBlock.of("$L.isEmpty() ? null : $L.get(0)", listName, listName), dataType),
+                    dataType);
             } else {
                 var c = sc.contributors().get(0);
                 var v = (SetGroupWriter) c.writer();
@@ -4092,9 +4102,11 @@ public class TypeFetcherGenerator {
                         DSL, value,
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 } else {
-                    block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
-                        DSL, ArgCallEmitter.nestedMapValueExpr("row", g.accessPath()),
+                    var dataType = CodeBlock.of("$T.$L.$L.getDataType()",
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    block.addStatement("cells.add($T.val($L, $L))", DSL,
+                        tablesOnly.fromWire(ArgCallEmitter.nestedMapValueExpr("row", g.accessPath()), dataType),
+                        dataType);
                 }
             }
             block.endControlFlow();
@@ -4292,7 +4304,7 @@ public class TypeFetcherGenerator {
         // lookup-WHERE emitters consume.
         var inputArg = w.inputArg();
         var tableRef = inputArg.table();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, outputPackage);
         String tableLocal = tablesOnly.tableLocalName();
         var setGroups = setGroupsOf(w.updateRows().setColumns());
         var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
@@ -4503,7 +4515,7 @@ public class TypeFetcherGenerator {
                                                           no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         var tia = w.input();
         var tableRef = tia.inputTable();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, outputPackage);
         String tableLocal = tablesOnly.tableLocalName();
 
         // When the .doUpdate() branch fires, build the SET map dynamically from
@@ -4667,7 +4679,7 @@ public class TypeFetcherGenerator {
      *
      * <p>{@code keyValues} holds, per bound target column (keyed by its SQL name), the value the
      * WHERE compares as a Java value of the column's type: the decode local's {@code valueN()} for a
-     * node-id binding, {@code DSL.val(<wire value>, <column>.getDataType()).getValue()} for a plain
+     * node-id binding, {@code ColumnValues.fromWire(<column>.getDataType(), <wire value>)} for a plain
      * one, which is the coercion the WHERE binds with, without the deprecated
      * {@code DataType.convert(Object)}. It is
      * keyed by column rather than listed because the groups emit in first-occurrence order, which
@@ -4788,8 +4800,9 @@ public class TypeFetcherGenerator {
      * {@link CallSiteExtraction.NodeIdDecodeKeys} leaf extraction, lifts the per-binding decode call
      * to a local (declared into {@code locals}) reading that wire value and emits
      * {@code DSL.val(decoded.value1(), t.col.getDataType())}; otherwise emits
-     * {@code DSL.val(<wire value>, t.col.getDataType())}. Returns the same value as a Java value of
-     * the column's type, unwrapped from {@code DSL.val}, for {@link LookupWhereChunk#keyValues()}.
+     * {@code DSL.val(ColumnValues.fromWire(t.col.getDataType(), <wire value>), t.col.getDataType())},
+     * the wire value coerced at the column behind its size bound. Returns the same value as a Java
+     * value of the column's type, unwrapped from {@code DSL.val}, for {@link LookupWhereChunk#keyValues()}.
      */
     private static CodeBlock appendMapBindingValueExpr(
             CodeBlock.Builder whereExpr,
@@ -4809,11 +4822,11 @@ public class TypeFetcherGenerator {
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
             return CodeBlock.of("$L.value$L()", recLocal, binding.decodeSlot() + 1);
         }
-        whereExpr.add("$T.val($L, $T.$L.$L.getDataType())",
-            DSL, wireValue,
+        var dataType = CodeBlock.of("$T.$L.$L.getDataType()",
             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
-        return CodeBlock.of("$T.val($L, $T.$L.$L.getDataType()).getValue()",
-            DSL, wireValue, tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+        var value = tablesOnly.fromWire(wireValue, dataType);
+        whereExpr.add("$T.val($L, $L)", DSL, value, dataType);
+        return value;
     }
 
     /**
@@ -4918,8 +4931,12 @@ public class TypeFetcherGenerator {
                         values.add(CodeBlock.of("$L.value$L()", "bulkKey" + groupIndex + "_" + bi,
                             binding.decodeSlot() + 1));
                     } else {
-                        values.add(CodeBlock.of("$L", ArgCallEmitter.nestedMapValueExpr(mapLocal,
-                            accessPathOf(binding.fieldName(), binding.extraction()))));
+                        // Coerced at the column here rather than bound raw, so the duplicate-key guard
+                        // reading these values compares what the WHERE joins on.
+                        values.add(tablesOnly.fromWire(ArgCallEmitter.nestedMapValueExpr(mapLocal,
+                            accessPathOf(binding.fieldName(), binding.extraction())),
+                            CodeBlock.of("$T.$L.$L.getDataType()", tablesOnly.tablesClass(),
+                                tableRef.javaFieldName(), binding.targetColumn().javaName())));
                     }
                     columns.add(binding.targetColumn());
                 }
@@ -5013,9 +5030,10 @@ public class TypeFetcherGenerator {
                             if (!first) b.add(", ");
                             first = false;
                             var path = accessPathOf(binding.fieldName(), binding.extraction());
-                            b.add("$T.val($L, $T.$L.$L.getDataType())",
-                                DSL, ArgCallEmitter.nestedMapValueExpr("row", path),
+                            var dataType = CodeBlock.of("$T.$L.$L.getDataType()",
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                            b.add("$T.val($L, $L)", DSL,
+                                tablesOnly.fromWire(ArgCallEmitter.nestedMapValueExpr("row", path), dataType), dataType);
                         }
                     }
                     case InputColumnBindingGroup.DecodedRecordGroup drg ->
@@ -5060,9 +5078,10 @@ public class TypeFetcherGenerator {
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                     } else {
                         var path = accessPathOf(binding.fieldName(), binding.extraction());
-                        b.add("$T.val($L, $T.$L.$L.getDataType())",
-                            DSL, ArgCallEmitter.nestedMapValueExpr("row", path),
+                        var dataType = CodeBlock.of("$T.$L.$L.getDataType()",
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                        b.add("$T.val($L, $L)", DSL,
+                            tablesOnly.fromWire(ArgCallEmitter.nestedMapValueExpr("row", path), dataType), dataType);
                     }
                 }
             }
@@ -5985,7 +6004,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.model.LengthCheck lengthCheck, String qualifiedName,
             java.util.function.BiFunction<GeneratorUtils.ResolvedTableNames, String, DmlChainAndGuards> chainFn,
             String outputPackage) {
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, outputPackage);
         String tableLocal = tablesOnly.tableLocalName();
         if (returning.primaryKey().isEmpty()) {
             throw new IllegalStateException(
@@ -6609,7 +6628,7 @@ public class TypeFetcherGenerator {
             Optional<ErrorChannel.Mapped> errorChannel,
             no.sikt.graphitron.rewrite.model.LengthCheck lengthCheck, String qualifiedName,
             String verb, BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, outputPackage);
         String tableLocal = tablesOnly.tableLocalName();
         if (returning.primaryKey().isEmpty()) {
             throw new IllegalStateException(

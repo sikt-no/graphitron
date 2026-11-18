@@ -530,8 +530,10 @@ public final class ProjectionEmitter {
         }
         select.add(".where($L)", pairs(steps.get(0).pairs(), "table", "x0"));
         for (var key : keys) {
-            select.add(".and($L.$L.eq($T.val(sf.getArguments().get($S), $L.$L)))", listed, key.column().javaName(), DSL,
-                key.argument(), listed, key.column().javaName());
+            // The key is a client's wire value, coerced at its column behind the size bound.
+            select.add(".and($L.$L.eq($T.val($T.fromWire($L.$L.getDataType(), sf.getArguments().get($S)), $L.$L)))",
+                listed, key.column().javaName(), DSL, no.sikt.graphitron.render.ColumnValuesRef.of(outputPackage),
+                listed, key.column().javaName(), key.argument(), listed, key.column().javaName());
         }
         select.add(".limit(1)");
         body.addStatement("fields.add($T.multiset($L).as($S + rkPath + entry.getKey()))", DSL, select.build(),

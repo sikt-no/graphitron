@@ -531,7 +531,9 @@ class FetcherPipelineTest {
             .contains("v.field(")
             .as("duplicate-lookup-key guard via HashSet<List<Object>>")
             .contains("seenKeys")
-            .contains("java.util.List.of(row.get(\"filmId\"))")
+            .contains("java.util.List.of(")
+            .as("the guard compares the key as coerced at its column, as the WHERE joins on it")
+            .contains(".getDataType(), row.get(\"filmId\")))")
             .contains("if (seenKeys.size() != in.size())")
             .as("chain shape: update().set().from(v).where()")
             .contains(".update(")
@@ -584,7 +586,9 @@ class FetcherPipelineTest {
             .contains("if (in.containsKey(\"title\"))")
             .contains("if (in.containsKey(\"description\"))")
             .contains("sets.put(")
-            .contains("org.jooq.impl.DSL.val(in.get(");
+            .as("each SET value is coerced at its column behind the size bound")
+            .contains("util.ColumnValues.fromWire(")
+            .contains(".getDataType(), in.get(\"description\"))");
     }
 
     // ===== single-table discriminated interface as a DML return =====

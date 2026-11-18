@@ -93,6 +93,9 @@ class ProjectionEmitterExecutionTest {
         for (TypeSpec spec : SelectionOccurrencesClassGenerator.generate(pkg)) {
             compiled.put(pkg + ".util." + spec.name(), spec);
         }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator.generate()) {
+            compiled.put(pkg + ".util." + spec.name(), spec);
+        }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
             compiled.put(pkg + ".schema." + spec.name(), spec);
         }

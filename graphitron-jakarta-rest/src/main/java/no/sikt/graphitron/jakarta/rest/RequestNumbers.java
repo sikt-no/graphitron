@@ -7,20 +7,30 @@ import java.util.Deque;
 import java.util.Map;
 
 /**
- * The size bound on numbers a request's {@code variables} and {@code extensions} carry, checked at
- * the HTTP boundary before the engine sees them.
+ * The size bound on the JSON numbers a request's {@code variables} and {@code extensions} carry,
+ * checked at the HTTP boundary before the engine sees them.
  *
  * <p>The JSON binder decodes every number in those untyped maps as an arbitrary-precision value,
  * and a few bytes of exponent notation stand for a number whose plain decimal form has billions of
  * digits. Scalar coercion, the engine's built-ins and any custom scalar alike, and consumer code
  * reading an argument may expand such a value in full, at a cost that grows with the exponent rather
  * than with the request. Refusing a number whose plain decimal form is longer than
- * {@link #MAX_DIGITS} keeps every expansion downstream small, and the check itself costs time in
- * proportion to the request's size: each value is visited once, iteratively, so a deeply nested
- * request cannot exhaust the stack either.
+ * {@link #MAX_DIGITS} keeps every expansion of a decoded JSON number small, and the check itself
+ * costs time in proportion to the request's size: each value is visited once, iteratively, so a
+ * deeply nested request cannot exhaust the stack either.
  *
  * <p>Only {@link BigDecimal} and {@link BigInteger} are unbounded; every other {@link Number} the
  * JDK has is fixed-width and passes unchecked.
+ *
+ * <p>What this bounds is the JSON number, and nothing else. A number written as text, a string
+ * variable such as {@code "1e999999999"} or a long run of digits, passes, as does every literal in
+ * the GraphQL document, which this class never reads: whether text is a number is the scalar's and
+ * the column's to say, not the transport's. Those reach their sinks unbounded, so each sink bounds
+ * what it parses. The generated code does: a column-bound {@code ID} is coerced through
+ * {@code ColumnValues.fromWire}, and a node id, a cursor and an entity key through the other
+ * {@code ColumnValues} entry points, all of which refuse an over-large value before anything parses
+ * it. A lenient arbitrary-precision scalar (one that reads a {@code String} or a float literal as a
+ * {@code BigDecimal} or {@code BigInteger}) and consumer code reading one are the consumer's to bound.
  */
 final class RequestNumbers {
 

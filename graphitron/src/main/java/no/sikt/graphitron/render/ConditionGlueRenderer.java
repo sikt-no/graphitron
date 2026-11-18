@@ -89,7 +89,7 @@ public final class ConditionGlueRenderer {
             CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry ->
                 RecordDecodeHelperRegistry.collectInto(classBuilder, outputPackage, decodes ->
                 InputBeanHelperRegistry.collectInto(classBuilder, outputPackage, decodes, beans ->
-                ElementRowsHelperRegistry.collectInto(classBuilder, elementRows ->
+                ElementRowsHelperRegistry.collectInto(classBuilder, outputPackage, elementRows ->
                 RequestContextHelper.collectInto(classBuilder, outputPackage, contextHelper -> {
                     // One projection host per class: the relation is the graph's, and reaching a decode
                     // registers its body here, so a called helper cannot go un-emitted.
@@ -97,7 +97,7 @@ public final class ConditionGlueRenderer {
                         projection -> decodes.register(NodeIdEncoderRef.of(outputPackage),
                             projection.typeId(), projection.nodeTypeName(),
                             projection.keyColumns(), projection.nodeTable()));
-                    var hosts = new Hosts(registry, contextHelper, beans, elementRows);
+                    var hosts = new Hosts(registry, contextHelper, beans, elementRows, outputPackage);
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
                         boolean takesDsl = row.readsSession();
@@ -128,10 +128,17 @@ public final class ConditionGlueRenderer {
      * The class-scoped helper hosts a glue method's binding locals register with: the node-id key
      * decodes, the request-context reader, the input-bean builders, and the list-of-input row
      * reads. One value per conditions class, so every glue method on it registers with the same
-     * four.
+     * four, and qualifies a wire value's coercion with the same output package.
      */
     private record Hosts(CompositeDecodeHelperRegistry decodes, RequestContextHelper contextHelper,
-                         InputBeanHelperRegistry beans, ElementRowsHelperRegistry elementRows) {}
+                         InputBeanHelperRegistry beans, ElementRowsHelperRegistry elementRows,
+                         String outputPackage) {
+
+        /** {@code value} coerced at the column {@code column} names on {@code table}, bounded. */
+        CodeBlock fromWire(CodeBlock value, CodeBlock table, String column) {
+            return ColumnValuesRef.fromWire(outputPackage, CodeBlock.of("$L.$L.getDataType()", table, column), value);
+        }
+    }
 
     private static MethodSpec buildGlueMethod(String methodName, TypeName jooqTableClass,
             List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv, boolean takesDsl,
@@ -526,7 +533,7 @@ public final class ConditionGlueRenderer {
      * non-reifiable target ({@code Map.get} is statically {@code Object}), which covers list
      * reads ({@code List<X>}) and generically-typed authored parameters
      * ({@code Map<String, Object>}). The {@code JooqConvert} form is carved out (its
-     * {@code instanceof} pattern plus {@code DSL.val} coercion own the runtime shape without a
+     * {@code instanceof} pattern plus {@code ColumnValues.fromWire} coercion own the runtime shape without a
      * cast), as are a NodeId decode, an input bean and a list-of-input row read (each helper takes
      * the uncast wire value).
      */
@@ -641,11 +648,9 @@ public final class ConditionGlueRenderer {
                     param.name(), enumClass, String.class, param.name());
             }
             case CallSiteExtraction.JooqConvert jc -> param.list()
-                ? CodeBlock.of("args.get($S) instanceof $T<?> keys"
-                        + " ? keys.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList() : null",
-                    param.name(), LIST, DSL, valueTable.expr(), jc.columnJavaName())
-                : CodeBlock.of("$T.val(args.get($S), $L.$L.getDataType()).getValue()",
-                    DSL, param.name(), valueTable.expr(), jc.columnJavaName());
+                ? CodeBlock.of("args.get($S) instanceof $T<?> keys ? keys.stream().map(k -> $L).toList() : null",
+                    param.name(), LIST, hosts.fromWire(CodeBlock.of("k"), valueTable.expr(), jc.columnJavaName()))
+                : hosts.fromWire(CodeBlock.of("args.get($S)", param.name()), valueTable.expr(), jc.columnJavaName());
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 decodeCall(hosts.decodes(), nidk, decodesList(param), CodeBlock.of("args.get($S)", param.name()));
             case CallSiteExtraction.NestedInputField nif ->
@@ -795,12 +800,10 @@ public final class ConditionGlueRenderer {
         if (nif.leaf() instanceof CallSiteExtraction.JooqConvert jc) {
             CodeBlock chain = WireMapChain.of(root, nif.path(), null, lifted);
             if (param.list()) {
-                return CodeBlock.of(
-                    "$L instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList() : null",
-                    chain, LIST, DSL, valueTable.expr(), jc.columnJavaName());
+                return CodeBlock.of("$L instanceof $T<?> keys ? keys.stream().map(k -> $L).toList() : null",
+                    chain, LIST, hosts.fromWire(CodeBlock.of("k"), valueTable.expr(), jc.columnJavaName()));
             }
-            return CodeBlock.of("$T.val($L, $L.$L.getDataType()).getValue()", DSL, chain, valueTable.expr(),
-                jc.columnJavaName());
+            return hosts.fromWire(chain, valueTable.expr(), jc.columnJavaName());
         }
         return WireMapChain.of(root, nif.path(), localType(param), lifted);
     }

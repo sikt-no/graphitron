@@ -63,7 +63,7 @@ final class JooqRecordInstantiationEmitter {
      * compile-tier check that every bound column exists on the record's table.
      */
     static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names,
-            ClassName clientException) {
+            ClassName clientException, ClassName columnValues) {
         ClassName recordType = CatalogRefs.recordClass(jr.table());
         ClassName tablesClass = CatalogRefs.constantsClass(jr.table());
         String tableField = jr.table().javaFieldName();
@@ -93,13 +93,13 @@ final class JooqRecordInstantiationEmitter {
         if (plan.stream().noneMatch(OverlapColumn::shared)) {
             // No overlap: byte-identical to the plain two-loop form (pay-for-what-you-use).
             for (var cb : jr.columnBindings()) {
-                emitColumnBinding(b, cb, tablesClass, tableField);
+                emitColumnBinding(b, cb, tablesClass, tableField, columnValues);
             }
             for (var kd : jr.keyDecodes()) {
                 emitKeyDecode(b, kd, tablesClass, tableField, clientException);
             }
         } else {
-            emitWithAgreement(b, writers, plan, tablesClass, tableField, clientException);
+            emitWithAgreement(b, writers, plan, tablesClass, tableField, clientException, columnValues);
         }
 
         return b.addStatement("return rec").build();
@@ -130,11 +130,11 @@ final class JooqRecordInstantiationEmitter {
      * unchanged.
      */
     private static void emitColumnBinding(MethodSpec.Builder b, CallSiteExtraction.ColumnBinding cb,
-            ClassName tablesClass, String tableField) {
+            ClassName tablesClass, String tableField, ClassName columnValues) {
         if (cb.paths().size() > 1) {
             String base = localBase(cb.path());
             emitMultiPathRead(b, base, cb.paths());
-            emitPlainLoad(b, base, cb.column(), tablesClass, tableField);
+            emitPlainLoad(b, base, cb.column(), tablesClass, tableField, columnValues);
             return;
         }
         String parentMap = openDescent(b, cb.path());
@@ -145,8 +145,9 @@ final class JooqRecordInstantiationEmitter {
         b.beginControlFlow("if ($L == null)", valVar);
         b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, cb.column().javaName());
         b.nextControlFlow("else");
-        b.addStatement("rec.fromArray(new $T[]{ $L }, $T.$L.$L)",
-            Object.class, valVar, tablesClass, tableField, cb.column().javaName());
+        b.addStatement("rec.fromArray(new $T[]{ $T.fromWire($T.$L.$L.getDataType(), $L) }, $T.$L.$L)",
+            Object.class, columnValues, tablesClass, tableField, cb.column().javaName(), valVar,
+            tablesClass, tableField, cb.column().javaName());
         b.endControlFlow();
         b.endControlFlow();
         closeDescent(b, cb.path());
@@ -185,18 +186,19 @@ final class JooqRecordInstantiationEmitter {
     /**
      * Writes a plain writer's resolved locals onto the record: an explicit null through
      * {@code set(col, null)} (reliable changed-flag), a present value through {@code fromArray}
-     * (DataType coercion), nothing at all when no read path was present (the column stays
+     * (DataType coercion, behind {@code ColumnValues.fromWire}'s size bound), nothing at all when no read path was present (the column stays
      * {@code changed=false}). Shared by the overlap-free multi-read-path emission and the
      * agreement-checked load phase, so both write a column the same way.
      */
     private static void emitPlainLoad(MethodSpec.Builder b, String base, ColumnRef column,
-            ClassName tablesClass, String tableField) {
+            ClassName tablesClass, String tableField, ClassName columnValues) {
         b.beginControlFlow("if ($LPresent)", base);
         b.beginControlFlow("if ($LValue == null)", base);
         b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, column.javaName());
         b.nextControlFlow("else");
-        b.addStatement("rec.fromArray(new $T[]{ $LValue }, $T.$L.$L)",
-            Object.class, base, tablesClass, tableField, column.javaName());
+        b.addStatement("rec.fromArray(new $T[]{ $T.fromWire($T.$L.$L.getDataType(), $LValue) }, $T.$L.$L)",
+            Object.class, columnValues, tablesClass, tableField, column.javaName(), base,
+            tablesClass, tableField, column.javaName());
         b.endControlFlow();
         b.endControlFlow();
     }
@@ -322,7 +324,8 @@ final class JooqRecordInstantiationEmitter {
      * so the load phase can tell whether a cleared reference has anything to defer to on that column.
      */
     private static void emitWithAgreement(MethodSpec.Builder b, List<Writer> writers,
-            List<OverlapColumn> plan, ClassName tablesClass, String tableField, ClassName clientException) {
+            List<OverlapColumn> plan, ClassName tablesClass, String tableField, ClassName clientException,
+            ClassName columnValues) {
         for (var w : writers) {
             emitPrepare(b, w, tablesClass, tableField, clientException);
         }
@@ -336,7 +339,7 @@ final class JooqRecordInstantiationEmitter {
             }
         }
         for (var w : writers) {
-            emitLoadPrepared(b, w, agreementLists, tablesClass, tableField);
+            emitLoadPrepared(b, w, agreementLists, tablesClass, tableField, columnValues);
         }
     }
 
@@ -438,10 +441,10 @@ final class JooqRecordInstantiationEmitter {
      * overwrite the shared column.
      */
     private static void emitLoadPrepared(MethodSpec.Builder b, Writer w, Map<String, String> agreementLists,
-            ClassName tablesClass, String tableField) {
+            ClassName tablesClass, String tableField, ClassName columnValues) {
         String base = w.base();
         if (!w.isDecode()) {
-            emitPlainLoad(b, base, w.plain().column(), tablesClass, tableField);
+            emitPlainLoad(b, base, w.plain().column(), tablesClass, tableField, columnValues);
             return;
         }
         var kd = w.decode();

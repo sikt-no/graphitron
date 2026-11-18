@@ -365,6 +365,40 @@ class ColumnValuesTest {
         assertThat(ColumnValues.inRange(SQLDataType.VARCHAR, MANY_DIGITS)).isTrue();
     }
 
+    // ===== fromWire: a client's wire value, coerced as jOOQ coerces it, behind the same bound =====
+
+    @Test
+    void fromWire_refusesAnExtremeNumberPromptly_onEveryNumericColumn() {
+        List<DataType<?>> types = List.of(SMALLINT, INTEGER, BIGINT, DECIMAL_INTEGER, NUMERIC, NUMERIC_4_1, DOUBLE,
+            ORG_CODE, TRUNCATING);
+        List<String> texts = List.of("1e30000000", "-1e30000000", "1E+30000000", "1e-30000000", "0e30000000",
+            " 1e30000000 ", "1e999999999", "9e-999999999", MANY_DIGITS, "0." + MANY_DIGITS, "-" + MANY_DIGITS);
+        assertTimeout(PROMPTLY, () -> {
+            for (DataType<?> type : types) {
+                for (String text : texts) {
+                    String what = type.getName() + " " + text.substring(0, Math.min(16, text.length()));
+                    assertThat(ColumnValues.fromWire(type, text)).as(what).isNull();
+                }
+            }
+        });
+    }
+
+    @Test
+    void fromWire_coercesWhatJooqCoerces_withinTheBound() {
+        assertThat(ColumnValues.fromWire(INTEGER, "12")).isEqualTo(12);
+        assertThat(ColumnValues.fromWire(INTEGER, " 12 ")).as("trimmed as jOOQ trims").isEqualTo(12);
+        assertThat(ColumnValues.fromWire(INTEGER, "1e3")).isEqualTo(1000);
+        assertThat(ColumnValues.fromWire(INTEGER, "abc")).as("what jOOQ cannot read stays null").isNull();
+        assertThat(ColumnValues.fromWire(INTEGER, null)).isNull();
+        assertThat(ColumnValues.fromWire(INTEGER, 7)).isEqualTo(7);
+        assertThat(ColumnValues.fromWire(BIGINT, "9223372036854775807")).isEqualTo(Long.MAX_VALUE);
+        String widest = "9".repeat(ColumnValues.MAX_DIGITS);
+        assertThat(ColumnValues.fromWire(DECIMAL_INTEGER, widest)).isEqualTo(new BigInteger(widest));
+        assertThat(ColumnValues.fromWire(NUMERIC, widest)).isEqualByComparingTo(widest);
+        assertThat(ColumnValues.fromWire(SQLDataType.VARCHAR, MANY_DIGITS))
+            .as("a text column reads any text as text").isEqualTo(MANY_DIGITS);
+    }
+
     @Test
     void fromDatabase_readsBackEveryDoubleToTextWrites() {
         for (double d : new double[] {Double.MIN_VALUE, -Double.MIN_VALUE, Double.MAX_VALUE, 1e-300, 0.1}) {

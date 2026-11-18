@@ -353,7 +353,7 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(legacyShapes)
             .addMethod(reportFold)
             .addMethod(logSafe)
-            .addMethod(buildRequireColumnAgreement())
+            .addMethod(buildRequireColumnAgreement(columnValues))
             .addMethod(buildDecodeInto());
 
         for (NodeIdEncoderQuery.Node node : nodes) {
@@ -369,8 +369,9 @@ public class NodeIdEncoderClassGenerator {
      * one writer ({@code @nodeId} decode or plain {@code @field}) lands on a single row column, it
      * throws {@code GraphqlErrorException} unless the present writers agree on the column's value.
      *
-     * <p>Agreement is defined by the destination column's coercion: each value runs through the
-     * column's jOOQ {@code DataType.convert} (the same coercion the real write applies) and the
+     * <p>Agreement is defined by the destination column's coercion: each value runs through
+     * {@code ColumnValues.fromWire} (the same bounded coercion the real write applies, so an
+     * over-large wire value is never parsed) and the
      * results compare with {@code Objects.equals}, so format-variant wire values ({@code "01"},
      * {@code 1.0}, a {@code BigInteger}) collapse onto the same key while genuinely different
      * stored values still disagree. {@code conflictLabel} names the conflicting GraphQL input
@@ -378,7 +379,7 @@ public class NodeIdEncoderClassGenerator {
      * than two writers emit pairwise calls against the first present writer ({@code equals} is
      * transitive).
      */
-    private static MethodSpec buildRequireColumnAgreement() {
+    private static MethodSpec buildRequireColumnAgreement(ClassName columnValues) {
         TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(ClassName.OBJECT));
         return MethodSpec.methodBuilder("requireColumnAgreement")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -386,7 +387,7 @@ public class NodeIdEncoderClassGenerator {
             .addParameter(dataTypeWildcard, "type")
             .addParameter(Object.class, "a")
             .addParameter(Object.class, "b")
-            .beginControlFlow("if (!$T.equals(type.convert(a), type.convert(b)))", OBJECTS)
+            .beginControlFlow("if (!$T.equals($T.fromWire(type, a), $T.fromWire(type, b)))", OBJECTS, columnValues, columnValues)
             .addStatement("throw $T.newErrorException().message($S + conflictLabel).build()",
                 GRAPHQL_ERROR, "Conflicting values supplied for ")
             .endControlFlow()

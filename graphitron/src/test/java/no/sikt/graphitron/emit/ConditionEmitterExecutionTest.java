@@ -353,9 +353,9 @@ class ConditionEmitterExecutionTest {
             public static org.jooq.Condition filmsByFilter(
                 no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film table,
                 java.util.Map<java.lang.String, java.lang.Object> args) {
-              java.lang.Short length = org.jooq.impl.DSL.val((args.get("filter") instanceof java.util.Map<?, ?> m1 && m1.get("inner") instanceof java.util.Map<?, ?> m2 ? m2.get("length") : null), table.LENGTH).getValue();
-              java.lang.Integer releaseYear = org.jooq.impl.DSL.val((args.get("filter") instanceof java.util.Map<?, ?> m3 ? m3.get("releaseYear") : null), table.RELEASE_YEAR).getValue();
-              java.lang.String title = org.jooq.impl.DSL.val((args.get("filter") instanceof java.util.Map<?, ?> m4 ? m4.get("title") : null), table.TITLE).getValue();
+              java.lang.Short length = conditions.util.ColumnValues.fromWire(table.LENGTH.getDataType(), (args.get("filter") instanceof java.util.Map<?, ?> m1 && m1.get("inner") instanceof java.util.Map<?, ?> m2 ? m2.get("length") : null));
+              java.lang.Integer releaseYear = conditions.util.ColumnValues.fromWire(table.RELEASE_YEAR.getDataType(), (args.get("filter") instanceof java.util.Map<?, ?> m3 ? m3.get("releaseYear") : null));
+              java.lang.String title = conditions.util.ColumnValues.fromWire(table.TITLE.getDataType(), (args.get("filter") instanceof java.util.Map<?, ?> m4 ? m4.get("title") : null));
               java.util.List<org.jooq.Condition> conditions = new java.util.ArrayList<>();
               if (length != null) conditions.add(table.LENGTH.eq(length));
               if (releaseYear != null) conditions.add(table.RELEASE_YEAR.eq(releaseYear));

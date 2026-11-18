@@ -32,6 +32,11 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  * so a regression shows as a failed case rather than a stalled build. The boundary cases sit
  * either side of the bound with exponents small enough to coerce cheaply, and tell the handler's
  * refusal from the engine's own by its message.
+ *
+ * <p>Numeric text is not a JSON number, so the handler passes it, in a string variable and in a
+ * document literal alike, and the sink bounds it: a column-bound {@code ID} coerces through
+ * {@code ColumnValues.fromWire}, which answers an over-large value as no value of the column, so
+ * the filter matches nothing, promptly, while an ordinary key still matches.
  */
 @QuarkusTest
 @QuarkusTestResource(SmokeTestPostgresResource.class)
@@ -52,6 +57,10 @@ class RequestNumberBoundsTest {
     private static final String ID_QUERY = "query($id: ID!) { node(id: $id) { __typename } }";
     private static final String BIG_DECIMAL_QUERY =
         "query($f: FilmRentalRangeFilter) { filmsByRentalRateRange(filter: $f) { title } }";
+    // store_id is an int column on both participants, so the ID text coerces at the column.
+    private static final String STORE_ID_QUERY =
+        "query($s: [ID!]) { occupantsByStoreId(storeId: $s) { __typename } }";
+    private static final String MANY_DIGITS = "7".repeat(1_000_000);
 
     // ===== out of bounds, every variable type, both verbs =====
 
@@ -127,6 +136,66 @@ class RequestNumberBoundsTest {
         post(body(FLOAT_QUERY, "{\"r\":" + digits + "}", null), GRAPHQL_RESPONSE_JSON)
             .statusCode(422)
             .body("errors[0].message", containsString(REFUSAL));
+    }
+
+    // ===== numeric text is bounded where it is parsed =====
+
+    @ParameterizedTest(name = "variable {index}")
+    @ValueSource(strings = {"1e999999999", "-1e999999999", "9e-999999999", "1E+999999999"})
+    @DisplayName("An ID variable holding extreme exponent text passes the handler and matches nothing, promptly.")
+    void exponentTextInAnIdVariableMatchesNothing(String text) {
+        promptly(() -> post(body(STORE_ID_QUERY, "{\"s\":[\"" + text + "\"]}", null), GRAPHQL_RESPONSE_JSON))
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", hasSize(0));
+    }
+
+    @Test
+    @DisplayName("An ID variable holding a million digits matches nothing, promptly.")
+    void longDigitTextInAnIdVariableMatchesNothing() {
+        promptly(() -> post(body(STORE_ID_QUERY, "{\"s\":[\"" + MANY_DIGITS + "\"]}", null), GRAPHQL_RESPONSE_JSON))
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", hasSize(0));
+    }
+
+    @Test
+    @DisplayName("The same text written as a literal in the document matches nothing, promptly, on both verbs.")
+    void numericTextInADocumentLiteralMatchesNothing() {
+        String exponent = "{ occupantsByStoreId(storeId: [\"1e999999999\"]) { __typename } }";
+        promptly(() -> post(body(exponent, null, null), GRAPHQL_RESPONSE_JSON))
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", hasSize(0));
+        promptly(() -> get(exponent, null, null))
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", hasSize(0));
+        // An ID literal written as an integer reaches the column as its text too.
+        String digits = "7".repeat(5_000);
+        promptly(() -> post(body("{ occupantsByStoreId(storeId: [" + digits + "]) { __typename } }", null, null),
+                GRAPHQL_RESPONSE_JSON))
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", hasSize(0));
+        promptly(() -> post(body("{ occupantsByStoreId(storeId: [\"" + MANY_DIGITS + "\"]) { __typename } }", null, null),
+                GRAPHQL_RESPONSE_JSON))
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", hasSize(0));
+    }
+
+    @Test
+    @DisplayName("An ordinary store key, as a variable and as a literal, still matches.")
+    void ordinaryIdTextStillMatches() {
+        post(body(STORE_ID_QUERY, "{\"s\":[\"1\"]}", null), GRAPHQL_RESPONSE_JSON)
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", not(hasSize(0)));
+        post(body("{ occupantsByStoreId(storeId: [\"1\"]) { __typename } }", null, null), GRAPHQL_RESPONSE_JSON)
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.occupantsByStoreId", not(hasSize(0)));
     }
 
     // ===== ordinary values coerce as before =====

@@ -25,9 +25,9 @@ import java.util.regex.Pattern;
  *
  * <pre>{@code
  * public static Condition filmsByFilter(Film table, Map<String, Object> args) {
- *     String title = DSL.val(args.get("filter") instanceof Map<?, ?> m1 ? m1.get("title") : null, table.TITLE).getValue();
+ *     String title = ColumnValues.fromWire(table.TITLE.getDataType(), args.get("filter") instanceof Map<?, ?> m1 ? m1.get("title") : null);
  *     List<Short> lengths = args.get("lengths") instanceof List<?> l1
- *         ? l1.stream().map(e1 -> DSL.val(e1, table.LENGTH).getValue()).toList() : null;
+ *         ? l1.stream().map(e1 -> ColumnValues.fromWire(table.LENGTH.getDataType(), e1)).toList() : null;
  *     List<Condition> conditions = new ArrayList<>();
  *     if (title != null) conditions.add(table.TITLE.eq(title));
  *     if (lengths != null && !lengths.isEmpty()) conditions.add(table.LENGTH.in(lengths));
@@ -196,6 +196,7 @@ public final class ConditionEmitter {
         if (row.takesDsl()) {
             method.addParameter(ClassName.get("org.jooq", "DSLContext"), "dsl");
         }
+        var columnValues = columnValues(runtime);
         var locals = new HashSet<String>();
         var counter = new int[1];
         var adds = CodeBlock.builder();
@@ -235,12 +236,12 @@ public final class ConditionEmitter {
                 var e = "e" + ++counter[0];
                 method.addStatement("$T $L = $L instanceof $T<?> $L ? $L.stream().map($L -> $L).toList() : null",
                     ParameterizedTypeName.get(LIST, type.box()), local, read, LIST, l, l, e,
-                    typed(term, type, CodeBlock.of("$L", e), column, counter));
+                    typed(term, type, CodeBlock.of("$L", e), column, counter, columnValues));
                 compare = CodeBlock.of("$L.in($L)", column, local);
                 guard = term.present() ? CodeBlock.of("!$L.isEmpty()", local)
                     : CodeBlock.of("$L != null && !$L.isEmpty()", local, local);
             } else {
-                method.addStatement("$T $L = $L", type.box(), local, typed(term, type, read, column, counter));
+                method.addStatement("$T $L = $L", type.box(), local, typed(term, type, read, column, counter, columnValues));
                 compare = CodeBlock.of("$L.eq($L)", column, local);
                 guard = term.present() ? null : CodeBlock.of("$L != null", local);
             }
@@ -252,7 +253,7 @@ public final class ConditionEmitter {
             }
         }
         for (var elements : listed.values()) {
-            list(method, adds, helpers, name, row, elements, locals, counter, tableAliases);
+            list(method, adds, helpers, name, row, elements, locals, counter, tableAliases, columnValues);
         }
         if (row.calls().stream().flatMap(call -> call.fills().stream())
                 .anyMatch(fill -> "ARGUMENT".equals(fill.fill()) && !fill.landingNodeId()
@@ -323,7 +324,7 @@ public final class ConditionEmitter {
      */
     private static void list(MethodSpec.Builder method, CodeBlock.Builder adds, List<MethodSpec> helpers,
                              String name, ConditionQuery.Row row, List<ConditionQuery.Term> elements,
-                             Set<String> locals, int[] counter, ClassName tableAliases) {
+                             Set<String> locals, int[] counter, ClassName tableAliases, ClassName columnValues) {
         var first = elements.getFirst();
         int at = first.lists().getFirst().position();
         var names = first.names().subList(0, at + 1);
@@ -340,7 +341,7 @@ public final class ConditionEmitter {
         CodeBlock compare;
         CodeBlock guard;
         if (whole) {
-            var rows = rowsHelper(helper, tableClass, elements, at, counter);
+            var rows = rowsHelper(helper, tableClass, elements, at, counter, columnValues);
             helpers.add(rows);
             method.addStatement("$T $L = $L($L, $L)", ParameterizedTypeName.get(LIST, elements.size() == 1
                 ? type(first.column().bindingType()).orElseThrow().box() : ClassName.get("org.jooq", "RowN")),
@@ -352,7 +353,7 @@ public final class ConditionEmitter {
             guard = present ? CodeBlock.of("!$L.isEmpty()", local)
                 : CodeBlock.of("$L != null && !$L.isEmpty()", local, local);
         } else {
-            helpers.add(matchHelper(helper, tableClass, elements, at, counter));
+            helpers.add(matchHelper(helper, tableClass, elements, at, counter, columnValues));
             method.addStatement("$T $L = $L($L, $L)", CONDITION, local, helper, wire, alias);
             compare = CodeBlock.of("$L", local);
             guard = CodeBlock.of("$L != null", local);
@@ -372,7 +373,7 @@ public final class ConditionEmitter {
      * themselves where the element has one field; {@code null} where the wire value is no list.
      */
     private static MethodSpec rowsHelper(String name, ClassName tableClass, List<ConditionQuery.Term> elements,
-                                         int at, int[] counter) {
+                                         int at, int[] counter, ClassName columnValues) {
         boolean single = elements.size() == 1;
         var first = elements.getFirst();
         TypeName row = single ? type(first.column().bindingType()).orElseThrow().box()
@@ -393,7 +394,7 @@ public final class ConditionEmitter {
             .addStatement("rows.add($L)", nulls)
             .addStatement("continue")
             .endControlFlow();
-        var cells = cells(body, elements, at, counter);
+        var cells = cells(body, elements, at, counter, columnValues);
         body.addStatement("rows.add($L)", single ? CodeBlock.of("$L", cells.getFirst())
             : CodeBlock.of("$T.row(($T<?>) $T.of($L))", DSL, java.util.Collection.class, LIST,
                 CodeBlock.join(java.util.stream.IntStream.range(0, elements.size())
@@ -407,7 +408,7 @@ public final class ConditionEmitter {
      * {@code null} where the wire value is no list or an empty one.
      */
     private static MethodSpec matchHelper(String name, ClassName tableClass, List<ConditionQuery.Term> elements,
-                                          int at, int[] counter) {
+                                          int at, int[] counter, ClassName columnValues) {
         var conditions = ParameterizedTypeName.get(LIST, CONDITION);
         var body = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -421,7 +422,7 @@ public final class ConditionEmitter {
             .addStatement("anyOf.add($T.falseCondition())", DSL)
             .addStatement("continue")
             .endControlFlow();
-        var cells = cells(body, elements, at, counter);
+        var cells = cells(body, elements, at, counter, columnValues);
         body.addStatement("$T cells = new $T<>()", conditions, ARRAY_LIST);
         for (int i = 0; i < elements.size(); i++) {
             var element = elements.get(i);
@@ -440,14 +441,14 @@ public final class ConditionEmitter {
 
     /** Declares each element field's value off the element's map, typed at its column, and names them. */
     private static List<String> cells(MethodSpec.Builder body, List<ConditionQuery.Term> elements, int at,
-                                      int[] counter) {
+                                      int[] counter, ClassName columnValues) {
         var out = new ArrayList<String>();
         for (var element : elements) {
             var cell = "c" + (out.size() + 1);
             var type = type(element.column().bindingType()).orElseThrow();
             var column = CodeBlock.of("table.$L", element.column().javaName());
             var value = read("fields", element.names().subList(at + 1, element.names().size()), counter);
-            body.addStatement("$T $L = $L", type.box(), cell, typed(element, type, value, column, counter));
+            body.addStatement("$T $L = $L", type.box(), cell, typed(element, type, value, column, counter, columnValues));
             out.add(cell);
         }
         return out;
@@ -818,15 +819,25 @@ public final class ConditionEmitter {
     /**
      * The wire value {@code value} as the column's Java type: an enum on a column of a Java enum by the
      * constant of its name, graphql-java handing an enum value over as its name, and anything else
-     * through the column's own data type.
+     * through the column's own data type, by {@code ColumnValues.fromWire}, which bounds the value's
+     * size before jOOQ parses it.
      */
     private static CodeBlock typed(ConditionQuery.Term term, TypeName type, CodeBlock value, CodeBlock column,
-                                   int[] counter) {
+                                   int[] counter, ClassName columnValues) {
         if ("ENUM".equals(term.typeKind()) && !"java.lang.String".equals(term.column().bindingType())) {
             var name = "s" + ++counter[0];
             return CodeBlock.of("$L instanceof $T $L ? $T.valueOf($L) : null", value, String.class, name, type, name);
         }
-        return CodeBlock.of("$T.val($L, $L).getValue()", DSL, value, column);
+        return CodeBlock.of("$T.fromWire($L.getDataType(), $L)", columnValues, column, value);
+    }
+
+    /** The generated {@code ColumnValues} of the run, which every typed wire value is coerced through. */
+    private static ClassName columnValues(FillEmitter.Runtime runtime) {
+        if (runtime.decode() == null) {
+            throw new IllegalArgumentException("a condition types its wire values through the run's ColumnValues,"
+                + " and the runtime names no output package");
+        }
+        return no.sikt.graphitron.render.ColumnValuesRef.of(runtime.decode().outputPackage());
     }
 
     /**

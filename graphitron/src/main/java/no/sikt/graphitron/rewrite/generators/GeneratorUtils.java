@@ -111,7 +111,7 @@ class GeneratorUtils {
     // -----------------------------------------------------------------------
 
     /**
-     * The three JavaPoet {@link ClassName}s that every SQL-touching generator method resolves
+     * The JavaPoet {@link ClassName}s that every SQL-touching generator method resolves
      * from a {@link TableRef} and the return type name.
      *
      * <ul>
@@ -121,23 +121,37 @@ class GeneratorUtils {
      *       (e.g. {@code no.example.jooq.tables.Film})</li>
      *   <li>{@link #typeClass} — the generated Graphitron type class
      *       (e.g. {@code no.example.types.Film})</li>
+     *   <li>{@link #columnValues} — the generated {@code <outputPackage>.util.ColumnValues}, which a
+     *       client's wire value is coerced through before it binds at a column</li>
      * </ul>
      */
-    record ResolvedTableNames(ClassName tablesClass, ClassName jooqTableClass, ClassName typeClass) {
+    record ResolvedTableNames(ClassName tablesClass, ClassName jooqTableClass, ClassName typeClass,
+                              ClassName columnValues) {
 
         static ResolvedTableNames of(TableRef tableRef, String returnTypeName, String outputPackage) {
             return new ResolvedTableNames(
                 CatalogRefs.constantsClass(tableRef),
                 CatalogRefs.tableClass(tableRef),
-                ClassName.get(outputPackage + ".types", returnTypeName));
+                ClassName.get(outputPackage + ".types", returnTypeName),
+                no.sikt.graphitron.render.ColumnValuesRef.of(outputPackage));
         }
 
-        /** Resolves only {@link #tablesClass} and {@link #jooqTableClass} — use when the type class is not needed. */
-        static ResolvedTableNames ofTable(TableRef tableRef) {
+        /** Resolves all but {@link #typeClass} — use when the type class is not needed. */
+        static ResolvedTableNames ofTable(TableRef tableRef, String outputPackage) {
             return new ResolvedTableNames(
                 CatalogRefs.constantsClass(tableRef),
                 CatalogRefs.tableClass(tableRef),
-                null);
+                null,
+                no.sikt.graphitron.render.ColumnValuesRef.of(outputPackage));
+        }
+
+        /**
+         * {@code ColumnValues.fromWire(<dataType>, <value>)}: a client's wire {@code value} as a value
+         * of the column whose {@code DataType} is {@code dataType}, {@code null} where jOOQ's coercion
+         * answers none or the value is too large to parse at all.
+         */
+        CodeBlock fromWire(CodeBlock value, CodeBlock dataType) {
+            return CodeBlock.of("$T.fromWire($L, $L)", columnValues, dataType, value);
         }
 
         /**

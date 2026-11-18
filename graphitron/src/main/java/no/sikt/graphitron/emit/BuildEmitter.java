@@ -1,5 +1,7 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.render.ColumnValuesRef;
+
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
@@ -59,7 +61,7 @@ public final class BuildEmitter {
     /**
      * The helper that makes {@code build}'s jOOQ record from an input object's map: each column set
      * from the first of its fields the client sent, a value through the column's own conversion by
-     * {@code fromArray} and an explicit null as null, a column no field was sent for left untouched, so
+     * {@code fromArray}, bounded first by {@code ColumnValues.fromWire}, and an explicit null as null, a column no field was sent for left untouched, so
      * the record's dirty flags are what the client wrote. Every value is loaded before any explicit null
      * is set: each {@code fromArray} clears the dirty flag of a null already on a {@code NOT NULL}
      * column, so a null written first would not survive a later load. Then the node ids decoded
@@ -99,7 +101,8 @@ public final class BuildEmitter {
                             .endControlFlow();
                     } else {
                         method.beginControlFlow("if ($L.get($S) != null)", reach.map(), sent)
-                            .addStatement("out.fromArray(new $T[] {$L.get($S)}, $L)", Object.class, reach.map(), sent,
+                            .addStatement("out.fromArray(new $T[] {$T.fromWire($L.getDataType(), $L.get($S))}, $L)",
+                                Object.class, ColumnValuesRef.of(runtime.outputPackage()), field, reach.map(), sent,
                                 field)
                             .endControlFlow();
                     }
