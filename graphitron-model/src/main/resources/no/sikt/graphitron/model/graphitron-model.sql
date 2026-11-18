@@ -12601,20 +12601,41 @@ UNION ALL
 -- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
 -- rule, and every field of the type would be fetched both ways. A row beside an object of classes
 -- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
--- handed; an object of a table's own record, or of no class, is not.
+-- handed; an object of a table's own record, or of no class, is not. Two objects break it too: a
+-- write's payload, which graphitron builds and holds no class, returned by a @service as well,
+-- whose object is a class of its own, so the payload's fields would read two different objects.
+-- Where the type is also a row, the mix above is what is judged.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'fetchers'
-  FROM (SELECT graph_name, type_name FROM graphitron_result
-         GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
+  FROM (SELECT r.graph_name, r.type_name
+          FROM (SELECT graph_name, type_name FROM graphitron_result
+                 GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
+         WHERE NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
+                             WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
+                    AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                                      JOIN sql_table st ON st.record_class_fqn = rc.class_name
+                                      JOIN store_graph_source sg
+                                        ON sg.graph_name = rc.graph_name AND sg.source_name = st.source_name
+                                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name))
+        UNION
+        SELECT wf.graph_name, wf.named_type
+          FROM graphitron_producer w
+          JOIN graphitron_field wf
+            ON wf.graph_name = w.graph_name AND wf.type_name = w.type_name AND wf.field_name = w.field_name
+         WHERE w.kind IN ('INSERT', 'UPDATE', 'DELETE')
+           AND EXISTS (SELECT 1 FROM graphitron_producer sp
+                         JOIN graphitron_field sf
+                           ON sf.graph_name = sp.graph_name AND sf.type_name = sp.type_name
+                          AND sf.field_name = sp.field_name
+                        WHERE sp.graph_name = wf.graph_name AND sp.kind = 'SERVICE'
+                          AND sf.named_type = wf.named_type)
+           AND EXISTS (SELECT 1 FROM graphitron_result_class rc
+                        WHERE rc.graph_name = wf.graph_name AND rc.type_name = wf.named_type)
+           AND NOT EXISTS (SELECT 1 FROM graphitron_result x
+                            WHERE x.graph_name = wf.graph_name AND x.type_name = wf.named_type
+                              AND x.shape = 'ROW')) c
   JOIN graphql_ast_type_declaration_entry d
-    ON d.graph_name = r.graph_name AND d.name = r.type_name
- WHERE NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
-                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
-                              JOIN sql_table st ON st.record_class_fqn = rc.class_name
-                              JOIN store_graph_source sg
-                                ON sg.graph_name = rc.graph_name AND sg.source_name = st.source_name
-                             WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name))
+    ON d.graph_name = c.graph_name AND d.name = c.type_name
 UNION ALL
 -- A field whose union or interface lists an @error type, or whose type is one, but which is no errors
 -- field, at its declaration, by the first rule it breaks: every member @error, a list, and a list
@@ -29462,7 +29483,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
    '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
-   'A type is reached both as a row of a statement and as an object in memory that is not a class graphitron reads by accessor, so its fields would be fetched two ways; give each its own type.'),
+   'A type is reached both as a row of a statement and as an object in memory that is not a class graphitron reads by accessor, or as a write''s payload and as the object a @service returns, so its fields would be fetched two ways; give each its own type.'),
   ('FIELD_WITHOUT_FETCHER', 'error', 'GRAPHITRON', 'GRAPHITRON_FIELD_WITHOUT_FETCHER',
    'A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with.'),
   ('ERRORS_FIELD_MIXED_MEMBERS', 'error', 'GRAPHITRON', 'graphitron.error-channel.mixed-members',

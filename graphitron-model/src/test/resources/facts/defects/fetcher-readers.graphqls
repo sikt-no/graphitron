@@ -73,6 +73,12 @@ type PlainProp implements Prop { label: String }
 interface Shelf @table(name: "film") { title: String }
 
 type AddFilmPayload { film: Film }
+"Returned by an insert, which builds it and holds no class, and by a @service handing back its own FilmRecord: two objects."
+type SharedFilmPayload { film: Film }
+"Returned by two writes, both building it."
+type WrittenFilmPayload { film: Film }
+"Returned by a @service alone."
+type CarriedFilmPayload { film: Film }
 input FilmInput @table(name: "film") { title: String }
 
 type Query {
@@ -103,6 +109,13 @@ type Mutation {
   addFilmWithPayload(input: FilmInput): AddFilmPayload @mutation(typeName: INSERT)
   "Nothing written, so nothing runs: a mutation-root field with no fetcher."
   nothing: Film
+  createSharedFilm(input: FilmInput!): SharedFilmPayload @mutation(typeName: INSERT)
+  carrySharedFilm(id: Int!): SharedFilmPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  insertWrittenFilm(input: FilmInput!): WrittenFilmPayload @mutation(typeName: INSERT)
+  updateWrittenFilm(input: FilmInput!): WrittenFilmPayload @mutation(typeName: UPDATE)
+  carryFilm(id: Int!): CarriedFilmPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
 }
 
 extend schema @assertContains(relation: "graphitron_result", rows: """
@@ -194,6 +207,7 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   coordinate,       code
   Mutation.nothing, FIELD_WITHOUT_FETCHER
   RecordTexts,      RESULT_SHAPES_CONFLICT
+  SharedFilmPayload, RESULT_SHAPES_CONFLICT
   Query.pagedProps, FIELD_WITHOUT_FETCHER
   Query.propList,   FIELD_WITHOUT_FETCHER
   Film.props,       FIELD_WITHOUT_FETCHER
@@ -213,6 +227,8 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   Query.pagedMedia, FIELD_WITHOUT_FETCHER
   CarrierError, RESULT_SHAPES_CONFLICT
   Texts,        RESULT_SHAPES_CONFLICT
+  WrittenFilmPayload, RESULT_SHAPES_CONFLICT
+  CarriedFilmPayload, RESULT_SHAPES_CONFLICT
   Orphan.label, FIELD_WITHOUT_FETCHER
   Texts.en,     FIELD_WITHOUT_FETCHER
   """)
