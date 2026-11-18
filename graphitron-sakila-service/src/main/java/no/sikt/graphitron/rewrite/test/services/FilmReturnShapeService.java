@@ -75,4 +75,8 @@ public final class FilmReturnShapeService {
     public static Map<FilmRecord, List<FilmListRecord>> filmListByFilm(Set<FilmRecord> films) {
         return Map.of();
     }
+
+    public static Map<FilmListRecord, Integer> rankByFilmList(Set<FilmListRecord> listings) {
+        return Map.of();
+    }
 }

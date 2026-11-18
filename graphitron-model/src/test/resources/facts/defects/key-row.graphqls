@@ -21,8 +21,13 @@ type FilmPair {
 # StintBatch.stints() hands over stint records, and stint has no primary key to batch by.
 type StintBatch { stints: [Stint!]! }
 
-# film_list has no primary key to read the records the services hand back by.
-type FilmListing @table(name: "film_list") { title: String }
+# film_list has no primary key to read the records the services hand back by, nor to batch rank's
+# parents by: its keys are the listings' own records.
+type FilmListing @table(name: "film_list") {
+  title: String
+  rank: Int @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "rankByFilmList"})
+}
 type Film @table(name: "film") {
   title: String
   listings: [FilmListing!]! @service(service: {
@@ -53,6 +58,7 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   KEY_ROW_AMBIGUOUS,             FilmPair.keyCensus
   KEY_TABLE_WITHOUT_PRIMARY_KEY, StintBatch.stints
   KEY_TABLE_WITHOUT_PRIMARY_KEY, Film.listings
+  KEY_TABLE_WITHOUT_PRIMARY_KEY, FilmListing.rank
   KEY_TABLE_WITHOUT_PRIMARY_KEY, Query.listings
   KEY_TABLE_WITHOUT_PRIMARY_KEY, Mutation.touchListings
   """)
