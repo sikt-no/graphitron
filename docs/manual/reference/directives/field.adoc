@@ -46,6 +46,8 @@ type Query {
 
 Without the directive, the generator would look up a column called `active` on the `customer` table. Sakila's `customer` table happens to have one (an unused integer flag), so the filter would silently bind to the wrong column. `@field(name: "ACTIVEBOOL")` pins it to the right one.
 
+A filter's argument or input field that names no column of the table, under its own name or its `@field(name:)`, is compared by nothing, so the build fails at it with `COLUMN_UNRESOLVED`, naming the spelling, unless something else takes it: its own `@condition`, or an overriding condition or a call reading it.
+
 On an *input field* (a mutation), `@field` plays the same role. The columns resolve against the consuming mutation's write-target table (derived from the field's `Film` return type here; the input itself carries no directive):
 
 [source,graphql]

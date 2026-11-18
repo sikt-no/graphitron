@@ -19584,6 +19584,56 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                   AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
                 WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate)
 UNION ALL
+-- A filter's argument or input field that names no column, at the @field where one is written and at
+-- the declaration otherwise: under a field whose rows a filter reads, so no @service, write or
+-- routine, and returning a table-bound type, it binds no column or node id, nothing at or under it is
+-- taken, by its own @condition among the rest, and no step above it takes it, an overriding condition
+-- or a call reading the object; so no predicate compares it and the value a client sends goes nowhere.
+-- Its leaves only: an input object is judged by its fields. One built into a class or record is judged
+-- member by member, and a @lookupKey argument by the lookup's own rules. The detail is the spelling.
+SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column),
+       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name)), 'occurrence-tenants'
+  FROM graphitron_occurrence o
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_path_need_table n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
+  JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
+  JOIN graphitron_tabletype tt ON tt.graph_name = ff.graph_name AND tt.type_name = ff.named_type
+  LEFT JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND n.landing_table IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
+                    WHERE c.graph_name = o.graph_name AND c.parent_coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
+                      AND p.kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
+                    WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application lk
+                    WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
+                      AND lk.directive_name = 'lookupKey')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate)
+ GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column)
+UNION ALL
 -- An input field nothing takes, under the class its input object is built into (Alf, 2026-11-17):
 -- neither it nor anything inside it is taken (graphitron_occurrence_taken), a member of that class
 -- by the name the class matches on, exactly, case included, among them. Its value would reach
@@ -30093,7 +30143,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
    'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
-   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, or an ordering''s fields element names one, so there is nothing to select, write or sort by: the name is misspelt, or the column lives on another table.'),
+   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, or a filter''s argument or input field compares one the table it filters does not have, under its own name or the one @field(name:) gives it, or an ordering''s fields element names one, so there is nothing to select, write, compare or sort by: the name is misspelt, or the column lives on another table.'),
   ('MEMBER_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_UNRESOLVED',
    'A field read off an object names a member its class does not offer, under its own name or the one @field(name:) gives it: a record offers its components and any other class its get and is getters, so a bare accessor or a public field is no member, and there is nothing to read. Name a member the class offers, or give the class one.'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',

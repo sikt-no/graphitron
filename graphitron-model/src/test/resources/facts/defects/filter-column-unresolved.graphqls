@@ -1,0 +1,25 @@
+# A filter argument compares the column it names, and one naming no column of the table the field
+# filters is compared by nothing: the value a client sends goes nowhere. Query.filmsBy's bogus is
+# COLUMN_UNRESOLVED, the detail its spelling. An argument naming a column, rating through
+# @field(name:), draws nothing, and neither does one its own @condition takes. A filter's input field
+# naming no column is input-object-build's.
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  filmsBy(rating: String @field(name: "rating"), bogus: String): [Film!]! @defaultOrder(primaryKey: true)
+  filmsByTitlePrefix(titlePrefix: String @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)): [Film!]! @defaultOrder(primaryKey: true)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,              coordinate,            detail
+  COLUMN_UNRESOLVED, Query.filmsBy(bogus:), bogus
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,              coordinate
+  COLUMN_UNRESOLVED, Query.filmsBy(rating:)
+  COLUMN_UNRESOLVED, Query.filmsByTitlePrefix(titlePrefix:)
+  """)

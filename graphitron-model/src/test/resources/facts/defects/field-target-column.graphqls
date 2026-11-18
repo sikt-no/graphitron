@@ -76,9 +76,10 @@ type LangPlain {
   id: ID!
 }
 
-# An input type is no read; its deprecated @table binds it, and nothing here judges its fields.
+# An input type is no read; its deprecated @table binds nothing, and its field, a filter on
+# filteredFilms naming film's title, is compared like any filter's.
 input FilmFilter @table(name: "film") {
-  titel: String
+  title: String
 }
 
 type Language @table(name: "language") {
@@ -157,6 +158,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column", rows: """
   Film.title,                    public.film,              title,       SQL_NAME
   Film.twiceComposed,            public.actor,             first_name,  SQL_NAME
   Film.twoHop,                   public.actor,             first_name,  SQL_NAME
+  Query.filteredFilms(filter.title:), public.film,         title,       SQL_NAME
   Lang.info.name,                public.language,          name,        SQL_NAME
   Language.details.lastUpdate,   public.language,          last_update, SQL_NAME
   Query.filmDetailsBatch.filmId, public.film,              film_id,     SQL_NAME
