@@ -20994,6 +20994,24 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema
                       AND pk.table_name = r.table_name)
 UNION ALL
+-- A @service handing back records of a table whose primary key is too wide to lift them by, at the
+-- field: the records are read back through a derived table holding each one's position, its parent's
+-- and its key, a typed record of the key's columns and two more, and jOOQ types records up to the
+-- widest RecordN only. The detail is the table.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_KEY_TOO_WIDE_UNSUPPORTED', r.table_name, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN sql_primary_key pk
+    ON pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema AND pk.table_name = r.table_name
+ WHERE p.kind = 'SERVICE'
+   AND (SELECT COUNT(*) FROM sql_constraint_column kc
+         WHERE kc.source_name = pk.source_name AND kc.table_schema = pk.table_schema
+           AND kc.table_name = pk.table_name AND kc.constraint_name = pk.constraint_name) + 2
+       > (SELECT MAX(t.degree) FROM code_tuple_class t WHERE t.kind = 'RECORD')
+UNION ALL
 -- A GraphQL enum value a service parameter or input member takes as a constant of a Java enum that
 -- declares none of its name, at the parameter's field or the member's input field: the value is
 -- handed Enum.valueOf of its runtime name, its @field(name:) or else its own, which throws. Judged
@@ -28983,6 +29001,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A parameter of a method a @service or a @condition calls is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.'),
   ('KEY_ROW_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ROW_AMBIGUOUS',
    'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.'),
+  ('SERVICE_KEY_TOO_WIDE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_KEY_TOO_WIDE_UNSUPPORTED',
+   'A @service hands back records of a table whose primary key has more columns than its records can be read back by: each is lifted through a typed jOOQ record of its key and two more values, and jOOQ types records of at most 22. Return a table with a narrower key, or a type that binds no table.'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
    'Rows graphitron keys by their table''s primary key are of a table that has none: a field fetching its own rows under a parent holding an object is batched by the key table''s, and the records a @service hands back are read back by their own table''s. Give the table a primary key, or fetch the field another way.'),
   ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',
