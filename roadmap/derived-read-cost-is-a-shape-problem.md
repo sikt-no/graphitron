@@ -459,10 +459,13 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     `TypeFetcherEmissionContext`; `command.ConnectionClass`, `LauncherCommands.connectionClassAt`
     and the classified `totalCount` probe went. The truth table (synthesised, authored without
     `totalCount`, faceted, union, batched child, two connections sharing an edge) is
-    `scenarios/connection-classes`, read by `ConnectionClassPipelineTest`. Whether a type counts or
-    carries facets is not restated at the field's grain for the claim's sake (Alf, 2026-11-13): it
-    is the positions the type fills, so the document claims the wrappers and the positions and the
-    pipeline test the join; a field's wrapper now has the foreign key to `graphitron_connection`.
+    `scenarios/connection-classes`, read by `ConnectionClassPipelineTest`. The document claims
+    the wrappers and the positions and the pipeline test the join; a field's wrapper has the foreign
+    key to `graphitron_connection`. A connection type's shape (its class, the positions it fills,
+    its facets record's components) is a fact of the type; what fills `totalCount` and `facets` is a
+    fact of the producing occurrence, since two fields returning one connection type can take
+    different arguments and so run different count and facet queries: the shapes match but they
+    are not the same (Alf, 2026-11-18). The `@asFacet` node below stores it at that grain.
     `ConnectionProducersExecutionTest` calls the generated root, batched and union producers
     directly over `scenarios/connection-producers`. The schema-free emitted-
     text tests of connection fetchers went, each named covering test recorded in the commit.
@@ -478,15 +481,17 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
       `@asConnection` carriers and the fields returning an authored connection type, read from the
       transcribed SDL rather than the merged `graphitron_field` (which includes the minted set, a
       cycle). The facets mint keys off it.
-    * The facet list. `graphitron_connection_facet` (today a view over
-      `graphitron_facet_binding`, read by the view `graphitron_carrier_facet_mint`) is stored at the
-      carrier field's grain, one row per carrier per facet position; the facets type is a function
-      of the declared field's arguments, so the field is its finest grain.
+    * The facet list. `graphitron_facet_binding` and `graphitron_connection_facet` are stored, the
+      latter at the `@asConnection` carrier's grain. What fills a connection's `totalCount` and
+      `facets` is the producing occurrence's (Alf, 2026-11-18), so the facets an occurrence surfaces,
+      from its own filter arguments, and whether it counts are stated per connection-producing
+      occurrence, for every field returning a connection, and the type contributes only the shape
+      they must fill.
     * The agreement. Every producer of one connection type must state the same facets: facet name,
       value type, nullability and position, what the minted type states; the filter argument and
       the column are the producer's own and not compared (working default). The occurrence-producers
-      stage states the disagreement as a defect at the producing field, flagging every producer of
-      the type, not those differing from a first one (working default). A producer with no facets
+      stage states the disagreement as a defect at the producing occurrence, flagging every producer
+      of the type, not those differing from a first one (working default). A producer with no facets
       for a faceted type disagrees too.
     * Authored `facets` fields. An authored connection declaring a `facets` field is refused, with
       `@asFacet` producers (graphitron owns the shape) and without (nothing backs it; it reaches the
@@ -503,8 +508,8 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
       declaration anyone wrote; whether the first-occurrence-wins dedup of a duplicate facet name
       across a carrier's filter inputs (`ConnectionPromoter.facetSpecsFor`) becomes a detection; and
       the derived stratum's provenance, the capture-side macro domains carrying no FACET value.
-    Found by probe (2026-11-13): the store unions differing facet sets into one facets type and
-    marks every producer of a faceted type faceted; the classifier alone refuses a disagreement.
+    Found by probe (2026-11-13): the store unioned differing facet sets into one facets type and
+    marked every producer of a faceted type faceted; the classifier alone refused a disagreement.
   * **The runtime connection vocabulary goes** `open`.
     `RESULT_EXPRESSION` and `ResultShape.Connection` go, with the retirement sweep, as does the
     store answer's carriage on `LauncherRelation` and `TypeFetcherEmissionContext` where the
