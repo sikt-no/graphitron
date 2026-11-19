@@ -444,7 +444,7 @@ public final class FactDocuments {
             var excluded = strings(directive, "lintExcludedTypes");
             var lint = disabled.isEmpty() && excluded.isEmpty()
                 ? LintConfig.empty()
-                : LintConfig.validated(new LinkedHashSet<>(disabled), excluded);
+                : new LintConfig(new LinkedHashSet<>(disabled), excluded);
             var handle = string(directive, "sessionHandle");
             var session = !bool(directive, "sessionState") && handle.isEmpty()
                 ? SessionStateConfig.none()

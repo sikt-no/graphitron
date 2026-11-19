@@ -1,0 +1,29 @@
+# A warning's code named among the disabled rules is suppressed wherever it stands: the site keeps
+# the defect and marks it suppressed, and the diagnostic view, which the editor and the MCP server
+# read, and the build log leave it out. An error is never suppressed, so the shadowed id beside it is
+# reported as before. node-metadata-unreadable is this document unconfigured; the defects themselves
+# are pinned there.
+extend schema @withConfiguration(lintDisabledRules: ["NODE_METADATA_UNREADABLE"])
+
+interface Node { id: ID! }
+
+type Half implements Node @table(name: "node_metadata_half") @node { id: ID! }
+
+type Query {
+  halves: [Half!]!
+}
+
+extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """
+  rule_id
+  NODE_METADATA_UNREADABLE
+  """)
+
+extend schema @assertAbsent(relation: "diagnostic", rows: """
+  lsp_code
+  GRAPHITRON_NODE_METADATA_UNREADABLE
+  """)
+
+extend schema @assertContains(relation: "diagnostic", rows: """
+  lsp_code,                          severity
+  GRAPHITRON_NODE_ID_SHADOWS_COLUMN, error
+  """)

@@ -37,7 +37,7 @@ class LintSuppressionDiagnosticsParityTest {
     @Test
     void buildSuppressedFindingDoesNotReplayAsSquiggle(@TempDir Path tmp) {
         var diags = diagnosticsWith(tmp,
-            LintConfig.validated(Set.of("field-names-camel-case"), List.of()));
+            new LintConfig(Set.of("field-names-camel-case"), List.of()));
 
         assertThat(diags)
             .as("the build-suppressed field-names-camel-case finding does not squiggle in the editor")

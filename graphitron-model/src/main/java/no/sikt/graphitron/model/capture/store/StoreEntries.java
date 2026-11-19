@@ -30,6 +30,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTBOX;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY;
@@ -147,6 +148,7 @@ public final class StoreEntries {
         config.tenantColumn().ifPresent(column -> tenantColumn(dsl, graph, column, touchedAt));
         config.maxAllowedPageSize().ifPresent(max -> maxAllowedPageSize(dsl, graph, max, touchedAt));
         lintExcludedTypes(dsl, graph, config.lint(), touchedAt);
+        lintDisabledRules(dsl, graph, config.lint(), touchedAt);
         sessionState(dsl, graph, config.sessionState(), touchedAt);
         outbox(dsl, graph, config.outbox(), touchedAt);
         dependencies(dsl, graph, classpath, touchedAt);
@@ -165,7 +167,8 @@ public final class StoreEntries {
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
-        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_SUPPLIED, STORE_GRAPH_SESSION_HANDLE,
+        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_SESSION_SUPPLIED,
+        STORE_GRAPH_SESSION_HANDLE,
         STORE_GRAPH_OUTBOX, STORE_GRAPH_OUTBOX_ROLE, STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY,
         STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
 
@@ -417,6 +420,24 @@ public final class StoreEntries {
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TYPE_PATTERN, excluded(t.TYPE_PATTERN))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The rule ids the author disabled, a lint rule's or a warning-severity defect's code, keyed by
+     * the id: the configured value is a set.
+     */
+    private static void lintDisabledRules(DSLContext dsl, String graph, LintConfig lint,
+                                          LocalDateTime touchedAt) {
+        var t = STORE_GRAPH_LINT_DISABLED_RULE;
+        var rows = lint.disabledRuleIds().stream().sorted().collect(Rows.toRowList(
+            id -> val(graph, t.GRAPH_NAME),
+            id -> val(id, t.RULE_ID),
+            id -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.RULE_ID, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 

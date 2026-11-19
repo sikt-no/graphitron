@@ -28,7 +28,8 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  *
  * <p>{@code defects/node-metadata-unreadable} holds the one warning-severity code today,
  * {@code NODE_METADATA_UNREADABLE}, beside an error, so its round is refused and still logs the
- * warning.
+ * warning. {@code defects/warning-disabled} is the same graph with the code among the disabled
+ * rules, which the build does not log.
  */
 @PipelineTier
 class StoredWarningBuildLogPipelineTest {
@@ -56,6 +57,24 @@ class StoredWarningBuildLogPipelineTest {
             .filteredOn(m -> m.contains("NODE_METADATA_UNREADABLE"))
             .singleElement()
             .satisfies(m -> assertThat(m).contains(": warning: "));
+    }
+
+    @Test
+    void aSuppressedWarningDefectIsNotLogged(@TempDir Path tmp) {
+        var ctx = context(tmp);
+        var logger = (Logger) LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            FACTS.read("defects/warning-disabled", graph -> catchThrowable(() ->
+                new GraphQLRewriteGenerator(ctx, graph.handle(), graph.schema()).validate()));
+        } finally {
+            logger.detachAppender(appender);
+        }
+        assertThat(appender.list)
+            .extracting(ILoggingEvent::getFormattedMessage)
+            .noneMatch(m -> m.contains("NODE_METADATA_UNREADABLE"));
     }
 
     @Test

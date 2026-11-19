@@ -292,7 +292,7 @@ class StoreEmittedFederationSchemaPipelineTest {
         var ctx = context(tmp,
             input(tmp, "stable.graphqls", LINK + NODE + STABLE_CARRIER, "stable"),
             input(tmp, "experimental.graphqls", EXPERIMENTAL_CARRIER, "experimental"))
-            .withLintConfig(LintConfig.validated(
+            .withLintConfig(new LintConfig(
                 Set.of(LintRule.SHARED_TYPE_TAGS_NARROWED.id()), List.of()));
 
         assertThat(narrowedFindings(ctx)).isEmpty();

@@ -42,22 +42,30 @@ public record LintConfig(Set<String> disabledRuleIds, List<String> excludedTypeP
     }
 
     /**
-     * Builds a config, validating every disabled rule id against {@link LintRule#ids()}. Config
-     * identity is typed against the rule enum: an id that resolves to no rule is a typo the build must
-     * not silently ignore, so this throws {@link IllegalArgumentException} naming the offending id(s)
-     * and listing the valid ones. The Maven seam turns that into a build failure.
+     * Checks every disabled rule id against what may be disabled: a lint rule's id or a
+     * warning-severity defect's code, the codes being the store's ({@code graphitron_defect_type}),
+     * so this runs once the store is open. An id naming neither is a typo the build must not silently
+     * ignore, and the failure lists every id it accepts, so a retired id meets its successor there;
+     * an error's code is refused on its own, an error never being silenced (Alf, 2026-11-19).
      */
-    public static LintConfig validated(Set<String> disabledRuleIds, List<String> excludedTypePatterns) {
-        var known = LintRule.ids();
+    public void check(Set<String> warningCodes, Set<String> errorCodes) {
+        var errors = disabledRuleIds.stream().filter(errorCodes::contains).sorted().toList();
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException("<disabledRules> names error code(s) "
+                + String.join(", ", errors) + ", which cannot be disabled: an error stops the build"
+                + " whatever the configuration says.");
+        }
+        var lintIds = LintRule.ids();
         var unknown = disabledRuleIds.stream()
-            .filter(id -> !known.contains(id))
+            .filter(id -> !lintIds.contains(id) && !warningCodes.contains(id))
             .sorted()
             .toList();
         if (!unknown.isEmpty()) {
             throw new IllegalArgumentException(
                 "Unknown lint rule id(s) in <disabledRules>: " + String.join(", ", unknown)
-                    + ". Valid rule ids are: " + String.join(", ", known) + ".");
+                    + ". Valid rule ids are the lint rules " + String.join(", ", lintIds)
+                    + " and the warning codes " + String.join(", ", warningCodes.stream().sorted().toList())
+                    + ".");
         }
-        return new LintConfig(disabledRuleIds, excludedTypePatterns);
     }
 }

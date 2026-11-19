@@ -83,7 +83,7 @@ class LintSuppressionPipelineTest {
             .as("control: the rule fires when nothing is disabled").isTrue();
 
         var disabled = report(tmp.resolve("b.graphqls"), sdl,
-            LintConfig.validated(Set.of("field-names-camel-case"), List.of()));
+            new LintConfig(Set.of("field-names-camel-case"), List.of()));
         assertThat(lintFindings(disabled))
             .as("the disabled rule no longer appears in the report")
             .noneMatch(f -> f.rule() == LintRule.FIELD_NAMES_CAMEL_CASE);
@@ -106,7 +106,7 @@ class LintSuppressionPipelineTest {
             """;
 
         var report = report(tmp.resolve("c.graphqls"), sdl,
-            LintConfig.validated(Set.of(), List.of("Film")));
+            new LintConfig(Set.of(), List.of("Film")));
 
         assertThat(hasRuleForNode(report, LintRule.FIELD_NAMES_CAMEL_CASE, "original_language_id"))
             .as("the excluded type produces no engine finding").isFalse();
@@ -124,7 +124,7 @@ class LintSuppressionPipelineTest {
             """;
 
         var report = report(tmp.resolve("d.graphqls"), sdl,
-            LintConfig.validated(Set.of(), List.of("Fi*m")));
+            new LintConfig(Set.of(), List.of("Fi*m")));
         assertThat(hasRuleForNode(report, LintRule.FIELD_NAMES_CAMEL_CASE, "original_language_id"))
             .as("a glob pattern excludes the matching type").isFalse();
     }
@@ -149,7 +149,7 @@ class LintSuppressionPipelineTest {
             .anyMatch(f -> f.rule() == LintRule.JOOQ_VERSION_LAG && f.location() == null);
 
         var disabled = report(tmp.resolve("i.graphqls"), sdl,
-            LintConfig.validated(Set.of("jooq-version-lag"), List.of()), versions);
+            new LintConfig(Set.of("jooq-version-lag"), List.of()), versions);
         assertThat(lintFindings(disabled))
             .as("the same build with the rule id disabled says nothing")
             .noneMatch(f -> f.rule() == LintRule.JOOQ_VERSION_LAG);
@@ -176,7 +176,7 @@ class LintSuppressionPipelineTest {
             .as("control: the classifier advisory fires").isTrue();
 
         var disabled = report(tmp.resolve("f.graphqls"), sdl,
-            LintConfig.validated(Set.of("splitquery-redundant-on-record-parent"), List.of()));
+            new LintConfig(Set.of("splitquery-redundant-on-record-parent"), List.of()));
         assertThat(lintFindings(disabled))
             .as("disabling a Source.CLASSIFIER rule id suppresses its advisory, so the filter sits on "
                 + "the combined BuildWarning channel and not inside the engine's AST walk")
@@ -202,7 +202,7 @@ class LintSuppressionPipelineTest {
             """;
 
         var report = report(tmp.resolve("g.graphqls"), sdl,
-            LintConfig.validated(Set.of(), List.of("FilmDetails")));
+            new LintConfig(Set.of(), List.of("FilmDetails")));
 
         assertThat(hasRuleForNode(report, LintRule.TYPES_AND_FIELDS_HAVE_DESCRIPTIONS, "FilmDetails"))
             .as("the engine finding on the excluded type is gone").isFalse();

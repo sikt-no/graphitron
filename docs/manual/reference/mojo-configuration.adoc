@@ -115,7 +115,7 @@ The following parameters apply to every goal:
 | `lint`
 | `LintBinding`
 | (none)
-| Lint suppression. A `<lint>` block naming rule ids to silence everywhere (`<disabledRules>`) and type-name globs to skip in the SDL lint engine (`<excludedTypes>`). Applied build-side, so the build log, the `graphitron:dev` editor squiggles, and the MCP `diagnostics` tool suppress identically. A disabled rule id that resolves to no rule fails the build with the list of valid ids. Omit the block to lint every author-owned type with every rule. See xref:#silencing-lint-warnings[Silencing lint warnings].
+| Lint suppression. A `<lint>` block naming rule ids to silence everywhere (`<disabledRules>`) and type-name globs to skip in the SDL lint engine (`<excludedTypes>`). Applied build-side, so the build log, the `graphitron:dev` editor squiggles, and the MCP `diagnostics` tool suppress identically. A disabled rule id that resolves to no rule or warning code fails the build with the list of valid ids. Omit the block to lint every author-owned type with every rule. See xref:#silencing-lint-warnings[Silencing lint warnings].
 
 | `sessionState`
 | `SessionStateBinding`
@@ -281,7 +281,7 @@ Graphitron's schema linter reports style and convention warnings (naming, missin
 </configuration>
 ----
 
-Rule ids are the kebab-case names shown in each warning and in the `graphitron:diagnostics` MCP tool. A misspelled rule id fails the build with the list of valid ids.
+Rule ids are the names shown in each warning and in the `graphitron:diagnostics` MCP tool: a lint rule's kebab-case name, or a warning code such as `NODE_METADATA_UNREADABLE`, which `disabledRules` and `excludedTypes` silence alike (Alf, 2026-11-19). A misspelled rule id fails the build with the list of valid ids, lint rules and warning codes both. An error code cannot be disabled: an error stops the build whatever the configuration says.
 
 `disabledRules` silences a rule everywhere it would fire: the build log, your editor's squiggles, and the MCP diagnostics tool. `excludedTypes` skips the matching types for every rule that has a type name to match against (glob syntax: `*` matches any run of characters, `?` one character), which is the schema linter's own checks and the rules derived from your database's keys, such as xref:directives/reference.adoc#duplicate-rows-through-a-junction[`reference-path-fans-out`]. A handful of advisories come from graphitron's schema classifier rather than the linter (for example `redundant-record-directive`, or `dml-write-length-unrouted`, which names a payload-returning `@mutation` that writes length-bounded columns while no `@error` type on its payload declares `{handler: VALIDATION}`, so the xref:../how-to/error-channel.adoc#column-length-check[column-length check] is off); these are not tied to a single type name, so they are silenced by rule id in `disabledRules`, not by `excludedTypes`.
 

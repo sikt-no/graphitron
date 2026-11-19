@@ -120,7 +120,7 @@ class RecordValidationPipelineTest {
     @Test
     void theRuleIdSuppressesTheFinding(@TempDir Path tmp) throws IOException {
         assertThat(unchecked(validateOnly(tmp, CHANNEL + FIELDS,
-            LintConfig.validated(Set.of("validation-column-unchecked"), List.of()), true))).isEmpty();
+            new LintConfig(Set.of("validation-column-unchecked"), List.of()), true))).isEmpty();
     }
 
     // ===== Helpers =====

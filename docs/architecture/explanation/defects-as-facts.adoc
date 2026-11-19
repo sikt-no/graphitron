@@ -25,6 +25,9 @@ emitted, so an author meets the stored defect and never a second account of the 
 reports the same verdict and keeps running. A warning-severity defect shows in the editor and the
 MCP server, is logged by the build in the form its warnings take, and does not stop it; it is not one
 of the build's warnings, so the editor shows it once, through its own entry in the diagnostic view.
+The author's `<lint>` configuration silences a warning, never an error, by its code among the
+disabled rules or its type among the excluded globs: the defect is still stored, and its site says
+it is suppressed, which the build and the diagnostic view both read (Alf, 2026-11-19).
 
 A shape the store cannot state completely is a defect, even where a build used to generate something
 for it: a defect is better than a data loss (Alf, 2026-11-16). An input field of an input object built

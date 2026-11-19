@@ -54,7 +54,8 @@ public final class EntryDefectVerdict {
 
     /**
      * The graph's defects of one severity, {@code error} or {@code warning}, in document and position
-     * order, each read alike. A defect on an {@code argMapping} string states no detail of its own;
+     * order, each read alike, a warning the author's {@code <lint>} configuration silences left out
+     * as the diagnostic view leaves it out. A defect on an {@code argMapping} string states no detail of its own;
      * its offending entries are rows under it, joined here in written order as the detail the
      * message quotes.
      */
@@ -78,7 +79,7 @@ public final class EntryDefectVerdict {
             .join(t).on(t.CODE.eq(d.CODE))
             .leftJoin(h).on(h.GRAPH_NAME.eq(d.GRAPH_NAME), h.SOURCE_NAME.eq(d.SOURCE_NAME),
                 h.SOURCE_LINE.eq(d.SOURCE_LINE), h.SOURCE_COLUMN.eq(d.SOURCE_COLUMN), h.CODE.eq(d.CODE))
-            .where(d.GRAPH_NAME.eq(graphName), t.SEVERITY.eq(severity))
+            .where(d.GRAPH_NAME.eq(graphName), t.SEVERITY.eq(severity), d.SUPPRESSED.isFalse())
             .orderBy(d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE)
             .fetch(r -> new Row(r.value1(), r.value2(),
                 r.value3() != null || r.value7() == null || r.value8() == null || r.value9() == null
@@ -88,6 +89,13 @@ public final class EntryDefectVerdict {
                 r.value6(), r.value8() == null || r.value9() == null
                     ? null
                     : new SourceLocation(r.value8(), r.value9(), r.value7())));
+    }
+
+    /** The defect codes of one severity, {@code warning} or {@code error}, as {@code graphitron_defect_type} states them. */
+    public static Set<String> codes(DSLContext dsl, String severity) {
+        return dsl.select(GRAPHITRON_DEFECT_TYPE.CODE).from(GRAPHITRON_DEFECT_TYPE)
+            .where(GRAPHITRON_DEFECT_TYPE.SEVERITY.eq(severity))
+            .fetchSet(GRAPHITRON_DEFECT_TYPE.CODE);
     }
 
     /**

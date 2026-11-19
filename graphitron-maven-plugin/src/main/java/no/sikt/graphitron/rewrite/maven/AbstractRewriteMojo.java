@@ -561,21 +561,16 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * An unknown disabled rule id is a typo the build must not silently ignore, so
-     * {@link LintConfig#validated} throws and this surfaces it as a build failure carrying the
-     * list of valid ids.
+     * The {@code <lint>} block as written. Its disabled rule ids are checked once the store is open,
+     * by {@link LintConfig#check}, since a warning-severity defect's code is the store's to know.
      */
-    private LintConfig buildLintConfig() throws MojoExecutionException {
+    private LintConfig buildLintConfig() {
         if (lint == null) {
             return LintConfig.empty();
         }
         var disabled = trimmedNonBlank(lint.disabledRules).collect(Collectors.toCollection(LinkedHashSet::new));
         var excluded = trimmedNonBlank(lint.excludedTypes).toList();
-        try {
-            return LintConfig.validated(disabled, excluded);
-        } catch (IllegalArgumentException e) {
-            throw new MojoExecutionException(e.getMessage(), e);
-        }
+        return new LintConfig(disabled, excluded);
     }
 
     /**

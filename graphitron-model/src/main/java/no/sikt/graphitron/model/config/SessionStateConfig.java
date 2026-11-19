@@ -15,7 +15,7 @@ import java.util.Optional;
  * <p>Config-shape defects (a blank {@code <handle>}, a leftover {@code <mount>} or
  * {@code <unmount>}) are validated in {@link #from}, which throws {@link IllegalArgumentException}
  * naming the offending element; the Maven seam ({@code AbstractRewriteMojo.buildSessionStateConfig})
- * turns that into a build failure, mirroring the {@code LintConfig.validated} precedent. A
+ * turns that into a build failure, mirroring the {@code LintConfig.check} precedent. A
  * {@code pom.xml} defect has no SDL coordinate, so it is validated here rather than routed
  * through the schema validator.
  */

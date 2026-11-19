@@ -140,7 +140,7 @@ class ReferencePathFanoutPipelineTest {
     @Test
     void theRuleIdSuppressesTheFinding(@TempDir Path tmp) throws IOException {
         assertThat(fanoutFindings(report(tmp, FANNING,
-            LintConfig.validated(Set.of("reference-path-fans-out"), List.of()))))
+            new LintConfig(Set.of("reference-path-fans-out"), List.of()))))
             .isEmpty();
     }
 
@@ -152,7 +152,7 @@ class ReferencePathFanoutPipelineTest {
     @Test
     void anExcludedTypeIsNotLintedByThisRuleEither(@TempDir Path tmp) throws IOException {
         assertThat(fanoutFindings(report(tmp, FANNING,
-            LintConfig.validated(Set.of(), List.of("Fi*m")))))
+            new LintConfig(Set.of(), List.of("Fi*m")))))
             .isEmpty();
     }
 

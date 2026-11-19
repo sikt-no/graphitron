@@ -524,6 +524,15 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
+     * The {@code <lint>} block's disabled rule ids, against the lint rules and the store's defect
+     * codes: an unknown id or an error's code fails the run before anything is judged.
+     */
+    private void checkLintConfig() {
+        ctx.lintConfig().check(EntryDefectVerdict.codes(store.dsl(), "warning"),
+            EntryDefectVerdict.codes(store.dsl(), "error"));
+    }
+
+    /**
      * The store's warning-severity defects, each in the message the build's errors take: logged by
      * the build, read by the editor and the MCP server off the diagnostic view, one statement apiece.
      */
@@ -554,6 +563,7 @@ public class GraphQLRewriteGenerator {
      * result; see the class javadoc for why there is one body rather than one per entry point.
      */
     private PassProducts runPipeline(Projection projection) {
+        checkLintConfig();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var attributed = AttributedRegistry.of(schemas.written(), jooq, store);
         // A document the loading rewrites refuse is refused as that, before its entries are judged.

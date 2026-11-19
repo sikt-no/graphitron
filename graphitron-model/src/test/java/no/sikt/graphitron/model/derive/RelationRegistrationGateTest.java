@@ -82,7 +82,7 @@ class RelationRegistrationGateTest {
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
             "store_graph_max_allowed_page_size",
             "store_graph_outbox", "store_graph_outbox_role", "store_graph_outbox_payload_entry",
-            "store_graph_lint_excluded_type",
+            "store_graph_lint_excluded_type", "store_graph_lint_disabled_rule",
             "store_graph_session_supplied", "store_graph_session_handle", "store_graph_dependency",
             "store_graph_module", "store_graph_module_entry",
             "store_graph_source",

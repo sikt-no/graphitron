@@ -1,0 +1,23 @@
+# A warning on a type an excluded glob matches is suppressed, as the lint engine skips the type: the
+# site keeps the defect and marks it suppressed, and the diagnostic view leaves it out. An error on
+# the same type is never suppressed. node-metadata-unreadable is this document unconfigured; the
+# defects themselves are pinned there.
+extend schema @withConfiguration(lintExcludedTypes: ["Ha*"])
+
+interface Node { id: ID! }
+
+type Half implements Node @table(name: "node_metadata_half") @node { id: ID! }
+
+type Query {
+  halves: [Half!]!
+}
+
+extend schema @assertAbsent(relation: "diagnostic", rows: """
+  lsp_code
+  GRAPHITRON_NODE_METADATA_UNREADABLE
+  """)
+
+extend schema @assertContains(relation: "diagnostic", rows: """
+  lsp_code,                          severity
+  GRAPHITRON_NODE_ID_SHADOWS_COLUMN, error
+  """)

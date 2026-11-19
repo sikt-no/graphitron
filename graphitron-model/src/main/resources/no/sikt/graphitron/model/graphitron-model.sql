@@ -279,6 +279,18 @@ COMMENT ON COLUMN store_graph_lint_excluded_type.ordinal IS 'position in the con
 COMMENT ON COLUMN store_graph_lint_excluded_type.type_pattern IS 'the type-name glob as configured';
 COMMENT ON COLUMN store_graph_lint_excluded_type.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
+CREATE TABLE store_graph_lint_disabled_rule (
+  graph_name VARCHAR   NOT NULL,
+  rule_id    VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, rule_id),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_lint_disabled_rule IS 'One id a graph''s build names in <lint><disabledRules>: a lint rule''s id or a warning-severity defect''s code. For example <disabledRules><rule>NODE_METADATA_UNREADABLE</rule></disabledRules> is one row reading that code, and a build disabling nothing has none.';
+COMMENT ON COLUMN store_graph_lint_disabled_rule.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_lint_disabled_rule.rule_id IS 'the rule id as configured: a lint_rule id or a graphitron_defect_type code';
+COMMENT ON COLUMN store_graph_lint_disabled_rule.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are ids the configuration no longer disables';
+
 CREATE TABLE store_graph_session_supplied (
   graph_name VARCHAR   NOT NULL,
   touched_at TIMESTAMP NOT NULL,
@@ -10244,7 +10256,7 @@ COMMENT ON COLUMN graphitron_entry_defect_path_step.touched_at IS 'when the read
 
 CREATE VIEW graphitron_entry_defect_site
   (graph_name, source_name, source_line, source_column, code, detail,
-   coordinate, type_name, field_name) AS
+   coordinate, type_name, field_name, suppressed) AS
 -- The element a defect's position is about, in fixed hops: a declaration is its own element, a
 -- directive application's element is its parent, an applied argument's is its application's, and
 -- a value's is reached through the node holding it. A holder is an applied argument when the value
@@ -10252,11 +10264,25 @@ CREATE VIEW graphitron_entry_defect_site
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.code, d.detail,
        el.coordinate,
        CASE WHEN ef.coordinate IS NULL THEN el.coordinate ELSE ef.type_name END,
-       ef.field_name
+       ef.field_name,
+       -- A warning the author's <lint> configuration silences, by its code among the disabled rules
+       -- or by its type matching an excluded glob, translated to a LIKE pattern as lint_violation
+       -- translates it (Alf, 2026-11-19). Still a stored fact, so only its readers drop it; an
+       -- error is never silenced.
+       CASE WHEN t.severity = 'warning'
+             AND (EXISTS (SELECT 1 FROM store_graph_lint_disabled_rule dr
+                           WHERE dr.graph_name = d.graph_name AND dr.rule_id = d.code)
+                  OR EXISTS (SELECT 1 FROM store_graph_lint_excluded_type x
+                              WHERE x.graph_name = d.graph_name
+                                AND CASE WHEN ef.coordinate IS NULL THEN el.coordinate ELSE ef.type_name END
+                                    LIKE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(x.type_pattern,
+                                      '!', '!!'), '%', '!%'), '_', '!_'), '*', '%'), '?', '_') ESCAPE '!'))
+            THEN TRUE ELSE FALSE END
   -- One finding per position and code however many stages raised it, two stages raising one rule
   -- wording it alike, so the stage is all that is collapsed.
   FROM (SELECT DISTINCT graph_name, source_name, source_line, source_column, code, detail
           FROM graphitron_entry_defect) d
+  JOIN graphitron_defect_type t ON t.code = d.code
   JOIN graphql_ast_entry n
     ON n.graph_name = d.graph_name AND n.source_name = d.source_name
    AND n.source_line = d.source_line AND n.source_column = d.source_column
@@ -10295,6 +10321,7 @@ COMMENT ON VIEW graphitron_entry_defect_site IS 'One finding an author reads, wi
 -- COMMENT ON COLUMN graphitron_entry_defect_site.coordinate IS 'the element the position is about, as graphql_ast_element_entry spells it: a type, a field, an argument or an input field, or $schema for the schema block';
 -- COMMENT ON COLUMN graphitron_entry_defect_site.type_name IS 'the type owning that element, or the element itself where it is a type';
 -- COMMENT ON COLUMN graphitron_entry_defect_site.field_name IS 'the field that element is or belongs to, NULL where it is a type';
+-- COMMENT ON COLUMN graphitron_entry_defect_site.suppressed IS 'whether the author''s <lint> configuration silences this warning, by its code among the disabled rules or its type among the excluded globs; the build and the diagnostic view drop a suppressed row, and an error is never one';
 
 -- Where an occurrence chain starts: a field of an object type that is a root, is table-bound or is
 -- targeted by no output field, a connection type being targeted by the field that returns it, and a
@@ -28795,7 +28822,9 @@ SELECT d.graph_name, 'schema', t.severity, t.basis <> 'UNSUPPORTED',
   JOIN graphitron_defect_type t ON t.code = d.code
   LEFT JOIN graphitron_entry_defect_hint dh
     ON dh.graph_name = d.graph_name AND dh.source_name = d.source_name
-   AND dh.source_line = d.source_line AND dh.source_column = d.source_column AND dh.code = d.code;
+   AND dh.source_line = d.source_line AND dh.source_column = d.source_column AND dh.code = d.code
+ -- A warning the author's <lint> configuration silences is no diagnostic, as the build logs none.
+ WHERE NOT d.suppressed;
 COMMENT ON VIEW diagnostic IS 'The diagnostic relations'' one read surface: the union of all six arms (the rejection residue, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle, the written-entry arm, a claim conflict among the entry defects), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are the residue''s own directive child under its key and an entry defect''s claims under the defect''s, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
 -- COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
 -- COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm, classpath for a workspace module the run read stale';
@@ -30060,6 +30089,9 @@ INSERT INTO meta_grain VALUES
   ('graph-max-page-size',
    'one graph whose build declares a largest page its connections return',
    'graph_name', 'configuration'),
+  ('graph-lint-disabled-rule',
+   'one rule id one graph''s build names among its disabled lint rules',
+   'graph_name, rule_id', 'configuration'),
   ('graph-session-supplied',
    'one graph whose build declares that its session identity is supplied per request',
    'graph_name', 'configuration'),
@@ -31730,6 +31762,10 @@ INSERT INTO meta_relation VALUES
    'The largest page any connection of one graph returns, as its build declared it in <maxAllowedPageSize>.',
    'For example a build setting the parameter to 1000 is one row reading 1000, and a build that sets none has no row.',
    'Configuration rather than a reading, and generation policy the store reads: the minted first argument''s default is lowered to it and an authored default above it is a defect, both of which are views, so the maximum is a row they can join rather than a value only the generator holds. Its own graph-keyed relation, on store_graph_tenant_column''s terms: single-valued, optional and run-owned, so row presence is the fact and a build with no maximum has no row.'),
+  ('store_graph_lint_disabled_rule', 'graph-lint-disabled-rule', 'store',
+   'One id a graph''s build names in <lint><disabledRules>: a lint rule''s id or a warning-severity defect''s code.',
+   'For example <disabledRules><rule>NODE_METADATA_UNREADABLE</rule></disabledRules> is one row reading that code, and a build disabling nothing has none.',
+   'Configuration rather than a reading, transcribed as written: the generator checks each id against the lint rules and graphitron_defect_type once the store is open, so an unknown id or an error''s code fails the run rather than landing as a fact a view must doubt. A set, unlike the excluded types, the configured order meaning nothing. graphitron_entry_defect_site reads it to mark a warning suppressed, which the diagnostic view and the build log drop.'),
   ('store_graph_session_supplied', 'graph-session-supplied', 'store',
    'One graph whose session identity is supplied per request, as its build declared it with a <sessionState> block.',
    'For example a build with <sessionState/> in its POM is one row, and a build with no block has none.',
