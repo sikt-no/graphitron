@@ -218,7 +218,13 @@ neither judges a payload key's id against a parameter's arity.
   one AsciiDoc fragment per code, the only home of that text. The model build gathers the
   fragments into the store beside the defect types, so the defects reference page, the LSP and the
   MCP serve the same guidance (Alf, 2026-11-19); a fragment naming a code the store does not
-  declare fails the build.
+  declare fails the build. The fragment is `<CODE>.adoc` under
+  `graphitron-model/src/main/resources/no/sikt/graphitron/model/defects/`, and a file there whose
+  name starts with an underscore is shared prose a fragment includes with
+  `include::_name.adoc[]`; the store writes the fragments into `graphitron_defect_guidance` when it
+  creates its schema, includes expanded, and `DefectGuidanceGateTest` and the reference page's
+  renderer hold them to the declared codes. The page is the manual's defects reference, one entry
+  per code at `#<code-in-kebab-case>`, rendered at every docs build.
 . Pin it in a fact document: the schema, then the expected rows of each relation the case touches
   with the defect rows beside the fact rows, since the defect is half the answer for that field;
   and beside them a near miss that draws nothing. Where the document goes:

@@ -2,7 +2,9 @@
 :description: Every closed-set diagnostic code the rewrite validator emits, with a sample message line and the next concrete step for each one.
 :!toc:
 
-You probably arrived here because the build failed with a `[<kind>] <message>` line and you searched for it. The rest of this page is organised so the line you saw is the entry point: top-level kinds first, then the eight `unknown-name` attempt kinds (the most common shape), then the four `deferred` emit-block reasons, and finally the handful of structural errors common enough to be worth naming individually. Each entry leads with a sample line you can grep for.
+You probably arrived here because the build failed with a `[<kind>] <message>` line and you searched for it. The rest of this page is organised so the line you saw is the entry point: top-level kinds first, then the `unknown-name` attempt kinds (the most common shape). Each entry leads with a sample line you can grep for.
+
+This page covers the classification walk's rejections. A finding that carries a code, such as `GRAPHITRON_COLUMN_UNRESOLVED` in the editor or `MUTATION_UPSERT` in a build message, is a defect the fact store reports, and every such code has an entry in the xref:defects.adoc[defects reference], with its fix guidance.
 
 == Reading an error line
 
@@ -53,7 +55,7 @@ Three prefixes. Triage by which one you saw.
 
 *Cause.* Recognised but not yet generator-supported. The classifier understands what the schema asks for, but emission is stubbed until support ships.
 
-*Next step.* Either drop the unsupported shape (and revisit when support ships), or contribute the missing emission to the rewrite. The message states which shape is unsupported; the emit-block reasons further down this page describe each shape that currently lands here.
+*Next step.* Either drop the unsupported shape (and revisit when support ships), or contribute the missing emission to the rewrite. The message states which shape is unsupported. A deferral the fact store reports carries a code whose basis is `UNSUPPORTED` instead, and its entry in the xref:defects.adoc#deferrals[defects reference] says what to write instead.
 
 == Unknown name: which kind of name
 
@@ -124,277 +126,13 @@ Under an input object built into a jOOQ record, a nested input groups onto the r
 
 *Next step.* Use one of the supported values (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). xref:directives/mutation.adoc[`@mutation` directive reference] covers the supported kinds.
 
-== Named structural errors
-
-Structural `[author-error]` messages are written at the classifier site and are mostly not enumerable, as the kind entry above says. The ones below are listed anyway because each is the error a schema meets by writing the *obvious* thing rather than a wrong thing, and because its remedies are fixed directives or declarations rather than a rename you have to work out.
-
-[#arg-mapping-path]
-=== An `argMapping` path that does not resolve
-
-*Sample line.* `[author-error] @routine argMapping entry 'pCustomerId: input.custmerId': segment 'custmerId' does not exist on input type 'RentFilmInput'; did you mean: customerId`.
-
-*Cause.* The right-hand side of an `argMapping` entry names a GraphQL slot and then walks into
-nested input fields. One message serves every directive that accepts an `argMapping`
-(xref:directives/service.adoc[`@service`], xref:directives/condition.adoc[`@condition`],
-xref:directives/routine.adoc[`@routine`], `@tableMethod`) because the path namespace is the same at
-all of them; only the site prefix differs. Two shapes reach it: a *head* segment that names no slot
-in scope, which lists the slots that are, and a later segment that names no field on the input type
-at that depth, which suggests the near miss.
-
-*Next step.* Correct the segment. xref:directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the form.
-
-The *left*-hand side of an entry at `@service`, `@condition` or `@tableMethod` names a parameter of
-the called method; a name the method has no parameter of is reported as
-`GRAPHITRON_ARGMAPPING_PARAMETER_UNKNOWN` at the entry, its detail the name written, beside the
-`GRAPHITRON_PARAMETER_UNFILLED` of the parameter that name was meant for. A method compiled without
-`-parameters` has no names to compare against and draws `GRAPHITRON_PARAMETER_NAMES_MISSING` instead.
-
-`@routine` adds three rejections on top, because a routine IN parameter is resolved from the
-database catalog rather than by reflection, and `$source.<column>` binds a column of the row the
-routine is applied to:
-
-* `@routine argMapping names parameter 'pEnvv', which is not an IN parameter of routine 'rentFilm'`
-  (the *left*-hand side named no routine parameter). Check the jOOQ-generated camelCased name.
-* `@routine parameter 'pEnv' has no binding`: the name the parameter reads, its `argMapping` entry's
-  right-hand side or its own name where no entry names it, is no argument of the field. A bare name
-  never binds a column; where it names one, the message says to write `$source.<column>`. A
-  `$source` column the table lacks is reported the same way, listing that table's columns. The
-  editor reports both as `GRAPHITRON_PARAMETER_UNFILLED` at the `@routine`, the same code an
-  unbound parameter of a `@service` or `@condition` method draws.
-* `@routine parameter 'pEnv' binds to 'input', whose GraphQL type 'RentFilmInput' is not a scalar
-  or enum`: the path stopped on an input object. A routine IN parameter takes one value; bind a
-  scalar field inside it.
-
-[#list-of-input-filter]
-=== An element field a list-of-input filter cannot compare
-
-*What it says.* One of three codes, at the element field's declaration:
-
-* `LIST_ELEMENT_NOT_ONE_VALUE`: `An input field of a list of input objects a filter compares as rows is itself a list, and one cell of a row holds one value`.
-* `LIST_ELEMENT_NODE_ID`: `An input field of a list of input objects a filter compares as rows is a node id, whose decoded key one cell of a row of plain values cannot hold`.
-* `LIST_ELEMENT_CONDITION`: `An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object`.
-
-A fourth sits at a `@condition` rather than an element field:
-
-* `LIST_CONDITION_BELOW_LIST`: `A @condition binds a parameter to a field read once per element of a list of input objects, which one call has no single value for`. Its `argMapping` reaches below the list, whether the `@condition` is on the list field itself or on the field and reaching through it; bind the whole list instead.
-
-*Cause.* A filter field typed as a list of input objects matches rows equal to any one element, comparing the element's fields together as one row (`(c1, c2) IN ((..), (..))`). That reading holds only when every element field is one value bound to a column, so the build refuses an element field that is itself a list or a list of input objects, is a node id, or carries `@condition`; one that binds no column is `COLUMN_UNRESOLVED`, as anywhere else. Each defect sits at the element field, because the same input type is fine elsewhere (as a non-list nested input, or as a `@service` parameter), and one declaration read through two list filters is one defect. A `@lookupKey` list is the lookup's key rather than a filter, and none of this applies to it. Under a `@condition` written with `override: true`, on the list field or anything enclosing it, the condition owns the list and its elements are not compared as rows, so only `LIST_ELEMENT_CONDITION` still applies there.
-
-The element fields' columns may all sit on the filtered table, or all on one table reached through the same `@reference` path, so the build also refuses an element field whose column is reached through a different `@reference` path than the first element field's ("its column is reached through a different @reference path than element field '<first>'"), or that mixes the filtered table's own columns with a path.
-
-*Next step.* Give every element field the same `@reference` path, or move the field out of the element type. To filter on a shape the row cannot express, put `@condition(override: true)` on the list field; the method receives the whole list and owns the predicate. xref:directives/field.adoc#list-of-input-filter[`@field` on a list-of-input filter] describes the semantics.
-
-[#override-slot-unread]
-=== A filter slot an override suppresses that no condition reads
-
-*What it says.* `ARGUMENT_UNBOUND` at the slot, or `MEMBER_UNKNOWN` where the slot's input object is built into a bean: an argument or input field nothing takes, so the value a client sends goes nowhere.
-
-*Cause.* `@condition(override: true)` suppresses the implicit `column = ?` predicate of every argument and input field beneath it, on the understanding that the method stands in for them. This error says one of them reaches no parameter of any condition or call on the consuming field: no parameter is bound to it or to anything enclosing it, it carries no `@condition` of its own, and no bean bound above it has a member for it. A bean's members match the input's fields by their GraphQL names, so a member named after the column (`setEMAILADRESSE_PRIVAT` for `@field(name: "EMAILADRESSE_PRIVAT")`) does not read it. It is reported once, at the outermost such slot: a nested input object none of whose fields is read is reported at that field.
-
-*Next step.* Add the member to the bean, named after the GraphQL field; bind the slot another way (a parameter whose `argMapping` reaches it, or a `@condition` of its own); or drop `override: true` so the implicit predicate reads it. The xref:directives/condition.adoc#input-object-parameter[`@condition` reference] covers how beans are bound.
-
-[#member-unfilled]
-=== A record component no input field fills
-
-*What it says.* `MEMBER_UNFILLED` at the argument or input field the record is built at, naming an unfilled component as `Class#component`.
-
-*Cause.* An input object built into a Java record is passed to the record's canonical constructor, which takes every component at once. A component no input field fills, directly or through a grouping, has no value to pass. A class built through setters is not refused: a property nothing sets keeps its default.
-
-*Next step.* Add a field named after the component, its `@field(name:)` where a `@service` takes the object and its own name where a `@condition` does, or give the record no such component.
-
-[#shadowed-node-id]
-=== A node's `id` field shadowing a column named `id`
-
-*Sample line.* `[author-error] field 'Doc.id': table 'doc' has a column named 'id' and also publishes node metadata, so 'id' is ambiguous. Add ``@nodeId`` to publish the global ID, or ``@field(name: "id")`` to expose the raw column.`
-
-*Cause.* The type is a node, so its `id` field is a candidate for the encoded global ID; the bound table also has a column of that name, so it is equally a candidate for that column's value. Both readings are legitimate and they are different values on the wire, so the classifier refuses to pick one for you. The wording of the first clause varies with where the node identity came from: a table publishing `\\__NODE_TYPE_ID` / `\\__NODE_KEY_COLUMNS` is named as such, and a type that declared `@node` explicitly is named as a node type over its table.
-
-*Next step.* Write the reading you meant on the field. `@nodeId` publishes the encoded global ID; `xref:directives/field.adoc[@field(name: "id")]` exposes the raw column, at the cost of that type no longer round-tripping through `Query.node(id:)`. The xref:directives/node.adoc[`@node` reference] covers both.
-
-[#field-without-fetcher]
-=== A field graphitron has nothing to fetch with (`FIELD_WITHOUT_FETCHER`)
-
-*What it says.* `A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with`, at the field's declaration.
-
-*Cause.* Every field either runs something of its own (a query, a lookup, a write, a `@service`, a `@routine`) or reads its value from what its parent holds (a column of the parent's row, a member of the parent's object). A field doing neither is a field graphitron would leave unanswered, so the build stops. Two shapes reach it:
-
-* A field on a root type with nothing written on it whose return type lands on no table, for example a `Mutation` field with no `@mutation`, `@service` or `@routine`.
-* A field returning a union or interface none of whose implementers is xref:directives/table.adoc[`@table`]-bound, wherever graphitron would fetch it: at the root, or under a table-bound parent, as a list, a single value or a connection. Graphitron fetches such a field per table-bound participant, so with none there is nothing to fetch; an interface's own `@table` does not count, so one carrying `@table` that no table-bound type implements is refused too. Under a value a `@service` handed back, the field is read off that value instead, and is no defect.
-
-*Next step.* Write what the field runs, or bind at least one implementer of the union or interface to a table. xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the layouts graphitron fetches.
-
-[#input-cycle-expanded]
-=== An input object that reaches itself again (`INPUT_CYCLE_EXPANDED`)
-
-*What it says.* `An input object is reached again inside itself where a call builds its value into a class or a filter compares it, and its nesting has no last level, so the nested value would be dropped`, at the input field that reaches the type again, the detail naming the type.
-
-*Cause.* An input object is read field by field, nested inputs included, and one whose fields lead back to its own type, directly or through another input type, has no last level. Graphitron refuses it where it reads the value as a whole:
-
-* under a class a `@service` or a `@condition` builds the input into;
-* under a field whose rows a plain filter input narrows, whatever an overriding `@condition` says.
-
-Taking the same input type in two sibling fields is no cycle; only a type inside itself is.
-
-*Next step.* Break the cycle in the input type, or take the nested part as a parameter of its own. xref:directives/field.adoc[`@field`] covers how a filter input binds its columns.
-
-[#parameter-names-missing]
-=== A method whose class was compiled without `-parameters` (`PARAMETER_NAMES_MISSING`)
-
-*What it says.* `A method a @service or a @condition calls has a parameter nothing fills by its type, and its class was compiled without -parameters`, at the directive, naming the class in the detail.
-
-*Cause.* An argument, an `argMapping` entry or a context key binds a parameter by its name, which the class file keeps only when the class was compiled with `-parameters`. Without names, a parameter nothing fills by its type has nothing that could bind it. The build reports this once per directive rather than one `PARAMETER_UNFILLED` per parameter, since renaming arguments cannot fix it.
-
-*Next step.* Compile the class's module with `-parameters`, as `<parameters>true</parameters>` on `maven-compiler-plugin` does, and rebuild it before graphitron reads it.
-
-[#minted-name-contested]
-=== A name `@asConnection` would mint, coined two ways (`MINTED_NAME_CONTESTED`)
-
-*What it says.* `A name @asConnection would mint is coined more than one way, a type in two roles or a field or argument in two shapes, so graphitron mints none of them`, at each `@asConnection` that coins the name, naming the first contested coordinate it coins, by name, in the detail.
-
-*Cause.* Graphitron generates the Connection, Edge and `PageInfo` types and their fields for each `@asConnection` field, and several fields may generate the same name, which is fine as long as they all describe it the same way. Two shapes make them disagree:
-
-* Two fields share a `connectionName:` over different element types, so the shared Connection's `nodes` and its Edge's `node` would have two types:
-+
-[source,graphql]
-----
-type Query {
-  films: [Film!]! @asConnection(connectionName: "Shared")
-  tongues: [Language!]! @asConnection(connectionName: "Shared")
-}
-----
-+
-Both fields draw the code, each naming `Shared.nodes; SharedEdge.node`.
-* A `connectionName:` names a type the same field also generates in another role, such as `@asConnection(connectionName: "PageInfo")`: the Connection and the page info would be one type.
-
-Graphitron generates none of the contested names rather than picking one, and stops the build.
-
-*Next step.* Give the connections distinct names, usually by dropping the deprecated `connectionName:` so each field gets its own, or give the fields sharing one name the same element type. xref:directives/asConnection.adoc#constraints[`@asConnection` constraints] lists the rules.
-
-[#minted-type-declared-short]
-=== A declared type `@asConnection` would generate, short of its shape (`MINTED_TYPE_DECLARED_SHORT`)
-
-*What it says.* `A type @asConnection would generate is declared in the schema, so graphitron uses the declaration, and the declaration lacks a field the shape requires or gives one the wrong type`, at each `@asConnection` that asks for the type, naming the type and what it lacks in the detail.
-
-*Cause.* Where the schema declares a Connection, Edge, `PageInfo` or facets type that an `@asConnection` field would otherwise generate, graphitron uses the declaration as written and checks it against what the shape requires. Where the Relay Cursor Connections specification states the shape, that is the requirement and nothing more: `edges` (a list) and `pageInfo` (`PageInfo!`) on a connection, `node` and `cursor` (neither a list) on an edge, and `hasNextPage: Boolean!`, `hasPreviousPage: Boolean!`, `startCursor` and `endCursor` on `PageInfo`. `nodes` and `totalCount` are optional. Where no external specification exists, the facets type of a connection with facets and its value types, graphitron's own shape is the requirement. For example:
-
-[source,graphql]
-----
-type Query {
-  films: [Film!]! @asConnection
-}
-
-type QueryFilmsConnection {
-  edges: [QueryFilmsConnectionEdge!]!
-}
-----
-
-draws the code at the `@asConnection`, reading `QueryFilmsConnection lacks pageInfo`. A `connectionName:` naming a type that is not a connection at all, such as the element type itself (`@asConnection(connectionName: "Film")`), draws it too, the detail listing every field the type lacks.
-
-*Next step.* Add or correct the fields the detail names, or remove the declaration and let graphitron generate the type. xref:directives/asConnection.adoc#constraints[`@asConnection` constraints] lists the rules.
-
-[#connection-facets-disagree]
-=== Fields returning one connection, surfacing different facets (`CONNECTION_FACETS_DISAGREE`)
-
-*What it says.* `Fields returning one connection type fill one facets record, the type's, so each must surface the same facets from its own filter arguments`, at each field returning the connection type, naming the type in the detail.
-
-*Cause.* A connection's `facets` field returns one facets type, generated once for the connection type. Each field returning the connection runs its own count and facet queries, from its own arguments, but all of them fill that one type, so each must surface the same facets: the same names, with the same value types and nullability, in the same order. Which argument a facet's filter rides in, and which column it groups by, are each field's own and may differ. Two fields sharing a connection through `connectionName:` where only one takes a filter with `@asFacet` disagree:
-
-[source,graphql]
-----
-type Query {
-  filmsFaceted(filter: FilmFilter): [Film!]! @asConnection(connectionName: "SharedFilmsConnection")
-  filmsPlain: [Film!]! @asConnection(connectionName: "SharedFilmsConnection")
-}
-----
-
-Both fields draw the code, not only the one that differs from the first. A field returning a connection type whose `facets` field asks for facets it does not surface draws it too.
-
-*Next step.* Give every field returning the connection the same `@asFacet` filter fields, or give each its own connection type. xref:directives/asFacet.adoc#constraints[`@asFacet` constraints] lists the rules.
-
-[#connection-facets-field-declared]
-=== A connection type declaring its own facets field (`CONNECTION_FACETS_FIELD_DECLARED`)
-
-*What it says.* `A connection type declares a facets field, which is graphitron's to generate`, at the `facets` field's declaration, naming the connection type in the detail.
-
-*Cause.* A connection's `facets` field and its facets type are generated by graphitron from the `@asFacet` fields of the connection's filter inputs, together with the code that counts them. A connection type you declare yourself does not gain one yet, so a `facets` field declared on it names a facets record nothing builds. A declaration standing in for a connection `@asConnection` generates is checked against the generated shape instead, by xref:#minted-type-declared-short[`MINTED_TYPE_DECLARED_SHORT`].
-
-*Next step.* Remove the `facets` field, or let `@asConnection` generate the connection, with the filter's `@asFacet` fields giving it its facets.
-
-[#faceted-connection-unsupported]
-=== A faceted connection graphitron does not generate yet (`FACETED_CONNECTION_UNSUPPORTED`)
-
-*What it says.* `A connection with @asFacet filter fields is generated only as a root Query field over a @table-bound object type`, at the connection field. A deferral: the schema is valid, and the build stops until graphitron generates the shape.
-
-*Cause.* The facet counts are computed by the root `Query` fetcher, over the rows of one table. A faceted connection under another type, fetched in a batch over its parents, or one over an interface or a union, has no fetcher that computes them.
-
-*Next step.* Move the connection to the root `Query` type, or remove `@asFacet` from its filter.
-
-[#facet-surfaced-nowhere]
-=== An `@asFacet` field no connection surfaces (`FACET_SURFACED_NOWHERE`)
-
-*What it says.* `An @asFacet filter field counts its values for the connections that take its input type as an argument, and no field returning a connection takes it`, at the `@asFacet`, naming the input type in the detail.
-
-*Cause.* A facet's counts surface on the `facets` field of the connections whose filter argument takes the input type. Where no field returning a connection takes it, only list fields or none at all, the counts would surface nowhere. An input taken only by fields returning a connection type you declared yourself is valid, and is the deferral xref:#authored-connection-facet-unsupported[`AUTHORED_CONNECTION_FACET_UNSUPPORTED`] instead.
-
-*Next step.* Use the input as the filter of an `@asConnection` field, or remove `@asFacet`.
-
-[#authored-connection-facet-unsupported]
-=== An `@asFacet` field only a declared connection type takes (`AUTHORED_CONNECTION_FACET_UNSUPPORTED`)
-
-*What it says.* `An @asFacet filter field is taken only by fields returning a connection type declared in the schema, which is valid, and graphitron does not yet generate the facets field on a connection type it did not generate`, at the `@asFacet`, naming the input type in the detail. A deferral: the schema is valid, and the build stops until graphitron generates the shape.
-
-*Cause.* A facet's counts surface on a `facets` field graphitron generates onto the connection type, with its facets type. It generates them only onto a connection type `@asConnection` generates; a connection type you declare yourself does not gain one yet. Where every field returning a connection that takes the input returns such a declared type, the counts have nowhere to surface for now:
-
-[source,graphql]
-----
-input FilmFilter { title: [String!] @field(name: "title") @asFacet }
-
-type Query {
-  films(filter: FilmFilter, first: Int, after: String): FilmsPage
-}
-----
-
-with `FilmsPage` a connection type declared in the schema.
-
-*Next step.* Return an `@asConnection` connection from a field taking the filter, which gains the facets, or remove `@asFacet` until graphitron generates facets onto declared connection types.
-
-[#lookup-key-refusals]
-=== A `@lookupKey` that names no key of the field's rows
-
-*What it says.* One of three codes, at the `@lookupKey` application:
-
-* `LOOKUP_KEY_ON_CONNECTION`: the field returns a connection, which pages where a lookup answers the keys it is given.
-* `LOOKUP_KEY_NOT_IDENTIFYING`: a field below the root returns one `@table` object, and its keys cover no key identifying a row of its table, its primary key or a unique key whose columns refuse `NULL`, so several rows could match the one value it returns; the table is named in the detail.
-* `LOOKUP_KEY_OFF_TABLE`: the argument is a node id of a node on another table than the field reads, or takes an input object with such an id whose columns no one foreign key from the field's table carries back; the node's table is named in the detail.
-
-*Cause.* A lookup narrows the field's rows by the keys the caller passes, each a column of the table the field reads. A key the build cannot state as such a column would narrow by fewer keys than were written and read more rows than asked for, so the build stops instead.
-
-*Next step.* Drop `@asConnection` or `@lookupKey`; key a single child by its table's primary key or a unique key whose columns refuse `NULL`, or return a list; or, for a node id of another node, drop `@lookupKey` and let the id filter through the foreign key. xref:directives/lookupKey.adoc#constraints[`@lookupKey` constraints] lists the rules.
-
-[#ordering-refusals]
-=== An ordering that says nothing to sort by
-
-*What it says.* One of these codes, at the `@defaultOrder`, `@order`, `@orderBy` or `fields` element written, or at the list field:
-
-* `ORDER_SURFACES`: the application writes other than exactly one of `index`, `primaryKey: true` and `fields`.
-* `ORDER_PRIMARY_KEY_MISSING`: `primaryKey: true` over a table with no primary key, named in the detail.
-* `ELEMENT_UNRESOLVED`: an `index` the table does not have, named in the detail, the code every name claimed in vain draws.
-* `COLUMN_UNRESOLVED`: a `fields` element's `name` matching no one column of the table, named in the detail, the code a field reading a missing column draws.
-* `ORDER_FIELD_SHAPE`: a `fields` element writing neither or both of `name` and `method`, or a `path` beside a `method`.
-* `ORDER_INPUT_SHAPE`: an xref:directives/orderBy.adoc[`@orderBy`] argument's type without exactly one sort enum field and exactly one other enum field, the direction, named in the detail.
-* `ORDER_VALUE_UNORDERED`: a value of an xref:directives/orderBy.adoc[`@orderBy`] argument's sort enum with neither `@order` nor `@index`.
-* `ORDER_CHOICE_ON_INLINE_LIST`: an `@orderBy` argument on a list read inside its parent's query, where a client's choice of order is not applied yet. A deferral, not a fault in the schema: read the list with `@splitQuery`, or order it with `@defaultOrder`.
-* `LIST_ORDER_UNDETERMINED`: a list or connection over a table with no primary key, read inside its parent's query, for which no order is stated: no `@defaultOrder`, and no `@orderBy` argument whose input type offers a choice.
-
-*Cause.* Each list is read in an order the build states: the one `@defaultOrder` writes, the table's primary key where none is written, or the one a client picks through `@orderBy`. An ordering whose keys cannot be stated would sort by fewer keys than were written, or by none, so the build stops instead.
-
-*Next step.* Write one surface, name a column, index or primary key the table has, or add `@defaultOrder` to the list. xref:directives/defaultOrder.adoc#constraints[`@defaultOrder` constraints] and xref:directives/order.adoc[`@order`] list the rules.
-
 == Drift protection
 
 `DiagnosticsDocCoverageTest` asserts every value of `RejectionKind` and `Rejection.AttemptKind` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.
 
-Structural variants (`AuthorError.Structural`, `InvalidSchema.Structural`, `InvalidSchema.DirectiveConflict`) carry ad-hoc messages produced at the classifier site and are not enumerable; the kind-level entries above describe how to read those. <<Named structural errors>> is outside the test's scope for the same reason: those entries are chosen editorially, so nothing forces one to exist and nothing forces one to be removed.
+Structural variants (`AuthorError.Structural`, `InvalidSchema.Structural`, `InvalidSchema.DirectiveConflict`) carry ad-hoc messages produced at the classifier site and are not enumerable; the kind-level entries above describe how to read those.
+
+The store's defect codes are not on this page and need no test to keep them here: the xref:defects.adoc[defects reference] is rendered from the store at every docs build, one entry per declared code, so a code cannot land without an entry nor leave one behind, and a link to a code no longer declared fails the docs build's link check.
 
 == See also
 
