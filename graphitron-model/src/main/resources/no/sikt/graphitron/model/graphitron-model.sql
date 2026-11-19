@@ -20248,6 +20248,32 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                          WHERE n2.graph_name = m2.graph_name AND n2.coordinate = m2.coordinate))
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
+-- A component of a record no input field fills: the record is made by its canonical constructor,
+-- which takes every component at once, so a component nothing fills has no value to pass. At the
+-- occurrence the object is built at, its own value (built_at), the members read across its
+-- groupings as MEMBER_FILLED_TWICE reads one object; per use site, one input type building a record
+-- at one argument and a bean at another. The detail an unfilled member, Class#component, the least
+-- by name; the others wait on a detail relation a reader asks for.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'MEMBER_UNFILLED', MIN(b.class_name || '#' || ws.slot_name), 'occurrence-builds'
+  FROM graphitron_occurrence_built_class b
+  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN code_construction cc
+    ON cc.source_name = b.class_source_ref AND cc.class_name = b.class_name_ref AND cc.shape = 'POSITIONAL'
+  JOIN code_write_slot ws
+    ON ws.source_name = cc.source_name AND ws.class_name = cc.class_name AND ws.descriptor = cc.descriptor
+ WHERE b.built_at = b.coordinate AND b.constructible AND b.record_table IS NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
+                     JOIN graphitron_occurrence_built_class p
+                       ON p.graph_name = m.graph_name AND p.coordinate = m.parent_coordinate
+                      AND p.class_name = m.class_name
+                    WHERE m.graph_name = b.graph_name AND m.class_name = b.class_name
+                      AND p.built_at = b.coordinate
+                      AND m.slot_source_name = ws.source_name AND m.slot_method_name = ws.method_name
+                      AND m.slot_descriptor = ws.descriptor AND m.slot_position = ws.position)
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
 -- Two input fields writing one column of a jOOQ record, neither deprecated, which nothing says how
 -- to choose between: a live field is preferred over a deprecated one, and two live ones are this.
 -- The record being the one both parents' built classes build, a grouping's its parent's. At the
@@ -30550,6 +30576,8 @@ INSERT INTO graphitron_defect_type VALUES
    'An input field nothing takes, under the class its input object is built into: it fills no member under the name it matches on, its @field(name:) for a @service and its own name for a @condition, matched exactly, case included, and nothing inside it fills one, is a column a filter compares, a call''s parameter or tenant, or carries its own @condition, so its value would reach nothing. Reported once, at the outermost such field: a nested input object none of whose fields binds is the misspelt member, and its fields are not reported. Name a member the class has, or give the class one.'),
   ('GROUPING_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_GROUPING_LIST',
    'A list of input objects fills no member of the class its parent is built into, or sits under a jOOQ record, and a grouping fills the enclosing object once, which a list has no one value for: give the class a member for the list, or make the field one input object.'),
+  ('MEMBER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_UNFILLED',
+   'A record an input object is built into has a component no input field fills, and its canonical constructor takes every component, so there is no value to pass: add a field named after the component, its @field(name:) for a @service and its own name for a @condition, or give the record no such component.'),
   ('MEMBER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_FILLED_TWICE',
    'Two input fields fill one member of one object, and nothing says which value it takes: rename one, or remove one. Node ids decoding into one record member are one record and allowed.'),
   ('REREAD_OF_DELETED_ROWS', 'error', 'GRAPHITRON', 'GRAPHITRON_REREAD_OF_DELETED_ROWS',

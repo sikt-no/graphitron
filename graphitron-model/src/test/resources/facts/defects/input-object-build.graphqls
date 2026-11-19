@@ -1,9 +1,10 @@
 # An input object a call takes is built into the class its parameter holds, field by field, and what
 # cannot be built is a defect at the input field or argument, each beside the shape that builds: a
 # class nothing constructs, a field filling no member, a list that cannot group, two fields on one
-# member, a @condition taking a jOOQ record, a field naming no column of the record it writes, and a
-# filter's field naming no column of the table it filters, or of the result a @routine filters. A
-# node id with no route onto the record is node-id-lands-on-table's.
+# member, a record component no field fills, a @condition taking a jOOQ record, a field naming no
+# column of the record it writes, and a filter's field naming no column of the table it filters, or
+# of the result a @routine filters. A node id with no route onto the record is
+# node-id-lands-on-table's.
 #
 # A nested input under a record groups onto its columns, and where it is named like a jOOQ embeddable
 # of the record's table (Alf, 2026-11-18) a field of it naming no column says so in its detail:
@@ -176,7 +177,8 @@ type Query {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code IN ('BUILT_CLASS_UNBUILDABLE', 'CONDITION_PARAMETER_RECORD', 'MEMBER_UNKNOWN', 'GROUPING_LIST',
-           'MEMBER_FILLED_TWICE', 'COLUMN_UNRESOLVED', 'COLUMN_AMBIGUOUS', 'NODE_ID_LANDS_ON_TABLE')
+           'MEMBER_FILLED_TWICE', 'MEMBER_UNFILLED', 'COLUMN_UNRESOLVED', 'COLUMN_AMBIGUOUS',
+           'NODE_ID_LANDS_ON_TABLE')
   """, rows: """
   coordinate,                          code,                       detail
   Query.countAbstractDraft(in:),       BUILT_CLASS_UNBUILDABLE,    no.sikt.graphitron.rewrite.test.services.AbstractFilmDraft
@@ -203,4 +205,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   FilmRecordListGroupInput.extras,     GROUPING_LIST,              no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   FilmSurveyTwiceInput.tally,          MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmSurvey#count
   FilmDraftBlankNameInput.title,       MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmDraft
+  Query.countBundleExtras(in:),        MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
+  Query.countBundleCapacityTwice(in:), MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#films
+  Query.countBundleTwoGroups(in:),     MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#films
+  Query.countBundleRenamedGroup(in:),  MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
+  Query.countBlankNameDraft(in:),      MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmDraft#title
   """)

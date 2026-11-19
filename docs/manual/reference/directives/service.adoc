@@ -169,7 +169,9 @@ its fields onto the enclosing object. The build fails at the field where it cann
 * a list of input objects filling no member, which has no one object to group onto
   (`GROUPING_LIST`), and any list of input objects inside a jOOQ record;
 * two fields filling one member of one object (`MEMBER_FILLED_TWICE`); node ids decoding into one
-  record member are one record and allowed.
+  record member are one record and allowed;
+* a record component no field fills (`MEMBER_UNFILLED`), since its canonical constructor takes every
+  component; a field reaching it through a grouping fills it.
 
 [[arg-mapping]]
 == Binding a parameter to a nested input field

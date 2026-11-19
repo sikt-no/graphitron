@@ -193,6 +193,15 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 
 *Next step.* Add the member to the bean, named after the GraphQL field; bind the slot another way (a parameter whose `argMapping` reaches it, or a `@condition` of its own); or drop `override: true` so the implicit predicate reads it. The xref:directives/condition.adoc#input-object-parameter[`@condition` reference] covers how beans are bound.
 
+[#member-unfilled]
+=== A record component no input field fills
+
+*What it says.* `MEMBER_UNFILLED` at the argument or input field the record is built at, naming an unfilled component as `Class#component`.
+
+*Cause.* An input object built into a Java record is passed to the record's canonical constructor, which takes every component at once. A component no input field fills, directly or through a grouping, has no value to pass. A class built through setters is not refused: a property nothing sets keeps its default.
+
+*Next step.* Add a field named after the component, its `@field(name:)` where a `@service` takes the object and its own name where a `@condition` does, or give the record no such component.
+
 [#shadowed-node-id]
 === A node's `id` field shadowing a column named `id`
 
