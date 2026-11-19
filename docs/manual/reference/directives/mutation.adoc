@@ -129,11 +129,11 @@ The input type carries no directive; its fields resolve against the table named 
 
 == Payload-returning DELETE
 
-`@mutation(typeName: DELETE)` supports two payload-carrier shapes. Both echo information about the rows the DML actually removed; neither projects non-primary-key columns from the deleted rows (the row is gone before the response can read it).
+`@mutation(typeName: DELETE)` returns the ids of the rows it removed, on the field itself or on a field of the payload type it returns. Cardinality follows the carrier field's wrapper: `ID` for a single DELETE, `[ID!]` for a bulk one.
 
-=== Echoing the deleted primary key (recommended)
+=== Echoing the deleted ids
 
-The simplest payload returns the encoded NodeId of each deleted row:
+The payload returns the encoded NodeId of each deleted row:
 
 [source,graphql]
 ----
@@ -151,31 +151,11 @@ The carrier field's element type must be `ID` (single DELETE) or `[ID!]` (bulk D
 
 The response holds one id per input key, in input order: a deleted row's id, or, for a key that matched no row, the id the input supplies (see <<when-a-key-matches-no-row>>). When the node type's key columns go beyond the primary key, a deleted row's extra columns are read back from the row, so its id encodes the row as it was stored rather than as the input id described it.
 
-=== Projecting the deleted row's primary key onto an SDL type
-
-The carrier may also return the `@table`-backed SDL type, but only when every non-nullable field on the type resolves to a primary-key column:
-
-[source,graphql]
-----
-type Regelverksamling @table(name: "regelverksamling") @node {
-    id: ID!                              # PK; admits
-    navn: String                         # non-PK, nullable; admits, runtime returns null
-    beskrivelse: String!                 # non-PK, non-nullable; REJECTS the carrier
-}
-----
-
-The classifier inspects every field on the element type and rejects the carrier if any non-nullable field maps to a non-PK column. Nullable non-PK fields admit and always resolve to `null` at runtime; this is by design — after a DELETE there is no row left to read those columns from. If your SDL type carries non-nullable non-PK fields, prefer the `[ID!]` shape above, or define a dedicated `DeletedRegelverksamling` SDL type whose non-nullable fields are PK-only.
-
-`@service`-resolved fields are not admitted on the element type, nullable or not. The service would receive a PK-only row at runtime and any non-PK source parameter would silently produce `null`. Use the `[ID!]` shape and resolve service-backed data on the deleted entity through a sibling lookup if needed. FK-traversing reference fields (`@reference` paths to a joined target table) are also rejected on DELETE carriers, since the join cannot run after the row is gone.
-
-=== Single vs bulk
-
-Both shapes work with single and bulk DELETE; cardinality follows the carrier field's wrapper (`ID`/`Foo` for single, `[ID!]`/`[Foo!]` for bulk).
-
 === What you can't return
 
 * Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING` is narrowed to primary-key columns, plus the node key's other columns where the payload's ids encode them. If you need the full pre-delete state, snapshot it in your application code before issuing the mutation.
-* A bare class-backed payload type. Use a NodeId echo or a `@table` projection.
+* The deleted row's `@table` type, even one whose fields are all primary-key columns. Reading a type by a row's keys finds no row after a DELETE, so the build rejects it (xref:../defects.adoc#reread-of-deleted-rows[`REREAD_OF_DELETED_ROWS`]). Return the ids instead.
+* A bare class-backed payload type. Use a NodeId echo.
 
 [#when-a-key-matches-no-row]
 == When a DELETE key matches no row
