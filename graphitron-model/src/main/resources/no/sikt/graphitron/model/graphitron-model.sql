@@ -22528,8 +22528,9 @@ UNION ALL
 -- answers it per key, and a List or Result in the keys' order hands each key the answer's own
 -- element, many only where that element is a container delivering many. One delivered where the
 -- field is a list is otherwise LIST_OVER_ONE_VALUE's, and many under one object with no table is a
--- payload the records are lifted into. A scalar is compared where its class is known, exactly, as
--- graphql-java would otherwise coerce a value the author meant as another. An outcome, a connection,
+-- payload the records are lifted into, refused below where its data field holds one object. A
+-- scalar is compared where its class is known, exactly, as graphql-java would otherwise coerce a
+-- value the author meant as another. An outcome, a connection,
 -- refused for a service of its own, and a result naming no class, a primitive or an array
 -- graphql-java reads as it is, which the arm above refuses at a field bound to a table, are not
 -- checked here, and neither is a child answer the batch cannot read. The detail is the declared
@@ -22573,6 +22574,36 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
         OR f.is_list AND p.start = 'CHILD' AND m.result_erased_class IN ('java.util.List', 'org.jooq.Result')
            AND NOT EXISTS (SELECT 1 FROM code_delivery_container c
                             WHERE c.container_class = m.result_first_argument_class AND c.multiplies))
+UNION ALL
+-- A @service answering many into one payload whose data field holds one object, at the field: the
+-- payload's object passes through to that field, as its OBJECT data field states, and the field's
+-- type is backed by the class the method hands back, so each element would be the one object and a
+-- list of them has no one to give. Many is read as the arm above reads it, a List or Result in the
+-- keys' order handing each key its own element. A list of payloads, one element each, is coherent, and
+-- a payload's data field that is a list holds them all. The detail is the declared result type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_RETURN_MISMATCH', m.result_type, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_call_method cm ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate
+  JOIN code_method m
+    ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
+   AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
+  JOIN graphitron_payload_data_field d
+    ON d.graph_name = f.graph_name AND d.type_name = f.named_type AND d.kind = 'OBJECT'
+  JOIN graphitron_field df
+    ON df.graph_name = d.graph_name AND df.type_name = d.type_name AND df.field_name = d.field_name
+ WHERE p.kind = 'SERVICE' AND NOT f.is_list AND NOT df.is_list AND m.result_element_class IS NOT NULL
+   AND (p.start = 'ROOT' OR m.result_erased_class IN ('java.util.Map', 'java.util.List', 'org.jooq.Result'))
+   AND CASE WHEN p.start = 'CHILD' AND m.result_erased_class IN ('java.util.List', 'org.jooq.Result')
+            THEN EXISTS (SELECT 1 FROM code_delivery_container c
+                          WHERE c.container_class = m.result_first_argument_class AND c.multiplies)
+            ELSE m.result_delivery = 'MANY' END
+   AND EXISTS (SELECT 1 FROM graphitron_type_backing b
+                WHERE b.graph_name = df.graph_name AND b.type_name = df.named_type
+                  AND b.class_name = m.result_element_class)
 UNION ALL
 -- Producers of one connection type filling different facets, at each producing field: the facets
 -- record is the type's, so every producer must fill the same one, facet by facet the same name,
@@ -30921,7 +30952,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',
-   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one. Where the field''s payload encodes the records into ids of a node, @nodeId(typeName:) written, answer that node table''s records, one for an id and a list for a list of ids. A result naming no class, a type variable, a raw container or an array, states no records at a field bound to a table: declare the table''s record.'),
+   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum or its payload''s data field holds one object, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one. Where the field''s payload encodes the records into ids of a node, @nodeId(typeName:) written, answer that node table''s records, one for an id and a list for a list of ids. A result naming no class, a type variable, a raw container or an array, states no records at a field bound to a table: declare the table''s record.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('UNROUTED_CHILD', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_CHILD',

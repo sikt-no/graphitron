@@ -4,7 +4,8 @@
 # Map's values or a List's elements in the keys' order. Film.titleByFilm and Query.filmCount answer
 # their scalar's class; records under one payload with no table are lifted into it; one value under a
 # list field at a root, Query.oneAsFilms, is LIST_OVER_ONE_VALUE's, pinned in list-over-one-value. A
-# jOOQ record of no table is no table's record.
+# jOOQ record of no table is no table's record, and a list of objects under a payload holding one has
+# no one object for it.
 
 type Film @table(name: "film") {
   title: String
@@ -82,6 +83,19 @@ type FilmIdPayload {
   id: ID @nodeId(typeName: "Film")
 }
 
+# A list of composites into a payload whose data field holds one composite.
+type FilmWithActorsOnePayload {
+  result: FilmWithActorsResult
+}
+type FilmWithActorsResult {
+  film: Film! @field(name: "filmRecord")
+}
+
+extend type Query {
+  filmsWithActorsIntoOne(filmIds: [Int!]!): FilmWithActorsOnePayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
+}
+
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_RETURN_MISMATCH'", rows: """
@@ -100,4 +114,5 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   SERVICE_RETURN_MISMATCH, Film.oneLanguageInOrder,    java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
   SERVICE_RETURN_MISMATCH, Film.languagesAsOne,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>>"
   SERVICE_RETURN_MISMATCH, Film.languageAsPlainRecord,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, org.jooq.Record>"
+  SERVICE_RETURN_MISMATCH, Query.filmsWithActorsIntoOne, java.util.List<no.sikt.graphitron.rewrite.test.services.FilmWithActors>
   """)
