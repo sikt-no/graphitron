@@ -320,12 +320,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- A pinned heap, not the JVM's share of the machine's memory. The shared fact
-                         population (FactGraphs) keeps every store open for the whole fork, about
-                         95 MB a store, and the population-wide checks warm all of them, so the live
-                         set sits near 3.3 GB; the default cap on a 16 GB machine leaves no headroom
-                         and the build would pass or fail on the machine it ran on. -->
-                    <argLine>@{argLine} -Xmx5g</argLine>
+                    <!-- A pinned heap, not the JVM's share of the machine's memory, and the one CI's
+                         forks get, so a local build judges what CI does and a growth fails here first.
+                         The shared fact population (FactGraphs) keeps every store open for the whole
+                         fork and the population-wide checks warm all of them; without a pin the build
+                         would pass or fail on the machine it ran on. -->
+                    <argLine>@{argLine} -Xmx4g</argLine>
                     <!-- The most stores one test JVM may open; FactStores refuses the boot past it.
                          Raised from 250 to 300 when fixtures read the emitted schema off a store of
                          their own, one per distinct fixture schema; raise it only after a recount

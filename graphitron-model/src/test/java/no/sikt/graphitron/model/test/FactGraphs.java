@@ -661,7 +661,7 @@ public final class FactGraphs implements AutoCloseable {
                 return;
             }
             home = storeHome();
-            store = FactStores.fileBacked(home, StoreUse.LONG_LIVED);
+            store = FactStores.fileBacked(home, StoreUse.POPULATION);
             BOOTS.incrementAndGet();
             // Every statement the store runs, captures and reads alike, kept by its text for the
             // checks over what the population's captures ran; room for every distinct text a

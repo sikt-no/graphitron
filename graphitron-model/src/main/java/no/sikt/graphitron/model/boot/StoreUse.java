@@ -26,7 +26,7 @@ package no.sikt.graphitron.model.boot;
  * database and never again, so it belongs to whoever opens a database first: a store reopened by
  * another handle in the same JVM keeps the size its first opener gave it.
  *
- * <p>The system property {@value #CACHE_SIZE_PROPERTY} replaces the number for either use in one
+ * <p>The system property {@value #CACHE_SIZE_PROPERTY} replaces the number for every use in one
  * JVM, for an operator or a measurement; callers still state the use.
  */
 public enum StoreUse {
@@ -44,10 +44,23 @@ public enum StoreUse {
      * for the second round to matter: the dev loop, a language server or tool server, a test
      * harness capturing many graphs into one store. Room for a capture's statements with headroom.
      */
-    LONG_LIVED(1024);
+    LONG_LIVED(1024),
 
-    /** The system property that replaces the cache size of either use for one JVM. */
+    /**
+     * Many captures into one store held open for a whole test run, beside other such stores: the
+     * test population. A cached statement keeps its compiled plan and the tokens it was parsed
+     * from, and a rule view expands into a large plan, so a cache sized for a long-lived connection
+     * held in every session of every store outgrows a test JVM's heap. It keeps {@link #ONE_CAPTURE}'s
+     * room unless the system property {@value #POPULATION_CACHE_SIZE_PROPERTY} says otherwise, for a
+     * suite whose readers replay statements that room evicts.
+     */
+    POPULATION(64);
+
+    /** The system property that replaces the cache size of every use for one JVM. */
     public static final String CACHE_SIZE_PROPERTY = "graphitron.queryCacheSize";
+
+    /** The system property that sizes {@link #POPULATION} alone for one JVM. */
+    public static final String POPULATION_CACHE_SIZE_PROPERTY = "graphitron.populationCacheSize";
 
     private final int cacheSize;
 
@@ -57,6 +70,7 @@ public enum StoreUse {
 
     /** Prepared statements each session of a store opened for this use keeps. */
     int cacheSize() {
-        return Integer.getInteger(CACHE_SIZE_PROPERTY, cacheSize);
+        int own = this == POPULATION ? Integer.getInteger(POPULATION_CACHE_SIZE_PROPERTY, cacheSize) : cacheSize;
+        return Integer.getInteger(CACHE_SIZE_PROPERTY, own);
     }
 }
