@@ -1665,6 +1665,18 @@ generated Java or SQL as text.
   shape, its emitter path following. The tests read documents already: `NodeIdFillEmitterTest` and
   `NodeIdBuildEmitterTest` `scenarios/node-id-decode-record`, `CallEmitterTest`
   `scenarios/service-call-shapes`, and the service census is part of `EmissionCensusTest`.
+* **A fact a document holds is claimed by the document, and decided by a rule** `open`, off the
+  critical path. `LiftQueryTest.recordsForAPayloadsDataFieldOrAScalarAreNoLift` names two absences
+  and pins every lift in `scenarios/service-lift` exactly, a claim the document should make
+  itself, so a new lift in the document breaks a test about payloads and scalars; and `LiftQuery`
+  decides in its own query which producers lift, where a stored rule should say so and the emitter
+  read it. The test keeps its two absences, the document claims its lifts with `@expectEquals`,
+  and whether a producer lifts is stored if no relation states it; then the same badness is looked
+  for and cleaned up elsewhere: Java tests that read a fact document by name and pin its population
+  (`containsExactly`, `hasSize`, a census count) where the document could claim it, or a fixture
+  class's whole method list where the claim is narrower (`MethodCompletionsTest`'s `hasSize` on
+  `FilmCarrierService`, which every new fixture method breaks), and emitter
+  queries that decide a fact the store should state rather than read one it does.
 * **No emitter reads a leaf** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". `CommandSeamRatchetTest` counts no leaf `instanceof`, case pattern or `plan`
   reference left in the generator.
 
