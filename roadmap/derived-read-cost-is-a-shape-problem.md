@@ -94,7 +94,9 @@ The walk's read path is gone
 │   ├── A leaf a filter compares is stated once
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
-    └── The walk's test service shapes are fact documents or walk-only refusals
+    ├── The walk's test service shapes are fact documents or walk-only refusals
+    ├── A child service whose source collects no table's records is refused
+    └── splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1114,7 +1116,7 @@ static method needs no holder.
   the store emits takes its checks from `BuildQuery`'s column writes; read off the validating
   producer's occurrence columns anti-joined to `sql_column_record_accessor`, the advisory and the
   checks state one fact.
-* **A child service whose source collects no table's records is refused** `open`. A child
+* **A child service whose source collects no table's records is refused** `open`, blocks "The walk's service path is gone": only the walk refuses it today. A child
   `@service` whose `Sources` parameter collects records of no table falls between
   `SOURCE_PARAMETER_MISSING` and the key-row arms, and which code refuses it is undecided (Alf,
   2026-11-10).
@@ -1169,7 +1171,7 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **The walk's service path is gone** `blocked`, E's, on "The walk's test service shapes are fact documents or walk-only refusals". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service path is gone** `blocked`, E's, on "The walk's test service shapes are fact documents or walk-only refusals", "A child service whose source collects no table's records is refused" and "splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`. What of `ServiceCatalog` stays has its
   owners: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
@@ -1199,7 +1201,7 @@ static method needs no holder.
 * **A hop-0 filter on a record parent's split query is refused in the store** `open`, off the
   critical path. `BuildContext.buildParentCorrelation` refuses a `condition:` filter on the first
   hop where the parent is no catalog table; the store has no code for it.
-* **splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C** `open`, off the critical path. It is a warning defect rather than a lint arm, `lint_violation` being the derivation family's, and lands with the walk's lint removed in one commit. The rule is CLASSIFIER, raised by FieldBuilder at a field returning a @table type under a class-backed parent and at a @service payload's data field. The payload arm goes silent when the service subtract deletes it, and the record-parent arm with the walk. In the store it is a lint_violation arm: the parent holds an object (graphitron_result OBJECT) and the field returns a table-bound type. It reads the fetchers stage's relations, so its case is a fact document rather than LintRuleCasesTest's AST-only corpus, and the move settles how that catalogue test counts it. It also reaches a DML payload's data field, which the walk does not warn on.
+* **splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C** `open`, its payload arm blocks "The walk's service path is gone", which would silence it. It is a warning defect rather than a lint arm, `lint_violation` being the derivation family's, and lands with the walk's lint removed in one commit. The rule is CLASSIFIER, raised by FieldBuilder at a field returning a @table type under a class-backed parent and at a @service payload's data field. The payload arm goes silent when the service subtract deletes it, and the record-parent arm with the walk. In the store it is a lint_violation arm: the parent holds an object (graphitron_result OBJECT) and the field returns a table-bound type. It reads the fetchers stage's relations, so its case is a fact document rather than LintRuleCasesTest's AST-only corpus, and the move settles how that catalogue test counts it. It also reaches a DML payload's data field, which the walk does not warn on.
 * **A payload's data field bound to another table than its service's records is refused in the store** `open`, off the critical path. A `@service` handing back a table's records into a payload whose data field's type carries `@table` lifts them for that field by their keys, which holds only where the two tables are one. The walk refuses the other case at the carrier; in the store `SERVICE_RETURN_MISMATCH` checks a bound type only and `SERVICE_PAYLOAD_IN_A_LIST` its own list case, and no rule compares the data field's table with the records'. A document first finds what, if anything, fires there; then one rule raises it at the data field.
 * **An empty routed answer over a non-lifted jOOQ Result names its table** `open`, off the critical path. `ConnectionQuery` builds a service's empty `RESULT` answer over the producer result's table, which is its lift. Since a service is lifted only where its field's type is (Alf, 2026-11-18), a `Result` of a table's records under a type without `@table` has a `RESULT` row and no lifted table, so a call naming no tenant would build its empty answer over nothing. No document reaches it yet (a type without `@table` is unscoped unless `$tenant` names one); the record's own table, read off its class, is what the empty answer needs.
 * **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
