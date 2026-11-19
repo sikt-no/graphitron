@@ -3,6 +3,7 @@ package no.sikt.graphitron.mcp;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.derive.AuthoredClaim;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.reference.DefectReferencePage;
 import no.sikt.graphitron.model.tables.records.DiagnosticRecord;
 import org.jooq.Condition;
 
@@ -18,6 +19,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_GUIDANCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
@@ -101,8 +103,16 @@ final class DiagnosticsTool {
                     ps.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN),
                     dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
             .convertFrom(rows -> rows.map(r -> r.value1()));
-        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives)
+        // A stored defect's code and guidance, through the editor code the view carries, which
+        // graphitron_defect_type holds once per code; the walk's rejections carry a kind and are
+        // left out, their codes being another namespace.
+        var rowType = GRAPHITRON_DEFECT_TYPE.as("row_type");
+        var dg = GRAPHITRON_DEFECT_GUIDANCE;
+        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives, rowType.CODE, dg.GUIDANCE)
             .from(DIAGNOSTIC)
+            .leftJoin(rowType).on(rowType.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE), DIAGNOSTIC.KIND.isNull(),
+                DIAGNOSTIC.SOURCE.eq(inline("schema")))
+            .leftJoin(dg).on(dg.CODE.eq(rowType.CODE))
             .where(conditions)
             .orderBy(DIAGNOSTIC.SOURCE.asc(),
                 DIAGNOSTIC.FILE.asc().nullsLast(),
@@ -111,7 +121,8 @@ final class DiagnosticsTool {
                 DIAGNOSTIC.COORDINATE.asc().nullsLast(),
                 DIAGNOSTIC.MESSAGE.asc())
             .fetch(r -> entry(r.into(DIAGNOSTIC), ordered(Stream.concat(
-                r.get(claimDirectives).stream(), r.get(stepDirectives).stream()).toList())));
+                r.get(claimDirectives).stream(), r.get(stepDirectives).stream()).toList()),
+                r.get(rowType.CODE), r.get(dg.GUIDANCE)));
 
         var paged = McpWire.page(entries, args, DEFAULT_LIMIT);
         var fields = new LinkedHashMap<String, Object>();
@@ -136,7 +147,9 @@ final class DiagnosticsTool {
      * appears only on rejection-bearing rows, {@code lintRule} only on lint rows, and the location
      * (the stored file path rendered as a URI through the file dimension's own spelling, plus its
      * 1-based position mapped to the 0-based wire shape every goto-definition consumer reads) only
-     * when the row has one.
+     * when the row has one. A stored defect adds its {@code defectCode}, the {@code reference} link to
+     * its entry on the defects reference page, and the {@code guidance} that entry carries, where one
+     * is written: the one text the page, the editor and this tool serve.
      *
      * <p>The kind is transformed rather than parsed into an enum first. Parsing added validation the
      * store performs at write time, the {@code rejection_validation_error.kind} column carrying a
@@ -145,7 +158,8 @@ final class DiagnosticsTool {
      * in the root locale, where the enum's own transform used the default one: on a Turkish-locale
      * JVM {@code INVALID_SCHEMA} came out with a dotless i.
      */
-    private static Map<String, Object> entry(DiagnosticRecord row, List<String> directives) {
+    private static Map<String, Object> entry(DiagnosticRecord row, List<String> directives,
+                                             String defectCode, String guidance) {
         var entry = new LinkedHashMap<String, Object>();
         entry.put("source", row.getSource());
         entry.put("severity", row.getSeverity());
@@ -158,6 +172,11 @@ final class DiagnosticsTool {
             entry.put("rejectionKind", row.getKind().toLowerCase(Locale.ROOT).replace('_', '-'));
         }
         McpWire.putIfNotNull(entry, "lintRule", row.getLintRule());
+        if (defectCode != null) {
+            entry.put("defectCode", defectCode);
+            entry.put("reference", DefectReferencePage.link(defectCode));
+            McpWire.putIfNotNull(entry, "guidance", guidance);
+        }
         if (row.getFile() != null) {
             var location = new LinkedHashMap<String, Object>();
             location.put("uri", DiagnosticFacets.Dimension.FILE.render(row.getFile()));

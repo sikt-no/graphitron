@@ -15,8 +15,10 @@ import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.reference.DefectReferencePage;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
+import org.eclipse.lsp4j.DiagnosticCodeDescription;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -475,6 +477,9 @@ public final class Diagnostics {
      * is judged here: the verdict is the build's, and what the row set holds is what a capture
      * recorded, so a buffer the author has since edited shows what the schema said when it was last
      * read rather than nothing at all.
+     *
+     * <p>A stored defect links its code to its entry on the defects reference page, which carries
+     * the rule and the guidance the store holds for it: the editor shows the code as that link.
      */
     private static void replay(
         Batch.Document document, DiagnosticFacts.Answers answers, List<Diagnostic> out
@@ -485,6 +490,9 @@ public final class Diagnostics {
             d.setSource(VALIDATOR_SOURCE);
             if (row.lspCode() != null) {
                 d.setCode(row.lspCode());
+            }
+            if (row.defectCode() != null) {
+                d.setCodeDescription(new DiagnosticCodeDescription(DefectReferencePage.link(row.defectCode())));
             }
             out.add(d);
         }

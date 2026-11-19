@@ -377,10 +377,12 @@ final class DiagnosticFacts {
      *
      * @param severity the view's closed pair, {@code error} or {@code warning}
      * @param lspCode the producing arm's stable machine code, or absent where it publishes none
+     * @param defectCode the stored defect's code where the row is one, which names its entry on the
+     *        defects reference page; absent on every other arm
      */
     record ReplayRow(
         String file, String severity, String message, String lspCode, Integer sourceLine,
-        Integer sourceColumn
+        Integer sourceColumn, String defectCode
     ) {}
 
     /**
@@ -921,10 +923,14 @@ final class DiagnosticFacts {
                     ps.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN),
                     dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
             .convertFrom(rows -> rows.map(r -> r.value1()));
+        // A stored defect's code, through the editor code graphitron_defect_type holds once per
+        // code; the walk's rejections carry a kind and another namespace of codes, and are left out.
+        var rowType = GRAPHITRON_DEFECT_TYPE.as("row_type");
         return multiset(select(DIAGNOSTIC.FILE, DIAGNOSTIC.SEVERITY, DIAGNOSTIC.MESSAGE,
                 DIAGNOSTIC.LSP_CODE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN, claimDirectives,
-                stepDirectives)
+                stepDirectives, rowType.CODE)
             .from(DIAGNOSTIC)
+            .leftJoin(rowType).on(rowType.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE), DIAGNOSTIC.KIND.isNull())
             .where(DIAGNOSTIC.GRAPH_NAME.eq(store.graphName()))
             .and(DIAGNOSTIC.SOURCE.eq(SCHEMA_CHANNEL))
             .and(DIAGNOSTIC.FILE.in(files))
@@ -937,7 +943,7 @@ final class DiagnosticFacts {
                 return new ReplayRow(r.value1(), r.value2(), named.isEmpty() ? r.value3()
                     : r.value3() + " (" + String.join(", ", named.stream().map(n -> "@" + n).toList())
                         + ")",
-                    r.value4(), r.value5(), r.value6());
+                    r.value4(), r.value5(), r.value6(), r.value9());
             }));
     }
 

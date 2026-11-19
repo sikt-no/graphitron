@@ -7812,6 +7812,9 @@ CREATE TABLE graphitron_defect_type (
   lsp_code  VARCHAR,
   statement VARCHAR NOT NULL,
   PRIMARY KEY (code),
+  -- An editor code names one defect, so a reader holding a diagnostic's editor code reaches the
+  -- code, and its guidance, by joining on it.
+  UNIQUE (lsp_code),
   CHECK (severity IN ('error', 'warning')),
   CHECK (basis IN ('SPECIFICATION', 'GRAPHITRON', 'UNSUPPORTED'))
 );
