@@ -1,0 +1,51 @@
+# A @service taking jOOQ records under a VALIDATION channel, over a record one of whose getters the
+# fixture codegen renames: renamed_getter_draft.description reads through readDescription, so the
+# record declares no getDescription, while title keeps getTitle. The call takes the drafts as a list
+# of the table's records, and each input field under the argument binds a column of that table. The
+# catalog's side, the getter each column has and the one description lacks, is
+# scenarios/catalog-record-accessors'. The generator reports the column it cannot check from this
+# graph, a validate-only run and a generating one alike.
+
+type Film @table(name: "film") { title: String }
+
+type DraftInvalid @error(handlers: [{handler: VALIDATION}]) {
+  path: [String!]!
+  message: String!
+}
+union DraftError = DraftInvalid
+type DraftsCountedPayload {
+  count: Int
+  errors: [DraftError]
+}
+
+input DraftInput {
+  title: String @field(name: "title")
+  description: String @field(name: "description")
+}
+
+type Query { films: [Film!]! }
+
+type Mutation {
+  saveDrafts(in: [DraftInput!]!): DraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.RenamedGetterDraftService",
+      method: "count", argMapping: "drafts: in"})
+}
+
+# The call's one parameter takes the argument as renamed_getter_draft's records.
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
+    where: "coordinate = 'Mutation.saveDrafts'", rows: """
+  coordinate,          position, fill,     landing_coordinate,      record_table
+  Mutation.saveDrafts, 0,        ARGUMENT, Mutation.saveDrafts(in:), renamed_getter_draft
+  """)
+
+# Both input fields bind a column of the record's table, the one with no getter included: which
+# columns a record writes is the binding's, and whether each can be checked is the getter's.
+extend schema @expectEquals(relation: "graphitron_occurrence_column",
+    where: "coordinate LIKE 'Mutation.%(%'", rows: """
+  coordinate,                           table_name,           column_name
+  Mutation.saveDrafts(in.description:), renamed_getter_draft, description
+  Mutation.saveDrafts(in.title:),       renamed_getter_draft, title
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
+    where: "coordinate LIKE 'Mutation.%'")

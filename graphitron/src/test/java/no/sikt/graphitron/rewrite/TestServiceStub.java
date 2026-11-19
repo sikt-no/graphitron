@@ -5,7 +5,6 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorReco
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmEndorsementRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
-import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.RenamedGetterDraftRecord;
 import org.jooq.DSLContext;
 import org.jooq.Result;
 
@@ -565,15 +564,6 @@ public class TestServiceStub {
     /** {@link #runSakWithFilmRecord} over a list, validated element by element. */
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithFilmRecords(
             java.util.List<FilmRecord> in) {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * {@link #runSakWithFilmRecords} over a {@link RenamedGetterDraftRecord}, whose generated getter
-     * for description is renamed, so the validator pre-step finds no getter to check that column by.
-     */
-    public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithRenamedGetterDrafts(
-            java.util.List<RenamedGetterDraftRecord> in) {
         throw new UnsupportedOperationException();
     }
 
