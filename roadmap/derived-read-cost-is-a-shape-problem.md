@@ -1194,7 +1194,7 @@ static method needs no holder.
 * **An input nothing takes is a defect everywhere, over one stored fact of what takes it** `open`, E's, off the critical path. Alf's ruling of 2026-11-17 is stated for inputs built into a bean or record, `MEMBER_UNKNOWN` reading the binders inline. A stored `graphitron_occurrence_taken`, one row per occurrence and binder kind written at occurrence-tenants, carries the rule to the other places an input can be dropped, and `ARGUMENT_UNBOUND` and `MEMBER_UNKNOWN` are restated on it.
     * **An argument on a field read off an object is judged, claimed by C** `blocked`, on "A getter taking arguments is captured as a read slot". An argument on a field that is neither a service nor table-bound reaches no call or predicate, and neither side says so.
     * **A routine's surviving filter leaf naming no column is COLUMN_UNRESOLVED in the store, claimed by C** `blocked`, on "A filter on a union or interface naming a column no participant has is COLUMN_UNRESOLVED in the store". The store now states a routine's leftover filter, a lookup key under an override, a `@reference` argument naming no column and a union participant lacking one, and stores the table each was looked for in; what is left is subtracting the walk's cascade verdict and `UnboundArg` refusal, held on `wip/c-walk-subtract`, with the "did you mean" columns ranked in the diagnostic view (Alf, 2026-11-18, 2026-11-19).
-        * **A filter on a union or interface naming a column no participant has is COLUMN_UNRESOLVED in the store** `blocked`, on "`Query.node` and `_entities` each read their own query". Telling it from `Query.node(id:)` needs the fact that the node fetcher takes its `id`, which that node states, so "nothing takes it" covers both.
+        * **A filter on a union or interface naming a column no participant has is COLUMN_UNRESOLVED in the store** `blocked`, on "`Query.node` and `_entities` each read their own query, claimed by C". Telling it from `Query.node(id:)` needs the fact that the node fetcher takes its `id`, which that node states, so "nothing takes it" covers both.
 * **A @service batch key is read through the read slots** `open`, E's, off the critical path. The walk finds a `Sources` element's key through `ClassAccessorResolver.enumerateZeroArg`, every zero-argument method, while the store's record lift reads only the class's read slots, so the two can pick different members for one key.
 * **A child @service keys off its parent's object through the accessor lift** `open`, E's, off the
   critical path. The store states the lift (`graphitron_occurrence_producer_lift_accessor`) and
@@ -1739,7 +1739,7 @@ output package they are written to are settled.
 * **The node id encoder is not planned** `open`. It renders from the store already and is written
   straight from it, as `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER`
   goes, with `PlanCompileGraph`'s edge to it.
-* **`Query.node` and `_entities` each read their own query** `open`. Node resolution and entity
+* **`Query.node` and `_entities` each read their own query, claimed by C** `open`. Node resolution and entity
   resolution are separate lookups with a query each against the store (ruled 2026-11-12, in
   `fact-model.adoc`). `Query.node` reads the nodes off `graphitron_node`, filtered to those whose
   `id` binds `NODE_ID`, with their type ids and key columns; `EntityKeyQuery`'s alternatives become
