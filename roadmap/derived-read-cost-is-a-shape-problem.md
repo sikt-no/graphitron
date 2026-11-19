@@ -1923,6 +1923,19 @@ someone to profile.
   `graphitron_occurrence_route_entry_defect_rule`), and one view named a rule no stage writes from,
   `graphitron_entry_defect_parameter_rule`: `StageRuleGateTest` lists both as debt, each to be stored
   or folded in, and the lists only shrink.
+  Bisected cold on 2026-11-19 (R1131 step 17, `audits/2026-11-19-what-h2-spends-a-capture-on.md`):
+  in a fresh store three rules hold 400 of the 515 ms the 29 entry-defect rules take to plan, and a
+  few arms each hold most of a rule's. In `graphitron_occurrence_producer_entry_defect_rule`, arms 18,
+  10, 15, 17 and 1 (arm 18, `SERVICE_RETURN_MISMATCH`, the dearest); in
+  `graphitron_occurrence_depth_entry_defect_rule`, arms 20, 22 and 8; in
+  `graphitron_occurrence_build_entry_defect_rule`, arms 14 (`NODE_ID_LANDS_ON_TABLE`), 6 and 13, arms
+  counted from 0 at the view's top-level `UNION`s as `ViewComplexityTest`'s `arms.tsv` lists them. Each
+  joins seven inputs in one block, the most H2 searches exhaustively (5,040 orders), with correlated
+  `EXISTS`/`NOT EXISTS` guards over several of them, whose evaluability H2 re-checks per order. Two
+  levers, each to be priced on a cold capture: a block of five or fewer inputs (120 orders), its shared
+  join stored once at its own grain as the occurrence-source and need claims were; and a guard repeated
+  across arms (the three `NOT EXISTS` on `graphitron_argmapping_landing` in builds' arm 14) stored once
+  and joined.
 * **A rule view's rows are exactly one relation's, claimed by G** `open`, off the critical path. A stage inserts
   part of a rule view's rows into a relation, a Java filter choosing them: the condition parameter rule into
   `graphitron_occurrence_call_parameter` by a join to the method the call pinned, which an
