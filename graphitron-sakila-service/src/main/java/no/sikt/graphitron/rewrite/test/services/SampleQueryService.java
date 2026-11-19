@@ -124,6 +124,14 @@ public final class SampleQueryService {
     }
 
     /**
+     * {@link #filmsByService} taking the jOOQ context twice: each parameter of that type is the
+     * context, so both are filled with it.
+     */
+    public static Result<FilmRecord> filmsByServiceOnTwoContexts(DSLContext dsl, DSLContext other, List<Integer> ids) {
+        return filmsByService(dsl, ids);
+    }
+
+    /**
      * Fixture: same logic as {@link #filmsByService} but with the Java parameter named
      * {@code filmIds}, demonstrating {@code @field(name: "filmIds")} on a GraphQL argument named
      * {@code ids} that binds to a differently-named Java parameter.

@@ -45,6 +45,14 @@ type Query {
   filmCount: Int @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmCount"})
+  "A Set of film records, a collection delivering many as a List does, lifted onto their rows."
+  filmsAsSet: [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+      method: "filmsAsSet"})
+  "The same Set handed down to a payload's list of films."
+  filmSetAsPayload: FilmsPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+      method: "filmsAsSet"})
 }
 
 # What a service hands back names its class by its code_class key where the graph's classpath entries
@@ -61,6 +69,18 @@ extend schema @assertContains(relation: "graphitron_occurrence_producer_result",
   Film.castMembers,       RECORD_LIST,   film_actor, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord
   Query.filmListCarriers, OBJECT,                  , no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord
   Query.filmCount,        SCALAR,                  ,                                                          ,
+  Query.filmsAsSet,       RECORD_LIST,   film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  """)
+
+# A Set of records is served as a List is: the call is made, and nothing is refused at the fields
+# or at the payload's data field.
+extend schema @assertContains(relation: "graphitron_occurrence_call_method", rows: """
+  coordinate,             call,     call_kind, method_name
+  Query.filmsAsSet,       producer, SERVICE,   filmsAsSet
+  Query.filmSetAsPayload, producer, SERVICE,   filmsAsSet
+  """)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate IN ('Query.filmsAsSet', 'Query.filmSetAsPayload', 'FilmsPayload.films')
   """)
 
 # A graph whose connection key has no part states no connection: its child services read on the

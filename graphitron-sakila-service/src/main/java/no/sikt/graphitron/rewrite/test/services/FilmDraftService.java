@@ -51,4 +51,9 @@ public final class FilmDraftService {
     public static FilmDraftsCountedPayload countAbstract(AbstractFilmDraft draft) {
         return new FilmDraftsCountedPayload(1, List.of());
     }
+
+    /** Takes a jOOQ record of no table that nothing can construct, being abstract; never called. */
+    public static FilmDraftsCountedPayload countPlainRecord(PlainRecordDraft draft) {
+        return new FilmDraftsCountedPayload(1, List.of());
+    }
 }

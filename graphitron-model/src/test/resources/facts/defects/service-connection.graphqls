@@ -15,8 +15,16 @@ type Query {
       method: "filmsByIds"})
 }
 
+type Mutation {
+  "A mutation's @service returning a connection, refused as a query's is."
+  touchFilmsPage(ids: [Int!]!): [Film!]! @asConnection
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
+}
+
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_CONNECTION_UNSUPPORTED'", rows: """
   code,                           coordinate
+  SERVICE_CONNECTION_UNSUPPORTED, Mutation.touchFilmsPage
   SERVICE_CONNECTION_UNSUPPORTED, Query.filmsPage
   """)

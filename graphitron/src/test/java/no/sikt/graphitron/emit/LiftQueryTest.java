@@ -72,6 +72,6 @@ class LiftQueryTest {
         assertThat(rows).doesNotContainKeys("Query.filmsAsPayload", "Query.filmCount");
         assertThat(List.copyOf(rows.keySet())).containsExactlyInAnyOrder(
             "Query.filmsByIds", "Query.filmById", "Query.filmActorsByIds", "Film.languageByService",
-            "Film.castMembers");
+            "Film.castMembers", "Query.filmsAsSet");
     }
 }

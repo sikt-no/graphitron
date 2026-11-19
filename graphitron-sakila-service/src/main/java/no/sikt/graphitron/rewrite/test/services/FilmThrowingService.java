@@ -26,4 +26,8 @@ public final class FilmThrowingService {
     public static String titleOrRuntime(Integer id) throws IllegalStateException {
         return null;
     }
+
+    public static String titleOrInterrupted(Integer id) throws InterruptedException {
+        return null;
+    }
 }

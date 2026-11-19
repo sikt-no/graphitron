@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
+import org.jooq.Record;
 import org.jooq.Result;
 import org.jooq.Row1;
 
@@ -87,6 +88,21 @@ public final class FilmReturnShapeService {
     }
 
     public static Map<FilmListRecord, Integer> rankByFilmList(Set<FilmListRecord> listings) {
+        return Map.of();
+    }
+
+    /** Films as a set: a collection delivering many, as a list does. */
+    public static Set<FilmRecord> filmsAsSet() {
+        return Set.of();
+    }
+
+    /** Films as an Iterable, delivering many as a list does. */
+    public static Iterable<FilmRecord> filmsAsIterable() {
+        return List.of();
+    }
+
+    /** Each film's language as a jOOQ record of no table, which names no record class to lift. */
+    public static Map<FilmRecord, Record> languageAsPlainRecord(Set<FilmRecord> films) {
         return Map.of();
     }
 }

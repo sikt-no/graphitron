@@ -1,7 +1,7 @@
 # What fills each parameter of a service call. Written fills come first: the session handle or one of
 # its members, a context key, and an argument path an argMapping pair names, which may land on an
 # input field, through a list of input objects too. Where nothing is written, the jOOQ context fills a parameter of its type, DSLContext or
-# Configuration; an argument of the call fills the parameter of its name; and a collection at a call
+# Configuration, each one where a method takes it twice; an argument of the call fills the parameter of its name; and a collection at a call
 # with a source takes what the source hands it, in each shape a batched child service signs. Last, a
 # parameter and an argument that are each other's only match by type bind whatever their names: a
 # list of an input object and a List of the record class it is built into, a list of Int and a
@@ -96,6 +96,10 @@ type Query {
   callPrincipal: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummarySessionService",
       method: "labelOf", argMapping: "summary: $session"})
+  "A method taking the jOOQ context twice: both parameters are filled with it."
+  callFilmsOnTwoContexts(ids: [Int!]): [Film] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByServiceOnTwoContexts"})
   callCountOn: Int @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmCountOn"})
@@ -121,6 +125,9 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Query.callPrincipal,          0,        dsl,            DSL_CONTEXT,    ,                              ,
   Query.callPrincipal,          1,        summary,        SESSION,        ,                              ,
   Query.callCountOn,            0,        configuration,  DSL_CONTEXT,    ,                              ,
+  Query.callFilmsOnTwoContexts, 0,        dsl,            DSL_CONTEXT,    ,                              ,
+  Query.callFilmsOnTwoContexts, 1,        other,          DSL_CONTEXT,    ,                              ,
+  Query.callFilmsOnTwoContexts, 2,        ids,            ARGUMENT,       Query.callFilmsOnTwoContexts(ids:), ,
   Query.callFilmsByType,        1,        filmIds,        ARGUMENT,       Query.callFilmsByType(wanted:), ,
   Query.countDrafts,            0,        drafts,         ARGUMENT,       Query.countDrafts(in:),        ,
   Query.holderOne,              0,        filmId,         ARGUMENT,       Query.holderOne(filmId:),      ,

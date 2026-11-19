@@ -1,6 +1,6 @@
 # A @service under an object answering an interface over two tables: each address's occupants may
 # be customers or staff, which the store-fed fetcher lifts participant by participant for a root call
-# only.
+# only, so it is refused under a table and under an object a Java record backs alike.
 
 interface AddressOccupant { firstName: String }
 type Customer implements AddressOccupant @table(name: "customer") { firstName: String @field(name: "first_name") }
@@ -11,10 +11,22 @@ type Address @table(name: "address") {
     className: "no.sikt.graphitron.rewrite.test.services.AddressOccupantCarrierService", method: "occupantsOf"})
 }
 
-type Query { addresses: [Address!]! }
+# AddressOccupantCarrier is a Java record whose address() hands the child service its keys.
+type AddressOccupantCarrier {
+  "The same service under a record-backed parent: refused as under a table."
+  occupants: [AddressOccupant!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.AddressOccupantCarrierService", method: "occupantsOf"})
+}
+
+type Query {
+  addresses: [Address!]!
+  carrier(addressId: Int!): AddressOccupantCarrier @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.AddressOccupantCarrierService", method: "byId"})
+}
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED'", rows: """
   code,                                  coordinate
   SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED, Address.occupants
+  SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED, AddressOccupantCarrier.occupants
   """)

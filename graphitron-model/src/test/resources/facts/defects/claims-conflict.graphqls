@@ -13,6 +13,10 @@ type Film @table(name: "film") {
   readTwice: String
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions", method: "isEnglish"})
     @nodeId
+  "A @service with @nodeId on the same field: the producer's value and the encoded id are two claims."
+  serviceAndNodeId: ID
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @nodeId
   namedAndComputed: String @field(name: "title")
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions", method: "isEnglish"})
   serviceAndReader: String
@@ -68,6 +72,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "co
   CLAIMS_CONFLICT,         Misspelt
   CLAIMS_CONFLICT,         Film.namedAndComputed
   CLAIMS_CONFLICT,         Film.readTwice
+  CLAIMS_CONFLICT,         Film.serviceAndNodeId
   CLAIMS_CONFLICT,         Film.serviceAndLateral
   CLAIMS_CONFLICT,         Film.serviceAndReader
   CLAIMS_CONFLICT,         Film.serviceAndSplitRoutine
@@ -89,6 +94,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_claim", rows: """
   CLAIMS_CONFLICT,         Film.namedAndComputed,       EXPRESSION
   CLAIMS_CONFLICT,         Film.readTwice,              EXPRESSION
   CLAIMS_CONFLICT,         Film.readTwice,              NODE_ID
+  CLAIMS_CONFLICT,         Film.serviceAndNodeId,       NODE_ID
+  CLAIMS_CONFLICT,         Film.serviceAndNodeId,       SERVICE
   CLAIMS_CONFLICT,         Film.serviceAndLateral,      SERVICE
   CLAIMS_CONFLICT,         Film.serviceAndReader,       EXPRESSION
   CLAIMS_CONFLICT,         Film.serviceAndReader,       SERVICE
