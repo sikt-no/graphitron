@@ -18,7 +18,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SESSION_HANDLE_MEMBER;
 /**
  * The store's verdict on a graph: every error-severity entry defect, each at the position it was
  * written. A build reads it before anything else judges the schema, so a graph the store refuses
- * stops here and is not classified at all; a warning-severity defect is no part of it.
+ * stops here and is not classified at all; a warning-severity defect is no part of it, and is read
+ * beside it, by {@link #rows(DSLContext, String, String)}, for the build to log.
  *
  * <p>The message is what the editor shows for the same row: the code's statement, the row's detail
  * after it, and the code itself, so the build and the editor never say two things about one defect.
@@ -35,12 +36,18 @@ public final class EntryDefectVerdict {
     public record Row(String code, String statement, String detail, String coordinate,
                       String typeName, String fieldName, SourceLocation location) {}
 
-    /**
-     * The graph's error-severity defects, in document and position order. A defect on an
-     * {@code argMapping} string states no detail of its own; its offending entries are rows under
-     * it, joined here in written order as the detail the message quotes.
-     */
+    /** The graph's error-severity defects, in document and position order. */
     public static List<Row> rows(DSLContext dsl, String graphName) {
+        return rows(dsl, graphName, "error");
+    }
+
+    /**
+     * The graph's defects of one severity, {@code error} or {@code warning}, in document and position
+     * order, each read alike. A defect on an {@code argMapping} string states no detail of its own;
+     * its offending entries are rows under it, joined here in written order as the detail the
+     * message quotes.
+     */
+    public static List<Row> rows(DSLContext dsl, String graphName, String severity) {
         var d = GRAPHITRON_ENTRY_DEFECT_SITE;
         var t = GRAPHITRON_DEFECT_TYPE;
         var e = GRAPHITRON_ARGMAPPING_PAIR_DEFECT;
@@ -57,7 +64,7 @@ public final class EntryDefectVerdict {
                 d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
             .from(d)
             .join(t).on(t.CODE.eq(d.CODE))
-            .where(d.GRAPH_NAME.eq(graphName), t.SEVERITY.eq("error"))
+            .where(d.GRAPH_NAME.eq(graphName), t.SEVERITY.eq(severity))
             .orderBy(d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE)
             .fetch(r -> new Row(r.value1(), r.value2(),
                 r.value3() != null || r.value7() == null || r.value8() == null || r.value9() == null

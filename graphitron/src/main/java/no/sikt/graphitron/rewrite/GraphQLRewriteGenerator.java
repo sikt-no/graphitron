@@ -152,6 +152,7 @@ public class GraphQLRewriteGenerator {
     public GenerationResult generate() {
         var pass = runPipeline(Projection.GENERATE);
         logWarnings(pass.warnings());
+        logStoredWarnings(pass.storedWarnings());
         logErrors(pass.errors());
         if (!pass.errors().isEmpty()) {
             throw new ValidationFailedException(pass.errors());
@@ -176,6 +177,7 @@ public class GraphQLRewriteGenerator {
     public Pass runPass() {
         var pass = runPipeline(Projection.PASS);
         logWarnings(pass.warnings());
+        logStoredWarnings(pass.storedWarnings());
         return new Pass(pass.output(), Optional.ofNullable(pass.generation()));
     }
 
@@ -304,6 +306,7 @@ public class GraphQLRewriteGenerator {
     public void validate() {
         var pass = runPipeline(Projection.VALIDATE);
         logWarnings(pass.warnings());
+        logStoredWarnings(pass.storedWarnings());
         logErrors(pass.errors());
         if (!pass.errors().isEmpty()) {
             throw new ValidationFailedException(pass.errors());
@@ -413,9 +416,15 @@ public class GraphQLRewriteGenerator {
      * What one pass computed, before an entry point decides what to do with it. The generation is
      * null exactly when this pass did not emit: either the projection asked for no emission, or the
      * validator rejected the schema and there was nothing to emit.
+     *
+     * <p>{@code storedWarnings} are the store's warning-severity defects, carried beside the
+     * {@code warnings} as {@code walkErrors} is beside {@code errors}: logged where the warnings are
+     * and never one of them, so they are not written back as findings and the editor shows each once,
+     * through the defect's own entry in the diagnostic view.
      */
     private record PassProducts(List<ValidationError> walkErrors,
                                 List<ValidationError> errors, List<BuildWarning> warnings,
+                                List<ValidationError> storedWarnings,
                                 IncrementalGeneration generation) {
 
         /** The editor-facing projection of these products, fusing the report the LSP reads. */
@@ -514,6 +523,16 @@ public class GraphQLRewriteGenerator {
             .toList();
     }
 
+    /**
+     * The store's warning-severity defects, each in the message the build's errors take: logged by
+     * the build, read by the editor and the MCP server off the diagnostic view, one statement apiece.
+     */
+    private List<ValidationError> storedWarnings() {
+        return EntryDefectVerdict.rows(store.dsl(), store.graphName(), "warning").stream()
+            .map(EntryDefectVerdict::error)
+            .toList();
+    }
+
     private List<ValidationError> storedRefusals() {
         var nameability = new ClasspathNameability(ctx.classpathRoots());
         return EntryDefectVerdict.rows(store.dsl(), store.graphName()).stream()
@@ -545,9 +564,10 @@ public class GraphQLRewriteGenerator {
         // it emits, and the fetcher generator emits them in the classified ones' place.
         var services = no.sikt.graphitron.emit.ServiceEmission.read(store);
         var refused = refusals(services);
+        var storedWarnings = storedWarnings();
         if (!refused.isEmpty()) {
             return new PassProducts(List.of(), refused,
-                suppressed(storeWarnings(store, schemas.narrowings())), null);
+                suppressed(storeWarnings(store, schemas.narrowings())), storedWarnings, null);
         }
 
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, accepted, ctx,
@@ -570,7 +590,7 @@ public class GraphQLRewriteGenerator {
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {
-            return new PassProducts(captured.walkErrors(), captured.errors(), warnings, null);
+            return new PassProducts(captured.walkErrors(), captured.errors(), warnings, storedWarnings, null);
         }
         var plan = captured.plan();
 
@@ -708,7 +728,7 @@ public class GraphQLRewriteGenerator {
         CompileDependencyGraph graph = projection.compileGraph()
             ? PlanCompileGraph.fromPlan(plan, fixedRuntime, schema)
             : null;
-        return new PassProducts(captured.walkErrors(), captured.errors(), warnings,
+        return new PassProducts(captured.walkErrors(), captured.errors(), warnings, storedWarnings,
             new IncrementalGeneration(result, graph));
     }
 
@@ -936,6 +956,18 @@ public class GraphQLRewriteGenerator {
                 && lintConfig.disabledRuleIds().contains(lf.rule().id()));
         }
         return all;
+    }
+
+    /** The store's warning-severity defects, in the form {@link #logWarnings} gives the others. */
+    private static void logStoredWarnings(List<ValidationError> warnings) {
+        warnings.forEach(w -> {
+            var loc = w.location();
+            if (loc != null) {
+                LOGGER.warn("{}:{}:{}: warning: {}", relativiseSourceName(loc.getSourceName()), loc.getLine(), loc.getColumn(), w.message());
+            } else {
+                LOGGER.warn("warning: {}", w.message());
+            }
+        });
     }
 
     private static void logWarnings(List<BuildWarning> warnings) {
