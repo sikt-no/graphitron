@@ -40,7 +40,7 @@ class DefectReferencePageTest {
     }
 
     @Test
-    @DisplayName("the floors refuse an empty set, a blank statement, a deferral with no guidance and an orphaned fragment")
+    @DisplayName("the floors refuse an empty set, a blank statement and an orphaned fragment")
     void floors() {
         var ok = new Entry("A_CODE", "error", "GRAPHITRON", "GRAPHITRON_A_CODE", "A rule.", null);
         assertThatThrownBy(() -> DefectReferencePage.render(List.of(), Set.of()))
@@ -48,9 +48,6 @@ class DefectReferencePageTest {
         assertThatThrownBy(() -> DefectReferencePage.render(
             List.of(new Entry("B", "error", "GRAPHITRON", null, " ", null)), Set.of()))
             .hasMessageContaining("blank statement");
-        assertThatThrownBy(() -> DefectReferencePage.render(
-            List.of(new Entry("C", "error", "UNSUPPORTED", null, "Not yet.", null)), Set.of()))
-            .hasMessageContaining("C is UNSUPPORTED and has no guidance");
         assertThatThrownBy(() -> DefectReferencePage.render(List.of(ok), Set.of("GONE")))
             .hasMessageContaining("GONE.adoc names a code the store does not declare");
         assertThat(DefectReferencePage.render(List.of(ok), Set.of())).contains("[#a-code]");

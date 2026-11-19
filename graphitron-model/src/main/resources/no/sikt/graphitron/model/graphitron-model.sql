@@ -7812,9 +7812,6 @@ CREATE TABLE graphitron_defect_type (
   lsp_code  VARCHAR,
   statement VARCHAR NOT NULL,
   PRIMARY KEY (code),
-  -- An editor code names one defect, so a reader holding a diagnostic's editor code reaches the
-  -- code, and its guidance, by joining on it.
-  UNIQUE (lsp_code),
   CHECK (severity IN ('error', 'warning')),
   CHECK (basis IN ('SPECIFICATION', 'GRAPHITRON', 'UNSUPPORTED'))
 );
@@ -28198,7 +28195,7 @@ CREATE TABLE meta_stated_relation (
   CHECK (CHAR_LENGTH(example) BETWEEN 1 AND 300),
   CHECK (CHAR_LENGTH(rationale) BETWEEN 1 AND 1500)
 );
-COMMENT ON TABLE meta_stated_relation IS 'One relation whose rows this file supplies: what one of its rows is, an example of one, and why it is stated rather than gathered. For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.';
+COMMENT ON TABLE meta_stated_relation IS 'One relation whose rows this file, or a resource shipped beside it, supplies: what one of its rows is, an example of one, and why it is stated rather than gathered. For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.';
 COMMENT ON COLUMN meta_stated_relation.relation_name IS 'the stated relation''s name as declared; the roster''s key, and it must resolve to an observed relation (gated) on meta_relation''s terms';
 COMMENT ON COLUMN meta_stated_relation.grain_text IS 'what one row of it is, in one sentence, on meta_relation.grain_text''s terms including the echo against the relation''s own comment';
 COMMENT ON COLUMN meta_stated_relation.example IS 'one concrete row, on meta_relation.example''s terms';
@@ -28250,7 +28247,7 @@ INSERT INTO meta_stated_relation VALUES
    'For example org.jooq.Row3 holds three values, typed by its three type arguments in order.',
    'The vocabulary a slot taking a node id''s key as a tuple is recognised by, stated here for the reason code_delivery_container is: the classes are jOOQ''s own, which no reading of a consumer''s classpath states, and their degree is in their name, which a rule would otherwise have to parse. jOOQ declares Record1 to Record22 and Row1 to Row22, so the set is closed.'),
   ('meta_stated_relation',
-   'One relation whose rows this file supplies: what one of its rows is, an example of one, and why it is stated rather than gathered.',
+   'One relation whose rows this file, or a resource shipped beside it, supplies: what one of its rows is, an example of one, and why it is stated rather than gathered.',
    'For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.',
    'The roster names itself, as meta_relation does, because a roster exempting itself is a roster with one unchecked member. What it exists for is a category the schema had without naming: a relation whose rows are a function of this file, which meta_relation cannot describe because that declaration needs a grain in a corpus and an owning gatherer, and a stated relation reads no corpus and has no producer. Every instance was grandfathered onto the undeclared roster instead, which is a list of what nobody has got to rather than a statement about anything, and which only shrinks; a new stated relation therefore had nowhere legal to go. The gatherer roster could not absorb them either: it keys on a class a gate loads, so declaring one would mean naming a producer that does not exist. Splitting the roster rather than widening meta_relation keeps the two claims apart: a declared relation names who fills it and from what, and a stated one asserts there is no such thing to name.'),
   ('graphitron_defect_guidance',
@@ -28658,10 +28655,10 @@ COMMENT ON VIEW build_warning_stale_module_hint IS 'One graph whose run read a w
 -- COMMENT ON COLUMN build_warning_stale_module_hint.hint IS 'the clause appended to the graph''s error diagnostics: how many modules were read stale and where the warnings naming them are, one per module';
 
 CREATE VIEW diagnostic
-  (graph_name, source, severity, actionable, kind, variant, lsp_code, attempt_kind, attempt,
+  (graph_name, source, severity, actionable, kind, variant, lsp_code, defect_code, attempt_kind, attempt,
    stub_key, lint_rule, type_name, field_name, coordinate, file,
    source_line, source_column, message) AS
-SELECT r.graph_name, 'schema', 'error', r.kind <> 'DEFERRED', r.kind, r.variant, r.lsp_code,
+SELECT r.graph_name, 'schema', 'error', r.kind <> 'DEFERRED', r.kind, r.variant, r.lsp_code, CAST(NULL AS VARCHAR),
        r.attempt_kind, r.attempt, r.stub_key,
        CAST(NULL AS VARCHAR),
        r.type_name, r.field_name,
@@ -28673,7 +28670,7 @@ SELECT r.graph_name, 'schema', 'error', r.kind <> 'DEFERRED', r.kind, r.variant,
   FROM rejection_validation_error r
 UNION ALL
 SELECT l.graph_name, 'schema', 'warning', TRUE,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        l.lint_rule,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -28682,7 +28679,7 @@ SELECT l.graph_name, 'schema', 'warning', TRUE,
   FROM lint_finding l
 UNION ALL
 SELECT w.graph_name, 'schema', 'warning', TRUE,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -28691,7 +28688,7 @@ SELECT w.graph_name, 'schema', 'warning', TRUE,
   FROM build_warning_no_rule w
 UNION ALL
 SELECT m.graph_name, 'classpath', 'warning', TRUE,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -28700,7 +28697,7 @@ SELECT m.graph_name, 'classpath', 'warning', TRUE,
   FROM build_warning_stale_module m
 UNION ALL
 SELECT p.graph_name, 'schema', 'error', TRUE,
-       CAST(NULL AS VARCHAR), p.error_class, CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), p.error_class, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -28711,7 +28708,7 @@ UNION ALL
 SELECT j.graph_name, 'compile',
        CASE WHEN j.kind = 'ERROR' THEN 'error' ELSE 'warning' END,
        TRUE,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), j.code,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), j.code, CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -28737,7 +28734,7 @@ UNION ALL
 -- The message is the defect type's statement with the entry's detail quoted after it where the
 -- code does not say everything on its own, which is that column's whole purpose.
 SELECT d.graph_name, 'schema', t.severity, t.basis <> 'UNSUPPORTED',
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), t.lsp_code,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), t.lsp_code, d.code,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR),
        d.type_name, d.field_name, d.coordinate,
@@ -28756,6 +28753,7 @@ COMMENT ON VIEW diagnostic IS 'The diagnostic relations'' one read surface: the 
 -- COMMENT ON COLUMN diagnostic.kind IS 'RejectionKind.name() on the residue''s rows; NULL on lint, advisory and compile rows, where the three-way fork does not apply';
 -- COMMENT ON COLUMN diagnostic.variant IS 'the producing oracle''s error-class dimension, in whichever of two namespaces minted the row: the rejection leaf''s package-stripped class name on rejection-bearing rows (rejection_validation_error.variant''s spelling rule), and graphql-java''s own error class name on the SDL toolchain''s arm (graphql_schema_problem.error_class, at every one of graphql-java''s three stages it records), and the loading-rewrite refusal''s variant name at its REWRITE stage, a third namespace the stage column tells apart. A PARSE row was rendered here as the literal InvalidSyntaxException while the parser had a relation of its own, on the claim that the stage has exactly one way to refuse. It has several: that name is a base class, and the parser throws subclasses of it (MoreTokensSyntaxException where a document parses and then does not stop). So the column says which, the arm reads it exactly as the two document-wide stages do, and the asymmetry of a literal for one stage and a column for the others is gone with the relation that forced it. The namespaces cannot collide, a rejection leaf keeping its enclosing classes and so always dotted where graphql-java''s are bare, which is the same argument lsp_code makes for carrying two code namespaces in one column. NULL on the lint, advisory and compile arms';
 -- COMMENT ON COLUMN diagnostic.lsp_code IS 'the stable machine code of the row''s producing oracle: the rejection sub-seals'' lspCode() on schema rows that declare one, javac''s Diagnostic.getCode() on compile rows; NULL where neither publishes a code';
+-- COMMENT ON COLUMN diagnostic.defect_code IS 'the graphitron_defect_type code on the written-entry arm, carried rather than recovered from lsp_code, so a reader reaches the defect''s guidance and reference entry by joining on it; NULL on every other arm';
 -- COMMENT ON COLUMN diagnostic.attempt_kind IS 'which lookup space a name resolution failed in (AttemptKind.name()), on UnknownName rows only';
 -- COMMENT ON COLUMN diagnostic.attempt IS 'the name the author wrote, on UnknownName rows only';
 -- COMMENT ON COLUMN diagnostic.stub_key IS 'the deferred row''s stubbed-variant anchor; NULL off Deferred rows and on inline-defer sites naming no leaf class';

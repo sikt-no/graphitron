@@ -380,7 +380,7 @@
                         fragments the store gathered beside it, into the manual's reference
                         staging. Generated and never committed, on render-schema-reference's
                         terms: base build, so the renderer's floors (no codes, a blank statement,
-                        a deferral with no guidance, a fragment naming an undeclared code) gate a
+                        a fragment naming an undeclared code) gate a
                         -P!docs build too, and declared before check-adoc-xrefs, so a link to an
                         entry whose code is gone fails that check.
                     -->

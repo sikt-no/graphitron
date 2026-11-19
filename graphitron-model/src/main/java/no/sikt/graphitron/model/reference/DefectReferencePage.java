@@ -26,8 +26,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
  *
  * <p>Generated-not-committed has no diff to show drift, so the floors here fail the build
  * instead of rendering a plausible page: no declared codes, a blank statement, a statement that
- * cannot be held inert, an {@code UNSUPPORTED} code with no guidance, and a guidance fragment
- * naming a code the store does not declare. A link into the page naming a code no longer declared
+ * cannot be held inert, and a guidance fragment naming a code the store does not declare. An
+ * {@code UNSUPPORTED} code with no guidance never reaches here: the store refuses to create
+ * itself without it. A link into the page naming a code no longer declared
  * is the docs build's own link check, which runs over the rendered page.
  *
  * <p>An entry's anchor is its code in lower kebab case, {@code MUTATION_UPSERT} at
@@ -105,10 +106,6 @@ public final class DefectReferencePage {
             } else if (entry.statement().contains("+") || entry.statement().contains("\n")) {
                 faults.add(entry.code() + "'s statement holds a '+' or a line break, which the page"
                     + " cannot hold inert");
-            }
-            if ("UNSUPPORTED".equals(entry.basis()) && entry.guidance() == null) {
-                faults.add(entry.code() + " is UNSUPPORTED and has no guidance fragment under "
-                    + DefectGuidance.DIRECTORY);
             }
             if (!BASIS_ORDER.contains(entry.basis())) {
                 faults.add(entry.code() + " has a basis the page has no section for: " + entry.basis());

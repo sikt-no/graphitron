@@ -104,6 +104,9 @@ public final class DefectGuidance {
     /**
      * Writes a row for every declared code that has a fragment. Run once, as the schema is created,
      * after the DDL's own rows: the codes it reads are those rows.
+     *
+     * @throws IllegalStateException where an {@code UNSUPPORTED} code has no fragment: a deferral
+     *         owes the author what to write instead, so no store is created without it
      */
     static void write(Connection connection) throws SQLException {
         var codes = new ArrayList<String>();
@@ -125,6 +128,21 @@ public final class DefectGuidance {
                 }
             }
             insert.executeBatch();
+        }
+        var missing = new ArrayList<String>();
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT t.code FROM graphitron_defect_type t"
+                    + " LEFT JOIN graphitron_defect_guidance g ON g.code = t.code"
+                    + " WHERE t.basis = 'UNSUPPORTED' AND g.code IS NULL ORDER BY t.code");
+             ResultSet rows = select.executeQuery()) {
+            while (rows.next()) {
+                missing.add(rows.getString(1));
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("UNSUPPORTED defect codes with no guidance fragment under "
+                + DIRECTORY + ": " + String.join(", ", missing) + "; write <CODE>.adoc saying what is"
+                + " valid, why it is not generated yet and what to write instead");
         }
     }
 

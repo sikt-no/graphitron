@@ -14,10 +14,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Holds the defect guidance fragments to the codes the store declares, in both directions: a
- * fragment names a declared code, and every {@code UNSUPPORTED} code has one, an author meeting a
- * deferral needing to know what to write instead. The defects reference renderer checks the same
- * two, so a build that skips these tests still fails on either.
+ * Holds the defect guidance fragments to the codes the store declares: a fragment names a declared
+ * code, and the store holds every fragment. The defects reference renderer checks the first too,
+ * so a build that skips these tests still fails on an orphan. The other direction, every
+ * {@code UNSUPPORTED} code having a fragment, is the store's own: it refuses to create itself
+ * without one.
  */
 class DefectGuidanceGateTest {
 
@@ -42,25 +43,6 @@ class DefectGuidanceGateTest {
             assertThat(stored)
                 .as("the guidance rows the store wrote at creation, against the fragments")
                 .isEqualTo(new TreeSet<>(fragments));
-        });
-    }
-
-    @Test
-    @DisplayName("every UNSUPPORTED defect code has fix guidance")
-    void everyDeferralHasGuidance() {
-        ThreadConfinedStore.run(dsl -> {
-            var missing = new TreeSet<>(dsl.select(GRAPHITRON_DEFECT_TYPE.CODE)
-                .from(GRAPHITRON_DEFECT_TYPE)
-                .leftJoin(GRAPHITRON_DEFECT_GUIDANCE)
-                .on(GRAPHITRON_DEFECT_GUIDANCE.CODE.eq(GRAPHITRON_DEFECT_TYPE.CODE))
-                .where(GRAPHITRON_DEFECT_TYPE.BASIS.eq("UNSUPPORTED"))
-                .and(GRAPHITRON_DEFECT_GUIDANCE.CODE.isNull())
-                .fetch(GRAPHITRON_DEFECT_TYPE.CODE));
-            assertThat(missing)
-                .as("UNSUPPORTED codes with no fragment under %s; write <CODE>.adoc saying what is"
-                    + " valid, why it is not generated yet and what to write instead",
-                    DefectGuidance.DIRECTORY)
-                .isEmpty();
         });
     }
 

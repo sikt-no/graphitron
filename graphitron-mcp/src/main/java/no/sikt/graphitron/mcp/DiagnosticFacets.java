@@ -101,6 +101,8 @@ final class DiagnosticFacets {
         KIND("kind", DIAGNOSTIC.KIND, "", Spelling.UPPER_SNAKE),
         VARIANT("variant", DIAGNOSTIC.VARIANT, "the rejection's own class"),
         LSP_CODE("lspCode", DIAGNOSTIC.LSP_CODE, ""),
+        DEFECT_CODE("defectCode", DIAGNOSTIC.DEFECT_CODE, "a stored defect's code, which names its reference entry",
+            Spelling.UPPER_SNAKE),
         ATTEMPT_KIND("attemptKind", DIAGNOSTIC.ATTEMPT_KIND,
             "which lookup space a name resolution failed in", Spelling.UPPER_SNAKE),
         ATTEMPT("attempt", DIAGNOSTIC.ATTEMPT, "the name the author wrote"),
@@ -455,7 +457,7 @@ final class DiagnosticFacets {
      */
     static final List<Dimension> TYPED_KEY_DIMENSIONS = List.of(
         Dimension.SEVERITY, Dimension.SOURCE, Dimension.ACTIONABLE, Dimension.KIND,
-        Dimension.VARIANT, Dimension.LSP_CODE, Dimension.ATTEMPT_KIND, Dimension.ATTEMPT,
+        Dimension.VARIANT, Dimension.LSP_CODE, Dimension.DEFECT_CODE, Dimension.ATTEMPT_KIND, Dimension.ATTEMPT,
         Dimension.STUB_KEY, Dimension.LINT_RULE);
 
     static final List<Dimension> LOCATION_DERIVED_DIMENSIONS = List.of(

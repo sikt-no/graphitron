@@ -215,15 +215,20 @@ neither judges a payload key's id against a parameter's arity.
 . Add a detail relation where the defect has more to say, keyed and cascaded as above.
 . Write its fix guidance where the statement alone does not say how to fix it, and always for an
   `UNSUPPORTED` deferral, since the author needs to know what to write instead (Alf, 2026-11-19):
-  one AsciiDoc fragment per code, the only home of that text. The model build gathers the
-  fragments into the store beside the defect types, so the defects reference page, the LSP and the
-  MCP serve the same guidance (Alf, 2026-11-19); a fragment naming a code the store does not
-  declare fails the build. The fragment is `<CODE>.adoc` under
+  one AsciiDoc fragment per code, the only home of that text. The store writes the fragments
+  beside the defect types when it creates its schema, so the defects reference page, the LSP and
+  the MCP serve the same guidance (Alf, 2026-11-19); a fragment naming a code the store does not
+  declare fails the build, and the store refuses to create itself while an `UNSUPPORTED` code has
+  none. The LSP and the MCP reach the guidance by the `defect_code` the `diagnostic` view carries
+  on its written-entry arm. The fragment is `<CODE>.adoc` under
   `graphitron-model/src/main/resources/no/sikt/graphitron/model/defects/`, and a file there whose
   name starts with an underscore is shared prose a fragment includes with
   `include::_name.adoc[]`; the store writes the fragments into `graphitron_defect_guidance` when it
   creates its schema, includes expanded, and `DefectGuidanceGateTest` and the reference page's
-  renderer hold them to the declared codes. The page is the manual's defects reference, one entry
+  renderer hold them to the declared codes. The relation is stated, not gathered: it is generator
+  vocabulary with no graph and nothing a refresh re-reads, so it sits in `meta_stated_relation`
+  beside `graphitron_defect_type`, its rows supplied by the resources shipped with the DDL rather
+  than by the DDL's own literals. The page is the manual's defects reference, one entry
   per code at `#<code-in-kebab-case>`, rendered at every docs build.
 . Pin it in a fact document: the schema, then the expected rows of each relation the case touches
   with the defect rows beside the fact rows, since the defect is half the answer for that field;

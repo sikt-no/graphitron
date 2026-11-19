@@ -37,7 +37,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
@@ -902,35 +901,28 @@ final class DiagnosticFacts {
         var ec = GRAPHITRON_ENTRY_DEFECT_CLAIM;
         var c = GRAPHITRON_CLAIM;
         var da = GRAPHITRON_DIRECTIVE_APPLICATION;
-        var dt = GRAPHITRON_DEFECT_TYPE;
         var ps = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
         var claimDirectives = multiset(select(da.DIRECTIVE_NAME)
                 .from(ec)
-                .join(dt).on(dt.CODE.eq(ec.CODE))
                 .join(c).on(c.GRAPH_NAME.eq(ec.GRAPH_NAME), c.COORDINATE.eq(ec.COORDINATE),
                     c.KIND.eq(ec.KIND), c.CLAIMER.eq(ec.CLAIMER))
                 .join(da).on(da.GRAPH_NAME.eq(c.GRAPH_NAME), da.SOURCE_NAME.eq(c.SOURCE_NAME),
                     da.SOURCE_LINE.eq(c.SOURCE_LINE), da.SOURCE_COLUMN.eq(c.SOURCE_COLUMN))
                 .where(ec.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ec.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
                     ec.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
-                    ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+                    ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), ec.CODE.eq(DIAGNOSTIC.DEFECT_CODE)))
             .convertFrom(rows -> rows.map(r -> r.value1()));
         var stepDirectives = multiset(select(inline(AuthoredClaim.ROUTINE.directive()))
                 .from(ps)
-                .join(dt).on(dt.CODE.eq(ps.CODE))
                 .where(ps.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ps.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
                     ps.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
                     ps.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN),
-                    dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+                    ps.CODE.eq(DIAGNOSTIC.DEFECT_CODE)))
             .convertFrom(rows -> rows.map(r -> r.value1()));
-        // A stored defect's code, through the editor code graphitron_defect_type holds once per
-        // code; the walk's rejections carry a kind and another namespace of codes, and are left out.
-        var rowType = GRAPHITRON_DEFECT_TYPE.as("row_type");
         return multiset(select(DIAGNOSTIC.FILE, DIAGNOSTIC.SEVERITY, DIAGNOSTIC.MESSAGE,
                 DIAGNOSTIC.LSP_CODE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN, claimDirectives,
-                stepDirectives, rowType.CODE)
+                stepDirectives, DIAGNOSTIC.DEFECT_CODE)
             .from(DIAGNOSTIC)
-            .leftJoin(rowType).on(rowType.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE), DIAGNOSTIC.KIND.isNull())
             .where(DIAGNOSTIC.GRAPH_NAME.eq(store.graphName()))
             .and(DIAGNOSTIC.SOURCE.eq(SCHEMA_CHANNEL))
             .and(DIAGNOSTIC.FILE.in(files))

@@ -20,7 +20,6 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_GUIDANCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
@@ -81,11 +80,9 @@ final class DiagnosticsTool {
         var ec = GRAPHITRON_ENTRY_DEFECT_CLAIM;
         var claim = GRAPHITRON_CLAIM;
         var da = GRAPHITRON_DIRECTIVE_APPLICATION;
-        var dt = GRAPHITRON_DEFECT_TYPE;
         var ps = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
         var claimDirectives = multiset(select(da.DIRECTIVE_NAME)
                 .from(ec)
-                .join(dt).on(dt.CODE.eq(ec.CODE))
                 .join(claim).on(claim.GRAPH_NAME.eq(ec.GRAPH_NAME),
                     claim.COORDINATE.eq(ec.COORDINATE), claim.KIND.eq(ec.KIND),
                     claim.CLAIMER.eq(ec.CLAIMER))
@@ -93,26 +90,20 @@ final class DiagnosticsTool {
                     da.SOURCE_LINE.eq(claim.SOURCE_LINE), da.SOURCE_COLUMN.eq(claim.SOURCE_COLUMN))
                 .where(ec.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ec.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
                     ec.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
-                    ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+                    ec.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN), ec.CODE.eq(DIAGNOSTIC.DEFECT_CODE)))
             .convertFrom(rows -> rows.map(r -> r.value1()));
         var stepDirectives = multiset(select(inline(AuthoredClaim.ROUTINE.directive()))
                 .from(ps)
-                .join(dt).on(dt.CODE.eq(ps.CODE))
                 .where(ps.GRAPH_NAME.eq(DIAGNOSTIC.GRAPH_NAME), ps.SOURCE_NAME.eq(DIAGNOSTIC.FILE),
                     ps.SOURCE_LINE.eq(DIAGNOSTIC.SOURCE_LINE),
                     ps.SOURCE_COLUMN.eq(DIAGNOSTIC.SOURCE_COLUMN),
-                    dt.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE)))
+                    ps.CODE.eq(DIAGNOSTIC.DEFECT_CODE)))
             .convertFrom(rows -> rows.map(r -> r.value1()));
-        // A stored defect's code and guidance, through the editor code the view carries, which
-        // graphitron_defect_type holds once per code; the walk's rejections carry a kind and are
-        // left out, their codes being another namespace.
-        var rowType = GRAPHITRON_DEFECT_TYPE.as("row_type");
+        // A stored defect's guidance, by the code the view carries on its written-entry arm.
         var dg = GRAPHITRON_DEFECT_GUIDANCE;
-        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives, rowType.CODE, dg.GUIDANCE)
+        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives, dg.GUIDANCE)
             .from(DIAGNOSTIC)
-            .leftJoin(rowType).on(rowType.LSP_CODE.eq(DIAGNOSTIC.LSP_CODE), DIAGNOSTIC.KIND.isNull(),
-                DIAGNOSTIC.SOURCE.eq(inline("schema")))
-            .leftJoin(dg).on(dg.CODE.eq(rowType.CODE))
+            .leftJoin(dg).on(dg.CODE.eq(DIAGNOSTIC.DEFECT_CODE))
             .where(conditions)
             .orderBy(DIAGNOSTIC.SOURCE.asc(),
                 DIAGNOSTIC.FILE.asc().nullsLast(),
@@ -122,7 +113,7 @@ final class DiagnosticsTool {
                 DIAGNOSTIC.MESSAGE.asc())
             .fetch(r -> entry(r.into(DIAGNOSTIC), ordered(Stream.concat(
                 r.get(claimDirectives).stream(), r.get(stepDirectives).stream()).toList()),
-                r.get(rowType.CODE), r.get(dg.GUIDANCE)));
+                r.get(dg.GUIDANCE)));
 
         var paged = McpWire.page(entries, args, DEFAULT_LIMIT);
         var fields = new LinkedHashMap<String, Object>();
@@ -159,7 +150,7 @@ final class DiagnosticsTool {
      * JVM {@code INVALID_SCHEMA} came out with a dotless i.
      */
     private static Map<String, Object> entry(DiagnosticRecord row, List<String> directives,
-                                             String defectCode, String guidance) {
+                                             String guidance) {
         var entry = new LinkedHashMap<String, Object>();
         entry.put("source", row.getSource());
         entry.put("severity", row.getSeverity());
@@ -172,9 +163,9 @@ final class DiagnosticsTool {
             entry.put("rejectionKind", row.getKind().toLowerCase(Locale.ROOT).replace('_', '-'));
         }
         McpWire.putIfNotNull(entry, "lintRule", row.getLintRule());
-        if (defectCode != null) {
-            entry.put("defectCode", defectCode);
-            entry.put("reference", DefectReferencePage.link(defectCode));
+        if (row.getDefectCode() != null) {
+            entry.put("defectCode", row.getDefectCode());
+            entry.put("reference", DefectReferencePage.link(row.getDefectCode()));
             McpWire.putIfNotNull(entry, "guidance", guidance);
         }
         if (row.getFile() != null) {
