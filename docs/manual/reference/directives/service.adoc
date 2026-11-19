@@ -238,6 +238,7 @@ The rules:
 * A bare name with no dots is the single-slot form, and is what an entry without `argMapping`
   binds to implicitly. `"filmIds: ids"` and `"filmIds: ids.value"` differ only in depth.
 
+[#constraints]
 == Constraints
 
 * `service:` is required: graphql-java rejects a `@service` without it at parse time.

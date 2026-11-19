@@ -9,7 +9,7 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 | Module | Purpose
 
 | `graphitron-model`
-| The fact tier: the DDL that defines the generator's fact base, the jOOQ compile-time surface generated from it, the in-memory H2 bootstrap a run captures into, and capture itself, which reads the consumer's three sources (their GraphQL schema, their jOOQ-generated database classes, their compiled Java) and writes down what it found. Builds before the core, so editing the DDL fails javac in every consumer that touched the changed relation and the core cannot reach back into the tier that feeds it.
+| The fact tier: the DDL that defines the generator's fact base, the jOOQ compile-time surface generated from it, the in-memory H2 bootstrap a run captures into, and capture itself, which reads the consumer's three sources (their GraphQL schema, their jOOQ-generated database classes, their compiled Java) and writes down what it found. Builds before the core, so editing the DDL fails javac in every consumer that touched the changed relation and the core cannot reach back into the tier that feeds it. It also holds the defect fix guidance, one AsciiDoc fragment per code that the store gathers beside the codes, and the renderer the docs build runs to publish the defects reference from them, so the page and the store it reads cannot drift.
 
 | `graphitron`
 | The generator core: the classifier, the validator, the planners and every emitter. Reads facts and writes none.

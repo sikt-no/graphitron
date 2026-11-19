@@ -21,7 +21,8 @@ These pages are where Graphitron's rules are stated: what an author may write, w
 
 == Diagnostics
 
-* xref:diagnostics-glossary.adoc[Diagnostics glossary]: every closed-set diagnostic code the validator emits, organised by category. Covers the three top-level rejection kinds (`author-error`, `invalid-schema`, `deferred`), the nine name-lookup attempt kinds (`column`, `table`, `foreign-key`, `service-method`, `lifter-method`, `enum-constant`, `type-name`, `nodeid-key-column`, `dml-kind`), and the four deferred emit-block reasons.
+* xref:defects.adoc[Defects reference]: every defect code graphitron reports on a schema, one entry each, generated from the fact store at every docs build: the rule, its severity, whether it is an error in the schema or a deferral graphitron does not generate yet, the code the editor shows, and the fix guidance or what to write instead.
+* xref:diagnostics-glossary.adoc[Diagnostics glossary]: every closed-set diagnostic code the validator emits, organised by category. Covers the three top-level rejection kinds (`author-error`, `invalid-schema`, `deferred`), and the name-lookup attempt kinds (`column`, `table`, `foreign-key`, `enum-constant`, `type-name`, `nodeid-key-column`, `dml-kind`).
 
 == Federation
 
