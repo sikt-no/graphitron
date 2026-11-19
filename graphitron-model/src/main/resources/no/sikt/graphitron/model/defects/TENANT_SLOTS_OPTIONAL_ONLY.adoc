@@ -1,0 +1,5 @@
+Reported at the root field.
+
+A root `@service` in a database-per-tenant build runs on the connection of the tenant its arguments name. When every value the tenant is read from may be left out, a request can leave them all out and name no tenant, so the call would have nowhere to run.
+
+*Next step.* Make one of those values required. A value counts as required only when every step of its path is non-null: the argument, each input field down to the one naming the tenant, and the elements of any list on the way. See xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].

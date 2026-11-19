@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the node's key column.
+
+With no path written, graphitron decodes the id through the one foreign key joining the slot's table to the node's, comparing each decoded key value with the column of the slot's table that the foreign key pairs it with. Here jOOQ binds the two columns as different Java types, for example where one carries a converter, so the generated predicate cannot compare them.
+
+*Next step.* Give both columns the same jOOQ binding, or write a xref:directives/reference.adoc[`@reference`] path that ends on the node's own table, so the id is compared with the node's key itself.

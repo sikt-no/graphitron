@@ -1,0 +1,5 @@
+Reported at the `@key`, typically one written with an empty `fields: ""`.
+
+A key with no fields gives a router nothing to send back and graphitron no columns to match a row by.
+
+*Next step.* Name the fields that identify the entity, or remove the `@key`. See xref:../how-to/federation-keys.adoc[How-to: Federation key fields].

@@ -1,0 +1,5 @@
+Reported at the `@issue`, the detail naming the type.
+
+An issuing type is published keyed by its voucher alone and not resolvable, so a router reaches the other subgraph's entity from it only through the voucher. An authored `@key` would give the router another way there, past the voucher.
+
+*Next step.* Remove the `@key` from the issuing type. See xref:directives/issue.adoc[`@issue`].

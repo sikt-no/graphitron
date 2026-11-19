@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry.
+
+The parameter is handed the handle your mount returned, or one member of it, as it is. Its type must be the handle's type or the member's own, or the member's box where the member is primitive. A boxed member cannot bind a primitive parameter, since it may be `null`.
+
+*Next step.* Declare the parameter as the type the handle or the member yields. See xref:mojo-configuration.adoc#consuming-the-handle[Consuming the handle].

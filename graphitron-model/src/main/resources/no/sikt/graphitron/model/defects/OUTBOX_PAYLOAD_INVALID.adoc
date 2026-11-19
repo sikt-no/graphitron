@@ -1,0 +1,5 @@
+Reported at every `@outbox`, since the plugin configuration has no position in the schema; the detail names the first offending entry as `key: source`.
+
+The `<outbox>` block's `<payload>` goes on every message, whichever field writes it, so it can read only what every field has: `$scope` members and `$session.<member>`. An argument or `$result` belongs to one field. Each key carries one value, so a key named twice would lose one.
+
+*Next step.* Correct the entry in `<payload>`: read a `$scope` or `$session` member there, move a field's own value into that field's `@outbox(argMapping:)`, or remove the repeated key. See xref:mojo-configuration.adoc#transactional-outbox[Transactional outbox].

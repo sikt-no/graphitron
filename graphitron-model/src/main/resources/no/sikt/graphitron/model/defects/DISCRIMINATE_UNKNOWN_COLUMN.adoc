@@ -1,0 +1,5 @@
+Reported at the `@discriminate`, the detail naming the column written in `on:`.
+
+A single-table interface is fetched with one `SELECT` against the interface's table, and each row is placed in a member by the value of the `on:` column. A name that matches no column of that table, by its SQL name or its jOOQ name, leaves nothing to read the value from.
+
+*Next step.* Correct `on:` to a column of the interface's `@table`. See xref:directives/discriminate.adoc[`@discriminate`].

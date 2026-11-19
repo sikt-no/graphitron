@@ -1,0 +1,5 @@
+Reported at the `@issue` or `@accept`, the detail naming the field.
+
+Graphitron mints the voucher field as `_voucher` on every issuing and accepting type, the same name in every subgraph so the two sides cannot disagree on it. A field of that name written by hand is not taken for the voucher.
+
+*Next step.* Rename or remove the field. See xref:directives/issue.adoc[`@issue`] or xref:directives/accept.adoc[`@accept`].

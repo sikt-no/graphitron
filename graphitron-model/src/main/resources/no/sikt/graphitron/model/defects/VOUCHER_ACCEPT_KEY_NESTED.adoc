@@ -1,0 +1,5 @@
+Reported at the `@accept`.
+
+A voucher's lookup part carries one scalar value per top-level field, so a key reaching into a nested selection has fields the voucher cannot fill.
+
+*Next step.* Name in `key:` an authored resolvable `@key` of top-level fields only, adding one to the type if it has none. See xref:directives/accept.adoc[`@accept`].

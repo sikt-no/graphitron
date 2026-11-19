@@ -1,0 +1,5 @@
+Reported at the element that names what is missing: a `@reference` path element (its `key`, `table` or `condition`), a `@routine`, or the `index` an ordering names, the detail giving the name where there is one.
+
+Graphitron generates each join, call and sort from what the jOOQ catalog and the classpath declare: a foreign key, a table, a condition method, a routine jOOQ generated a call for, an index. A name matching none of these, or matching the wrong kind of object, such as a table where a routine is expected, leaves nothing to generate from. A path stops at the first such element, and only that element is reported.
+
+*Next step.* Correct the spelling. A table is written `table` or `schema.table`, with no empty half and no third segment; a routine must be a database function jOOQ generated; an index is found only when jOOQ generates indexes (`<includeIndexes>true</includeIndexes>`). Check that the catalog the build reads is current. See xref:directives/reference.adoc[`@reference`], xref:directives/routine.adoc[`@routine`] and xref:directives/order.adoc[`@order`].

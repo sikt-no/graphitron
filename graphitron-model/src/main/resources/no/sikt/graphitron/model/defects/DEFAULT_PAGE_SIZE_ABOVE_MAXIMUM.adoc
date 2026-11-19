@@ -1,0 +1,5 @@
+Reported where the default was written: the `@asConnection` whose `defaultFirstValue:` set it, or the `first:` argument the field declares itself. The detail gives the default and the maximum.
+
+A request asking for more than `<maxAllowedPageSize>` rows is served at the maximum, so a default above it is advertised in the schema but never delivered. The default graphitron mints when none is written is lowered to the maximum, and a default equal to the maximum is accepted.
+
+*Next step.* Lower the default to at most the maximum, or raise `<maxAllowedPageSize>` in the plugin configuration. See xref:directives/asConnection.adoc[`@asConnection`] and xref:mojo-configuration.adoc[Mojo configuration].

@@ -1,0 +1,5 @@
+Reported at the path element that names the condition, the detail naming the two tables and the declarations that tie.
+
+Graphitron calls a path element's condition with the table the step departs and the table it arrives at, and leaves the choice among overloads to the Java compiler. When several declarations accept the pair and none is more specific than the others, for example `(Customer, Table<?>)` beside `(Table<?>, Address)`, the call is ambiguous and does not compile.
+
+*Next step.* Remove one of the tied declarations, or add one taking both tables by their generated classes, which is more specific than either. See xref:directives/reference.adoc[`@reference`] and the xref:directives/condition.adoc#parameter-binding[rules for table parameters].

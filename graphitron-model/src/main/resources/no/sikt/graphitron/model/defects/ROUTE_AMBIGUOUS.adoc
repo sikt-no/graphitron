@@ -1,0 +1,5 @@
+Reported at the path element naming a table more than one key reaches, or at the field's declaration where no path is written, the detail then naming the two tables and the keys to choose between.
+
+An element naming only a `table:`, and a field with no path written, leave graphitron to find the foreign key to join on, and it takes one only where exactly one joins the two tables, in either direction. `film` reaches `language` by `language_id` and by `original_language_id`, two joins with two different answers.
+
+*Next step.* Name the key with `{key:}` in xref:directives/reference.adoc[`@reference`], or, for one participant of an interface or union, in xref:directives/referenceFor.adoc[`@referenceFor`]. See xref:directives/reference.adoc#path-rules[Path rules].

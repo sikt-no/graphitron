@@ -1,0 +1,5 @@
+Reported at the later of the two input fields, the detail naming the member as `Class#member`, or the column where the object is a jOOQ record.
+
+An input object built into a Java object hands each input field's value to one member: a record component, a setter, or a column of a jOOQ record. Two fields reaching the same member, directly or through a grouping, give it two values and no rule for choosing. Node ids decoding into one record member are the exception: they build one record together and are allowed. On a jOOQ record a live field is preferred over a deprecated one, so only two live fields writing one column are refused.
+
+*Next step.* Rename one of the two fields so it fills a member of its own, or remove one.

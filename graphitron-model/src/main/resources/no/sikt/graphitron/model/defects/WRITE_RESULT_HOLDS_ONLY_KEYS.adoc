@@ -1,0 +1,5 @@
+Reported at the field under the type the write returns.
+
+An `INSERT`, `UPDATE` or `DELETE` `@mutation`, or a `@routine` write, hands back the keys of the rows it wrote, not an object of a class. A field reading a member off that result finds nothing there. What a type returned by a write can hold is a field re-reading the written rows by those keys, an id encoded from them, and an errors field.
+
+*Next step.* Read the value through a field returning the written rows' `@table` type, or make the field an `ID`. See xref:directives/mutation.adoc[`@mutation`].

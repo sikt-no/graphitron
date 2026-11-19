@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the interface or union.
+
+An id of an interface or union is decoded per member: the generated fetcher reads the id's type prefix and builds that member's own record, which only a Java slot typed as a record supertype can receive. Anywhere else the value binds a predicate or is encoded, and those need the key of one node type; an output field has nothing to encode from either.
+
+*Next step.* Name one node type in `typeName:`, or move the polymorphic id to an argument or input field a xref:directives/service.adoc[`@service`] takes. See xref:directives/nodeId.adoc#polymorphic-record-slot[Decoding an id of any implementation into a record supertype].

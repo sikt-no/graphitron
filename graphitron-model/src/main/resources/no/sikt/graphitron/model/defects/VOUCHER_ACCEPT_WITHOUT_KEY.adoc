@@ -1,0 +1,5 @@
+Reported at the `@accept`.
+
+A voucher's lookup part decodes to the fields of an authored `@key` this subgraph resolves the type by, and the vouched row is read through that key's lookup. A type with no such key has nothing for the lookup part to fill.
+
+*Next step.* Write a resolvable `@key` on the type, named and typed as the issuing type's absorbed fields outside `vouchesFor`. See xref:directives/accept.adoc[`@accept`] and xref:../how-to/voucher-handover.adoc[How-to: Voucher handover].

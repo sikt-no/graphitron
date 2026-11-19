@@ -1,0 +1,5 @@
+Reported at the `@node`, or at the `@table` where the table class states the shape; the detail names the missing current key column.
+
+An id in the legacy shape is converted to the current one by picking the current key's values out of it, without reading the row. A current key column the legacy shape leaves out has no value to pick.
+
+*Next step.* List every `keyColumns` column in the legacy shape, in the position the old ids carried it. Where the table class states the shape, fix the generator configuration that writes it. See xref:directives/node.adoc#narrowing-the-key[Narrowing the key].

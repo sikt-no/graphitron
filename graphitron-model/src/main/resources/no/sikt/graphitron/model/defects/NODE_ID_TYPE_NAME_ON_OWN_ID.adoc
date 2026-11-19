@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the node type.
+
+A node type's own `id` field is that node's id by construction, so `typeName:` there can only repeat what the type already answers.
+
+*Next step.* Remove `typeName:`. The directive itself is optional on a node's own `id` field. See xref:directives/nodeId.adoc[`@nodeId`].

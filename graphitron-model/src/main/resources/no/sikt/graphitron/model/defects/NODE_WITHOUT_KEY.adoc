@@ -1,0 +1,5 @@
+Reported at the `@node`, the detail naming the table.
+
+A node's id encodes its key columns, taken in turn from `keyColumns` on `@node`, from the node metadata the table's generated class publishes, and from the table's primary key. All three are missing here, as for a view, so there is nothing to build an id from.
+
+*Next step.* Name the columns with `@node(keyColumns:)`; they must form a primary key or another unique key of the table. Or give the table a primary key. See xref:directives/node.adoc[`@node`].

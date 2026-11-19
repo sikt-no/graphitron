@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the record class.
+
+Under a `@table` type, or a type nested in its row, each parent is a row of that table, and the batch hands the service its key. Nothing turns a row of one table into a record of another, so a source parameter collecting another table's records has nothing to be handed.
+
+*Next step.* Take the parent table's records, or `Row<N>` or `Record<N>` of its key columns, and reach the other table inside the method. See the xref:directives/service.adoc#constraints[`@service` constraints].

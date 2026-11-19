@@ -1,0 +1,5 @@
+Reported at the `@outbox`, the detail naming the first conflicting key as written; once it is fixed, the next is reported.
+
+A message's payload is a flat JSON object, one value per key. A key bound twice in the `@outbox`'s `argMapping`, or also bound by the common payload of the `<outbox>` block, has two values and could keep only one.
+
+*Next step.* Rename one of the two keys or remove one. A value the common payload already puts on every message needs no entry of its own. See xref:directives/outbox.adoc[`@outbox`].

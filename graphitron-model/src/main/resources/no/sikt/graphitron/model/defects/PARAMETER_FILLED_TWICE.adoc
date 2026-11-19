@@ -1,0 +1,5 @@
+Reported at the directive's method reference, naming the parameter.
+
+A `contextArguments` element `k` is the `argMapping` entry `k: $context.k` under another spelling. A parameter both name has two values, and nothing says which one the call passes.
+
+*Next step.* Remove one of the two. See xref:directives/service.adoc#parameter-filling[How each parameter is filled].

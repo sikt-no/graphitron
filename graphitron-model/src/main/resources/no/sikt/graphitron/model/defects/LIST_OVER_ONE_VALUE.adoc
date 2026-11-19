@@ -1,0 +1,5 @@
+Reported at the field.
+
+The producer hands back one value per call: a xref:directives/service.adoc[`@service`] method whose return type is not a collection, or a xref:directives/mutation.adoc[`@mutation`] returning an object, which is handed back once however many rows it writes. A list declared over that one value has no elements of its own to list, so graphitron cannot say what it holds.
+
+*Next step.* Declare the field as a single value, or, for a service, have the method return a collection.

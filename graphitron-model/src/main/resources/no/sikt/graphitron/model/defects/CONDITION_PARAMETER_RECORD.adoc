@@ -1,0 +1,5 @@
+Reported at the argument or input field bound to the parameter, the detail naming the jOOQ record class.
+
+Building an input onto a jOOQ record's columns prepares a row to write, which is a `@service` feature. A condition only reads the input's values to build a predicate, so graphitron hands a `@condition` either the map graphql-java delivered or a bean built from it.
+
+*Next step.* Declare the parameter as a Java record or bean mirroring the input's fields, or as `Map<String, Object>`. See xref:directives/condition.adoc#input-object-parameter[`@condition` input-object parameters].

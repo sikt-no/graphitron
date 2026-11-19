@@ -1,0 +1,5 @@
+Reported at the `@scalarType`, the detail the reference as written.
+
+The class was read, and the name after its last period is not a constant it declares as `public static` and of type `GraphQLScalarType`: the constant is missing or misspelt, not public and static, or of another type. Graphitron registers that constant as the scalar's implementation, so there is nothing to register.
+
+*Next step.* Name a `public static GraphQLScalarType` constant the class declares, as in `graphql.scalars.ExtendedScalars.UUID`. See xref:directives/scalarType.adoc[`@scalarType`].

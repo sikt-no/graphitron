@@ -1,0 +1,5 @@
+Reported at the field's declaration.
+
+Graphitron recognises an errors field by its element type: a union or interface whose every member is xref:directives/error.adoc[`@error`], or one `@error` type. A list mixing `@error` members with ordinary ones is neither where caught exceptions arrive nor a plain result, so the build cannot tell which the author meant.
+
+*Next step.* Split the errors into a union or interface of `@error` types only, and return the other members through a field of their own. See xref:../how-to/error-channel.adoc[How-to: The errors channel].

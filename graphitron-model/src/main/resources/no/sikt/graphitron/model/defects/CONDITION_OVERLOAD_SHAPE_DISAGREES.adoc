@@ -1,0 +1,5 @@
+Reported at the condition reference, on a field, an argument or an input field. The detail names the first point of disagreement: the parameter count, the static modifier, the return type, the `throws` clause, or a parameter position.
+
+Graphitron generates one call to the named method and lets the Java compiler choose among overloads by the table argument. That is only sound when the overloads are the same call apart from their table parameters, so that one declaration per participant of a multitable interface or union can keep its own typed columns. A set differing in anything else would need different generated calls.
+
+*Next step.* Make the overloads agree on everything but their jOOQ table parameters, or give the differing method a name of its own and reference that. See the xref:directives/condition.adoc[`@condition` constraints] and xref:../how-to/add-custom-conditions.adoc#filter-a-multitable-interface[Filter a multitable interface or union].

@@ -1,0 +1,5 @@
+Reported at the `@nodeId`.
+
+The polymorphic decode reads the id's type prefix and decodes into that member's own table. An interface carrying xref:directives/table.adoc[`@table`] itself, such as a single-table xref:directives/discriminate.adoc[`@discriminate`] interface, binds one table and has no per-member tables to decode into.
+
+*Next step.* Name one of its node types in `typeName:`, or make the interface a node type itself.

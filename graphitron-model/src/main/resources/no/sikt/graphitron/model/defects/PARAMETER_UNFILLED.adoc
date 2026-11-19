@@ -1,0 +1,5 @@
+Reported at the directive's method reference, the `service:` or the `condition:`, or at the `@routine`, naming the parameter.
+
+The generated call passes every parameter a value. For a `@service` the fills are tried in order: what `argMapping` or `contextArguments` writes, a `DSLContext` or `Configuration` by its type, an argument of the parameter's name, the parent keys on a batched child, and an argument that is its only match by type. A routine's IN parameter takes an argument, by its name or through `argMapping`, or a column of the row it is applied to as `$source.<column>`; a bare name never binds a column. A parameter an `argMapping` entry names is that entry's to report where the entry fills nothing.
+
+*Next step.* Rename the parameter after its argument, or bind it in `argMapping`, or in `contextArguments` where the directive has one. See xref:directives/service.adoc#parameter-filling[How each parameter is filled] and xref:directives/routine.adoc#parameter-binding[Where a parameter takes its value].

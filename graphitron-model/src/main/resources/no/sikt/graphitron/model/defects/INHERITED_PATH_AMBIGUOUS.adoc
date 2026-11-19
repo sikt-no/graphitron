@@ -1,0 +1,5 @@
+Reported at the implementing field's declaration, the detail naming the two interfaces.
+
+A field with no `@reference` of its own inherits the path written on the same-named field of an interface its type implements, and an interface extending another overrides the path it redeclares. When two interfaces, neither extending the other, each write a path for the field, neither overrides the other and graphitron has no rule for choosing which join to generate.
+
+*Next step.* Write the path on the implementing field itself with `@reference` (or `@referenceFor` per participant); the field's own path beats an inherited one. See xref:directives/reference.adoc#path-rules[Path rules].

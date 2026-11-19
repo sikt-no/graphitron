@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry, the detail naming the member written after `$session.`.
+
+A member is read off the handle class itself: a record's components, or the public no-argument `getX()` and `isX()` methods the class declares. Accessors it inherits and public fields offer no member, so a name that exists only there is unknown too.
+
+*Next step.* Correct the name to one the handle declares, or declare an accessor for it on the handle class, re-declaring one that lives on a base class. xref:mojo-configuration.adoc#consuming-the-handle[Consuming the handle] lists which members a handle offers.

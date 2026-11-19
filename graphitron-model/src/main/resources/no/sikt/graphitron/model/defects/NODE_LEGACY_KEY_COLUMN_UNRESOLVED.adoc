@@ -1,0 +1,5 @@
+Reported at the `@node`, the detail naming the spelling that does not resolve.
+
+A legacy key shape lists the columns ids were encoded from before the key was narrowed, and graphitron reads an old id by matching each of its values to one of those columns. An entry that names no column of the bound table, or names two, leaves a value with no column to read it as.
+
+*Next step.* Correct the entry to the column the old ids carried. See xref:directives/node.adoc#narrowing-the-key[Narrowing the key].

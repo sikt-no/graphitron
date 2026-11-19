@@ -1,0 +1,5 @@
+Reported at the field's declaration.
+
+A type a `@service`, a write or a `@routine` hands back beside an errors field is an outcome: when the producer succeeds its fields carry the value, and when it fails only the errors field does. A non-null field then has no value, and graphql-java nulls the whole outcome in its place, errors included. A non-null list is allowed, answering an empty list.
+
+*Next step.* Make the field nullable. See xref:../how-to/error-channel.adoc[How-to: The errors channel].

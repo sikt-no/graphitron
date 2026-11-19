@@ -1,0 +1,5 @@
+Reported at the argument or input field whose input object is built, the detail naming the class.
+
+Graphitron builds an input object into the class the receiving parameter declares, field by field, before calling the method. The generated code must be able to construct that class: a public canonical constructor (a Java record), or a public no-argument constructor with setters. An abstract class, one the generated code cannot see such as a package-private nested class, or a class no declared dependency of the build carries cannot be constructed.
+
+*Next step.* Give the class a public constructor of one of those shapes, declare the artifact carrying it, or declare the parameter as `Map<String, Object>` and read the delivered map. See xref:../how-to/handle-services.adoc#input-bean-parameter[Nested input types] and xref:directives/condition.adoc#input-object-parameter[`@condition` input-object parameters].

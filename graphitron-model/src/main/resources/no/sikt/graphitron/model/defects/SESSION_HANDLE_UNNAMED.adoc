@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry binding `$session` or `$session.<member>`, the detail naming what it binds.
+
+A `$session` parameter receives the handle your connection source's leases carry, and `$session.<member>` reads one member of it. Graphitron checks both against the handle's class, which `<sessionState>` names in `<handle>`; with no `<handle>` there is no class to check the parameter or the member against.
+
+*Next step.* Name the handle class in `<sessionState><handle>`, by its binary name, or remove the `$session` entry if your leases carry no handle. See xref:mojo-configuration.adoc#session-identity[Session identity].

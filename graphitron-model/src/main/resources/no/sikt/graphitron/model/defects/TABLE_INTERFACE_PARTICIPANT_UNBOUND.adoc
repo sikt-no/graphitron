@@ -1,0 +1,5 @@
+Reported at the `@discriminate`, the detail naming the member without `@table`.
+
+A `@discriminate` interface reads all its members off one shared table and tells their rows apart by the discriminator column. A member with no table is a row of no table, so there is nothing to read it from.
+
+*Next step.* Give the member the interface's `@table` and a xref:directives/discriminator.adoc[`@discriminator(value:)`], or take it out of the interface. Members on tables of their own belong to an interface without `@discriminate`; see xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] and xref:directives/discriminate.adoc[`@discriminate`].

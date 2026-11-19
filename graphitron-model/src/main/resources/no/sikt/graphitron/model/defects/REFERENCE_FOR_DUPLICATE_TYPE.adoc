@@ -1,0 +1,5 @@
+Reported at each `@referenceFor` after the first that names the type, which the detail names.
+
+Each `@referenceFor` is one participant's complete path, keyed by its `type`. Two naming one participant are two paths for it, and graphitron keeps the first written, so the later one does nothing.
+
+*Next step.* Remove the later application. To give the participant a path of several steps, write them as elements of the first one's `path`. See xref:directives/referenceFor.adoc[`@referenceFor`].

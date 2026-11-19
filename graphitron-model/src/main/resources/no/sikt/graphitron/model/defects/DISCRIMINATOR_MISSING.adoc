@@ -1,0 +1,5 @@
+Reported at the interface's `@discriminate`, naming each table-bound member that carries no `@discriminator`.
+
+Graphitron places each row of the shared table in a member by comparing the discriminating column with the members' values. A member without a value could never be chosen, and its rows could not be told apart from the others'.
+
+*Next step.* Add `@discriminator(value:)` to each member named. See xref:directives/discriminator.adoc[`@discriminator`].

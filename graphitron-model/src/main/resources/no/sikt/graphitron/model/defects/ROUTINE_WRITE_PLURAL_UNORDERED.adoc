@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the list argument.
+
+A mutation taking a list and returning a list answers one item per element, matched to the input by position, so its answer must come back in the input's order. A routine returning a table hands back rows in no order of their own, and only the routine knows which row answers which element.
+
+*Next step.* Have the routine return a column keeping each row's place in the input, and name it with `@defaultOrder(fields:)`; or change the field so it is no longer a list in and a list out. See xref:directives/defaultOrder.adoc#plural-routine-write[On a plural mutation backed by a routine].

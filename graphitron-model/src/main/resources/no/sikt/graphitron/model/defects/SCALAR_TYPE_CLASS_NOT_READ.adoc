@@ -1,0 +1,5 @@
+Reported at the `@scalarType`, the detail naming the class part of the reference.
+
+Graphitron binds the scalar to the constant the reference names by reading its class off the classpath the build hands the generator. A class it did not read is misspelt, or comes from an artifact the module does not declare itself, one arriving only transitively or through a `<plugin><dependencies>` block.
+
+*Next step.* Correct the class name, or declare the artifact carrying it in the module's own `<dependencies>`. See xref:../how-to/external-code.adoc#make-the-class-nameable[Make the class nameable].

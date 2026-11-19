@@ -1,0 +1,5 @@
+Reported at the errors field's declaration.
+
+When the producer succeeds, nothing was caught and the errors field resolves to `null`. A non-null list would then fail the response on every success.
+
+*Next step.* Drop the outer `!` from the list type; the elements may stay non-null, as in `[FilmError!]`. See xref:../how-to/error-channel.adoc[How-to: The errors channel].

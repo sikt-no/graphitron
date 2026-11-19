@@ -1,0 +1,5 @@
+Reported at the `@node`, or at the `@table` where the table class states the shape; the detail lists the legacy columns.
+
+Graphitron tells an old id from a current one by how many values it carries. A legacy shape holding exactly the current key's columns, only in another order, carries as many values as a current id, so the two cannot be told apart.
+
+*Next step.* A legacy shape is for a key that was narrowed, so it is the current key plus at least one more column. If the old ids carried only the current key's columns, drop the legacy shape and keep `keyColumns` in the order the old ids carry them, since the order is part of the wire format. See xref:directives/node.adoc#narrowing-the-key[Narrowing the key].

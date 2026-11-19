@@ -1,0 +1,5 @@
+Reported at the absorbed field, the detail naming it.
+
+The voucher field's fetcher signs each absorbed field's value as read off the issuing row, so each must read a column of the issuing type's table. A field is matched to a column by its `@field(name:)`, or by its own name when that is left out.
+
+*Next step.* Name the column with xref:directives/field.adoc[`@field(name:)`], or remove the field. See xref:directives/issue.adoc[`@issue`].

@@ -1,0 +1,5 @@
+Reported at each type's declaration, the detail naming the other type.
+
+Graphitron writes one file for each type other than a scalar, named for the type, and minted types count too. On a filesystem that folds case, two names differing only in case are one file, and neither type can be kept.
+
+*Next step.* Rename one of the types so the names differ by more than case.

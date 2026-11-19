@@ -1,0 +1,5 @@
+Reported at the `@node`.
+
+`implements Node` is what declares a type a node to clients: it lets `Query.node` return the type and holds it to an `id` field. `@node` only supplies the identity parameters, and cannot promote a type that does not implement the interface, a `@node(resolvable: false)` included.
+
+*Next step.* Add `implements Node` to the type, or remove `@node` if the type is not meant to be a node. See xref:directives/node.adoc[`@node`].

@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the table the first step reaching many rows arrives at.
+
+A `@routine` write's answer is read along its path from the rows the routine wrote. A step following a foreign key back from the table it references, `rental` to `payment` for one, reaches every row pointing there, so one written row could answer as several where the field holds one.
+
+*Next step.* Return a list, or write a path whose every step follows a foreign key to the one row it references. See xref:directives/routine.adoc#write[Writes on Mutation].

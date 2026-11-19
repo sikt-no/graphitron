@@ -1,0 +1,5 @@
+Reported at each `@discriminator` writing the shared value, the detail naming the interface.
+
+Graphitron places each row of the shared table in the member whose `@discriminator(value:)` equals the row's discriminating column. With two members claiming one value, a row holding it belongs to neither more than the other.
+
+*Next step.* Give each member a value of its own. See xref:directives/discriminator.adoc[`@discriminator`].

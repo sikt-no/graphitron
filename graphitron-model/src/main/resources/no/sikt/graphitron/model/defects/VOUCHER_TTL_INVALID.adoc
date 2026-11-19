@@ -1,0 +1,5 @@
+Reported at the `@issue`, the detail naming the `ttl` as written.
+
+Every voucher an operation issues expires at the operation's start plus `ttl`, so it must be a duration graphitron can read: `PT` followed by hours, minutes and seconds, each optional but at least one present.
+
+*Next step.* Write `ttl` as such a duration, for example `PT5M` or `PT1H30M`. See xref:directives/issue.adoc[`@issue`].

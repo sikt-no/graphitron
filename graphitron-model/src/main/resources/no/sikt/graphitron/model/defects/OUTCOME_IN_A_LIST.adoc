@@ -1,0 +1,5 @@
+Reported at the field.
+
+A producer catching its failure into an outcome makes one call and hands back one outcome: its value, or the errors it caught. A list of outcomes would need a catch per element, and there is one call.
+
+*Next step.* Declare the field as one outcome, and put the list inside it, on its data field. See xref:../how-to/error-channel.adoc[How-to: The errors channel].

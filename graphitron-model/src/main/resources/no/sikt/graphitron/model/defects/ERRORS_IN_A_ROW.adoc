@@ -1,0 +1,5 @@
+Reported at the errors field's declaration.
+
+Errors arrive when a producer, a `@service`, a `@routine` or a `@mutation`, throws and a handler claims the exception; they fill the errors field of the payload that producer returns. A type graphitron reads as rows of a query is filled column by column from the database, and no exception is ever caught on its behalf, so its errors field would always be empty.
+
+*Next step.* Move the errors field to the payload type the root `@service` or write returns. See xref:../how-to/error-channel.adoc[How-to: The errors channel].

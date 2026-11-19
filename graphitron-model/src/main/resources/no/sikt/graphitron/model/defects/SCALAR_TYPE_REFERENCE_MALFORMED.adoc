@@ -1,0 +1,5 @@
+Reported at the `@scalarType`, the detail the reference as written.
+
+A reference is split at its last period into a class and a constant. One with no period, or with nothing on one side of the last one, names neither, so there is no class to look for.
+
+*Next step.* Write the reference as the class's fully qualified name, a period and the constant: `graphql.scalars.ExtendedScalars.UUID`. See xref:directives/scalarType.adoc[`@scalarType`].

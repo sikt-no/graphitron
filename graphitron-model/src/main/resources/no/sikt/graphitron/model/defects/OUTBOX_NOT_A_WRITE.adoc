@@ -1,0 +1,5 @@
+Reported at the `@outbox`.
+
+A message says that a write happened, and is written in the transaction that made it, so it exists exactly when the write committed. A field that writes nothing, a `Query` field for one, has no write for the message to describe and no transaction for it to join.
+
+*Next step.* Move the `@outbox` onto a mutation field that writes a table with xref:directives/mutation.adoc[`@mutation`] or that a xref:directives/service.adoc[`@service`] answers, or remove it. See xref:directives/outbox.adoc[`@outbox`].

@@ -1,0 +1,5 @@
+Reported at each `@outbox` carrying the event, which the detail names.
+
+A consumer subscribes to messages by their event, so two `@outbox` with one event write one stream it cannot split. An `@outbox` without `event` takes the field's coordinate, with `.failed` added on an `ERROR` message, so two on one field for one outcome collide even when neither names an event.
+
+*Next step.* Give each `@outbox` its own `event`; on one field, leave it out on at most one per outcome. See xref:directives/outbox.adoc[`@outbox`].

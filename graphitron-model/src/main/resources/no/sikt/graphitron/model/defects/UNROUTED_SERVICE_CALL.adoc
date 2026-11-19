@@ -1,0 +1,5 @@
+Reported at the root field.
+
+A service's own SQL is opaque to graphitron. A root `@service` that is handed a `DSLContext` or `$session`, or whose returned rows graphitron re-reads from a tenant's table, must run on a tenant's connection, and only its arguments can say which tenant. With none naming it, the call would run on the connection with no tenant.
+
+*Next step.* Name the tenant: with a `$tenant: <path>` entry in the `argMapping`, or by taking the node table's jOOQ record through `@nodeId(typeName:)` in place of an encoded id, or a jOOQ record parameter binding the tenant column. A service that works only on global tables takes no connection. See xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] and xref:directives/service.adoc#arg-mapping[`argMapping`].

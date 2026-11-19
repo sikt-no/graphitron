@@ -1,0 +1,5 @@
+Reported at each writing that gives the parameter a context key, a `contextArguments` element or an `argMapping` pair, the detail naming the parameter.
+
+Graphitron fills each parameter of the called method from exactly one source. Two writings for one parameter, whether the same key twice or an element beside a pair, would each fill it, so graphitron fills it from neither.
+
+*Next step.* Remove all but one of the writings for that parameter. See xref:directives/service.adoc#parameter-filling[`@service` parameter filling].

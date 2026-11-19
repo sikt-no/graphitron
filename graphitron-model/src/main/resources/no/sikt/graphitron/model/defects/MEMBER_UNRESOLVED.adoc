@@ -1,0 +1,5 @@
+Reported at the field's xref:directives/field.adoc[`@field`] where one is written, since that is the name to fix, and at the field otherwise; the detail names the class.
+
+A field below a parent holding a Java object is read off that object by a member of its class. Graphitron reads a record by its components and any other class by its `get` and `is` getters; a bare accessor such as `title()` on a class that is not a record, or a public field, is not one of them. With no member of the field's name, there is nothing to read.
+
+*Next step.* Name a member the class offers, with `@field(name:)` or by renaming the field, or add a getter or record component to the class.

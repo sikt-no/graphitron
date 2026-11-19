@@ -1,0 +1,5 @@
+Reported at the `@accept`.
+
+The voucher's lookup part is read through the authored key's own lookup, so `key:` must match one of the type's resolvable `@key` field sets; the order of the fields does not matter.
+
+*Next step.* Correct `key:` to the fields of an authored resolvable `@key` of the type. See xref:directives/accept.adoc[`@accept`].

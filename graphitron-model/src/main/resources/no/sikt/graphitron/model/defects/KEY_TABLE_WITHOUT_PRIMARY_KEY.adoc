@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the table.
+
+Graphitron keys two kinds of rows by their table's primary key. A field that fetches its own rows under a parent holding an object is batched, its keys grouped by that key; and the records a xref:directives/service.adoc[`@service`] hands back are read back from their table by it, at a root and below one alike. A table with no primary key gives neither anything to key by.
+
+*Next step.* Give the table a primary key, or fetch the field another way.

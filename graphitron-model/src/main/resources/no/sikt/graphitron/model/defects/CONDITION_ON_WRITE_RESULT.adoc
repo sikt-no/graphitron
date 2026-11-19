@@ -1,0 +1,5 @@
+Reported at the first `@reference` path element after a `Mutation` field's `@routine`, where that element carries a `condition`.
+
+A `@routine` write runs in two statements: the routine call, which captures the key columns of the rows it returned, and a read-only re-read starting from the first hop's table, keyed by those values. The routine is left out of the re-read, since calling it again would repeat the write, so the first step has no routine result on its left to join from and nothing for the condition's first table to be.
+
+*Next step.* Leave the routine's result by a table or a key only, for example `{table: "rental"}`, and put the condition on a later step of the path, where it joins two tables of the re-read. See xref:directives/routine.adoc#write[`@routine` writes on Mutation].

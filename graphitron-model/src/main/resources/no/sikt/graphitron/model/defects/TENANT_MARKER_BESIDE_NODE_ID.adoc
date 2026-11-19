@@ -1,0 +1,5 @@
+Reported at the `@tenant`.
+
+A node id carries its tenant inside the key it decodes to, and a call taking it is already routed by that. The marker would name the same tenant a second way, saying nothing the id does not.
+
+*Next step.* Remove `@tenant` from the argument or input field. See xref:directives/tenant.adoc[`@tenant`].

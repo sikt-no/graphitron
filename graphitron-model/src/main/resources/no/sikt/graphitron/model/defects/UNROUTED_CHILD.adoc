@@ -1,0 +1,5 @@
+Reported at the field.
+
+In a database-per-tenant build each tenant's rows live in that tenant's database. A field below a global table's row reads a tenant's rows by a key that does not land on the tenant column, so the parent row names no tenant and none is handed down from it. This holds whether a `@service` answers the field or graphitron reads it.
+
+*Next step.* Follow a foreign key that lands on the tenant column, so the parent row names the tenant, or read these rows from a field under a tenant's rows. See xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].

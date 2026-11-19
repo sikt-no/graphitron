@@ -1,0 +1,5 @@
+Reported at the directive's method reference, naming the parameter; at the input field for a member of a class a `@service` builds, naming the member; and at the `@externalField` reference, naming the first table its parameter does not accept.
+
+The generated call passes each parameter the value as it arrives, so it compiles only where the two agree: a list for a list and one value for one, and the class the value arrives as. An `ID` arrives as a `String`, an `Int` as an `Integer` or `int`, and an `Object` parameter takes any scalar or enum value. An `@externalField` method's table parameter takes the table its field's values are rows of.
+
+*Next step.* Declare the parameter as what arrives. To take a node id as a key, decode it onto a jOOQ record with `@nodeId(typeName:)`. See xref:directives/service.adoc#parameter-filling[How each parameter is filled].

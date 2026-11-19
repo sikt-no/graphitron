@@ -1,0 +1,5 @@
+Reported at the `@node`, the detail naming the first column, in the order written, that does not resolve.
+
+Each `keyColumns` entry must name exactly one column of the bound table, matched against its SQL name or its generated jOOQ name, ignoring case. The pinned key is the published wire format of the node's ids, so graphitron does not fall back to another key when one entry fails.
+
+*Next step.* Correct the spelling to a column of the table, or remove `keyColumns` to key the node by what the table class publishes or by its primary key. See xref:directives/node.adoc[`@node`].

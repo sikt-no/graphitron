@@ -1,0 +1,5 @@
+Reported at the `@condition`, on a field, an argument or an input field.
+
+Graphitron adds the predicate the named method returns to the query, and neither the class nor the method has a default. A `@condition` with no `condition:` argument, or one missing `className:` or `method:`, names no method to call. This holds with `override: true` too, since the method is what stands in for the predicates the override suppresses.
+
+*Next step.* Write `condition: {className: "...", method: "..."}` with both names, or remove the `@condition`. See xref:directives/condition.adoc[`@condition`].

@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the type as written.
+
+The id is encoded and decoded against the named type's type id and key columns, which only a node has, or, for an interface or union, its member nodes. The name given is neither, possibly a misspelling or a type that does not exist.
+
+*Next step.* Name a node type, or make the named type a node with xref:directives/node.adoc[`@node`] and `implements Node`. The editor completes `typeName:` against the node types of the schema.

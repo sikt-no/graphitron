@@ -1,0 +1,5 @@
+Reported at the last `@routine` written on the field.
+
+On a mutation field the routine call is the write, and the generated fetcher runs one write and then re-reads its committed rows. Each `@routine` is a write of its own, so a field carrying two would write twice, and graphitron emits one write per field.
+
+*Next step.* Keep one `@routine` on the field, and combine the work in one database function if both writes belong together, or move the second write to a field of its own. See xref:directives/routine.adoc#write[Writes on Mutation].

@@ -1,0 +1,5 @@
+Reported at the `@service` field, the detail naming the payload's field.
+
+Where a service hands back a list of table records, or of the class a payload's data field is read off, under a field returning a list of payloads, each element fills one payload. That payload's field then holds one element, so a list there has no list to hold.
+
+*Next step.* Make the payload's field a single value, return one payload holding the whole list, or have the service hand back the payloads themselves, each with its own list.

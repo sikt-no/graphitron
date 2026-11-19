@@ -1,0 +1,5 @@
+Reported at the `service:` reference, the detail naming the class.
+
+For an instance method, the generated fetcher makes the object the method runs on, with the class's public constructor taking one `DSLContext`, else its public no-argument constructor. An abstract class, an interface, or a class whose constructors all take something else leaves it nothing to call. A context value fills a method's parameter, never a constructor's.
+
+*Next step.* Add one of those constructors, or make the method `static`. See the xref:directives/service.adoc#constraints[`@service` constraints].

@@ -1,0 +1,5 @@
+Reported at the `@accept`.
+
+A voucher's lookup part decodes to the fields of one of the type's keys. With `key:` left out graphitron takes the type's one authored resolvable `@key`, and this type has several, so which fields the lookup part fills is unsaid.
+
+*Next step.* Name the key with `key:`, spelled as that `@key(fields:)` spells it. See xref:directives/accept.adoc[`@accept`].

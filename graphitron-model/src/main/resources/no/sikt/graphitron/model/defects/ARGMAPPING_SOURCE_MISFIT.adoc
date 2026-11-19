@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry of an `@outbox`, the detail giving the entry and the reason it does not fit, such as the type it reads or the list it passes through.
+
+An `@outbox` message is written as a JSON payload, each key holding one value, and the source must still exist when the message is written. So the build refuses a source whose value is an object, a record or the whole session handle, a path through a list, `$result` on an `ERROR` message (written after the rollback, when nothing the call wrote is left), `$error` on a `SUCCESS` message, and an `$error` field that not every error type of the field's errors field declares with one type.
+
+*Next step.* Bind a member or field holding one such value: for a record, its node id (`$result.film.id`); for the session, one member (`$session.userId`); for an error, `$error.__typename`, `$error.message` or a field every error type declares alike. See xref:directives/outbox.adoc[`@outbox`].

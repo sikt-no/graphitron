@@ -1,0 +1,5 @@
+Reported at the `@mutation` of a write `@asConnection` rewrote, or at the `@routine` of a `@routine` write.
+
+A write returns the keys of the rows it wrote, and graphitron re-reads those rows by key after the write. That re-read is the set the write touched, not a page of a larger list, so it has no cursors or `pageInfo` to offer and graphitron generates nothing for the field.
+
+*Next step.* Drop `@asConnection` and return a list of the written type, for example `[Film]`. See xref:directives/mutation.adoc[`@mutation`].

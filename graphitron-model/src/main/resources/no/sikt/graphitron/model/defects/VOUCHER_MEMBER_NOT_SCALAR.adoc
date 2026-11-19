@@ -1,0 +1,5 @@
+Reported at the absorbed field, the detail naming it.
+
+The voucher carries each absorbed field as one value, serialized by the field's scalar before it is signed. A list, an object or an enum has no single scalar value to carry.
+
+*Next step.* Absorb scalar fields only: change the field's type to a scalar, or remove it from the issuing type. See xref:directives/issue.adoc[`@issue`].

@@ -1,0 +1,5 @@
+Reported at the `@field(name:)` where one is written, since that is the spelling to fix, and at the field, argument or input field otherwise; on an ordering, at the `fields` element. The detail gives the name looked for.
+
+Graphitron selects, writes, compares or sorts by a column it finds in the jOOQ catalog, under the field's own name or the one `@field(name:)` gives, by SQL name or generated name and regardless of case. Which table is searched depends on the site: the parent's table, the table a `@reference` path arrives at, the table a filter filters (or the result of the `@routine` it filters), or the table whose jOOQ record an input is built into. Where the path itself arrives nowhere, the path draws its own defect and the column is not judged.
+
+*Next step.* Correct the spelling, usually with `@field(name:)`, or add or correct the `@reference` path to reach the table that holds the column. See xref:directives/field.adoc[`@field`] and xref:directives/reference.adoc[`@reference`].

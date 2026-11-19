@@ -1,0 +1,5 @@
+Reported at the field's declaration.
+
+Each exception a handler claims becomes one entry in the payload's errors field, so the field is read as a list. A single value of an `@error` type, or of a union or interface of them, has no place for that list.
+
+*Next step.* Declare the field as a nullable list, for example `errors: [FilmError!]`. See xref:../how-to/error-channel.adoc[How-to: The errors channel].

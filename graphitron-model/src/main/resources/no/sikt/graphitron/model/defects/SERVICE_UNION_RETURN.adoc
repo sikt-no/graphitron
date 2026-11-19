@@ -1,0 +1,5 @@
+Reported at the field.
+
+A Java method declares one result type, and no Java type is a union of others, so nothing in the method's signature says which member of the union it answers.
+
+*Next step.* Declare an interface the members implement, return it from the field, and have the method answer it. See the xref:directives/service.adoc#constraints[`@service` constraints].

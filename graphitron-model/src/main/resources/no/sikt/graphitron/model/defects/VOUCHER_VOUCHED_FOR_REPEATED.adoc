@@ -1,0 +1,5 @@
+Reported at the `@issue` or `@accept`, the detail naming the repeated field.
+
+Each vouched-for field is one section of the voucher and one part of the connection key, so a field named twice would stand for two parts holding one value.
+
+*Next step.* Name each field once in `vouchesFor`.

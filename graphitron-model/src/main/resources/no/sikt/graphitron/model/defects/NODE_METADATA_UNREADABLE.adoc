@@ -1,0 +1,5 @@
+Reported at the `@table` of each type bound to the table, the detail naming the table. A warning: the build continues.
+
+The table's generated class declares node metadata, `\\__NODE_TYPE_ID` and `\\__NODE_KEY_COLUMNS`, that graphitron cannot use, for example a type id without key columns. A node over the table then takes its identity from what the schema declares, else from the type's name and the table's primary key, which may not be the ids the class meant.
+
+*Next step.* Fix the jOOQ generator configuration that writes the metadata, and regenerate the catalog. xref:directives/node.adoc[`@node`] describes how a node's identity is resolved.

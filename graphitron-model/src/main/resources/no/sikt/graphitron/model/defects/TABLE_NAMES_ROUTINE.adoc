@@ -1,0 +1,5 @@
+Reported at the `@table`, the detail naming what it names.
+
+A type returned by a field carrying `@routine` takes the routine's result as its rows; that belongs to the field, where the routine is called with its arguments. A table-valued function is no table a type can stand on, since there are no rows until it is called.
+
+*Next step.* Remove the `@table` and let the `@routine` field say where the rows come from. See xref:directives/routine.adoc#result[The type's rows are the routine's result].

@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, or at the argument or input field where the id is read without one; the detail names the table the path reaches, or the slot's or record's table where there is no path.
+
+The id carries the key of its node's table, so it can only be encoded from, compared with, or loaded into columns that path leads back to. Three shapes miss: a written path ending on another table; no path where no one foreign key joins the slot's table to the node's, in either direction; and, for an id built into a jOOQ record, no single foreign-key step from the record's table that carries every key column back.
+
+*Next step.* Write or correct the xref:directives/reference.adoc[`@reference`] path so it ends on the node's table, naming the foreign key where several connect the tables. See xref:directives/nodeId.adoc[`@nodeId`].

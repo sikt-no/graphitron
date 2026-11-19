@@ -1,0 +1,5 @@
+Reported at the code reference, the detail naming the class written in `className:`.
+
+Graphitron reads the classes the build hands it before generating, so that every method it calls is checked against what is really there. A class that reading never met is either misspelt or lives in an artifact the module does not declare; this is told apart from a method that is missing on a class that was read, `CODE_REFERENCE_METHOD_NOT_FOUND`.
+
+*Next step.* Check the fully qualified name, and declare the artifact carrying the class in the module's own `<dependencies>`: a transitive dependency or a plugin's `<dependencies>` block does not count. See xref:../how-to/external-code.adoc#make-the-class-nameable[Make the class nameable].

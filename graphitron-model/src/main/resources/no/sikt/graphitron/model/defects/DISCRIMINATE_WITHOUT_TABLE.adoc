@@ -1,0 +1,5 @@
+Reported at the `@discriminate`.
+
+`@discriminate(on:)` names a column of the one table every member's rows share, and that table is the interface's own `@table`. A union cannot carry `@table`, so a union with `@discriminate` always draws this.
+
+*Next step.* Give the interface the `@table` its members share; or, when the members live on different tables, drop `@discriminate` and let graphitron fetch the interface as a multi-table interface. See xref:directives/discriminate.adoc[`@discriminate`] and xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types].

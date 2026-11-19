@@ -1,0 +1,5 @@
+Reported at the `@key`, the detail naming the field it selects.
+
+The fields a key selects are the fields a router sends back to this subgraph to name an entity, so each must be a field the type declares. This holds on any type, a key with `resolvable: false` included, because the key describes the type's own shape whatever it is bound to.
+
+*Next step.* Correct the name in `fields:`, or declare the field on the type. See xref:../how-to/federation-keys.adoc[How-to: Federation key fields].

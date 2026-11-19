@@ -1,0 +1,5 @@
+Reported at the directive on the absorbed field, the detail naming the field.
+
+The voucher reads each absorbed field off the issuing row. A field carrying `@nodeId`, `@service`, `@routine`, `@reference`, `@externalField` or `@pivot` has a value of its own that the row does not hold.
+
+*Next step.* Remove the directive so the field reads a column, or remove the field from the type. See xref:directives/issue.adoc[`@issue`].

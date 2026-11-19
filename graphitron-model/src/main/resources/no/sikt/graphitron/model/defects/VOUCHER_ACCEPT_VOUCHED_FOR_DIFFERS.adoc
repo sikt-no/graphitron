@@ -1,0 +1,5 @@
+Reported at each `@accept` whose shape differs from the first accepting type's by name.
+
+A graph's vouched connections are all keyed by one generated `ConnectionKey`, one part per vouched-for field typed by its column. Every `@accept` must fill that one key, so they must all name the same vouched-for fields, each reading a column of the same Java type.
+
+*Next step.* Make every `@accept` in the graph name the same vouched-for fields, with columns of the same Java type. See xref:directives/accept.adoc[`@accept`].

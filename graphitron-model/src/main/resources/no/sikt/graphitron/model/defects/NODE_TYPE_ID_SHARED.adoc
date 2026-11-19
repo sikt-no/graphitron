@@ -1,0 +1,5 @@
+Reported at the `@table` of each type sharing the type id, the detail naming the type id.
+
+Every id a node mints starts with its type id, and `Query.node` dispatches on it to the type and table to fetch. The type id may be written with `typeId:`, defaulted to the type's name, or taken from the table class's metadata; two node types ending up with the same one mint ids that name either.
+
+*Next step.* Give one of the types its own type id with xref:directives/node.adoc[`@node(typeId:)`]. Keep the one already issued to clients where ids are stored, since changing it invalidates them.

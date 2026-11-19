@@ -1,0 +1,5 @@
+Reported at the `@error` type's field, the detail naming the class it is read from: the exception a `GENERIC` handler names, `java.sql.SQLException` for a `DATABASE` handler, or `graphql.GraphQLError` for `VALIDATION`.
+
+Every field of an `@error` type other than `path` and `message` is filled from the matched exception through a `get` or `is` getter, so the generated code needs one whose return fits the field's type. A bare `code()` method or a public field is not read.
+
+*Next step.* Point the field at an existing getter with `@field(name:)`, add the getter to the exception class, or change the field's type to what the getter returns. See xref:directives/error.adoc#extra-fields[`@error` extra fields].

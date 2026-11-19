@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, at an input field named `id` that carries no directive, or at the `@mutation` for a write's `ID` return; the detail names an occurrence.
+
+An id written without `typeName:` takes its node from a table: the record a xref:directives/service.adoc[`@service`] slot takes, else the table the slot binds against. Here that table is one several node types declare themselves over, or the occurrences reach different nodes, and each node has its own type id and key, so nothing says which one the id is.
+
+*Next step.* Name the node type with `@nodeId(typeName:)`. See xref:directives/node.adoc#several-node-types-over-one-table[Several node types over one table].

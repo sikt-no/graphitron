@@ -1,0 +1,5 @@
+Reported at the `@key` on the interface.
+
+Federation allows a key on an interface, but graphitron resolves each entity from the one table its type is bound to, and its entity resolution does not dispatch through an interface to its implementers.
+
+*Next step.* Move the `@key` from the interface to each implementing type. See xref:../how-to/federation-keys.adoc[How-to: Federation key fields].

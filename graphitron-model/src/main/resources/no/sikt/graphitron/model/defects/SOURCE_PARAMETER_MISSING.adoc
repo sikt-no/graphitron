@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the service method.
+
+A `@service` below the root always batches: the generated fetcher collects the parents the request reached and calls the method once for all of them, through a DataLoader. The method must therefore take the parents' keys and answer one value per key; there is no per-parent call to fall back on.
+
+*Next step.* Add a `Set<Key>` or `List<Key>` parameter, where `Key` is the parent table's record or a `Row<N>` or `Record<N>` of its key columns, and return a `Map<Key, V>` or a `List<V>` in the keys' order. xref:directives/service.adoc#constraints[`@service` constraints] states the shapes.

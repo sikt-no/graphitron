@@ -1,0 +1,5 @@
+Reported at the declaration of the field or type the claims are on, each conflicting claim listed under it.
+
+Each directive claims what an element is: what a field runs (a `@service`, a `@routine`, a `@mutation`, a lookup) or how it binds (a column, an `@externalField` expression, a node id), and what a type is (a `@table` type, an `@error` type). A field runs one producer and binds one way, so any two claims on one element leave graphitron with two answers to which code it generates. A claim counts as written, so a `@table` naming a table the catalog lacks still conflicts.
+
+*Next step.* Keep the one directive that says what the element is and remove the other. To combine behaviours, move one of them to a separate field or type.

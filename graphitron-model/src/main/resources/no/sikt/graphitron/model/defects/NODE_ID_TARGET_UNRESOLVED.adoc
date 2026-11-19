@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, or at the `@mutation` for a write's `ID` return; the detail names an occurrence.
+
+An id written without `typeName:` takes its node from a table: the record a xref:directives/service.adoc[`@service`] slot takes, else the field's return table, else the table xref:directives/mutation.adoc[`@mutation(table:)`] names. Here that table is one no node type declares itself over, or there is no table at all, so there is no type id or key to decode against.
+
+*Next step.* Name the node type with `@nodeId(typeName:)`, or declare a node over the table with xref:directives/node.adoc[`@node`]. See xref:directives/nodeId.adoc#named-parameter-decode[Decoding into a producer parameter named for the argument].

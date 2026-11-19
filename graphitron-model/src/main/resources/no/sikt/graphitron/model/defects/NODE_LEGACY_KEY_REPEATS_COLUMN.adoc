@@ -1,0 +1,5 @@
+Reported at the `@node`, or at the `@table` where the table class states the shape; the detail names the repeated column.
+
+Each position of the legacy shape is one value inside an old id, read as the column at that position. A column named twice has two values in an old id, and the conversion cannot tell which is the column's.
+
+*Next step.* Name each column once, in the order the old ids carry them. See xref:directives/node.adoc#narrowing-the-key[Narrowing the key].

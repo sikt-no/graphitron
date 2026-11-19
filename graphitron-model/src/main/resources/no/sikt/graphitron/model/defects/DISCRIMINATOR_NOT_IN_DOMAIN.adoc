@@ -1,0 +1,5 @@
+Reported at the `@discriminator`, the detail naming the database enum type of the discriminating column.
+
+The value is bound through the column's own type. A string outside the enum's literals binds as `NULL` and would silently match no row, so graphitron checks it against the catalog instead. A `varchar` column has no literal set and is not checked.
+
+*Next step.* Write one of the enum's literals, spelled as the database spells it. See xref:directives/discriminate.adoc[`@discriminate`].

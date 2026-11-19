@@ -1,0 +1,5 @@
+Reported at the list field, the detail naming the class or jOOQ record its parent is built into.
+
+A nested input field that matches no member of the class is read as a grouping: its own fields fill the enclosing class as if declared beside it, once. A list of input objects holds any number of such values, with no one value to spread onto the enclosing class. Under a jOOQ record the same holds, since a record is one row.
+
+*Next step.* Add a member to the class that takes the list, named after the field, or make the field a single input object. See xref:../how-to/handle-services.adoc[How-to: Handle services].

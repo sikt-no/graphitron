@@ -1,0 +1,5 @@
+Reported at the field or input field, the detail giving the name looked for.
+
+Graphitron matches a name against the table's columns regardless of case, by SQL name and by the name jOOQ generated. A table holding columns that differ only by case, such as `"Code"` and `code`, folds both onto one spelling, leaving graphitron no one column to select or write.
+
+*Next step.* Where jOOQ generated a name for the column that no other column folds onto, such as `CAPITAL_CODE` for `"Code"`, name it with xref:directives/field.adoc[`@field(name:)`]. Otherwise the clash is in the database's column names, and renaming one of the columns is what separates them.

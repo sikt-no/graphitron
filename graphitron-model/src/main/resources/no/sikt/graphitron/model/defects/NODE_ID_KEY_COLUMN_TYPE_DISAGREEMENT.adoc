@@ -1,0 +1,5 @@
+Reported at the xref:directives/service.adoc[`@service`] or xref:directives/condition.adoc[`@condition`] reference, the detail naming the key column, its type and the type the parameter declares.
+
+An `argMapping` path opening a node id with one of its key columns hands that column's own decoded value to the parameter, compared without widening; for a list of ids it hands a `List` of the column's values. A parameter of another type cannot receive it.
+
+*Next step.* Declare the parameter with the type jOOQ binds the column as, boxed, or as a `List` of it for a list of ids. See xref:directives/nodeId.adoc#key-column-projection[Projecting one key column into an `argMapping` parameter].

@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the members whose records do not fit named beneath it.
+
+At a xref:directives/service.adoc[`@service`] parameter or bean member, an id of an interface or union is decoded into whichever member's generated record it names, so the slot's Java type must accept every member's record. A slot typed as one member's record, or as anything another member's record is not, cannot receive the others.
+
+*Next step.* Type the slot as a supertype of every member's record: `org.jooq.Record`, `TableRecord<?>`, `UpdatableRecord<?>` where every member's table has a primary key, or an interface your jOOQ configuration makes the records implement. To take one member only, name that member in `typeName:`. See xref:directives/nodeId.adoc#polymorphic-record-slot[Decoding an id of any implementation into a record supertype].

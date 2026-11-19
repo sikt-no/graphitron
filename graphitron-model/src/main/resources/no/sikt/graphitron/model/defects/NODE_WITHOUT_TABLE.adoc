@@ -1,0 +1,5 @@
+Reported at the `@node`.
+
+A node is a row of a table and its id encodes that row's key, so a type bound to no table has no key to encode and no table for `Query.node` to fetch from.
+
+*Next step.* Bind the type to its table with xref:directives/table.adoc[`@table`], or remove `@node`.

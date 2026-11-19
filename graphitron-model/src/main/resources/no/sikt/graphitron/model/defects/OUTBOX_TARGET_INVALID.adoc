@@ -1,0 +1,5 @@
+Reported at every `@outbox`, since the plugin configuration has no position in the schema; the detail says what is wrong with the `<outbox>` block.
+
+Graphitron fills two things of a message, its type and its payload, and leaves the rest to the database. A `<table>` target is one table of the jOOQ catalog with a type column, a JSON, JSONB or text payload column and a primary key, and no other `NOT NULL` column without a default. A `<function>` target is one procedure or function of the catalog, not a table-valued function, taking the type and the payload. The block names one of the two, and its `<columns>` or `<parameters>` bind only the `type` and `payload` roles.
+
+*Next step.* Correct the block, or the table or routine it names, as the detail says. See xref:mojo-configuration.adoc#transactional-outbox[Transactional outbox].

@@ -1,0 +1,5 @@
+Reported at the `@table` of each type sharing the type id, the detail naming the type id.
+
+A legacy shape belongs to a type id, since an id names its id space only by its type id. Here types over different tables, or with different current keys, answer to that type id, so converting an old id of it would rewrite ids another type owns.
+
+*Next step.* Give the types their own type ids with `@node(typeId:)`, keeping the type id the old ids were issued under on the type the legacy shape belongs to. See xref:directives/node.adoc#narrowing-the-key[Narrowing the key].

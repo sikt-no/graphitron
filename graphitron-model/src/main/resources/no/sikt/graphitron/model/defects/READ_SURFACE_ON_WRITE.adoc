@@ -1,0 +1,5 @@
+Reported at the `@condition`, on the field or on an argument, or at the `@orderBy` argument; the detail says which.
+
+On a `Mutation` field the routine call is the write, and the field answers with a re-read of the written rows by the keys the call captured. Neither statement has a filter a condition could narrow or an order a client's choice could set, so the directive would be accepted and do nothing.
+
+*Next step.* Remove the `@condition` or the `@orderBy`. What should narrow the write goes to the routine as a parameter, through `argMapping`; the order of a plural write's answer is stated with xref:directives/defaultOrder.adoc#plural-routine-write[`@defaultOrder`]. See xref:directives/routine.adoc#write[Writes on Mutation].

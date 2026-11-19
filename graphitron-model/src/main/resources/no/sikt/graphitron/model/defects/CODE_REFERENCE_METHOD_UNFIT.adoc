@@ -1,0 +1,5 @@
+Reported at the code reference, the detail giving the first requirement the method fails.
+
+An `@externalField` method is called while building the parent's `SELECT`: graphitron passes it the parent's jOOQ table and places the `Field` it returns in the select list. A method that is not static, takes anything other than exactly one jOOQ table, or returns something other than `org.jooq.Field` cannot be called there.
+
+*Next step.* Change the method's signature to `public static Field<T> name(SomeTable table)`, or point the reference at a method of that shape. See xref:directives/externalField.adoc[`@externalField`].

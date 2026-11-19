@@ -1,0 +1,5 @@
+Reported at the `@table`, the detail naming the table as written.
+
+The catalog spans several schemas, and more than one of them holds a table of this name, so the bare name could bind the type to either and graphitron will not pick one.
+
+*Next step.* Qualify the name with its schema, as `@table(name: "public.event")`. See xref:directives/table.adoc[`@table`].

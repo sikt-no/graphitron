@@ -1,0 +1,5 @@
+Reported at the `@issue` or `@accept`.
+
+The vouched-for fields say whose rows a voucher vouches for, and they become the connection key the accepting subgraph's row-level security reads. A voucher vouching for nothing would unlock nothing.
+
+*Next step.* Name at least one field in `vouchesFor`, the same fields on both the `@issue` and the `@accept`. See xref:../how-to/voucher-handover.adoc[How-to: Voucher handover].

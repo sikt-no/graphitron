@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the parameter.
+
+A decoded id reaches the xref:directives/service.adoc[`@service`] parameter in the argument's own shape: one value for one id, a `java.util.List` for a list of ids. A list parameter where one id arrives, a single value where a list does, or another collection such as a `Set`, cannot be filled.
+
+*Next step.* Declare the parameter in the argument's shape, using `List` for a list of ids, or change the argument's list wrapping to match the method.

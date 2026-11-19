@@ -1,0 +1,5 @@
+Reported at the code reference, the detail naming the class and the method looked for.
+
+The class was read, so the name is what fails: no public method of it is declared there. An `@externalField` written without `method:` looks for a method named after the GraphQL field.
+
+*Next step.* Correct `method:`, make the method public, or, at an `@externalField`, write `method:` when the Java name differs from the field's. See xref:../how-to/external-code.adoc[How-to: Wire external Java code].

@@ -1,0 +1,5 @@
+Reported at the `@key`, the detail naming the field it selects.
+
+Graphitron resolves an entity by selecting the row of its own table whose columns equal the key's values. A nested selection, a field read through a `@reference` path, an `@externalField` or computed scalar, and an `@nodeId` field carrying another node's encoded id hold no column of that table to compare against. The node's own id is the one exception, and only when it is the key's only field: graphitron decodes it.
+
+*Next step.* Select fields that read columns of the type's own table, or key on the node's `id` alone. See xref:../how-to/federation-keys.adoc[How-to: Federation key fields].

@@ -1,0 +1,5 @@
+Reported at the code reference, the detail naming the class and method.
+
+At a `@service`, an `@externalField` or a `FieldSort.method` the generated code calls one method, and graphitron binds its parameters from that method's signature. With several public overloads of the name there is no one signature to bind. A `@condition` is different: it takes an overload set, and draws other codes when the overloads do not fit.
+
+*Next step.* Rename one overload, or point the reference at a method whose name is declared once. See xref:../how-to/external-code.adoc[How-to: Wire external Java code].

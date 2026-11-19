@@ -1,0 +1,5 @@
+Reported at the path element that names the condition, the detail naming the table the step departs and the table it arrives at.
+
+A `condition` in a `@reference` path joins two tables, so graphitron calls the method with both: the table the step leaves and the table it enters, in that order. Each parameter must accept its table as its generated class or as one of jOOQ's public table types, such as `Table<?>`. With no declaration accepting this pair, the generated call would not compile.
+
+*Next step.* Add or change a declaration so its two table parameters accept the two tables named, or check that the path reaches the tables you meant. See xref:directives/reference.adoc[`@reference`] and the xref:directives/condition.adoc#parameter-binding[rules for table parameters].

@@ -1,0 +1,5 @@
+Reported at the `@node`, the detail listing the columns.
+
+Both the schema and the table's generated class state the legacy key shape here, as `legacyKeyColumns` and as `\\__NODE_LEGACY_KEY_COLUMNS`. The order of that list is the order of the values inside ids already issued, so two different lists would read the same old id two ways.
+
+*Next step.* Make `legacyKeyColumns` the same columns in the same order as the class, or remove it and let the class's list stand. See xref:directives/node.adoc#narrowing-the-key[Narrowing the key].

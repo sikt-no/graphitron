@@ -1,0 +1,5 @@
+Reported at the field.
+
+What the parent holds yields many rows for this field: a write taking a list of inputs yields one row per input, and a member of the parent's object may deliver a collection. A field declaring one value has room for only one of them, and nothing says which.
+
+*Next step.* Declare the field as a list. A payload re-reading the rows of a bulk xref:directives/mutation.adoc[`@mutation`] carries them in a list field.

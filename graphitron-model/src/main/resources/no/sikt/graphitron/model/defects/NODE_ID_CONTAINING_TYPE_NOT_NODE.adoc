@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the type the field is declared on.
+
+A `@nodeId` without `typeName:` on an output field with no xref:directives/reference.adoc[`@reference`] takes its node from the type it is declared on, encoding that type's own key. The type is no node, so there is no type id or key to encode.
+
+*Next step.* Write `typeName:` naming the node the id belongs to, adding a `@reference` path where that node's row is another table's, or make the declaring type a node with xref:directives/node.adoc[`@node`] and `implements Node`.

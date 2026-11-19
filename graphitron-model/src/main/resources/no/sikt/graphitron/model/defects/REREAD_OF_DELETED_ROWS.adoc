@@ -1,0 +1,5 @@
+Reported at the delete's own field where it returns a `@table` type, or at the field under the type it returns that would re-read its rows.
+
+A `DELETE` hands back the keys of the rows it removed. Anything selecting those rows by their keys afterwards finds them gone.
+
+*Next step.* Return the deleted rows' ids, as `ID` or `[ID!]` on the field or on a field of the type it returns. See xref:directives/mutation.adoc[`@mutation`].

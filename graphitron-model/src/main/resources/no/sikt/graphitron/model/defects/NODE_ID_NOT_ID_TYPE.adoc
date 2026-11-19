@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the type written.
+
+`@nodeId` encodes a key into an opaque `ID` on the way out and decodes one on the way in, so the slot it marks must be `ID`, `ID!` or a list of them. On any other type the wire value would be bound undecoded.
+
+*Next step.* Change the slot's type to `ID`, or remove the directive if the field carries a plain value. See the constraints of xref:directives/nodeId.adoc[`@nodeId`].

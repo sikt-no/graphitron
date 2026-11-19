@@ -1,0 +1,5 @@
+Reported at the `@mutation`.
+
+The `typeName` of a `@mutation` is the SQL statement graphitron generates for the field; without one there is no write to generate.
+
+*Next step.* Write the kind of write the field performs, for example `@mutation(typeName: INSERT)`, `UPDATE` or `DELETE`. xref:directives/mutation.adoc[`@mutation`] describes each.

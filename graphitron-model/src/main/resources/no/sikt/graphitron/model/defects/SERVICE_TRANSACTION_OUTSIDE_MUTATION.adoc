@@ -1,0 +1,5 @@
+Reported at the `@service`.
+
+`transactionControl: SERVICE` tells graphitron not to open the transaction it otherwise opens around the field, so the service commits its own writes. Only a field of the root `Mutation` type runs in a transaction of its own. Anywhere else, a query field or a field under a mutation's payload, there is no such transaction to leave out, and the argument says nothing.
+
+*Next step.* Remove the argument, or move the `@service` onto a root mutation field. See xref:directives/service.adoc#transaction-demarcation[transaction demarcation].

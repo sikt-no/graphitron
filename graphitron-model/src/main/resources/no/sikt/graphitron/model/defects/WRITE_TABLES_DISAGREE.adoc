@@ -1,0 +1,5 @@
+Reported at the `@mutation`.
+
+A `@mutation` writes one table, and graphitron takes it from every place the write is read on: the `@table` type it returns, the `@table` types its payload's fields re-read the written rows as, and `@mutation(table:)`. Two fields re-reading the same table agree; here two of these name different tables.
+
+*Next step.* Make them name one table: correct or drop `table:`, and re-read the written rows only as types bound to the table written. See xref:directives/mutation.adoc[`@mutation`].

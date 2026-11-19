@@ -1,0 +1,5 @@
+Reported at the `@nodeId`.
+
+An id of an interface or union is decoded per member against the member's table and key. None of the members named here is bound to a table, so no member has a key to decode an id against.
+
+*Next step.* Name a node type, or an interface or union whose members carry xref:directives/table.adoc[`@table`] and are nodes. See xref:directives/nodeId.adoc#polymorphic-record-slot[Decoding an id of any implementation into a record supertype].

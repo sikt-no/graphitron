@@ -1,0 +1,5 @@
+Reported at the `@service` field, the detail naming the checked exception.
+
+The generated fetcher calls the service inside a `try` that catches only what the field's errors channel claims. A checked exception nothing claims escapes the fetcher, which Java will not compile. `IOException` and `InterruptedException` are let through as infrastructure failures, redacted rather than surfaced.
+
+*Next step.* Return a payload with an errors field whose xref:directives/error.adoc[`@error`] types include a `GENERIC` handler naming the exception or a supertype of it, or a `DATABASE` handler for an `SQLException`; or remove the `throws` clause from the method. See xref:../how-to/error-channel.adoc[How-to: The errors channel].

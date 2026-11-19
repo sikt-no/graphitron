@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the method's declared result type.
+
+The generated fetcher hands the field what the method returns, so the declared result has to be what the field takes: records of the table the field's type is bound to, values of the class its scalar arrives as, and many only where the field is a list. Under an object the answer is read per key, from a `Map`'s values or a `List`'s elements in the keys' order, so a list field there answers `Map<Key, List<V>>` or `List<List<V>>`. A payload encoding the records into ids with `@nodeId(typeName:)` takes that node table's records. A result naming no class, such as a type variable, a raw container or an array, says nothing of which records to read.
+
+*Next step.* Declare the result the field takes, or change the field to what the method returns. See the xref:directives/service.adoc#constraints[`@service` constraints].

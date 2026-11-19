@@ -1,0 +1,5 @@
+Reported at every `@outbox`, since the plugin configuration has no position in the schema.
+
+Where a message goes is configured once for every `@outbox`: an outbox table graphitron inserts a row into, or a database routine it calls. With neither, the generated code has nowhere to write it.
+
+*Next step.* Add an `<outbox>` block naming a `<table>` or a `<function>` to the plugin configuration. See xref:mojo-configuration.adoc#transactional-outbox[Transactional outbox].

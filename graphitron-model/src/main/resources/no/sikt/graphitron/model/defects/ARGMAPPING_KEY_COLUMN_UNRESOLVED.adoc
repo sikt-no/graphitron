@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry, the key columns it could have meant listed under it.
+
+A path continuing past an `@nodeId` slot projects one column out of the decoded key, so that the parameter receives that column's own value. Graphitron must know which column: with a composite key and no column named, with a name the key does not have, or with an interface's or a union's id, whose members each have their own key, there is no one column to project.
+
+*Next step.* Name one of the listed key columns after the id, as in `filmId: pick.filmActor.film_id`; or end the path on the id itself, so the parameter takes the whole decoded key, a jOOQ `Row` for a composite key. Projection out of an interface's or a union's id is not available yet. See xref:directives/routine.adoc#node-id-key-projection[Projecting a key column out of a node id].

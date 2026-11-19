@@ -1,0 +1,5 @@
+Reported at the declaration that writes the path, or at the `@referenceFor` naming the member, the detail naming the target type.
+
+A path is a chain of joins ending on the table the field's rows come from. An object type without `@table`, a union, or an interface without a table of its own has no one table, so the path has nowhere to arrive. A scalar or enum read through a path, a `@pivot`, and a path ending on a `@routine` take what they read from wherever the path arrives, and are not refused.
+
+*Next step.* Bind the target type to its table with xref:directives/table.adoc[`@table`]. For a union or an interface whose participants sit on tables of their own, write each participant's path with xref:directives/referenceFor.adoc[`@referenceFor`] instead of a path on the field. Or remove the path.

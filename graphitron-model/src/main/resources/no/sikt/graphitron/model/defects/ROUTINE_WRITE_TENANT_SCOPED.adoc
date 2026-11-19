@@ -1,0 +1,5 @@
+Reported at the field.
+
+In a database-per-tenant build, a row a tenant column scopes lives in that tenant's database and is reached only on that tenant's connection. A routine write names no tenant, so it runs on the default source, and its re-read cannot reach the tenant's rows it answers with.
+
+*Next step.* Return rows of a table no tenant column scopes, or make the write in a root xref:directives/service.adoc[`@service`] that names its tenant with a `$tenant` entry in its `argMapping`. See xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].

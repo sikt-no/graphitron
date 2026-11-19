@@ -1,0 +1,5 @@
+Reported at the `@table`, the detail naming the table as written, or the type's name where `name:` is left out.
+
+Every column, join and write on the type is resolved against its table in the jOOQ catalog, so a type bound to a name the catalog lacks has nothing to resolve against.
+
+*Next step.* Correct the name to the table as the catalog spells it, or, when `name:` is left out, give one where the type's name is not the table's. If the table lives in a schema the jOOQ code generation leaves out, include that schema. See xref:directives/table.adoc[`@table`].

@@ -1,0 +1,5 @@
+Reported at the field's declaration, the detail naming the class of the object its parent holds.
+
+A field fetching its own rows is batched by the keys of its parents. Under a parent holding a Java object rather than a table's row, graphitron reads those keys off a member of the object's class: for a `@service`, the member returning records of the table its `Sources` parameter collects, found by what it returns rather than by its name; for another field, the member named as the field. With two members qualifying, the keys could come from either.
+
+*Next step.* Change the class so only one member qualifies, for example by removing or retyping the other. See the xref:directives/service.adoc#constraints[`@service` constraints].

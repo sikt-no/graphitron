@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry, the detail naming the member written.
+
+`$scope` describes the field and its operation, and has three members: `coordinate`, `operationName` and `alias`. Any other name has no value to read.
+
+*Next step.* Read one of the three, or remove the entry. See xref:directives/outbox.adoc[`@outbox`].

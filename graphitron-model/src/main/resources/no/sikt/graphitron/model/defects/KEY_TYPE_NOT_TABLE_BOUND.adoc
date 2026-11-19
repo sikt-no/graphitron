@@ -1,0 +1,5 @@
+Reported at the `@key`, the detail naming the type.
+
+This subgraph answers `_entities` for a resolvable key by selecting the entity's row from its table, matching the key's values against that table's columns. A type with no xref:directives/table.adoc[`@table`] has no table to select from. A key marked `resolvable: false` is another subgraph's to resolve and needs none.
+
+*Next step.* Bind the type to a table with `@table`, or, if another subgraph resolves the entity, mark every one of its keys `resolvable: false`. xref:federation.adoc[Federation] lists the rules a key is held to.

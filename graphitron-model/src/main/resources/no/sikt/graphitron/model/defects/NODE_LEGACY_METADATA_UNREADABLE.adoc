@@ -1,0 +1,5 @@
+Reported at the `@table` of each type bound to the table, the detail naming the table.
+
+The table's generated class declares `\\__NODE_LEGACY_KEY_COLUMNS`, and graphitron cannot use what it declares, for example a column of another table. Unlike unreadable node metadata, nothing falls back for a legacy shape, and every stored id in the old shape would fail to decode at runtime, so the build stops.
+
+*Next step.* Fix the jOOQ generator configuration that writes the field on the table class, and regenerate the catalog.

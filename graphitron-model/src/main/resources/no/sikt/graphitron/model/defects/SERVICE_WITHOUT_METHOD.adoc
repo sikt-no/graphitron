@@ -1,0 +1,5 @@
+Reported at the `@service`.
+
+The field's value is what the named method returns, and `@service` defaults neither `className` nor `method`. A `service:` missing either names nothing to call. (`@externalField` is the directive that defaults its method, to the field's name.)
+
+*Next step.* Write both `className` and `method` in `service:`. See the xref:directives/service.adoc#constraints[`@service` constraints].

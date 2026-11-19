@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry, the detail the source as written.
+
+`$session` reads the handle your connection source's mount returns, on the connection the call runs on. The `<sessionState>` block is what declares that your source mounts one, so without it there is no handle to read.
+
+*Next step.* Add a `<sessionState>` block to the plugin configuration, with a `<handle>` naming the handle's type, or bind the parameter another way. See xref:mojo-configuration.adoc#session-identity[Session identity].

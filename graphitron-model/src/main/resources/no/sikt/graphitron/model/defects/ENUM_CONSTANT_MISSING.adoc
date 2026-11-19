@@ -1,0 +1,5 @@
+Reported at the field whose `@service` parameter takes the constant, or at the input field filling the member, the detail naming the GraphQL enum value.
+
+Graphitron converts the value a client sends to the Java enum the parameter or member declares, by name: the value's `@field(name:)` where one is written, its own name otherwise. With no constant of that name, the conversion would throw at request time, when a client first sends the value.
+
+*Next step.* Rename the GraphQL value, or point it at an existing constant with `@field(name:)`; add the constant to the Java enum; or declare the parameter or member as a `String` and read the value by name. See xref:directives/service.adoc#parameter-filling[`@service` parameter filling].

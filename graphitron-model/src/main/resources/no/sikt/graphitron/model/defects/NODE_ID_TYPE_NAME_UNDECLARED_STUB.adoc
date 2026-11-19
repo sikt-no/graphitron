@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the detail naming the type as written.
+
+The named type is a xref:directives/table.adoc[`@table`] type over a table whose generated class publishes node metadata, but it is not a node. That is the shape of an entity another subgraph owns: this subgraph decodes its ids without fetching it.
+
+*Next step.* Declare the type `@node(resolvable: false)` and `implements Node`, which makes it a node for its id that this subgraph does not resolve. See xref:directives/node.adoc#federation-stubs[Nodes this subgraph does not resolve].

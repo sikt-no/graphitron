@@ -1,0 +1,5 @@
+Reported at the `$tenant` entry of the `argMapping`, the detail naming the argument or input field marked `@tenant`.
+
+A root `@service` runs on one tenant's connection. With a `$tenant` entry and a `@tenant` marker on another value, two values could name different tenants, and nothing says which one the call runs on.
+
+*Next step.* Name the tenant once. `$tenant` is the preferred form, so remove the `@tenant` marker. See xref:directives/tenant.adoc[`@tenant`] and xref:directives/service.adoc#arg-mapping[`argMapping`].

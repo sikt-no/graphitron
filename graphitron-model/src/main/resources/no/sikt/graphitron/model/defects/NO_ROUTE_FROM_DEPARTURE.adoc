@@ -1,0 +1,5 @@
+Reported at the path element that has no move; for a path inherited from an interface, at the interface's element. Where a `condition` alone takes any table as its second parameter, the detail says so.
+
+A path is walked one element at a time, each departing the table the walk stands on: the parent's table for the first element, and wherever the one before arrived for the rest. An element naming a key between two other tables, or a condition method taking neither table, has nowhere to go from there. A key naming a table's own primary key is a self-join, which moves only as the one element of a field reading one row.
+
+*Next step.* Correct the element so it departs the table the previous one arrived at, writing the elements in the direction the join runs. Type a condition method's second parameter with the table it joins to. See xref:directives/reference.adoc#path-rules[Path rules].

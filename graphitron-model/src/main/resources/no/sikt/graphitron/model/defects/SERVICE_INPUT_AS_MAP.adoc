@@ -1,0 +1,5 @@
+Reported at the argument or input field, the detail naming the parameter's type as declared.
+
+Graphitron builds an input object into the class its parameter declares, matching each input field to a member and refusing at build time what does not match. A `Map` or an `Object` has no members, so nothing is checked and every key is read by its GraphQL name at run time. A `@condition` takes the map and is not refused.
+
+*Next step.* Take a typed class mirroring the input object: a jOOQ record, a Java record, or a class with a public no-argument constructor and setters. For open-ended JSON, declare a custom scalar with xref:directives/scalarType.adoc[`@scalarType`] and take its Java type. See xref:directives/service.adoc#parameter-filling[How each parameter is filled].

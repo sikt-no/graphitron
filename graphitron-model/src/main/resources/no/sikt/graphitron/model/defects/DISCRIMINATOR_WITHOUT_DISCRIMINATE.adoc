@@ -1,0 +1,5 @@
+Reported at the `@discriminator`.
+
+A `@discriminator` value is only read against the column an interface's `@discriminate(on:)` names. On a type implementing no such interface it would match nothing and is most likely left over or misplaced.
+
+*Next step.* Add `@discriminate` to the interface the type implements, or remove the `@discriminator`. See xref:directives/discriminator.adoc[`@discriminator`].

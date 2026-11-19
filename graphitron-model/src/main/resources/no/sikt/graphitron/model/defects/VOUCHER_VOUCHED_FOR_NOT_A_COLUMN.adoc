@@ -1,0 +1,5 @@
+Reported at the `@accept`, the detail naming the first such field.
+
+Each vouched-for value is coerced to its field's column and becomes one part of the connection key, typed by that column, as a key field's value is. A list, or a field read some other way than off one column of the type's own table, has no column to coerce to.
+
+*Next step.* Name in `vouchesFor` fields that read one column of the type's table. See xref:directives/accept.adoc[`@accept`].

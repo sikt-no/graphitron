@@ -1,0 +1,5 @@
+Reported at the `@issue`, the detail naming the type.
+
+A voucher vouches for rows the user reached below a parent this subgraph's own rules admitted. A root operation field reaches the rows with no such parent. A mutation payload's field is no root field.
+
+*Next step.* Return the issuing type from a field below a parent type, and not from a field of `Query`, `Mutation` or `Subscription`. See xref:directives/issue.adoc[`@issue`].

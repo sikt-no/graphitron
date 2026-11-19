@@ -1,0 +1,5 @@
+Reported at the `@issue`, the detail naming the type.
+
+Every field written on an issuing type is absorbed into the voucher and withheld from the published schema. A node is keyed by its id, which would then be absorbed with the rest.
+
+*Next step.* Issue the voucher from a type that is no node, or drop `@issue`. See xref:directives/issue.adoc[`@issue`].

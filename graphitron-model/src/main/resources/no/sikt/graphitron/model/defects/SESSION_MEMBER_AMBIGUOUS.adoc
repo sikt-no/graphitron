@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry, the detail naming the member written after `$session.`.
+
+A member of the handle is the name of an accessor without its `get` or `is` prefix, so a class declaring both `getActive()` and `isActive()` offers the member `active` twice, and graphitron cannot tell which one the parameter should receive.
+
+*Next step.* Remove one of the two accessors from the handle class, or wrap the handle in a Java record whose components name each value once. xref:mojo-configuration.adoc#consuming-the-handle[Consuming the handle] lists which members a handle offers.

@@ -1,0 +1,5 @@
+Reported at the first of the type's errors fields.
+
+What a xref:directives/service.adoc[`@service`], write or routine catches is routed to the one errors field of the type it hands back, a list of xref:directives/error.adoc[`@error`] types or of a union or interface over them. With two such fields, nothing says which one the errors arrive at.
+
+*Next step.* Keep one errors field, merging the error types into one union if both are needed. xref:../how-to/error-channel.adoc[The error channel how-to] describes the carrier shapes.

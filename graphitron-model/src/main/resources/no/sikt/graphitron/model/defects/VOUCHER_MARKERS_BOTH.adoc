@@ -1,0 +1,5 @@
+Reported at each marker, the detail naming the type.
+
+A type carries one voucher field, which either signs a voucher here or receives one from another subgraph, so it issues or accepts, not both.
+
+*Next step.* Keep `@issue` if this subgraph vouches for the rows, or `@accept` if it grants access to them, and remove the other. See xref:directives/issue.adoc[`@issue`] and xref:directives/accept.adoc[`@accept`].
