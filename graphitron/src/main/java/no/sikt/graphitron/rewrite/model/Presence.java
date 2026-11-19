@@ -309,12 +309,15 @@ public final class Presence {
         /**
          * The null contract of a field wrapped {@code wrapper} whose value is an object with
          * {@code presence}: a non-null single field always resolves to an object, a nullable one
-         * collapses when every presence leaf is absent, and a list-wrapped one never collapses.
+         * collapses when every presence leaf is absent, and a list-wrapped one never collapses. A
+         * nullable one over no leaf at all never collapses either: nothing would tell an absent
+         * object from a present one, so the row's existence decides, which errs toward keeping it.
          */
         static NullContract of(FieldWrapper wrapper, SubtreePresence presence) {
             return switch (wrapper) {
                 case FieldWrapper.Single s when !s.nullable() -> new AlwaysObject(new Reason.NonNull());
                 case FieldWrapper.Single ignored -> switch (presence) {
+                    case SubtreePresence.Leaves l when l.leaves().isEmpty() -> new AlwaysObject(new Reason.NoLeaf());
                     case SubtreePresence.Leaves l -> new CollapsesWhenAbsent(l.leaves());
                     case SubtreePresence.Blocked b -> new AlwaysObject(new Reason.BlockedBy(b.blocker()));
                 };
@@ -393,6 +396,13 @@ public final class Presence {
 
             /** The field is list-wrapped. */
             record NotSingle() implements Reason {}
+
+            /**
+             * The object holds no field a presence leaf decides, such as an {@code @issue} type, whose
+             * written fields are sealed into the voucher and whose one field is the voucher the store
+             * mints: a collapse over no leaf would answer {@code null} for every row.
+             */
+            record NoLeaf() implements Reason {}
 
             /**
              * The field's parent is a producer-handed record (the data field of a {@code @service}

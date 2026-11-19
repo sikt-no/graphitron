@@ -120,6 +120,27 @@ class VoucherIssueExecutionTest {
         }
     }
 
+    /**
+     * A single, nullable field into an issuing type answers the referenced row, not {@code null}: the
+     * type's written fields are sealed into the voucher, so no presence column could tell the row
+     * absent, and the row's existence decides.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aSingleFieldIntoAnIssuingTypeAnswersItsRowWithAVoucher() {
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(session())
+            .query("{ inventories { inventoryId film { _voucher } } }").build());
+        assertThat(result.getErrors()).isEmpty();
+        var inventories = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("inventories");
+        assertThat(inventories).isNotEmpty();
+        var verifier = VoucherCodec.verifier(keys, Instant.now());
+        for (var inventory : inventories) {
+            var film = (Map<String, Object>) inventory.get("film");
+            assertThat(film).as("inventory %s's film", inventory.get("inventoryId")).isNotNull();
+            assertThat(verify(verifier, (String) film.get("_voucher")).keyId()).isEqualTo("k1");
+        }
+    }
+
     @Test
     void anOperationsVouchersShareOneVouchIdAndAnotherOperationMintsAnother() {
         var verifier = VoucherCodec.verifier(keys, Instant.now());

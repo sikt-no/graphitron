@@ -7,12 +7,20 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["
 
 type Query {
   languages: [Language!]!
+  inventories: [Inventory!]!
   applications: [Application!]!
 }
 
 type Language @table(name: "language") {
   name: String
   films: [FilmVoucher!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+# A single, nullable reference to an issuing type: its object is the referenced row whenever there is
+# one, the voucher being no column a presence check could read.
+type Inventory @table(name: "inventory") {
+  inventoryId: Int! @field(name: "inventory_id")
+  film: FilmVoucher @reference(path: [{key: "inventory_film_id_fkey"}])
 }
 
 type FilmVoucher @table(name: "film") @issue(scope: "films", ttl: "PT5M", vouchesFor: "title") {

@@ -207,6 +207,14 @@ class PresenceTest {
     }
 
     @Test
+    void nullableSingleOverNoLeaf_isAlwaysAnObject() {
+        // An issuing type's one field is the voucher the store mints, which is no leaf: a collapse
+        // over nothing would answer null for every row.
+        assertThat(NullContract.of(new FieldWrapper.Single(true), new SubtreePresence.Leaves(List.of())))
+            .isEqualTo(new NullContract.AlwaysObject(new NullContract.Reason.NoLeaf()));
+    }
+
+    @Test
     void otherChild_blocksTheWrapperNamingThatChild() {
         var blocker = pagedList("languages");
         var nf = nullable("release", column("year", YEAR), blocker);
