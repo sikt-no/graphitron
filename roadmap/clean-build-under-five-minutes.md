@@ -310,9 +310,10 @@ parallelises a module's tests is priced against that before it is tried.
     view and arm statically on every model build (`target/view-complexity/`), and picked those three.
     Their arms are bisected cold (the audit, § "The three rules, arm by arm"): in each, a few arms
     joining seven inputs with correlated guards carry most of the cost, and they are handed to R876's
-    node "No view reads a view, and every rule view is simple" with the two levers. Next here: the
-    report's weight peaks at seven inputs and counts the correlated conditions per block, so it ranks
-    arms as it ranks views; a gate over it comes once a measure has held against a few changes.
+    node "No view reads a view, and every rule view is simple" with the two levers. The report's weight
+    now follows H2's own search bound and counts each block's conditions (the audit, § "The weight,
+    corrected against the arms"): Spearman over the measured arms 0.69 to 0.82, over the rules 0.92 to
+    0.87. Next here: a first gate over the report, once a measure has held against a few changes.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every

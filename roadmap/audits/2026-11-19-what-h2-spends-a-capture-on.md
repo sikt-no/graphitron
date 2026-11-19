@@ -128,3 +128,30 @@ past seven inputs, where H2 switches to a cheaper partial search (producers' arm
 costs 16 ms); it should peak at seven. And among seven-input blocks it cannot tell a 66 ms arm from a
 15 ms one; the correlated conditions over the block are the likely discriminator, and it does not
 count them yet. A shared `WITH` is also counted once though H2 inlines it at each reference.
+
+## The weight, corrected against the arms
+
+`ViewComplexityTest`'s weight was reworked against the 67 measured arms and the 29 rules whole,
+compared by Spearman rank correlation and by how many of each rule's five dearest arms it also put
+in its top five.
+
+H2 2.5.250's `Optimizer` searches every join order up to `MAX_BRUTE_FORCE_FILTERS` (7) inputs and,
+past that, at most `MAX_BRUTE_FORCE` (2,000) partial orders and `MAX_GENETIC` (500) genetic rounds, so
+a block of eight inputs plans in fewer orders than one of seven. The measured arms agree: in
+`occurrence-depth-defects`, arms whose widest block joins seven inputs cost 31 to 38 ms, those joining
+eight to ten 9 to 13 ms. A view's leading `WITH` is now carried onto every arm, as H2 sees it, and a
+CTE adds its weight wherever it is named.
+
+| weight per block | Spearman, 67 arms | top-5 overlap, of 15 | Spearman, 29 rules |
+|---|---:|---:|---:|
+| `n!` rising past seven (the first version) | 0.69 | 6 | 0.92 |
+| H2's orders alone (`n!` to seven, 2,500 past it) | 0.79 | 11 | 0.89 |
+| orders times (1 + subquery guards) | 0.76 | 10 | 0.87 |
+| orders times (1 + conditions), kept | 0.82 | 10 | 0.87 |
+| orders times (1 + conditions + 3 times guards) | 0.81 | 10 | 0.87 |
+
+Most of the gain is H2's real search bound and the carried `WITH`; counting conditions adds a little
+at arm level and costs a little at rule level, and on this sample a few hundredths is not a
+difference to lean on. The kept weight follows the mechanism the recording showed, H2 re-checking
+every condition per order tried, and the report carries `conditions` and `guards` beside it.
+`occurrence-tenants` stays the rule-level miss: third by weight, with 42 guards, and 5 ms cold.
