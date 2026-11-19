@@ -20,9 +20,13 @@ import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +41,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 /**
  * The fact documents' graphs, each captured once per test run and read by every class that names
@@ -61,12 +66,10 @@ import java.util.function.Function;
  *
  * <p><b>Rows above, not beside, {@link FactStores}.</b> That class never puts rows in a store, which
  * every harness above it relies on; this one exists to. It opens its stores through
- * {@link FactStores#inMemory(StoreUse)}, so they are counted with every other boot. They are held in
- * memory although they accumulate every document's and every inline schema's graph of the run: what
- * an open store costs the heap is mostly its schema and statement cache, not its rows, and the same
- * stores on disk measured slower and no lighter, H2 reading pages back through its small default
- * page cache and appending a rewritten page for every one a capture changed. What an open store does
- * cost the heap is why there are few of them.
+ * {@link FactStores#fileBacked(Path, StoreUse)}, so they are counted with every other boot. They are
+ * on disk because they accumulate graphs, every document's and every inline schema's of the run, and
+ * a graph's rows on disk cost the heap nothing beyond H2's page cache; what an open store does cost
+ * the heap, its schema and its statement cache, is why there are few of them.
  *
  * <p><b>Shards.</b> A store has one writing connection, and a capture holds it for its whole
  * transaction, so one store for every graph would serialize every capture in a run. Graphs are
@@ -99,7 +102,9 @@ import java.util.function.Function;
  * <p><b>Lifetime.</b> One population per test JVM, so a static helper with no extension context of
  * its own reaches the same stores a class does, through {@link #inline()}. The first class that
  * registers a {@link Reader} puts it in the root {@link ExtensionContext}'s store, which closes it
- * when the run ends.
+ * when the run ends, and with them their files. Each store's file lives in this JVM's own directory
+ * under the module's {@code target}, so concurrent test JVMs never share one, and a population sweeps
+ * away the directories of JVMs that are no longer running.
  */
 public final class FactGraphs implements AutoCloseable {
 
@@ -143,6 +148,8 @@ public final class FactGraphs implements AutoCloseable {
     private final CatalogInput fixture;
     private final List<ClasspathEntry> classpath;
     private final Path directory;
+    /** This JVM's store files, one directory per store. */
+    private final Path stores;
     private final Map<ShardKey, Shard> shards = new ConcurrentHashMap<>();
 
     private record ShardKey(Optional<String> catalog, Optional<String> classpath, int index) {}
@@ -158,6 +165,9 @@ public final class FactGraphs implements AutoCloseable {
         // Under the module's own build output, and kept: a failing scenario's rendered folder is
         // where its expanded schema is read.
         this.directory = Path.of("target", "fact-scenarios").toAbsolutePath();
+        var homes = directory.resolve("stores");
+        sweepStoreHomes(homes);
+        this.stores = homes.resolve(Long.toString(ProcessHandle.current().pid()));
     }
 
     /** The JVM's population, while it is open. */
@@ -309,6 +319,7 @@ public final class FactGraphs implements AutoCloseable {
             }
         }
         shards.values().forEach(Shard::close);
+        deleteTree(stores);
     }
 
     /**
@@ -447,6 +458,45 @@ public final class FactGraphs implements AutoCloseable {
         throw new IllegalArgumentException("no store holds the inline graph " + graphName);
     }
 
+    /** A fresh directory for one store's file, under this JVM's own. */
+    private Path storeHome() {
+        try {
+            return Files.createTempDirectory(Files.createDirectories(stores), "store-");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Removes the store files of test JVMs that are no longer running. */
+    private static void sweepStoreHomes(Path root) {
+        if (!Files.isDirectory(root)) {
+            return;
+        }
+        try (Stream<Path> jvms = Files.list(root)) {
+            jvms.filter(dir -> {
+                    var pid = dir.getFileName().toString();
+                    return !pid.chars().allMatch(Character::isDigit)
+                        || ProcessHandle.of(Long.parseLong(pid)).isEmpty();
+                })
+                .forEach(FactGraphs::deleteTree);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static void deleteTree(Path root) {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(root)) {
+            for (var path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     /** Where an inline graph's file is written: kept for the run, since its store outlives the test. */
     private Path inlineDirectory(String graphName) {
         return directory.resolve("inline").resolve(graphName);
@@ -486,6 +536,7 @@ public final class FactGraphs implements AutoCloseable {
     private final class Shard {
 
         private GraphitronModelStore store;
+        private Path home;
         /** Inline graphs held beside the documents', which the population's checks do not iterate. */
         private final Set<String> inlineGraphs = new LinkedHashSet<>();
         private final Map<String, CapturedSchema> graphs = new LinkedHashMap<>();
@@ -604,12 +655,13 @@ public final class FactGraphs implements AutoCloseable {
             store.dsl().execute("SHUTDOWN");
         }
 
-        /** Opens the store on first use, in memory. */
+        /** Opens the store on first use, on disk under a home of its own. */
         private void boot() {
             if (store != null) {
                 return;
             }
-            store = FactStores.inMemory(StoreUse.LONG_LIVED);
+            home = storeHome();
+            store = FactStores.fileBacked(home, StoreUse.LONG_LIVED);
             BOOTS.incrementAndGet();
             // Every statement the store runs, captures and reads alike, kept by its text for the
             // checks over what the population's captures ran; room for every distinct text a
@@ -650,6 +702,9 @@ public final class FactGraphs implements AutoCloseable {
             }
             if (store != null) {
                 store.close();
+            }
+            if (home != null) {
+                deleteTree(home);
             }
         }
     }
