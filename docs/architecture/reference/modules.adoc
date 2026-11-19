@@ -2,7 +2,7 @@
 :description: The reactor module map for the Graphitron generator.
 :!toc:
 
-The repository is a single Maven reactor rooted at the `graphitron-rewrite-parent` parent pom (`10-SNAPSHOT`). Thirteen modules cover the generator, its inputs, its consumers, the reusable runtime surface, the tooling that wraps both ends, and the documentation site. The roadmap-tool `check-module-enumeration` step fails the build if this table stops naming a module the root pom declares, so the set below cannot fall behind the reactor:
+The repository is a single Maven reactor rooted at the `graphitron-rewrite-parent` parent pom (`10-SNAPSHOT`). Fourteen modules cover the generator, its inputs, its consumers, the reusable runtime surface, the tooling that wraps both ends, and the documentation site. The roadmap-tool `check-module-enumeration` step fails the build if this table stops naming a module the root pom declares, so the set below cannot fall behind the reactor:
 
 [cols="1,3"]
 |===
@@ -10,6 +10,9 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 
 | `graphitron-model`
 | The fact tier: the DDL that defines the generator's fact base, the jOOQ compile-time surface generated from it, the in-memory H2 bootstrap a run captures into, and capture itself, which reads the consumer's three sources (their GraphQL schema, their jOOQ-generated database classes, their compiled Java) and writes down what it found. Builds before the core, so editing the DDL fails javac in every consumer that touched the changed relation and the core cannot reach back into the tier that feeds it. It also holds the defect fix guidance, one AsciiDoc fragment per code that the store gathers beside the codes, and the renderer the docs build runs to publish the defects reference from them, so the page and the store it reads cannot drift.
+
+| `graphitron-store-functions`
+| The Java functions the fact store's SQL calls, bound by `CREATE ALIAS` in `graphitron-model`'s DDL: the edit distance a "did you mean" ranks candidates by, which the diagnostic view and the rejection messages share. A module of its own because the model's jOOQ codegen runs the DDL before the model compiles, so a bound function must already be a jar on the codegen plugin's classpath.
 
 | `graphitron`
 | The generator core: the classifier, the validator, the planners and every emitter. Reads facts and writes none.

@@ -17,6 +17,8 @@
         <module>graphitron-fixtures-codegen</module>
         <module>graphitron-sakila-db</module>
         <module>graphitron-sakila-service</module>
+        <!-- The functions the store's SQL calls, ahead of the model whose DDL binds them. -->
+        <module>graphitron-store-functions</module>
         <module>graphitron-model</module>
         <!-- graphitron is its only consumer. -->
         <module>graphitron</module>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-rewrite-parent</artifactId>
+        <version>10-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>graphitron-store-functions</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+
+    <description>
+        The Java functions the fact store's SQL calls, bound by CREATE ALIAS in graphitron-model's
+        DDL. Its own module because graphitron-model's jOOQ codegen runs the DDL in generate-sources,
+        before the model's own classes are compiled, so a function the DDL binds has to be on the
+        codegen plugin's classpath as a dependency. graphitron-model depends on it at run time too,
+        where the store and the rejection messages call the same function.
+    </description>
+</project>

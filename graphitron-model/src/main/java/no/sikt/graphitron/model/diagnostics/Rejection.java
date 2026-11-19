@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.diagnostics;
 
+import no.sikt.graphitron.store.functions.StoreFunctions;
+
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -663,34 +665,19 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
     /**
      * Produces the {@code "; did you mean: X, Y, Z"} suffix used by
-     * {@link AuthorError.UnknownName#message()}. Mirrors {@code BuildContext.candidateHint}; kept
-     * here so the rejection model is self-contained and consumers outside the rewrite package can
-     * render rejection messages without pulling in the package-private {@code BuildContext}.
+     * {@link AuthorError.UnknownName#message()}, ranked by {@link StoreFunctions#levenshtein}, the
+     * function the store's diagnostic view ranks a stored defect's candidates by, so the two read
+     * alike. Mirrors {@code BuildContext.candidateHint}; kept here so the rejection model is
+     * self-contained and consumers outside the rewrite package can render rejection messages without
+     * pulling in the package-private {@code BuildContext}.
      */
     private static String candidateHint(String attempt, List<String> candidates) {
         if (candidates.isEmpty()) return "";
         String lc = attempt.toLowerCase();
         return "; did you mean: " + candidates.stream()
-            .sorted(Comparator.comparingInt(c -> levenshteinDistance(lc, c.toLowerCase())))
+            .sorted(Comparator.comparingInt(c -> StoreFunctions.levenshtein(lc, c.toLowerCase())))
             .limit(5)
             .collect(Collectors.joining(", "));
-    }
-
-    private static int levenshteinDistance(String a, String b) {
-        int m = a.length(), n = b.length();
-        int[] prev = new int[n + 1], curr = new int[n + 1];
-        for (int j = 0; j <= n; j++) prev[j] = j;
-        for (int i = 1; i <= m; i++) {
-            curr[0] = i;
-            for (int j = 1; j <= n; j++) {
-                if (a.charAt(i - 1) == b.charAt(j - 1))
-                    curr[j] = prev[j - 1];
-                else
-                    curr[j] = 1 + Math.min(prev[j - 1], Math.min(prev[j], curr[j - 1]));
-            }
-            int[] tmp = prev; prev = curr; curr = tmp;
-        }
-        return prev[n];
     }
 
     /** {@link AuthorError.UnknownName} factory for foreign-key-name lookups. */

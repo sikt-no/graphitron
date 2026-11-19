@@ -33,6 +33,12 @@
             <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
+        <!-- The functions the DDL binds by CREATE ALIAS, which the store calls at run time. -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-store-functions</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!--
             The embedded store, at both cadences: the build-time codegen driver boots it so jOOQ
             reads live H2 metadata, and the run-time bootstrap boots it so a generator run has
@@ -160,6 +166,12 @@
                         <groupId>com.h2database</groupId>
                         <artifactId>h2</artifactId>
                         <version>${version.com.h2database}</version>
+                    </dependency>
+                    <!-- The DDL's CREATE ALIAS loads its class when the codegen runs it. -->
+                    <dependency>
+                        <groupId>no.sikt</groupId>
+                        <artifactId>graphitron-store-functions</artifactId>
+                        <version>${project.version}</version>
                     </dependency>
                 </dependencies>
                 <executions>
