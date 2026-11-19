@@ -1235,7 +1235,7 @@ static method needs no holder.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
-* **A record component no field fills is refused in the store** `open`, off the critical path.
+* **A record component no field fills is refused in the store, claimed by C** `open`, off the critical path.
   `InputBeanResolver.bindRecord` refuses a positional class whose component no input field fills;
   the store states the other direction only, `MEMBER_UNKNOWN`.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
@@ -1746,7 +1746,9 @@ output package they are written to are settled.
   exactly the type's `@key` applications, so its prepended node id alternative and the resolvable-node
   disjunct in its entity selection go, as does the matching prepend in `EntityResolutionBuilder`. A
   key whose field binds the node id still decodes as `Query.node` does; today the two stay apart only
-  because a synthesised key covers every federated node, which this makes a matter of shape. The node query states which argument the fetcher decodes, which the `NODE` taken row matches by name until it does; until then `Query.node`'s `id` is also read as a filter's node id by its name, and compared, where `Query.nodes`'s `ids` is not.
+  because a synthesised key covers every federated node, which this makes a matter of shape. Which argument a node fetcher decodes is stated first, as a subtype of its producer that the `NODE` taken row, the implicit node id rule and the fetcher read, ending the name match and `Query.node`'s `id` being also compared as a filter's node id; by the Relay names or by signature waits on Alf.
+  * **The dispatch's read emitters render from a plain keyed read** `open`. `EntityLoaders`, `HandleMethodBody` and `SelectMethodBody` take `EntityKeyQuery`'s entities, so a node query cannot render its own reads through them; they take a value of the type, its table, key columns and tenant position instead, with nothing changing, proven by the execution tests, `VoucherAcceptExecutionTest` among them.
+  * **`Query.node` renders its own unit from a node query** `blocked`, on "The dispatch's read emitters render from a plain keyed read". Its own type-id map, loads and tenant routing, planned from the node query; then `EntityKeyQuery`'s prepend, its resolvable-node disjunct, the walk's prepend and `typenameForTypeId` go together.
 * **The facade, dev executor, registrations and schema class read the store** `open`.
   `GraphitronFacadeGenerator`, `GraphitronDevExecutorGenerator`, `FetcherRegistrationsEmitter` and
   `GraphitronSchemaClassGenerator` take roots, nodes, scalars, error types and entities from the
