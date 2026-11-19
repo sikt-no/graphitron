@@ -297,6 +297,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_directive_argument_rule", Arm.DERIVED);
         registrations.put("graphitron_type_federation", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_site", Arm.DERIVED);
+        registrations.put("graphitron_entry_defect_hint", Arm.DERIVED);
         registrations.put("graphitron_code_reference", Arm.DERIVED);
         // The paths keyed per need, derived from the entries and the catalog; what pins them is the
         // schema's own keys and checks.

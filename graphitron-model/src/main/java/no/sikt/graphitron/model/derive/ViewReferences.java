@@ -11,6 +11,7 @@ import org.jooq.Select;
 import org.jooq.Table;
 import org.jooq.TableField;
 import org.jooq.VisitListener;
+import org.jooq.conf.ParseUnknownFunctions;
 import org.jooq.impl.DSL;
 import org.jooq.impl.DefaultConfiguration;
 import org.jooq.impl.QOM;
@@ -575,10 +576,16 @@ public final class ViewReferences {
         return definition;
     }
 
-    /** The parsed form of one stored definition, a parse failure being a defect in the DDL. */
+    /**
+     * The parsed form of one stored definition, a parse failure being a defect in the DDL. A function
+     * the DDL binds by {@code CREATE ALIAS}, such as {@code GRAPHITRON_LEVENSHTEIN}, is unknown to
+     * jOOQ's parser and parses as a plain call, reading no relation.
+     */
     private static Query parse(DSLContext dsl, String viewName, String definition) {
         try {
-            return dsl.parser().parseQuery(definition);
+            return dsl.configuration()
+                .derive(dsl.settings().withParseUnknownFunctions(ParseUnknownFunctions.IGNORE))
+                .dsl().parser().parseQuery(definition);
         } catch (RuntimeException e) {
             throw new IllegalStateException("the stored definition of view " + viewName
                 + " did not parse, and a definition walk reads it: " + e.getMessage(), e);

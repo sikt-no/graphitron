@@ -88,3 +88,17 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_table", where: "c
   40,          staff
   41,          films_for_actor
   """)
+
+# What each message suggests: the five columns of the looked-in tables nearest the spelling,
+# case-blind, nearest first and ties by name, as the walk's refusal suggested them.
+extend schema @expectEquals(relation: "graphitron_entry_defect_hint", where: "code = 'COLUMN_UNRESOLVED'", rows: """
+  source_line, hint
+  27,          "; did you mean: length, title, rating, film_id, language_id"
+  28,          "; did you mean: title, film_id, language_id, length, rating"
+  29,          "; did you mean: title, film_id, language_id, length, rating"
+  33,          "; did you mean: length, title, rating, film_id, language_id"
+  37,          "; did you mean: language_id, name, last_update"
+  39,          "; did you mean: last_name, first_name, email, active, store_id"
+  40,          "; did you mean: email, active, store_id, staff_id, username"
+  41,          "; did you mean: title, film_id"
+  """)

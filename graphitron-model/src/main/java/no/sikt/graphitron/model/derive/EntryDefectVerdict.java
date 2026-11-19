@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_HINT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SESSION_HANDLE_MEMBER;
 
@@ -30,11 +31,21 @@ public final class EntryDefectVerdict {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT_SITE, GRAPHITRON_DEFECT_TYPE,
-        GRAPHITRON_ARGMAPPING_PAIR_DEFECT, GRAPHITRON_SESSION_HANDLE_MEMBER);
+        GRAPHITRON_ARGMAPPING_PAIR_DEFECT, GRAPHITRON_SESSION_HANDLE_MEMBER, GRAPHITRON_ENTRY_DEFECT_HINT);
 
-    /** One stored defect with what its message and position need. */
-    public record Row(String code, String statement, String detail, String coordinate,
-                      String typeName, String fieldName, SourceLocation location) {}
+    /**
+     * One stored defect with what its message and position need, {@code hint} the suggestion
+     * {@code graphitron_entry_defect_hint} ranks for it, or null.
+     */
+    public record Row(String code, String statement, String detail, String hint, String coordinate,
+                      String typeName, String fieldName, SourceLocation location) {
+
+        /** A defect with no suggestion. */
+        public Row(String code, String statement, String detail, String coordinate,
+                   String typeName, String fieldName, SourceLocation location) {
+            this(code, statement, detail, null, coordinate, typeName, fieldName, location);
+        }
+    }
 
     /** The graph's error-severity defects, in document and position order. */
     public static List<Row> rows(DSLContext dsl, String graphName) {
@@ -60,17 +71,20 @@ public final class EntryDefectVerdict {
             .collect(Collectors.groupingBy(
                 r -> List.of(r.value1(), r.value2(), r.value3(), r.value4()),
                 Collectors.mapping(r -> r.value5(), Collectors.joining("; "))));
+        var h = GRAPHITRON_ENTRY_DEFECT_HINT;
         return dsl.select(d.CODE, t.STATEMENT, d.DETAIL, d.COORDINATE, d.TYPE_NAME, d.FIELD_NAME,
-                d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
+                d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, h.HINT)
             .from(d)
             .join(t).on(t.CODE.eq(d.CODE))
+            .leftJoin(h).on(h.GRAPH_NAME.eq(d.GRAPH_NAME), h.SOURCE_NAME.eq(d.SOURCE_NAME),
+                h.SOURCE_LINE.eq(d.SOURCE_LINE), h.SOURCE_COLUMN.eq(d.SOURCE_COLUMN), h.CODE.eq(d.CODE))
             .where(d.GRAPH_NAME.eq(graphName), t.SEVERITY.eq(severity))
             .orderBy(d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE)
             .fetch(r -> new Row(r.value1(), r.value2(),
                 r.value3() != null || r.value7() == null || r.value8() == null || r.value9() == null
                     ? r.value3()
                     : entries.get(List.of(r.value7(), r.value8(), r.value9(), r.value1())),
-                r.value4(), r.value5(),
+                r.value10(), r.value4(), r.value5(),
                 r.value6(), r.value8() == null || r.value9() == null
                     ? null
                     : new SourceLocation(r.value8(), r.value9(), r.value7())));
@@ -127,6 +141,7 @@ public final class EntryDefectVerdict {
         var rejection = Rejection.structural((row.detail() == null
             ? row.statement()
             : row.statement() + " (" + row.detail() + ")")
+            + (row.hint() == null ? "" : row.hint())
             + (explanation == null ? "" : " " + explanation) + " [" + row.code() + "]");
         if (row.fieldName() != null) {
             return ValidationError.forField(row.coordinate(), rejection, row.location());

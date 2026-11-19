@@ -10151,6 +10151,61 @@ COMMENT ON COLUMN graphitron_entry_defect_table.table_schema IS 'that table''s s
 COMMENT ON COLUMN graphitron_entry_defect_table.table_name IS 'that table''s name';
 COMMENT ON COLUMN graphitron_entry_defect_table.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
+-- The edit distance a "did you mean" ranks candidates by: one Java function, StoreFunctions.levenshtein
+-- in graphitron-store-functions, which Rejection's candidates rank by too, so a stored defect's hint
+-- and a walk refusal's read alike (Alf, 2026-11-19).
+CREATE ALIAS GRAPHITRON_LEVENSHTEIN FOR 'no.sikt.graphitron.store.functions.StoreFunctions.levenshtein';
+
+-- What a defect's message suggests beside its statement: for a COLUMN_UNRESOLVED, the five columns
+-- of the tables its name was looked for in (graphitron_entry_defect_table) nearest the spelling,
+-- nearest first and case-blind, as the walk's refusal suggested them. Ranked here so every reader of
+-- the defect, the build and the diagnostic view alike, shows one text (Alf, 2026-11-19). Display
+-- material only: nothing joins, groups or filters on the hint, and each candidate is picked by its
+-- rank rather than aggregated.
+CREATE VIEW graphitron_entry_defect_hint
+  (graph_name, source_name, source_line, source_column, code, hint) AS
+WITH candidate (graph_name, source_name, source_line, source_column, code, column_name, distance) AS (
+  SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, d.code, sc.column_name,
+         GRAPHITRON_LEVENSHTEIN(LOWER(d.detail), LOWER(sc.column_name))
+    FROM graphitron_entry_defect d
+    JOIN graphitron_entry_defect_table et
+      ON et.graph_name = d.graph_name AND et.source_name = d.source_name
+     AND et.source_line = d.source_line AND et.source_column = d.source_column AND et.code = d.code
+    JOIN sql_column sc
+      ON sc.source_name = et.table_source_name AND sc.table_schema = et.table_schema
+     AND sc.table_name = et.table_name
+   WHERE d.code = 'COLUMN_UNRESOLVED' AND d.detail IS NOT NULL
+)
+SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column, c.code,
+       '; did you mean: ' || (SELECT x.column_name FROM candidate x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.distance, x.column_name FETCH NEXT 1 ROWS ONLY)
+       || COALESCE(', ' || (SELECT x.column_name FROM candidate x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.distance, x.column_name OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY), '')
+       || COALESCE(', ' || (SELECT x.column_name FROM candidate x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.distance, x.column_name OFFSET 2 ROWS FETCH NEXT 1 ROWS ONLY), '')
+       || COALESCE(', ' || (SELECT x.column_name FROM candidate x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.distance, x.column_name OFFSET 3 ROWS FETCH NEXT 1 ROWS ONLY), '')
+       || COALESCE(', ' || (SELECT x.column_name FROM candidate x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.distance, x.column_name OFFSET 4 ROWS FETCH NEXT 1 ROWS ONLY), '')
+  FROM candidate c;
+COMMENT ON VIEW graphitron_entry_defect_hint IS 'What a defect''s message suggests beside its statement: one row per position and code that has a suggestion. For example Query.filmsBy(bogus:)''s COLUMN_UNRESOLVED suggests the film columns nearest bogus.';
+-- COMMENT ON COLUMN graphitron_entry_defect_hint.graph_name IS 'the owning graph''s partition, carried from the defect';
+-- COMMENT ON COLUMN graphitron_entry_defect_hint.source_name IS 'the defect''s file';
+-- COMMENT ON COLUMN graphitron_entry_defect_hint.source_line IS 'the defect''s line, 1-based';
+-- COMMENT ON COLUMN graphitron_entry_defect_hint.source_column IS 'the defect''s column, 1-based';
+-- COMMENT ON COLUMN graphitron_entry_defect_hint.code IS 'the defect''s code; with the four columns before it, the finding';
+-- COMMENT ON COLUMN graphitron_entry_defect_hint.hint IS 'the suggestion as a message appends it, for example ''; did you mean: title, film_id''';
+
 -- The @routine a field's written path steps through, under a claim defect it is in: a path step and
 -- no claim, so it has a detail of its own.
 CREATE TABLE graphitron_entry_defect_path_step (
@@ -28723,7 +28778,8 @@ UNION ALL
 -- written on an argument is the argument's own coordinate.
 --
 -- The message is the defect type's statement with the entry's detail quoted after it where the
--- code does not say everything on its own, which is that column's whole purpose.
+-- code does not say everything on its own, which is that column's whole purpose, and the suggestion
+-- graphitron_entry_defect_hint ranks for it, as the build appends it.
 SELECT d.graph_name, 'schema', t.severity, t.basis <> 'UNSUPPORTED',
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), t.lsp_code, d.code,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -28733,9 +28789,13 @@ SELECT d.graph_name, 'schema', t.severity, t.basis <> 'UNSUPPORTED',
        d.source_line, d.source_column,
        CASE WHEN d.detail IS NULL THEN t.statement
             ELSE t.statement || ' (' || d.detail || ')' END
+       || COALESCE(dh.hint, '')
        || CASE WHEN t.severity = 'error' THEN COALESCE((SELECT h.hint FROM build_warning_stale_module_hint h WHERE h.graph_name = d.graph_name), '') ELSE '' END
   FROM graphitron_entry_defect_site d
-  JOIN graphitron_defect_type t ON t.code = d.code;
+  JOIN graphitron_defect_type t ON t.code = d.code
+  LEFT JOIN graphitron_entry_defect_hint dh
+    ON dh.graph_name = d.graph_name AND dh.source_name = d.source_name
+   AND dh.source_line = d.source_line AND dh.source_column = d.source_column AND dh.code = d.code;
 COMMENT ON VIEW diagnostic IS 'The diagnostic relations'' one read surface: the union of all six arms (the rejection residue, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle, the written-entry arm, a claim conflict among the entry defects), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are the residue''s own directive child under its key and an entry defect''s claims under the defect''s, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
 -- COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
 -- COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm, classpath for a workspace module the run read stale';
@@ -32019,6 +32079,10 @@ INSERT INTO meta_relation VALUES
    'One @routine a field''s written path steps through, under the claim defect it conflicts in: one row per defect and step.',
    'For example a field carrying @service and a @routine below a root without @splitQuery draws a CLAIMS_CONFLICT with a SERVICE claim and this row for the routine.',
    'A routine below a root and not split is a step of the field''s path and no claim, yet no claim can share a field with it, so the conflict it is in names it beside the claims. Keyed by the defect and the step''s written position, with a foreign key to each.'),
+  ('graphitron_entry_defect_hint', 'graphitron-entry-defect-finding', 'graphitron',
+   'What a defect''s message suggests beside its statement: one row per position and code that has a suggestion.',
+   'For example Query.filmsBy(bogus:)''s COLUMN_UNRESOLVED suggests the film columns nearest bogus.',
+   'A view the build and the diagnostic view both read, so the two show one text (Alf, 2026-11-19): the candidates are the rows of graphitron_entry_defect_table under the defect, and only their ranking, by GRAPHITRON_LEVENSHTEIN, is computed here, display material nothing joins, groups or filters on.'),
   ('graphitron_entry_defect_site', 'graphitron-entry-defect-finding', 'graphitron',
    'One finding an author reads, with the element its position is about: one row per position and code over the stages that raised it, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
