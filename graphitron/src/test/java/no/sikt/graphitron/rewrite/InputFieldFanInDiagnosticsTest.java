@@ -309,13 +309,6 @@ class InputFieldFanInDiagnosticsTest {
                 Rejection.AuthorError.Structural.class,
                 "genuinely structural: a cycle names nothing to look up"),
 
-            new ProducerCase("use-keyed cascade verdict (bare unbound, no enclosing override)",
-                """
-                input PlainFilter { foo: String }
-                """ + FILM + "type Query { films(filter: PlainFilter): [Film!]! }\n",
-                "PlainFilter.foo", "at occurrence 'Query.films(filter)/foo'",
-                Rejection.AuthorError.UnknownName.class, null),
-
             new ProducerCase("malformed shape (@condition(override: false) with no column)",
                 """
                 input PlainFilter {

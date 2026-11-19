@@ -3394,8 +3394,8 @@ class BuildContext {
         // field is genuinely unbound: with an authored @condition (override: false, required to
         // compose with an implicit predicate that has no column to bind) the malformed-shape fact
         // is minted here, keyed by this definition and the resolving table, unconditional on any
-        // enclosing cascade; with no @condition the carrier is cascade-dependent and the
-        // consumer's walk applies the use-keyed verdict.
+        // enclosing cascade; with no @condition it compares nothing, the store's
+        // COLUMN_UNRESOLVED.
         //
         // The malformed-shape mint reads the authored directive rather than the built
         // ArgConditionRef: a failing condition build empties the carrier's condition by design

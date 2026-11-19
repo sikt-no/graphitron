@@ -3711,33 +3711,6 @@ class GraphitronSchemaBuilderTest {
                     .isEqualTo("countryId");
             }),
 
-        // ===== UnboundArg / UnclassifiedArg error surfacing =====
-        // classifyArguments emits UnboundArg when a scalar arg can't resolve to a column and
-        // UnclassifiedArg for other structural failures. projectFilters promotes both into
-        // per-argument errors with the "argument 'X': <reason>" format; the owning field becomes
-        // UnclassifiedField. These tests lock the contract in place.
-
-        UNBOUND_ARG_COLUMN_NOT_IN_TABLE(
-            "scalar arg bound to a non-existent column — UnclassifiedField with candidate hint in the reason",
-            """
-            type Film @table(name: "film") {
-                filmId: Int! @field(name: "film_id")
-            }
-            type Query {
-                films(tytle: String @field(name: "tytle")): [Film!]!
-            }
-            """,
-            schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "films");
-                assertThat(f.reason())
-                    .contains("argument 'tytle'")
-                    .contains("could not be resolved in table 'film'")
-                    .contains("did you mean");
-                // Ratchet: typo-class rejections are AUTHOR_ERROR (typo-fixable). Must not drift
-                // into INVALID_SCHEMA or DEFERRED.
-                assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-            }),
-
         LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED(
             "R130 + R144: @lookupKey on the ARGUMENT_DEFINITION of a same-table singular "
                 + "`id: ID! @nodeId` plain input arg → admitted via the extraction-propagation "
@@ -4382,44 +4355,6 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * The negative half of per-consumer resolution, and the regression home for the
-     * cross-table-reuse flip: a field of the shared input that resolves on one consumer's
-     * table but not the other's rejects only the non-resolving consumer, naming that
-     * consumer's table (never silently resolving against some type-level table).
-     */
-    @Test
-    void plainInput_reused_columnMissingOnOneConsumer_rejectsOnlyThatConsumerNamingItsTable() {
-        var schema = build("""
-            input SharedFilter { title: String @field(name: "title") }
-            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Actor @table(name: "actor") { actorId: Int! @field(name: "actor_id") }
-            type Query {
-                films(filter: SharedFilter): [Film!]!
-                actors(filter: SharedFilter): [Actor!]!
-            }
-            """);
-        assertThat(schema.field("Query", "films"))
-            .as("title exists on film; that consumer classifies")
-            .isNotInstanceOf(UnclassifiedField.class);
-        var uf = (UnclassifiedField) schema.field("Query", "actors");
-        assertThat(uf.reason())
-            .as("the actor consumer keeps the consequence")
-            .contains("'title'");
-        // The cause is the use-keyed cascade verdict, minted at the input field with the
-        // occurrence path and the resolving table, so the actor consumer's table is named
-        // there and film's never appears: exactly one occurrence fact, the actors one.
-        var minted = schema.diagnostics().stream()
-            .filter(d -> "SharedFilter.title".equals(d.coordinate()))
-            .toList();
-        assertThat(minted).hasSize(1);
-        assertThat(minted.getFirst().message())
-            .as("the cause names the non-resolving consumer's table and occurrence, not film")
-            .contains("Query.actors(filter)/title")
-            .contains("table 'actor'")
-            .doesNotContain("film");
-    }
-
-    /**
      * Acceptance test #4, reshaped by the malformed-shape mint: an unresolvable column under
      * {@code @condition(override: false)} is the malformed shape, minted into the build
      * diagnostics at the definition with the resolving table in the key and the typed
@@ -4447,32 +4382,6 @@ class GraphitronSchemaBuilderTest {
         assertThat(un.attempt()).isEqualTo("no_such_column");
         assertThat(un.candidates()).isNotEmpty();
         assertThat(un.message()).contains("@condition(override: false)", "table 'film'", "did you mean:");
-    }
-
-    /**
-     * Acceptance test #5 — Path B pin: a bare Unresolved (no {@code @condition}) on a plain
-     * input still rejects loudly. The cause is the use-keyed cascade verdict in the build
-     * diagnostics, carrying the typed {@link Rejection.AuthorError.UnknownName} shape and the
-     * occurrence path; the consumer keeps one consequence rejection. Future contributors cannot
-     * quietly reintroduce per-field skip without breaking this test by name.
-     */
-    @Test
-    void plainInput_bareUnresolvedField_rejectsAsUnclassifiedFieldWithUnknownName() {
-        var schema = build("""
-            input PlainFilter { noSuch: String @field(name: "no_such_column") }
-            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Query { films(filter: PlainFilter): [Film!]! }
-            """);
-        var uf = (UnclassifiedField) schema.field("Query", "films");
-        assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "input field 'noSuch'");
-        var minted = schema.diagnostics().stream()
-            .filter(d -> "PlainFilter.noSuch".equals(d.coordinate()))
-            .toList();
-        assertThat(minted).hasSize(1);
-        assertThat(minted.getFirst().rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
-        var un = (Rejection.AuthorError.UnknownName) minted.getFirst().rejection();
-        assertThat(un.attempt()).isEqualTo("no_such_column");
-        assertThat(un.message()).contains("input field 'noSuch'", "Query.films(filter)/noSuch");
     }
 
     /**
@@ -4565,17 +4474,6 @@ class GraphitronSchemaBuilderTest {
             .contains("argument 'sakskode'")
             .contains("could not be resolved in table 'film'");
         assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-    }
-
-    /** A lookup needs a column tuple to drive its VALUES+JOIN, so the override does not lift it. */
-    @Test
-    void argument_overrideTrueWithLookupKeyAndNoColumn_stillRejected() {
-        var field = build("""
-            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Query { films(sakskode: [String!]! @lookupKey %s): [Film!]! }
-            """.formatted(SAKSKODE_OVERRIDE)).field("Query", "films");
-        assertThat(field)
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
     }
 
     /**
@@ -4714,32 +4612,6 @@ class GraphitronSchemaBuilderTest {
         var hasGcf = qtf.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance);
         assertThat(hasGcf).isFalse();
         assertThat(qtf.filters().stream().filter(ConditionFilter.class::isInstance).count()).isEqualTo(1L);
-    }
-
-    /**
-     * #3 — plain input + bare non-binding field (no {@code @field}, no {@code @condition})
-     * consumed by a non-override arg still rejects: the use-keyed cascade verdict mints into
-     * the build diagnostics at the input field with the field name as the attempted column
-     * and the occurrence path in the prose, and the consumer keeps one consequence rejection.
-     */
-    @Test
-    void r215_plainInputBareNonBindingFieldRejectsAtConsumer() {
-        var schema = build("""
-            input FilmInput { foo: String }
-            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Query { films(filter: FilmInput): [Film!]! }
-            """);
-        // walkInputFieldConditions sees UnboundField with condition.empty() and
-        // enclosingOverride == false → mints the cascade verdict, consumer keeps the consequence.
-        var uf = (UnclassifiedField) schema.field("Query", "films");
-        assertThat(uf.reason()).contains("FilmInput", "input field 'foo'");
-        var minted = schema.diagnostics().stream()
-            .filter(d -> "FilmInput.foo".equals(d.coordinate()))
-            .toList();
-        assertThat(minted).hasSize(1);
-        var un = (Rejection.AuthorError.UnknownName) minted.getFirst().rejection();
-        assertThat(un.attempt()).isEqualTo("foo");
-        assertThat(un.message()).contains("FilmInput", "input field 'foo'", "Query.films(filter)/foo");
     }
 
     /**
@@ -5239,32 +5111,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(uf.reason()).contains("1 input field could not be resolved");
                 // The cause is reported at the input field carrying it, not on the consumer.
                 assertThat(TestSchemaHelper.diagnosticMessages(schema)).contains("no_such_fkey");
-            }),
-
-        NESTED_INPUT_FIELD_UNKNOWN_COLUMN_REJECTS_AT_CONSUMER(
-            "nested plain input with an unresolvable column → the use-keyed cascade verdict "
-                + "mints at the nested field with the attempted column and the occurrence path; "
-                + "the non-override consumer keeps the consequence (R215 §3 defers "
-                + "column-coverage to consumption)",
-            """
-            input BadInput { noSuch: String @field(name: "no_such_column") }
-            input FilmInput {
-              filmId: Int! @field(name: "film_id")
-              details: BadInput!
-            }
-            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Query { films(in: FilmInput): [Film!]! }
-            """,
-            schema -> {
-                var uf = (UnclassifiedField) schema.field("Query", "films");
-                assertThat(uf.reason()).contains("input field 'noSuch'");
-                var minted = schema.diagnostics().stream()
-                    .filter(d -> "BadInput.noSuch".equals(d.coordinate()))
-                    .toList();
-                assertThat(minted).hasSize(1);
-                var un = (Rejection.AuthorError.UnknownName) minted.getFirst().rejection();
-                assertThat(un.attempt()).isEqualTo("no_such_column");
-                assertThat(un.message()).contains("input field 'noSuch'", "Query.films(in)/details/noSuch");
             }),
 
         ARG_CONDITION_OVERRIDE(
@@ -6629,7 +6475,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_PLAIN_SCALAR_ARG(
-            "lookup field list arg with no matching column → UnclassifiedField",
+            "lookup field list arg with no matching column → UnclassifiedField, its column miss the store's COLUMN_UNRESOLVED",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(unknownColumn: [String] @lookupKey): [Film!]! }
@@ -6637,8 +6483,6 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Query", "filmById"))
                     .isInstanceOf(UnclassifiedField.class);
-                var uf = (UnclassifiedField) schema.field("Query", "filmById");
-                assertThat(uf.reason()).contains("unknownColumn");
             }),
 
         LOOKUP_FIELD_PLAIN_INPUT_TYPE_ARG_ADMITS_EVERY_FIELD(

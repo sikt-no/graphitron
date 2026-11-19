@@ -43,7 +43,7 @@ import java.util.Optional;
  *       a {@code @nodeId} arg with no route to the target table, or a plain scalar arg that
  *       matches no column.</li>
  *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved and that
- *       no {@code @condition(override: true)} owns; surfaced as a validation error.</li>
+ *       no {@code @condition(override: true)} owns; the store's {@code COLUMN_UNRESOLVED}.</li>
  *   <li>{@link InputTypeArg.TableInputArg} — table-resolved input arg; carries per-field
  *       column bindings.</li>
  *   <li>{@link InputTypeArg.PlainInputArg} — input type without {@code @table}; only meaningful
@@ -257,8 +257,8 @@ public sealed interface ArgumentRef {
         }
 
         /**
-         * Scalar arg whose column could not be resolved on the target table;
-         * surfaced as a validation error with a candidate hint.
+         * Scalar arg whose column could not be resolved on the target table; the store's
+         * {@code COLUMN_UNRESOLVED} refuses it before the walk runs.
          */
         record UnboundArg(
             String name,

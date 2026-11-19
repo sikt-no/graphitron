@@ -29,8 +29,10 @@ interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
 
 # A filter built into nothing: nope names no column of film, so no predicate compares it, and neither
-# does a cell of a list of input objects naming none.
+# does a cell of a list of input objects naming none, nor a field of a nested input naming none.
 input FilmPlainFilterInput { title: String nope: String }
+input FilmNestedFilterInput { title: String inner: FilmInnerFilterInput }
+input FilmInnerFilterInput { title: String nope: String }
 input FilmTitleCellInput { title: String nope: String }
 # A @routine's parameters take actorId and minLength; title filters the function's result, and foo
 # names none of its columns.
@@ -166,6 +168,7 @@ type Query {
   # releaseYear fills no member, but the filter, not overridden, compares it as a column.
   filmsByPlainFilter(filter: FilmPlainFilterInput): [Film!]! @defaultOrder(primaryKey: true)
   filmsByTitleCells(cells: [FilmTitleCellInput!]): [Film!]! @defaultOrder(primaryKey: true)
+  filmsByNestedFilter(filter: FilmNestedFilterInput): [Film!]! @defaultOrder(primaryKey: true)
   actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
     @routine(name: "films_for_actor",
              argMapping: "pActorId: filter.actorId, pMinLength: filter.minLength")
@@ -194,6 +197,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   SpanLeaves.starts,                   COLUMN_UNRESOLVED,          starts
   FilmPlainFilterInput.nope,           COLUMN_UNRESOLVED,          nope
   FilmTitleCellInput.nope,             COLUMN_UNRESOLVED,          nope
+  FilmInnerFilterInput.nope,           COLUMN_UNRESOLVED,          nope
   ActorFilmFilter.foo,                 COLUMN_UNRESOLVED,          foo
   FilmBundleLimitsInput.capacity,      MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
   FilmBundleQuotaInput.capacity,       MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity

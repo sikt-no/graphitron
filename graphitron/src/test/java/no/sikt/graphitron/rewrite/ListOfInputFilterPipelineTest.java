@@ -637,13 +637,6 @@ class ListOfInputFilterPipelineTest {
     }
 
     @Test
-    void unboundElementField_mintsTheCascadeVerdictOnce() {
-        var schema = assertRejected("actorId: Int! @field(name: \"no_such_column\")",
-            "PairInput.actorId", "pairs/actorId");
-        assertThat(diagnosticsAt(schema, "PairInput.actorId")).hasSize(1);
-    }
-
-    @Test
     void conditionParameterDescendingPastTheList_isRejectedAtTheListField() {
         var schema = build("""
             input PairInput {

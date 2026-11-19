@@ -290,16 +290,15 @@ public sealed interface InputField extends GraphitronField
      *       produces SQL) while the diagnostic fails the build.</li>
      *   <li>{@code condition.isEmpty()}: the field has no {@code @condition} of its own. Admitted
      *       at consumption when an enclosing arg- or field-level
-     *       {@code @condition(override: true)} cascade resolves it; the use-keyed cascade verdict
-     *       is minted otherwise.</li>
+     *       {@code @condition(override: true)} cascade resolves it; otherwise it compares nothing,
+     *       the store's {@code COLUMN_UNRESOLVED}, whose verdict stops the build first.</li>
      * </ul>
      *
      * <p>Not a {@link LookupKeyField} / {@link SetField}: those rails require a column tuple to
      * drive the VALUES+JOIN or INSERT/UPDATE columnlist; unbound carriers have neither.
      *
      * <p>{@code attemptedColumnName} is always the name the lookup missed with ({@code @field}
-     * binding or the SDL name); the cascade verdict renders it into the Levenshtein "did you
-     * mean" hint.
+     * binding or the SDL name).
      */
     record UnboundField(
         String parentTypeName,

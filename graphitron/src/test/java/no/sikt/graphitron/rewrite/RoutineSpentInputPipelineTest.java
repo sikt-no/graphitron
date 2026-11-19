@@ -109,38 +109,6 @@ class RoutineSpentInputPipelineTest {
     }
 
     /**
-     * A surviving leaf naming no column of the result lands the rejection it already lands on a
-     * table-backed field. No new diagnostic was needed for it: the rule that governs every other
-     * filter in the tree now reaches inside a routine argument too.
-     */
-    @Test
-    void aSurvivingLeafNamingNothingLandsTheExistingNoBindingRejection() {
-        var bundle = TestSchemaHelper.buildBundle(PRELUDE + """
-            input ActorFilmFilter {
-              actorId:   ID! @nodeId(typeName: "Actor")
-              minLength: Int
-              foo:       String
-            }
-            type Query {
-              actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
-                @routine(name: "films_for_actor",
-                         argMapping: "pActorId: filter.actorId.actor_id, pMinLength: filter.minLength")
-                @defaultOrder(fields: [{name: "film_id"}])
-            }
-            """);
-
-        assertThat(field(bundle, "Query", "actorFilms")).isInstanceOf(UnclassifiedField.class);
-        assertThat(bundle.model().diagnostics())
-            .as("located at the leaf, naming the result table it was looked for in")
-            .anySatisfy(d -> {
-                assertThat(d.coordinate()).isEqualTo("ActorFilmFilter.foo");
-                assertThat(d.rejection().message())
-                    .contains("Query.actorFilms(filter)/foo")
-                    .contains("films_for_actor");
-            });
-    }
-
-    /**
      * A leaf bound one level below the argument is withheld too, which is what pins the nesting
      * enumerator's skip rather than only the argument's own top level. The input tree expands as
      * deep as it nests and an author may reach into any of it.
@@ -331,33 +299,15 @@ class RoutineSpentInputPipelineTest {
     // ===== Validator reach =====
 
     /**
-     * Both new rejections reach the validator, and they reach it through the diagnostic drain
-     * rather than through a rule of the validator's own: {@code drainBuildDiagnostics} re-surfaces
-     * what the classification walk minted, coordinate, typed rejection and location unchanged, so
-     * what an author sees in a build and what the LSP shows at a leaf are the same value. A second
-     * spelling in {@code GraphitronSchemaValidator} would show up here as a duplicate.
+     * The write seat's rejection reaches the validator through the diagnostic drain rather than
+     * through a rule of the validator's own: {@code drainBuildDiagnostics} re-surfaces what the
+     * classification walk minted, coordinate, typed rejection and location unchanged, so what an
+     * author sees in a build and what the LSP shows at a leaf are the same value. A second spelling
+     * in {@code GraphitronSchemaValidator} would show up here as a duplicate. A filter leaf naming no
+     * column is the store's COLUMN_UNRESOLVED.
      */
     @Test
-    void bothNewRejectionsReachTheValidatorThroughTheDrain() {
-        var leftover = TestSchemaHelper.buildSchema(PRELUDE + """
-            input ActorFilmFilter {
-              actorId:   ID! @nodeId(typeName: "Actor")
-              minLength: Int
-              foo:       String
-            }
-            type Query {
-              actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
-                @routine(name: "films_for_actor",
-                         argMapping: "pActorId: filter.actorId.actor_id, pMinLength: filter.minLength")
-                @defaultOrder(fields: [{name: "film_id"}])
-            }
-            """);
-        assertThat(new GraphitronSchemaValidator().validate(leftover))
-            .filteredOn(e -> "ActorFilmFilter.foo".equals(e.coordinate()))
-            .as("one verdict, drained rather than restated")
-            .singleElement()
-            .satisfies(e -> assertThat(e.location()).isNotNull());
-
+    void theWriteSeatsRejectionReachesTheValidatorThroughTheDrain() {
         var unread = TestSchemaHelper.buildSchema(WRITE_PRELUDE + """
             input RentFilmInput { inventoryId: Int! customerId: Int! neverRead: String }
             type Mutation {

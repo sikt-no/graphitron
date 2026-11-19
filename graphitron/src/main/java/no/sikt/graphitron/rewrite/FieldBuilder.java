@@ -2565,10 +2565,14 @@ class FieldBuilder {
                     return new ArgumentRef.ScalarArg.ConditionOwnedArg(
                         name, typeName, nonNull, list, argCondition.get(), Optional.empty());
                 }
+                String reason = "no column '" + refColumnName + "' reachable via @reference path from table '"
+                    + rt.tableName() + "'";
+                if (argCondition.isPresent() && !argCondition.get().override()) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        Rejection.structural(reason));
+                }
                 return new ArgumentRef.ScalarArg.UnboundArg(
-                    name, typeName, nonNull, list, refColumnName,
-                    "no column '" + refColumnName + "' reachable via @reference path from table '"
-                        + rt.tableName() + "'");
+                    name, typeName, nonNull, list, refColumnName, reason);
             }
             var refColumnRef = refCol.get();
             String refEnumClassName;
@@ -2608,10 +2612,16 @@ class FieldBuilder {
                 return new ArgumentRef.ScalarArg.ConditionOwnedArg(
                     name, typeName, nonNull, list, argCondition.get(), Optional.empty());
             }
-            return new ArgumentRef.ScalarArg.UnboundArg(
-                name, typeName, nonNull, list, columnName,
-                "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
-                    + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(rt.tableName())));
+            String reason = "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
+                + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(rt.tableName()));
+            // Its own @condition still runs beside the implicit predicate, which has no column to
+            // compare: the walk's refusal until the override is read as consumption. With no
+            // condition it compares nothing, the store's COLUMN_UNRESOLVED.
+            if (argCondition.isPresent() && !argCondition.get().override()) {
+                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                    Rejection.structural(reason));
+            }
+            return new ArgumentRef.ScalarArg.UnboundArg(name, typeName, nonNull, list, columnName, reason);
         }
         var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass(), col.get().databaseType());
         String enumClassName;
@@ -2989,8 +2999,8 @@ class FieldBuilder {
      *
      * <p>{@link ArgumentRef.OrderByArg} and {@link ArgumentRef.PaginationArgRef} are skipped
      * (handled by {@link OrderByResolver} / {@link PaginationResolver}).
-     * {@link ArgumentRef.UnclassifiedArg} and {@link ArgumentRef.ScalarArg.UnboundArg} add to
-     * {@code errors}. For {@link ArgumentRef.InputTypeArg} variants the arg-level, input-field-level
+     * {@link ArgumentRef.UnclassifiedArg} adds to {@code errors}; an
+     * {@link ArgumentRef.ScalarArg.UnboundArg} is the store's {@code COLUMN_UNRESOLVED}. For {@link ArgumentRef.InputTypeArg} variants the arg-level, input-field-level
      * {@code @condition} predicates and (for {@code @table} inputs) implicit column-equality
      * predicates on un-annotated fields are emitted via {@link #walkInputFieldConditions}.
      * Returns {@code null} when any filter classification fails.
@@ -3012,9 +3022,8 @@ class FieldBuilder {
         boolean hadError = false;
         var fieldCond = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCond != null && fieldCond.override();
-        // The use-site half of the occurrence-path identity the cascade verdict is keyed by;
-        // serialized as <Type>.<field>(<argument>)/<nested>/.../<leaf>, the same format the
-        // derived occurrence-path relation uses as its key.
+        // The use-site half of the occurrence path the list-level diagnostics name, serialized as
+        // <Type>.<field>(<argument>)/<nested>/.../<leaf>.
         String useSiteCoordinate = parentTypeName + "." + fieldDef.getName();
         for (var ref : refs) {
             columnBindingOf(ref).ifPresent(columnSlots::add);
@@ -3043,7 +3052,7 @@ class FieldBuilder {
                     walkInputFieldConditions(tia.fields(), useSiteCoordinate, tia.name(), List.of(),
                         enclosingOverride, tia.nonNull(),
                         lookupBoundNames, implicitParams, columnSlots, argConditions,
-                        errors, tia.inputTable(), tiaSummary);
+                        errors, tiaSummary);
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
@@ -3057,8 +3066,7 @@ class FieldBuilder {
                     int errorsBefore = errors.size();
                     walkListLevel(listLevel, pia.fields(), useSiteCoordinate, pia.name(), List.of(),
                         fieldOverride, pia.nonNull(), Set.of(), implicitParams, columnSlots,
-                        argConditions, errors, rt,
-                        "plain input type '" + pia.typeName() + "'");
+                        argConditions, errors, "plain input type '" + pia.typeName() + "'");
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
@@ -3074,7 +3082,7 @@ class FieldBuilder {
                     walkInputFieldConditions(pia.fields(), useSiteCoordinate, pia.name(), List.of(),
                         enclosingOverride, pia.nonNull(),
                         Set.of(), implicitParams, columnSlots, argConditions, errors,
-                        rt, "plain input type '" + pia.typeName() + "'");
+                        "plain input type '" + pia.typeName() + "'");
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
@@ -3087,10 +3095,9 @@ class FieldBuilder {
                     // predicate to suppress, so unlike ColumnBackedArg there is no four-state
                     // projection table here, just the method's own filter.
                     argConditions.add(co.condition().filter());
-                case ArgumentRef.ScalarArg.UnboundArg u -> {
-                    errors.add(Rejection.structural("argument '" + u.name() + "': " + u.reason()));
-                    hadError = true;
-                }
+                // Naming no column, it compares nothing: COLUMN_UNRESOLVED in the store, whose
+                // verdict stops the build before this runs.
+                case ArgumentRef.ScalarArg.UnboundArg ignored -> {}
                 case ArgumentRef.ScalarArg.ColumnBackedArg ca -> {
                     boolean autoSuppressed = !implicitPredicateOf(ca).emitted();
                     // Lookup-key args are consumed by LookupMappingResolver → LookupMapping and
@@ -3226,7 +3233,6 @@ class FieldBuilder {
             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
             List<WhereFilter> out,
             List<Rejection> walkRejections,
-            TableRef resolvingTable,
             String containerSummary) {
         requireNonNull(implicitBodyParams, "implicitBodyParams");
         requireNonNull(walkRejections, "walkRejections");
@@ -3316,7 +3322,7 @@ class FieldBuilder {
                     walkListLevel(listLevel, nf.fields(), useSiteCoordinate, outerArgName, pathPrefix,
                         enclosingOverride, effectiveNonNull && nf.nonNull(), lookupBoundNames,
                         implicitBodyParams, columnSlots, out, walkRejections,
-                        resolvingTable, containerSummary);
+                        containerSummary);
                 }
                 case InputField.NestingField nf -> {
                     nf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
@@ -3325,7 +3331,7 @@ class FieldBuilder {
                     walkInputFieldConditions(nf.fields(), useSiteCoordinate, outerArgName, leafPath,
                         nestOverride, effectiveNonNull && nf.nonNull(),
                         lookupBoundNames, implicitBodyParams, columnSlots, out,
-                        walkRejections, resolvingTable, containerSummary);
+                        walkRejections, containerSummary);
                 }
                 case InputField.ConditionOwnedField cof ->
                     // The explicit @condition(override: true) method owns the WHERE predicate
@@ -3338,23 +3344,11 @@ class FieldBuilder {
                     // @condition (override: false by the carrier's invariant) the method still
                     // fires (every authored @condition produces SQL) while the malformed-shape
                     // fact, minted at classification keyed by the definition and the resolving
-                    // table, fails the build. Without one, the field is cascade-dependent:
-                    // admitted when an enclosing @condition(override: true) resolves it, and
-                    // otherwise the use-keyed cascade verdict mints into the build diagnostics
-                    // at this use-site join, with the consuming field keeping one consequence
-                    // rejection. Admitted under an override, nothing reading it is the store's
-                    // ARGUMENT_UNBOUND.
-                    if (uf.condition().isPresent()) {
-                        out.add(conditionResolver.rewrapForNested(
-                            uf.condition().get().filter(), outerArgName, leafPath));
-                    } else if (!enclosingOverride) {
-                        mintCascadeVerdict(uf, resolvingTable, containerSummary,
-                            useSiteCoordinate, outerArgName, leafPath);
-                        walkRejections.add(Rejection.structural(containerSummary
-                            + ": input field '" + uf.name() + "' has no column binding and no "
-                            + "@condition; the field cannot resolve without an enclosing "
-                            + "@condition(override: true) cascade"));
-                    }
+                    // table, fails the build. Without one it compares nothing: COLUMN_UNRESOLVED
+                    // in the store, or ARGUMENT_UNBOUND under an override nothing reads it under,
+                    // and the store's verdict stops the build before this runs.
+                    uf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(
+                        c.filter(), outerArgName, leafPath)));
                 }
             }
         }
@@ -3401,7 +3395,6 @@ class FieldBuilder {
             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
             List<WhereFilter> out,
             List<Rejection> walkRejections,
-            TableRef resolvingTable,
             String containerSummary) {
         boolean suppressed = enclosingOverride
             || level.condition().map(ArgConditionRef::override).orElse(false);
@@ -3426,8 +3419,7 @@ class FieldBuilder {
         }
         var collected = new ArrayList<CollectedCell>();
         offending += collectCells(level, elementFields, List.of(), true, useSiteCoordinate, outerArgName,
-            level.listPath(), suppressed, lookupBoundNames, columnSlots, collected, resolvingTable,
-            containerSummary);
+            level.listPath(), suppressed, lookupBoundNames, columnSlots, collected, containerSummary);
         if (!suppressed) {
             offending += checkReachAgreement(level, collected, useSiteCoordinate, outerArgName,
                 containerSummary);
@@ -3477,15 +3469,14 @@ class FieldBuilder {
      * minting a located diagnostic for every field a row cannot express. Returns the number of
      * offending fields. {@code elementPrefix} is the descent from the element's {@code Map};
      * {@code slotPrefix} the same position from the outer argument, which is where the column slots
-     * and the cascade verdict address the field. {@code pathRequired} is true while every nested
+     * address the field. {@code pathRequired} is true while every nested
      * input from the element down to here is non-null; a cell below a nullable one is optional.
      */
     private int collectCells(ListLevel level, List<InputField> fields, List<String> elementPrefix,
             boolean pathRequired, String useSiteCoordinate, String outerArgName, List<String> slotPrefix,
             boolean suppressed, Set<String> lookupBoundNames,
             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
-            List<CollectedCell> cells,
-            TableRef resolvingTable, String containerSummary) {
+            List<CollectedCell> cells, String containerSummary) {
         int offending = 0;
         for (var f : fields) {
             var leafPath = new ArrayList<>(slotPrefix);
@@ -3531,20 +3522,12 @@ class FieldBuilder {
                     // cells are optional whatever their own nullability.
                     offending += collectCells(level, nf.fields(), cellPath, pathRequired && nf.nonNull(),
                         useSiteCoordinate, outerArgName, leafPath, suppressed, lookupBoundNames,
-                        columnSlots, cells, resolvingTable, containerSummary);
+                        columnSlots, cells, containerSummary);
                     yield null;
                 }
                 case InputField.UnboundField uf when uf.condition().isPresent() -> CONDITION_IN_ELEMENT;
-                case InputField.UnboundField uf -> {
-                    if (!suppressed) {
-                        // The cascade verdict already states this fact at this field's coordinate;
-                        // the list level only counts it toward its consequence.
-                        mintCascadeVerdict(uf, resolvingTable, containerSummary, useSiteCoordinate,
-                            outerArgName, leafPath);
-                        offending++;
-                    }
-                    yield null;
-                }
+                // Naming no column, it is no cell: COLUMN_UNRESOLVED in the store.
+                case InputField.UnboundField uf -> null;
             };
             if (refusal != null) {
                 offending++;
@@ -3674,41 +3657,6 @@ class FieldBuilder {
     private static boolean descendsPastList(ConditionFilter filter) {
         return filter.params().stream().anyMatch(p ->
             p.source() instanceof ParamSource.Arg arg && !arg.path().isHead());
-    }
-
-    /**
-     * Mints the use-keyed cascade verdict for an {@link InputField.UnboundField} with no
-     * {@code @condition} of its own, reached at a use site with no enclosing
-     * {@code @condition(override: true)} cascade. The fact is about one occurrence: the same
-     * input field consumed elsewhere under an override cascade is admitted, so the minted
-     * value carries the serialized occurrence path (the same
-     * {@code <Type>.<field>(<argument>)/<nested>/.../<leaf>} format the derived
-     * occurrence-path relation keys by; a named fixture in the shadow agreement test pins the
-     * two serializations equal) and the resolving table. The occurrence identity riding in the
-     * message is a recorded deferral: it becomes a typed component when the diagnostics
-     * surface grows one.
-     *
-     * <p>The rejection lifts to {@link Rejection.AuthorError.UnknownName} with the attempted
-     * column name and the Levenshtein candidates against the resolving table when one is in
-     * hand (LSP fix-its and watch-mode formatters consume the structured payload); with no
-     * table context it folds to a structural fact. The mint is located at the leaf field's own
-     * definition, the fan-in doctrine's located-cause rule; the consumer keeps a consequence
-     * rejection beside it.
-     */
-    private void mintCascadeVerdict(InputField.UnboundField uf, TableRef resolvingTable,
-                                    String containerSummary, String useSiteCoordinate,
-                                    String outerArgName, List<String> leafPath) {
-        String path = useSiteCoordinate + "(" + outerArgName + ")/" + String.join("/", leafPath);
-        String summary = containerSummary + ": input field '" + uf.name() + "' at occurrence '"
-            + path + "'";
-        Rejection rejection = resolvingTable != null
-            ? Rejection.unknownColumn(
-                summary + " against table '" + resolvingTable.tableName() + "'",
-                uf.attemptedColumnName(),
-                ctx.catalog.columnSqlNamesOf(resolvingTable.tableName()))
-            : Rejection.structural(summary + ": has no column binding and no @condition; the "
-                + "field cannot resolve without an enclosing @condition(override: true) cascade");
-        ctx.addDiagnostic(new ValidationError(uf.qualifiedName(), rejection, uf.location()));
     }
 
     /**

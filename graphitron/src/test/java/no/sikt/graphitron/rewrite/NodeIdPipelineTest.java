@@ -441,21 +441,6 @@ class NodeIdPipelineTest {
                     .contains("Specify typeName: explicitly");
             }),
 
-        ACCESSOR_MISSING(
-            "plain ID field resolved against a table without node-id metadata → the consuming "
-                + "field rejects, naming the plain input type and the unresolvable field",
-            """
-            input Foo { id: ID! }
-            type Qux @table(name: "qux") { name: String }
-            type Query { quxes(in: Foo): [Qux!] }
-            """,
-            schema -> {
-                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "quxes");
-                assertThat(f.reason())
-                    .contains("'Foo'")
-                    .contains("input field 'id'");
-            }),
-
         R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID(
             "R377: a @node with a customized numeric @node(typeId: \"10154\") plus a nesting-projection "
                 + "@table type over the same table. The decode helper for an @nodeId(typeName:) input "
@@ -545,21 +530,6 @@ class NodeIdPipelineTest {
                 assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_2", "id_1");
                 assertThat(leafDecodeMethodName(bp)).isEqualTo("decodeBarRev");
-            }),
-
-        LIST_VARIANT(
-            "list ID input skips the node-id check (list gate); the column 'id' does not exist "
-                + "on the consumer's table, so the consuming field rejects",
-            """
-            input Foo { id: [ID!]! }
-            type Bar @table(name: "bar") { name: String }
-            type Query { bars(in: Foo): [Bar!] }
-            """,
-            schema -> {
-                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bars");
-                assertThat(f.reason())
-                    .contains("'Foo'")
-                    .contains("input field 'id'");
             });
 
         final String sdl;

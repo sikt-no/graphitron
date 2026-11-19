@@ -230,19 +230,9 @@ class NodeInferencePipelineTest {
 
     @Test
     void inferringTheFirstNodeOverATableGivesAnInputLeafItsDecodeHelper() {
-        // The other direction across the same boundary. With no node over the table there is no
-        // implicit node reading to have: a directive-less `id` is an ordinary column, and `bar` has
-        // none by that name, so the consuming field rejects. Adding `implements Node` to the output
-        // type supplies the node the input field was naming all along.
-        var noNode = schema("""
-            type Foo @table(name: "bar") { name: String }
-            input Selector { id: ID! }
-            type Query { bars(in: Selector): [Foo!] }
-            """);
-        assertThat(noNode.field("Query", "bars"))
-            .as("no node backs the table, so `id` is a plain column and `bar` has none")
-            .isInstanceOf(GraphitronField.UnclassifiedField.class);
-
+        // The other direction across the same boundary: with no node over the table a directive-less
+        // `id` is an ordinary column, which `bar` lacks, the store's COLUMN_UNRESOLVED. Adding
+        // `implements Node` to the output type supplies the node the input field was naming all along.
         var inferred = schema("""
             type Foo implements Node @table(name: "bar") { name: String id: ID! }
             input Selector { id: ID! }
