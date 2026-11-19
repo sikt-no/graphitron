@@ -77,32 +77,6 @@ class ClassifierAdvisoryFixPipelineTest {
             .as("@record with arguments has no computable end, so no deletion fix").isEmpty();
     }
 
-    @Test
-    void splitQueryOnRecordParent_carriesDeletionFix() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Language @table(name: "language") { name: String }
-            type FilmDetails {
-              language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """);
-
-        // @splitQuery is a marker directive (no arguments), so its span is always computable: exactly
-        // '@splitQuery' (11 characters).
-        var fix = fixFor(schema, LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT, "FilmDetails.language");
-        assertThat(fix).as("redundant @splitQuery carries a deletion fix").isPresent();
-        assertThat(fix.get().edits()).singleElement().satisfies(e -> {
-            assertThat(e.replacement()).isEmpty();
-            assertThat(e.end().getLine()).isEqualTo(e.start().getLine());
-            assertThat(e.end().getColumn() - e.start().getColumn())
-                .as("the deleted span is exactly '@splitQuery'").isEqualTo(11);
-        });
-    }
-
     /**
      * The discriminated interface child's sibling advisory, at both cardinalities: the arm's
      * delivery is decided by cardinality alone, so {@code @splitQuery} names nothing it does not

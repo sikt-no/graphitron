@@ -303,7 +303,7 @@ final class MutationInputResolver {
                         if ("@splitQuery".equals(fc.directiveName())) {
                             message += " @splitQuery is redundant on an @service-backed carrier's data "
                                 + "field (which already resolves through a PK-keyed follow-up SELECT, "
-                                + "where it fires the warnIfSplitQueryOnRecordParent advisory), but it "
+                                + "where the build warns SPLIT_QUERY_REDUNDANT), but it "
                                 + "is rejected on a DML carrier.";
                         }
                         yield message;

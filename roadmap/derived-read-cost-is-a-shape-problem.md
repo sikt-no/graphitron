@@ -1192,16 +1192,13 @@ static method needs no holder.
     the flip lands.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
-* **A `@splitQuery` on a write payload's data field is judged in the store** `open`, off the
-  critical path. `MutationInputResolver.validateReturnType` refuses it; the store makes the data field
-  a `LOOKUP` producer and says nothing. Refused or admitted is Alf's to rule.
 * **A list field over an accessor returning one record is refused in the store** `open`, off the
   critical path. `FieldBuilder.collectAccessorMatches` refuses it; `LIST_OVER_ONE_VALUE` covers
   service and write producers only.
 * **A hop-0 filter on a record parent's split query is refused in the store** `open`, off the
   critical path. `BuildContext.buildParentCorrelation` refuses a `condition:` filter on the first
   hop where the parent is no catalog table; the store has no code for it.
-* **splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C** `open`, off the critical path: its payload arm is raised at the payload carrier, which stays the walk's after the service subtract, so the subtract silences nothing there. It is a warning defect rather than a lint arm, `lint_violation` being the derivation family's, and lands with the walk's lint removed in one commit. The rule is CLASSIFIER, raised by FieldBuilder at a field returning a @table type under a class-backed parent and at a @service payload's data field. The payload arm goes silent when the service subtract deletes it, and the record-parent arm with the walk. In the store it is a lint_violation arm: the parent holds an object (graphitron_result OBJECT) and the field returns a table-bound type. It reads the fetchers stage's relations, so its case is a fact document rather than LintRuleCasesTest's AST-only corpus, and the move settles how that catalogue test counts it. It also reaches a DML payload's data field, which the walk does not warn on.
+* **A stored defect offers its fix as an editor action** `open`, off the critical path. The walk's lints carry a `LintFix` the language server offers as a code action, deleting a bare redundant directive among them; a stored defect has its message and guidance and no edit. The redundant `@splitQuery` under a class-backed parent lost its action when it became `SPLIT_QUERY_REDUNDANT` (Alf, 2026-11-19: "It's ok to remove"). An edit at the defect's position needs where the directive application ends, which `graphql_ast_entry` does not capture; that input fact comes first, then an edit stated at the code's grain, which the language server and the MCP server both read.
 * **A payload's data field bound to another table than its service's records is refused in the store** `open`, off the critical path. A `@service` handing back a table's records into a payload whose data field's type carries `@table` lifts them for that field by their keys, which holds only where the two tables are one. The walk refuses the other case at the carrier; in the store `SERVICE_RETURN_MISMATCH` checks a bound type only and `SERVICE_PAYLOAD_IN_A_LIST` its own list case, and no rule compares the data field's table with the records'. A document first finds what, if anything, fires there; then one rule raises it at the data field.
 * **An empty routed answer over a non-lifted jOOQ Result names its table** `open`, off the critical path. `ConnectionQuery` builds a service's empty `RESULT` answer over the producer result's table, which is its lift. Since a service is lifted only where its field's type is (Alf, 2026-11-18), a `Result` of a table's records under a type without `@table` has a `RESULT` row and no lifted table, so a call naming no tenant would build its empty answer over nothing. No document reaches it yet (a type without `@table` is unscoped unless `$tenant` names one); the record's own table, read off its class, is what the empty answer needs.
 * **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
@@ -1360,7 +1357,9 @@ pass and no stratum that clears and recomputes.
       `NoSetFields`, `MixedCarrierKeyMembership`, `NullableStraddlingReference`,
       `PlainColumnCollision`, `FailOnMissingNeedsKey`, the idempotent delete's key and echo, and
       `UnsupportedInputFieldShape`. Each becomes a stored defect before the walkers go, or the shape
-      is admitted silently.
+      is admitted silently. `MutationInputResolver.validateReturnType` also refuses a `@splitQuery` on
+      a write payload's data field, a valid schema since the store admits it with the warning
+      `SPLIT_QUERY_REDUNDANT` (Alf, 2026-11-19); that refusal goes with the walk, not into the store.
     * **A root routine's refusals are codes a stage writes** `open`.
       `RoutineDirectiveResolver`'s GRAPHITRON refusals, a parameter nothing binds, an argMapping
       naming no IN parameter, a non-scalar leaf, `$source` at a root, an unknown or mistyped

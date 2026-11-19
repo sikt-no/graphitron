@@ -1,0 +1,5 @@
+Reported at the `@splitQuery`. A warning: the build continues, and the directive is ignored.
+
+The field's rows already arrive from a query of their own. Under a type a Java object backs, the object's record is handed to the field, which opens a DataLoader-backed scope for it; on a payload's data field, the field re-reads its producer's records by their keys. Either way there is no parent query left to split, so `@splitQuery` changes nothing.
+
+*Next step.* Remove the `@splitQuery`. To keep it, list SPLIT_QUERY_REDUNDANT under `<lint><disabledRules>`. xref:directives/splitQuery.adoc[`@splitQuery`] describes where the directive applies.

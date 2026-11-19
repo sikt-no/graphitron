@@ -300,6 +300,11 @@ each producer, what it runs and where it starts.
   parents: a `@splitQuery` field, a table-bound field under a parent that holds an object rather than
   rows, a payload's data field re-read by key after a write, or a child `@service`.
 
+A table-bound field under a parent that holds an object, and a payload's data field, start their own
+query whatever is written on them, so a `@splitQuery` there changes nothing. It is admitted, and the
+store warns that it is redundant, `SPLIT_QUERY_REDUNDANT`, a write's payload included (Alf,
+2026-11-19).
+
 A child the parent's query can join in does not produce: it binds, and its join path continues its
 producer's query. In the running example only `Query.films` produces; every field below it, the
 language, the actors and the inventory among them, is read by the one query it runs.

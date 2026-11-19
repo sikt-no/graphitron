@@ -2843,12 +2843,11 @@ class GraphitronSchemaBuilderTest {
         // (negatives), not as a single-shape classification here.
 
         // @splitQuery on a record-backed parent field is a structural no-op (the record handoff
-        // already opens a new DataLoader-backed scope) and should surface as a build warning so
-        // the developer who added it learns the directive changes nothing. Two fixtures cover
-        // the record-backed parent classification arms.
+        // already opens a new DataLoader-backed scope), which the store warns as
+        // SPLIT_QUERY_REDUNDANT. Two fixtures cover the record-backed parent classification arms.
 
-        SPLIT_QUERY_ON_RECORD_PARENT_WARNS_TABLE_FIELD(
-            "@splitQuery on record-backed parent + @table return → BatchedTableField + build warning naming the field coordinate",
+        SPLIT_QUERY_ON_RECORD_PARENT_TABLE_FIELD(
+            "@splitQuery on record-backed parent + @table return → BatchedTableField",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2860,18 +2859,12 @@ class GraphitronSchemaBuilderTest {
                 prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
             }
             """,
-            schema -> {
-                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedTableField.class);
-                assertThat(schema.warnings())
-                    .extracting(BuildWarning::message)
-                    .anyMatch(m -> m.contains("FilmDetails.language")
-                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
-            }) {
+            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
-        SPLIT_QUERY_ON_RECORD_PARENT_WARNS_LOOKUP_FIELD(
-            "@splitQuery on record-backed parent + @lookupKey + @table return → BatchedTableField + build warning",
+        SPLIT_QUERY_ON_RECORD_PARENT_LOOKUP_FIELD(
+            "@splitQuery on record-backed parent + @lookupKey + @table return → BatchedTableField",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2885,41 +2878,8 @@ class GraphitronSchemaBuilderTest {
                 prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
             }
             """,
-            schema -> {
-                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedTableField.class);
-                assertThat(schema.warnings())
-                    .extracting(BuildWarning::message)
-                    .anyMatch(m -> m.contains("FilmDetails.language")
-                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
-            }) {
+            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
-        },
-
-        // Holistic-surfacing rule. An unrelated rejection on the same field (here, an
-        // unresolvable @reference) must not suppress the @splitQuery redundancy advisory ; the
-        // developer needs both diagnostics, not just whichever fires first. Locks the warning
-        // emission to the table-bound-return seam, before any rejection guard.
-        SPLIT_QUERY_WARNS_ALONGSIDE_RECORD_PARENT_REJECTION(
-            "@splitQuery on record-backed parent with unresolvable @reference → UnclassifiedField + build warning still fires",
-            """
-            type Language @table(name: "language") { name: String }
-            type FilmDetails {
-              language: Language @splitQuery @reference(path: [{key: "no_such_fkey"}])
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """,
-            schema -> {
-                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(UnclassifiedField.class);
-                assertThat(schema.warnings())
-                    .extracting(BuildWarning::message)
-                    .anyMatch(m -> m.contains("FilmDetails.language")
-                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
         // A hop-0 {key:, condition:} filter on a record-backed parent's @splitQuery

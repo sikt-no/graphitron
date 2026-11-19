@@ -38,25 +38,31 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
 @PipelineTier
 class BuildOutputReportPipelineTest {
 
-    /** A schema whose only diagnostic is the redundant @splitQuery under a record-backed parent. */
+    /**
+     * A schema whose only model diagnostic is the walk's redundant @splitQuery on a discriminated
+     * interface child, a classifier warning.
+     */
     private static final String WARNED = """
-        type Language @table(name: "language") { name: String }
-        type Film @table(name: "film") { title: String }
-        type FilmDetails {
-          language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+        interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+          title: String @field(name: "TITLE")
+        }
+        type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+          title: String @field(name: "TITLE")
+        }
+        type Film @table(name: "film") {
+          title: String
+          contents: [Content!]! @splitQuery @reference(path: [{key: "content_film_id_fkey"}])
         }
         type Query {
           film: Film
-          details(id: Int!): FilmDetails
-            @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
         }
         """;
 
     @Test
     void buildOutput_populatesReportWithTheStoresRefusal(@TempDir Path tmp) throws IOException {
         // An unresolvable @reference key, which the store refuses before the walk runs.
-        var report = report(tmp, WARNED.replace("type Film @table(name: \"film\") { title: String }",
-            "type Film @table(name: \"film\") {\n  languageName: String @reference(path: [{key: \"no_such_fk\"}])\n}"));
+        var report = report(tmp, WARNED.replace("  title: String\n  contents:",
+            "  title: String\n  languageName: String @reference(path: [{key: \"no_such_fk\"}])\n  contents:"));
 
         assertThat(report.errors())
             .as("the store's refusals flow through buildOutput() into the report")
@@ -77,7 +83,7 @@ class BuildOutputReportPipelineTest {
             .as("model warnings flow through buildOutput() into the report")
             .extracting(BuildWarning::message)
             .as("the redundant @splitQuery directive surfaces as a build warning")
-            .anyMatch(m -> m.contains("FilmDetails.language") && m.contains("redundant"));
+            .anyMatch(m -> m.contains("Film.contents") && m.contains("redundant"));
     }
 
     private static ValidationReport report(Path tmp, String sdl) throws IOException {

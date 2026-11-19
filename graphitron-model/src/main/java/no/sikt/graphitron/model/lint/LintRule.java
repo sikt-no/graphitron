@@ -39,7 +39,6 @@ public enum LintRule {
     SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD("splitquery-redundant-on-service-child", Source.ENGINE),
 
     // Classifier-owned advisories (surfaced and tagged here, not re-derived; no engine visitor).
-    SPLITQUERY_REDUNDANT_ON_RECORD_PARENT("splitquery-redundant-on-record-parent", Source.CLASSIFIER),
     SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD(
         "splitquery-redundant-on-discriminated-interface-child", Source.CLASSIFIER),
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),

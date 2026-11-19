@@ -7161,8 +7161,8 @@ class FieldBuilder {
 
         // @pivot needs a parent SELECT to fold its correlated aggregate into (inline) or a
         // catalog-keyed batch seam (@splitQuery); a record-backed parent offers neither.
-        // The typed rejection deliberately does not suggest @splitQuery, which is lint-ignored
-        // as redundant on record-backed parents (warnIfSplitQueryOnRecordParent).
+        // The typed rejection deliberately does not suggest @splitQuery, which is redundant on
+        // record-backed parents (the store's SPLIT_QUERY_REDUNDANT).
         if (fieldDef.hasAppliedDirective(DIR_PIVOT)) {
             return new UnclassifiedField(parentTypeName, name, location,
                 new PivotError.RecordBackedParent(parentTypeName + "." + name, parentTypeName));
@@ -7233,10 +7233,6 @@ class FieldBuilder {
                         + "'; payload-returning @service-carrier mutations require the data field's "
                         + "@table to equal the producer's reflected return-element record class's table"));
                 }
-                // @splitQuery on the carrier data field is structurally redundant — the
-                // emit below already resolves the field through a PK-keyed follow-up SELECT off
-                // the producer's record. Same advisory family as the class-backed-parent redundancy.
-                warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
                 // The @service payload carrier collapses into a record-sourced BatchedTableField — a
                 // source=target re-fetch, the same shape as the DML carrier above. The producer
                 // hands back the target XRecord on env.getSource() (bare, or wrapped in
@@ -7401,14 +7397,6 @@ class FieldBuilder {
         String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr && jtr.table() != null
             ? jtr.table().tableName() : null;
         var resolvedReturnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-        // @splitQuery on a class-backed-parent field with a table-bound return is structurally
-        // redundant: the parent-record-keyed DataLoader already opens a new scope. Fire the
-        // advisory as soon as we know the return type is table-bound, before the path-error /
-        // table-field-components / batch-key rejection guards below; an unrelated rejection
-        // shouldn't suppress the redundancy advisory.
-        if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType) {
-            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
-        }
         String targetSqlTableName = resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tbt
             ? tbt.table().tableName() : null;
         TableRef targetTableRef = resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tbt
@@ -7465,14 +7453,6 @@ class FieldBuilder {
                     elementTypeName, p, parentResultType);
             }
         };
-    }
-
-    private void warnIfSplitQueryOnRecordParent(GraphQLFieldDefinition fieldDef, String parentTypeName,
-            String name, SourceLocation location) {
-        warnIfSplitQueryRedundant(fieldDef, parentTypeName, name, location,
-            LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT,
-            "@splitQuery is redundant on a record-backed parent field; the record handoff already "
-            + "opens a new DataLoader-backed scope. The directive will be ignored.");
     }
 
     /**

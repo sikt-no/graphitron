@@ -828,8 +828,8 @@ class BuildContext {
     // data-field emit already resolves through a PK-keyed follow-up SELECT off the producer's
     // record (FetcherEmitter's Wrap.TableRecord arm), so @splitQuery adds nothing there, and
     // dropping the whole carrier over a redundant directive would leave an invalid assembled
-    // schema (dangling payload typeRef). The classifier fires a redundancy advisory instead
-    // (FieldBuilder's warnIfSplitQueryOnRecordParent family). DML carriers keep the strict set.
+    // schema (dangling payload typeRef). The store warns SPLIT_QUERY_REDUNDANT instead. DML
+    // carriers keep the strict set.
     private static final java.util.Set<String> FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES =
         FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES.stream()
             .filter(d -> !d.equals(DIR_SPLIT_QUERY))

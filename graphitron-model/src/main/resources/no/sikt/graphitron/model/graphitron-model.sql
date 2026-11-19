@@ -13171,7 +13171,35 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                   OR EXISTS (SELECT 1 FROM code_throwable_supertype st
                               WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
                                 AND st.supertype_name = 'java.sql.SQLException'))))
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- A @splitQuery on a field returning a table-bound type where its rows arrive from a query of their
+-- own anyway, at the written @splitQuery: under a type a Java object backs, whose record is handed to
+-- the field, which opens a DataLoader-backed scope of its own; and on a payload's data field, which
+-- re-reads its producer's records by their keys. The directive changes nothing there and is admitted
+-- with this warning (Alf, 2026-11-19). The object's parent holds an instance of a class
+-- (graphitron_result_class), and only that: a type graphitron also reads as a row elsewhere is no such
+-- parent. A field with its own @service or @routine is a producer of its own, and its @splitQuery is
+-- that producer's.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'SPLIT_QUERY_REDUNDANT', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE da.directive_name = 'splitQuery' AND da.origin = 'AUTHORED' AND da.source_name IS NOT NULL
+   AND (EXISTS (SELECT 1 FROM graphitron_result_class rc
+                 WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name)
+        AND NOT EXISTS (SELECT 1 FROM graphitron_result r
+                         WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name
+                           AND r.shape = 'ROW')
+        OR EXISTS (SELECT 1 FROM graphitron_payload_data_field pd
+                    WHERE pd.graph_name = f.graph_name AND pd.type_name = f.type_name
+                      AND pd.field_name = f.field_name AND pd.kind = 'RECORDS'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
+                    WHERE p.graph_name = da.graph_name AND p.coordinate = da.coordinate
+                      AND p.directive_name IN ('service', 'routine'));
 COMMENT ON VIEW graphitron_fetcher_entry_defect_rule IS 'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.';
 
 CREATE TABLE graphitron_outbox_message (
@@ -28503,7 +28531,6 @@ INSERT INTO lint_rule VALUES
   ('no-deprecated-directive-usage', 'ENGINE', 'WARNING'),
   ('no-typename-prefix', 'ENGINE', 'WARNING'),
   ('splitquery-redundant-on-service-child', 'ENGINE', 'WARNING'),
-  ('splitquery-redundant-on-record-parent', 'CLASSIFIER', 'WARNING'),
   ('splitquery-redundant-on-discriminated-interface-child', 'CLASSIFIER', 'WARNING'),
   ('redundant-record-directive', 'CLASSIFIER', 'WARNING'),
   ('asconnection-same-table-pk-in', 'CLASSIFIER', 'WARNING'),
@@ -31027,6 +31054,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A @scalarType names a class the classpath reading did not read: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
   ('SCALAR_TYPE_CONSTANT_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_CONSTANT_NOT_FOUND',
    'A @scalarType names a class the reading read and a constant it does not declare as a public static GraphQLScalarType, so there is no scalar to bind.'),
+  ('SPLIT_QUERY_REDUNDANT', 'warning', 'GRAPHITRON', 'GRAPHITRON_SPLIT_QUERY_REDUNDANT',
+   'A @splitQuery on a field whose rows arrive from a query of their own anyway, under a type a Java object backs or on a payload''s data field, changes nothing, so the directive is ignored. Remove it.'),
   ('NODE_METADATA_UNREADABLE', 'warning', 'GRAPHITRON', 'GRAPHITRON_NODE_METADATA_UNREADABLE',
    'The table''s generated class declares node metadata graphitron cannot use, so a node over it encodes its ids from what the schema declares, or from the type''s name and the table''s primary key; fix the generator configuration that writes __NODE_TYPE_ID and __NODE_KEY_COLUMNS.'),
   ('NODE_TYPE_ID_SHARED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_TYPE_ID_SHARED',

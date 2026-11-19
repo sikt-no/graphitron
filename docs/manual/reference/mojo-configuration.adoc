@@ -272,6 +272,8 @@ Graphitron's schema linter reports style and convention warnings (naming, missin
     <disabledRules>
       <rule>input-object-name-suffix</rule>
       <rule>types-and-fields-have-descriptions</rule>
+      <!-- A warning code silences that warning the same way. -->
+      <rule>SPLIT_QUERY_REDUNDANT</rule>
     </disabledRules>
     <!-- Skip linting types whose name matches a pattern (glob). -->
     <excludedTypes>

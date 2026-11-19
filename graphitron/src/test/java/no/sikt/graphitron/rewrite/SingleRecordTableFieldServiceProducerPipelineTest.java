@@ -14,7 +14,6 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.diagnostics.BuildWarning;
 
 /**
  * Pipeline-tier coverage for the {@code @service}-backed producer admit for single-record
@@ -105,10 +104,10 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
      * on the carrier data field is tolerated by the {@code @service}-carrier scan (redundant:
      * the carrier emit already runs a PK-keyed follow-up SELECT off the producer's records), so
      * the payload promotes and the data field projects over the {@code OUTCOME_SUCCESS} list
-     * path. A redundancy advisory fires for the ignored directive.
+     * path. The store warns SPLIT_QUERY_REDUNDANT at the ignored directive.
      */
     @Test
-    void serviceProducer_splitQueryListCarrier_withErrors_admitsAndWarnsRedundantDirective() {
+    void serviceProducer_splitQueryListCarrier_withErrors_admitsRedundantDirective() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type DbErr @error(handlers: [{handler: DATABASE}]) {
@@ -137,10 +136,6 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         var errorsField = schema.field("FilmListPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
         assertThat(((ChildField.ErrorsField) errorsField)).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
-        assertThat(schema.warnings())
-            .extracting(BuildWarning::message)
-            .anyMatch(m -> m.contains("FilmListPayload.films")
-                && m.contains("@splitQuery is redundant on a record-backed parent field"));
     }
 
     /**

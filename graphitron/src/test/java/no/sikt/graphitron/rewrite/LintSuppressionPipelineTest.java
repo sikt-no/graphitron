@@ -157,56 +157,62 @@ class LintSuppressionPipelineTest {
 
     @Test
     void disabledRule_suppressesClassifierAdvisoryToo(@TempDir Path tmp) throws IOException {
-        // FilmDetails binds to the @service producer's reflected record; @splitQuery on a record-backed
-        // parent is a Source.CLASSIFIER advisory (splitquery-redundant-on-record-parent), emitted on
-        // schema.warnings() rather than by the engine's AST walk.
+        // @splitQuery on a discriminated interface child is a Source.CLASSIFIER advisory
+        // (splitquery-redundant-on-discriminated-interface-child), emitted on schema.warnings()
+        // rather than by the engine's AST walk.
         String sdl = """
-            type Language @table(name: "language") { name: String }
-            type FilmDetails {
-              language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              title: String @field(name: "TITLE")
             }
-            type Query {
-              details(id: Int!): FilmDetails
-                @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              title: String @field(name: "TITLE")
             }
+            type Film @table(name: "film") {
+              splitContents: [Content!]! @splitQuery @reference(path: [{key: "content_film_id_fkey"}])
+            }
+            type Query { films: [Film!]! }
             """;
 
         var enabled = report(tmp.resolve("e.graphqls"), sdl, LintConfig.empty());
-        assertThat(hasRuleForNode(enabled, LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT, "FilmDetails.language"))
+        assertThat(hasRuleForNode(enabled, LintRule.SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD,
+                "Film.splitContents"))
             .as("control: the classifier advisory fires").isTrue();
 
         var disabled = report(tmp.resolve("f.graphqls"), sdl,
-            new LintConfig(Set.of("splitquery-redundant-on-record-parent"), List.of()));
+            new LintConfig(Set.of("splitquery-redundant-on-discriminated-interface-child"), List.of()));
         assertThat(lintFindings(disabled))
             .as("disabling a Source.CLASSIFIER rule id suppresses its advisory, so the filter sits on "
                 + "the combined BuildWarning channel and not inside the engine's AST walk")
-            .noneMatch(f -> f.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT);
+            .noneMatch(f -> f.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD);
     }
 
     @Test
     void excludedTypes_isEngineScoped_classifierAdvisoryOnExcludedTypeStillFires(@TempDir Path tmp) throws IOException {
-        // FilmDetails trips both an engine rule (types-and-fields-have-descriptions on the type) and a
-        // classifier advisory (splitquery-redundant on FilmDetails.language). Excluding the type must
+        // Film trips both an engine rule (types-and-fields-have-descriptions on the type) and a
+        // classifier advisory (splitquery-redundant on Film.splitContents). Excluding the type must
         // silence the engine finding while leaving the classifier advisory, pinning that excludedTypes
         // reaches only the engine's AST walk. A future refactor extending it to the classifier
         // channel would need the fragile owning-type reverse-map option C rejects.
         String sdl = """
-            type Language @table(name: "language") { name: String }
-            type FilmDetails {
-              language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              title: String @field(name: "TITLE")
             }
-            type Query {
-              details(id: Int!): FilmDetails
-                @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              title: String @field(name: "TITLE")
             }
+            type Film @table(name: "film") {
+              splitContents: [Content!]! @splitQuery @reference(path: [{key: "content_film_id_fkey"}])
+            }
+            type Query { films: [Film!]! }
             """;
 
         var report = report(tmp.resolve("g.graphqls"), sdl,
-            new LintConfig(Set.of(), List.of("FilmDetails")));
+            new LintConfig(Set.of(), List.of("Film*")));
 
-        assertThat(hasRuleForNode(report, LintRule.TYPES_AND_FIELDS_HAVE_DESCRIPTIONS, "FilmDetails"))
+        assertThat(hasRuleForNode(report, LintRule.TYPES_AND_FIELDS_HAVE_DESCRIPTIONS, "Film"))
             .as("the engine finding on the excluded type is gone").isFalse();
-        assertThat(hasRuleForNode(report, LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT, "FilmDetails.language"))
+        assertThat(hasRuleForNode(report, LintRule.SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD,
+                "Film.splitContents"))
             .as("the classifier advisory on the same excluded type still fires").isTrue();
     }
 }

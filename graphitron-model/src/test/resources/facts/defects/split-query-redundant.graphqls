@@ -1,0 +1,53 @@
+# A @splitQuery where the rows arrive from a query of their own anyway changes nothing, and is
+# admitted with a warning (Alf, 2026-11-19). FilmDetails is the class FilmCarrierService.filmById
+# returns, and its language, a table-bound type reached by a path, draws SPLIT_QUERY_REDUNDANT at its
+# @splitQuery. So does a payload's data field, which re-reads its producer's records by their keys
+# whatever wrote them: AddFilmPayload.film under an INSERT, and RentFilmsPayload.rentals under a
+# routine. The same directive on Film, whose rows graphitron reads, splits a query and draws nothing,
+# and neither does FilmDetails's languageInline, written without it.
+
+type Language @table(name: "language") { name: String }
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type FilmDetails {
+  language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+  languageInline: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type AddFilmPayload { film: Film @splitQuery }
+
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+
+type RentFilmsPayload { rentals: [Rental!] @splitQuery }
+
+input FilmInput @table(name: "film") { title: String }
+
+type Query {
+  film: Film
+  details(id: Int!): FilmDetails
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+}
+
+type Mutation {
+  addFilm(input: FilmInput!): AddFilmPayload @mutation(typeName: INSERT, table: "film")
+  rentFilms(firstInventoryId: Int!, secondInventoryId: Int!, customerId: Int!): RentFilmsPayload
+    @routine(name: "rent_films",
+             argMapping: "pFirstInventoryId: firstInventoryId, pSecondInventoryId: secondInventoryId, pCustomerId: customerId")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+                            where: "code = 'SPLIT_QUERY_REDUNDANT'", rows: """
+  coordinate,               suppressed
+  AddFilmPayload.film,      FALSE
+  FilmDetails.language,     FALSE
+  RentFilmsPayload.rentals, FALSE
+  """)
+
+extend schema @assertContains(relation: "diagnostic", rows: """
+  lsp_code,                                severity
+  GRAPHITRON_SPLIT_QUERY_REDUNDANT,        warning
+  """)

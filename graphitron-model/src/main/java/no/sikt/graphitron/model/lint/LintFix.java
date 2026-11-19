@@ -81,8 +81,8 @@ public record LintFix(String description, List<Edit> edits) {
 
     /**
      * A safe deletion fix for a redundant applied directive whose value graphitron ignores anyway
-     * (the classifier advisories {@code redundant-record-directive} and
-     * {@code splitquery-redundant-on-record-parent}). The fix is offered only for the bare form (no
+     * (the classifier advisories {@code redundant-record-directive} and the redundant
+     * {@code @splitQuery} ones). The fix is offered only for the bare form (no
      * arguments): graphql-java records a node's start location but no end, so the span of
      * {@code @record(record: {...})} cannot be derived, whereas a bare {@code @record} /
      * {@code @splitQuery} is exactly {@code '@' + name}. Returns empty when the directive is absent,

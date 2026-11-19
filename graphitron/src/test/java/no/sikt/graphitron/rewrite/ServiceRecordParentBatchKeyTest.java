@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
@@ -10,7 +9,6 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
@@ -304,23 +302,5 @@ class ServiceRecordParentBatchKeyTest {
 
         assertThat(reasonOf(schema, "Parent", "language"))
             .contains("declares no Sources parameter");
-    }
-
-    /**
-     * A @splitQuery beside the class-backed parent's service child is not the record-parent
-     * advisory's: the service-child rule says it, read off the schema rather than this walk.
-     */
-    @Test
-    void splitQueryBesideServiceOnClassBackedParent_drawsNoRecordParentAdvisory() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
-                rank: Int @splitQuery
-                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
-            """.formatted(SVC)));
-
-        assertThat(schema.field("Parent", "rank")).isInstanceOf(ChildField.ServiceRecordField.class);
-        assertThat(schema.warnings())
-            .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
-                && lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT)
-            .isEmpty();
     }
 }
