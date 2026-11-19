@@ -74,6 +74,8 @@ type Query {
 
 `Query.node(id:)` decodes the opaque ID, reads the embedded `typeId`, and dispatches to the matching `@node` type's table. `Query.nodes(ids:)` is the batched form: the rewrite groups IDs by `typeId`, fans out one batched `SELECT` per type, and scatters rows back to the request's original positions.
 
+Any query-root field returning `Node` is such a node fetcher, whatever its name, so a subgraph can expose another entry point beside `node`. It decodes its argument by name, as Relay has it: `id` on a field returning one node, `ids` on a field returning a list (Alf, 2026-11-19). A node fetcher with no argument of that name is refused (`NODE_FETCHER_WITHOUT_ID`). A query-root field returning `Node` with a xref:service.adoc[`@service`] is a service and runs what the service returns, not a node fetcher (Alf, 2026-11-19).
+
 Composite-PK nodes follow the same shape:
 
 [source,graphql]

@@ -16620,6 +16620,48 @@ COMMENT ON COLUMN graphitron_occurrence_producer_routine.table_schema IS 'the ro
 COMMENT ON COLUMN graphitron_occurrence_producer_routine.routine_name IS 'the routine';
 COMMENT ON COLUMN graphitron_occurrence_producer_routine.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The argument a node fetcher decodes, by name as the Relay contract has it (Alf, 2026-11-19): a
+-- query-root field returning the Node interface, which looks up the ids it is handed (a LOOKUP
+-- producer by its signature), decodes its argument named id where it returns one node and ids where
+-- it returns a list. A node fetcher with no such argument has no row, and is refused.
+CREATE VIEW graphitron_occurrence_producer_node_rule
+  (graph_name, coordinate, kind, argument_coordinate) AS
+SELECT p.graph_name, p.coordinate, p.kind, a.coordinate
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence fo ON fo.graph_name = p.graph_name AND fo.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = fo.graph_name AND f.coordinate = fo.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INTERFACE'
+  JOIN graphitron_occurrence a
+    ON a.graph_name = p.graph_name AND a.parent_coordinate = p.coordinate AND a.kind = 'FIELD_ARGUMENT'
+   AND a.name = CASE WHEN f.is_list THEN 'ids' ELSE 'id' END
+ WHERE p.kind = 'LOOKUP' AND p.start = 'ROOT' AND f.named_type = 'Node';
+COMMENT ON VIEW graphitron_occurrence_producer_node_rule IS 'One row the node fetcher rule computes, in the shape graphitron_occurrence_producer_node stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_node, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_node_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_node.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_node_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_node.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_node_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_node.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_node_rule.argument_coordinate IS 'the argument_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_node.argument_coordinate';
+
+CREATE TABLE graphitron_occurrence_producer_node (
+  graph_name          VARCHAR   NOT NULL,
+  coordinate          VARCHAR   NOT NULL,
+  kind                VARCHAR   NOT NULL,
+  argument_coordinate VARCHAR   NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate, kind)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, argument_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (kind = 'LOOKUP')
+);
+COMMENT ON TABLE graphitron_occurrence_producer_node IS 'The argument a node fetcher decodes: one row per query-root field returning the Node interface that has an argument named id, or ids where it returns a list. For example Query.node(id: ID!): Node decodes id, and Query.nodes(ids: [ID!]!): [Node]! decodes ids.';
+COMMENT ON COLUMN graphitron_occurrence_producer_node.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_producer_node.coordinate IS 'the node fetcher''s occurrence, the whole key: one decoded argument per fetcher';
+COMMENT ON COLUMN graphitron_occurrence_producer_node.kind IS 'always LOOKUP, pinned so the foreign key holds the row to a lookup producer';
+COMMENT ON COLUMN graphitron_occurrence_producer_node.argument_coordinate IS 'the decoded argument''s occurrence, a child of the fetcher''s';
+COMMENT ON COLUMN graphitron_occurrence_producer_node.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 CREATE VIEW graphitron_occurrence_producer_write_rule
   (graph_name, coordinate, kind, matches, table_source_name, table_schema, table_name) AS
 -- The table a write producer writes and, for an identifying write, how many rows one input may match.
@@ -17037,7 +17079,8 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
 UNION ALL
 -- An argument's or input field's id: ID with neither @nodeId nor @field written, named for its
 -- target: the node its need reaches, on the terms above, all its needs reaching that one node, and
--- only where that node's table has no column of the name, as the own id.
+-- only where that node's table has no column of the name, as the own id. Not the id a node fetcher
+-- decodes, which names no target: it is decoded by its own type id.
 SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'TARGET_ID_NAME', k.type_name, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
@@ -17060,6 +17103,8 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
              AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND nt.table_name = COALESCE(jp.target_table, pn.landing_table)))
  WHERE o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
    AND COALESCE(f.named_type, a.named_type) = 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node npn
+                    WHERE npn.graph_name = o.graph_name AND npn.argument_coordinate = o.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
                       AND x.kind IN ('NODE_ID', 'COLUMN'))
@@ -19660,20 +19705,10 @@ SELECT o.graph_name, o.coordinate, 'COMPARED'
                       AND sp.kind = 'SERVICE'
                     WHERE a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate)
 UNION
--- The id a node fetcher decodes: a query-root field returning the Node interface, which looks up
--- the ids it is handed (a LOOKUP producer by its signature), takes id where it returns one node and
--- ids where it returns a list. By name, as the fetcher reads them: no stored fact says yet which
--- argument it decodes, so another argument of the field is judged as any other.
-SELECT o.graph_name, o.coordinate, 'NODE'
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence_producer p
-    ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-   AND p.kind = 'LOOKUP' AND p.start = 'ROOT'
-  JOIN graphitron_occurrence fo ON fo.graph_name = p.graph_name AND fo.coordinate = p.coordinate
-  JOIN graphitron_field f ON f.graph_name = fo.graph_name AND f.coordinate = fo.element_coordinate
-  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INTERFACE'
- WHERE o.kind = 'FIELD_ARGUMENT' AND f.named_type = 'Node'
-   AND o.name = CASE WHEN f.is_list THEN 'ids' ELSE 'id' END
+-- The argument a node fetcher decodes, as graphitron_occurrence_producer_node states it; another
+-- argument of the field is judged as any other.
+SELECT pn.graph_name, pn.argument_coordinate, 'NODE'
+  FROM graphitron_occurrence_producer_node pn
 UNION
 -- A @lookupKey, which drives its lookup's join whether or not an overriding condition stands in for
 -- the field's filter.
@@ -22756,7 +22791,24 @@ SELECT fb.graph_name, fb.source_name, fb.source_line, fb.source_column,
                   AND bf.field_name = fb.field_name
                   AND NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
                                    WHERE cc.graph_name = cf.graph_name AND cc.type_name = cf.type_name
-                                     AND cc.field_name = cf.field_name));
+                                     AND cc.field_name = cf.field_name))
+UNION ALL
+-- A node fetcher with no argument it decodes, at the field's declaration: a query-root field
+-- returning the Node interface decodes its argument named id, or ids where it returns a list (Alf,
+-- 2026-11-19), and this one has none, so no id reaches it. A field with a @service is a service,
+-- and runs what the service returns.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'NODE_FETCHER_WITHOUT_ID', CASE WHEN f.is_list THEN 'ids' ELSE 'id' END, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence fo ON fo.graph_name = p.graph_name AND fo.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = fo.graph_name AND f.coordinate = fo.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INTERFACE'
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'LOOKUP' AND p.start = 'ROOT' AND f.named_type = 'Node'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
+                    WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate);
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
@@ -29579,6 +29631,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-producers', 'graphitron_occurrence_producer_facet'),
   ('occurrence-producers', 'graphitron_occurrence_producer_result'),
   ('occurrence-producers', 'graphitron_occurrence_producer_empty'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_node'),
   ('occurrence-producers', 'graphitron_occurrence_producer_routine'),
   ('occurrence-producers', 'graphitron_occurrence_producer_service'),
   ('occurrence-producers', 'graphitron_occurrence_producer_write'),
@@ -29861,6 +29914,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-producers', 'graphitron_occurrence_producer_connection', 'graphitron_occurrence_producer_connection_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_facet', 'graphitron_occurrence_producer_facet_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_result', 'graphitron_occurrence_producer_result_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_node', 'graphitron_occurrence_producer_node_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_routine', 'graphitron_occurrence_producer_routine_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_service', 'graphitron_occurrence_producer_service_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer_write', 'graphitron_occurrence_producer_write_rule'),
@@ -30914,6 +30968,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A record an input object is built into has a component no input field fills, and its canonical constructor takes every component, so there is no value to pass: add a field named after the component, its @field(name:) for a @service and its own name for a @condition, or give the record no such component.'),
   ('MEMBER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_FILLED_TWICE',
    'Two input fields fill one member of one object, and nothing says which value it takes: rename one, or remove one. Node ids decoding into one record member are one record and allowed.'),
+  ('NODE_FETCHER_WITHOUT_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_FETCHER_WITHOUT_ID',
+   'A query-root field returning Node is a node fetcher, which decodes its argument named id, or ids where it returns a list, and this field has none; name the argument id (ids for a list), or write a @service to run something else.'),
   ('REREAD_OF_DELETED_ROWS', 'error', 'GRAPHITRON', 'GRAPHITRON_REREAD_OF_DELETED_ROWS',
    'A field re-reads the rows a delete removed, and they are gone once it runs: a delete hands back the keys of its rows, so return their ids.'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
@@ -31545,6 +31601,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_producer_service_rule', 'graph-occurrence', 'graphitron',
    'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_service, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_producer_node', 'graph-occurrence', 'graphitron',
+   'The argument a node fetcher decodes: one row per query-root field returning the Node interface that has an argument named id, or ids where it returns a list.',
+   'For example Query.node(id: ID!): Node decodes id, and Query.nodes(ids: [ID!]!): [Node]! decodes ids.',
+   'By name, the Relay contract the manual states (Alf, 2026-11-19), and stated once so the occurrence''s taken NODE row, the implicit node id rule and the refusal of a fetcher with no such argument read one fact rather than each matching the names. A subtype of graphitron_occurrence_producer, the LOOKUP producer a node fetcher is by its signature; a field with a @service is a service and has no row.'),
+  ('graphitron_occurrence_producer_node_rule', 'graph-occurrence', 'graphitron',
+   'One row the node fetcher rule computes, in the shape graphitron_occurrence_producer_node stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_node, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_producer_routine', 'graph-occurrence', 'graphitron',
    'The routine a ROUTINE producer calls, its first @routine with no table before it; one row per routine producer whose routine resolved to one callable.',

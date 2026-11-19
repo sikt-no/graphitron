@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the argument it lacks.
+
+A query-root field returning the `Node` interface is a node fetcher: it decodes the opaque ids it is handed and reads each node off its own table. Which argument holds them is fixed by name, as Relay has it: `id` on a field returning one node, `ids` on a field returning a list. This field has no argument of that name, so no id would reach it.
+
+*Next step.* Name the argument `id`, or `ids` for a list, as in `node(id: ID!): Node`. To run something else under a `Node` return, write a xref:directives/service.adoc[`@service`] on the field. See xref:directives/node.adoc[`@node`].

@@ -1,10 +1,9 @@
 # What takes each argument and input field. A column a filter compares is taken by the comparison;
 # an @orderBy argument and a connection's page arguments graphitron reads itself, and they cover
 # what is under them. An input object is not taken for its own sake, only through its fields. The
-# node fetchers take the id they decode, Query.node's id and Query.nodes's ids, and nodeByKey's key,
-# an argument no node fetcher reads, is taken by nothing. What else takes them is left out of the
-# population below: an argument named id lands on a node's id by its name alone, so node's id is
-# compared too where nodes's ids is not, which the node fetcher's own query is to settle.
+# node fetchers take the argument they decode, Query.node's id and Query.nodes's ids, and nothing
+# else takes it: the id a node fetcher decodes names no node of its own, so it is not compared as a
+# filter's node id. A Node fetcher with no such argument is refused, defects/node-fetcher-without-id.
 
 interface Node { id: ID! }
 
@@ -36,25 +35,15 @@ type Query {
         @asConnection @defaultOrder(primaryKey: true)
     node(id: ID!): Node
     nodes(ids: [ID!]!): [Node]!
-    nodeByKey(key: ID!): Node
 }
 
-extend schema @expectEquals(relation: "graphitron_occurrence_taken", where: "coordinate LIKE 'Query.%' AND coordinate NOT LIKE 'Query.node%'", rows: """
+extend schema @expectEquals(relation: "graphitron_occurrence_taken", where: "coordinate LIKE 'Query.%'", rows: """
   coordinate,                        taken_by, covers_below
   Query.films(filter.title:),        COMPARED, FALSE
   Query.films(rating:),              COMPARED, FALSE
   Query.filmsPaged(order:),          ORDER,    TRUE
   Query.filmsPaged(first:),          PAGE,     TRUE
   Query.filmsPaged(after:),          PAGE,     TRUE
-  """)
-
-extend schema @assertContains(relation: "graphitron_occurrence_taken", rows: """
-  coordinate,        taken_by
-  Query.node(id:),   NODE
-  Query.nodes(ids:), NODE
-  """)
-
-extend schema @assertAbsent(relation: "graphitron_occurrence_taken", rows: """
-  coordinate
-  Query.nodeByKey(key:)
+  Query.node(id:),                   NODE,     FALSE
+  Query.nodes(ids:),                 NODE,     FALSE
   """)

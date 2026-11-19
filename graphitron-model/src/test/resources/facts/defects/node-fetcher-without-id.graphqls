@@ -1,0 +1,31 @@
+# A query-root field returning Node is a node fetcher, which decodes its argument named id, or ids
+# where it returns a list (Alf, 2026-11-19). nodeByKey's argument is key and nodesByKeys's keys, so no
+# id reaches either, and each is refused at its declaration, the detail the argument it lacks.
+# Query.node and Query.nodes, whose arguments are named so, decode them and draw nothing.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+    id: ID! @nodeId
+    title: String
+}
+
+type Query {
+    node(id: ID!): Node
+    nodes(ids: [ID!]!): [Node]!
+    nodeByKey(key: ID!): Node
+    nodesByKeys(keys: [ID!]!): [Node]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+                            where: "code = 'NODE_FETCHER_WITHOUT_ID'", rows: """
+  coordinate,        detail
+  Query.nodeByKey,   id
+  Query.nodesByKeys, ids
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_node", rows: """
+  coordinate,  argument_coordinate
+  Query.node,  Query.node(id:)
+  Query.nodes, Query.nodes(ids:)
+  """)

@@ -18,6 +18,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FAC
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_NODE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RULE;
@@ -126,6 +128,8 @@ public final class OccurrenceProducers {
             graph, null, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE_RULE,
             graph, null, touchedAt);
+        refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_NODE, GRAPHITRON_OCCURRENCE_PRODUCER_NODE_RULE,
+            graph, null, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE_RULE,
             graph, null, touchedAt);
         // A write's call and a root routine's, read off the producer, since neither pins a method.
@@ -162,7 +166,8 @@ public final class OccurrenceProducers {
      */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE,
-                GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE,
+                GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_NODE,
+                GRAPHITRON_OCCURRENCE_PRODUCER_WRITE,
                 GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY, GRAPHITRON_OCCURRENCE_PRODUCER_FACET,
                 GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT,
                 GRAPHITRON_OCCURRENCE_PRODUCER)) {
