@@ -1,0 +1,16 @@
+Reported at the `@asFacet`, naming the input type in the detail. The schema is valid; the build stops until graphitron generates the shape.
+
+A facet's counts surface on a `facets` field graphitron generates onto the connection type, with its facets type. It generates them only onto a connection type `@asConnection` generates; a connection type you declare yourself does not gain one yet. Where every field returning a connection that takes the input returns such a declared type, the counts have nowhere to surface for now:
+
+[source,graphql]
+----
+input FilmFilter { title: [String!] @field(name: "title") @asFacet }
+
+type Query {
+  films(filter: FilmFilter, first: Int, after: String): FilmsPage
+}
+----
+
+with `FilmsPage` a connection type declared in the schema.
+
+*Instead.* Return an `@asConnection` connection from a field taking the filter, which gains the facets, or remove `@asFacet` until graphitron generates facets onto declared connection types.

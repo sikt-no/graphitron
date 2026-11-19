@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry. Valid: `$context.<key>` binds a parameter to the value the request context carries under the key, which may be spelt apart from the parameter.
+
+Graphitron records what the entry fills, but no site reads a `$context` entry into the call yet.
+
+*Instead.* Name the key in `contextArguments` where the directive takes them, which fills the parameter of the same name, renaming the parameter after the key where the two differ.

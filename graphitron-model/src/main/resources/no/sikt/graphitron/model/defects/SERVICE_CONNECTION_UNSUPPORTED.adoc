@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid: a `@service` field may return a connection.
+
+Graphitron would page the rows the service answers, cursors and `pageInfo` included, and that paging is generated for fields graphitron fetches but not for a service yet.
+
+*Instead.* Return a list from the `@service`, or read the rows with a field graphitron fetches and pages, with `@asConnection`. See the xref:directives/service.adoc#constraints[`@service` constraints].

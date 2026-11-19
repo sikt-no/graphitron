@@ -1,0 +1,5 @@
+Reported at the field reading the value. Valid: a value may be read off another table down a `@reference` path of any length, and is, under a field graphitron fetches.
+
+The site the field sits at does not follow that path yet. Today that site is a participant of a discriminated `@service`'s result: the service's lift reads each participant off the shared table and follows one step from it, so a value more than one step off the shared table, or down a path that does not depart from it, has nothing to read it. Other sites that cannot read a scalar down a path report this code too.
+
+*Instead.* Read the value one step off the shared table, or read the rows with a field graphitron fetches rather than a `@service`. See the xref:directives/service.adoc#constraints[`@service` constraints].

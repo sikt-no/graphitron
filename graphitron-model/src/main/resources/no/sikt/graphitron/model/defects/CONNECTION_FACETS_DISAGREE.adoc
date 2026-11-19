@@ -1,0 +1,15 @@
+Reported at each field returning the connection type, naming the type in the detail.
+
+A connection's `facets` field returns one facets type, generated once for the connection type. Each field returning the connection runs its own count and facet queries, from its own arguments, but all of them fill that one type, so each must surface the same facets: the same names, with the same value types and nullability, in the same order. Which argument a facet's filter rides in, and which column it groups by, are each field's own and may differ. Two fields sharing a connection through `connectionName:` where only one takes a filter with `@asFacet` disagree:
+
+[source,graphql]
+----
+type Query {
+  filmsFaceted(filter: FilmFilter): [Film!]! @asConnection(connectionName: "SharedFilmsConnection")
+  filmsPlain: [Film!]! @asConnection(connectionName: "SharedFilmsConnection")
+}
+----
+
+Both fields draw the code, not only the one that differs from the first. A field returning a connection type whose `facets` field asks for facets it does not surface draws it too.
+
+*Next step.* Give every field returning the connection the same `@asFacet` filter fields, or give each its own connection type. xref:directives/asFacet.adoc#constraints[`@asFacet` constraints] lists the rules.

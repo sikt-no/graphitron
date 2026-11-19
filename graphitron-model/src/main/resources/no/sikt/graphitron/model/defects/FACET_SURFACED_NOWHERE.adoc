@@ -1,0 +1,5 @@
+Reported at the `@asFacet`, naming the input type in the detail.
+
+A facet's counts surface on the `facets` field of the connections whose filter argument takes the input type. Where no field returning a connection takes it, only list fields or none at all, the counts would surface nowhere. An input taken only by fields returning a connection type you declared yourself is valid, and is the deferral xref:#authored-connection-facet-unsupported[`AUTHORED_CONNECTION_FACET_UNSUPPORTED`] instead.
+
+*Next step.* Use the input as the filter of an `@asConnection` field, or remove `@asFacet`.

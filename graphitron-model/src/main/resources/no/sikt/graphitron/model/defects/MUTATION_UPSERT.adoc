@@ -1,0 +1,5 @@
+Reported at the `@mutation`. Valid: `UPSERT` is one of the write kinds `@mutation(typeName:)` accepts.
+
+An upsert needs a conflict target, the unique key whose clash turns the insert into an update, and a bulk form for a list of inputs; neither is designed yet, so graphitron generates no upsert.
+
+*Instead.* Write the field as an `INSERT` or an `UPDATE`, or perform the upsert in a xref:directives/service.adoc[`@service`] or a xref:directives/routine.adoc[`@routine`] of your own. See xref:directives/mutation.adoc[`@mutation`].

@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid: a service may hand back records of any table.
+
+Graphitron reads a service's records back through a typed jOOQ record holding each one's key columns and two more values, its position and its parent's. jOOQ types records of at most 22 values, so a table whose primary key has more than 20 columns has no record to read its rows back by.
+
+*Instead.* Return records of a table with a narrower key, or return a type that binds no table, whose values are read as the service hands them over.

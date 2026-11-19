@@ -1,0 +1,3 @@
+A field below the root returns one `@table` object, and its keys cover no key identifying a row of its table, its primary key or a unique key whose columns refuse `NULL`, so several rows could match the one value it returns; the table is named in the detail.
+
+include::_lookup-key.adoc[]

@@ -1,0 +1,5 @@
+Reported at the directive, naming the class in the detail.
+
+An argument, an `argMapping` entry or a context key binds a parameter by its name, which the class file keeps only when the class was compiled with `-parameters`. Without names, a parameter nothing fills by its type has nothing that could bind it. The build reports this once per directive rather than one `PARAMETER_UNFILLED` per parameter, since renaming arguments cannot fix it.
+
+*Next step.* Compile the class's module with `-parameters`, as `<parameters>true</parameters>` on `maven-compiler-plugin` does, and rebuild it before graphitron reads it.

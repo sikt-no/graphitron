@@ -1,0 +1,7 @@
+Reported at the `argMapping` string, the detail naming the segment that does not resolve.
+
+The right-hand side of an `argMapping` entry names a GraphQL slot and then walks into nested input fields. One rule serves every directive that accepts an `argMapping` (xref:directives/service.adoc[`@service`], xref:directives/condition.adoc[`@condition`], xref:directives/routine.adoc[`@routine`], `@tableMethod`) because the path namespace is the same at all of them. Two shapes reach it: a *head* segment that names no slot in scope, and a later segment that names no field on the input type at that depth.
+
+*Next step.* Correct the segment. xref:directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the form.
+
+At a `@routine` a parameter is resolved from the database catalog rather than by reflection, and `$source.<column>` binds a column of the row the routine is applied to. A bare name never binds a column; where it names one, write `$source.<column>`. A path stopping on an input object binds no IN parameter, which takes one value: bind a scalar field inside it.

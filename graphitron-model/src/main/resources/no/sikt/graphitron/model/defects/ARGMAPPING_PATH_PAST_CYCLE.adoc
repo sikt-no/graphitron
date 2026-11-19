@@ -1,0 +1,5 @@
+Reported at the `argMapping` string. Valid: an input type may nest itself, `input Tree { value: Int child: Tree }`, and a path may name any depth of it.
+
+Graphitron follows a self-nesting input type to its first repetition, `tree.child.value`, and not further yet.
+
+*Instead.* Bind the parameter at a shallower depth, taking the nested value whole and reading deeper levels in the method. xref:directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] describes the paths.

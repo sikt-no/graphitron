@@ -1,0 +1,3 @@
+Reported at the `@service` field. A child `@service` is called once per request with the keys of every parent the request touched, and answers one value per key. Some valid Java signatures for that are not read by the generated batch yet: keys in a container delivering many, a jOOQ `Result`, unless it holds the parent table's own records; an answer that is a `Map` by key under keys in a list; or a `List` or `Result` answer, which is read in the keys' order, under keys whose container gives no order, such as a `Set`.
+
+*Instead.* Take the keys as a `Set` and answer a `Map` from key to value, or take them as a `List` and answer a `List` in the same order. The xref:directives/service.adoc#constraints[`@service` constraints] describe the batch signatures.

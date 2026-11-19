@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid: a child `@service` may answer an interface or union whose rows belong to several participants.
+
+A `@service` answering such a type is lifted participant by participant, each read from its own table. Graphitron does this for a root `@service` only; under an object the call is batched over the parents, and the batch is not split by participant yet. An outcome, the call's success beside its errors, is no such answer and is not refused.
+
+*Instead.* Move the call to a root field, or answer one participant's type. See the xref:directives/service.adoc#constraints[`@service` constraints].

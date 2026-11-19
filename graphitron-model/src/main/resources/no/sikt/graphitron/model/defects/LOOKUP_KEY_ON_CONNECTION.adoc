@@ -1,0 +1,3 @@
+The field returns a connection, which pages where a lookup answers the keys it is given.
+
+include::_lookup-key.adoc[]

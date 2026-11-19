@@ -1,0 +1,5 @@
+Reported at the participant's field. Valid: an object with no table of its own may be read down a `@reference` path, and is, under a field graphitron fetches.
+
+A `@service` answering a discriminated interface or union is lifted by reading each participant off its one shared row. An object read down a path needs a join from that row, which the service's lift does not make yet.
+
+*Instead.* Read the object off the participant's own row, without a path; give the object's type a `@table` of its own; or read the rows with a field graphitron fetches rather than a `@service`. See the xref:directives/service.adoc#constraints[`@service` constraints].

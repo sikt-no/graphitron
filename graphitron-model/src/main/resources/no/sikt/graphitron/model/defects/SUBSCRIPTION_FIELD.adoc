@@ -1,0 +1,5 @@
+Reported at the field's declaration. Valid: a subscription root is part of GraphQL.
+
+Graphitron generates no subscription resolver yet, so a field on the subscription root would have nothing behind it.
+
+*Instead.* Leave the subscription root out of the schema graphitron reads until subscriptions are generated.

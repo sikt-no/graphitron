@@ -1,0 +1,5 @@
+Reported at the input field. Valid: a list of node ids is a legal input field, and `@nodeId` on it decodes each element.
+
+An input object a call builds into a jOOQ record writes each field into a column of the record's table, and a node id writes its node's key into the key's columns. A list of ids has no one column to write, and graphitron does not build a record from one yet.
+
+*Instead.* Take the ids as an argument of their own, outside the input object built into the record, or give the record field one id rather than a list. The xref:directives/service.adoc#constraints[`@service` constraints] list what an input object built into a record may hold.

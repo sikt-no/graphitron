@@ -1,0 +1,5 @@
+Reported at the field. Valid in a build with database-per-tenant routing (`<tenantColumn>`): the field's foreign key reaches a tenant's rows from a global table, so its parents may each name a different tenant.
+
+Such a field is a read of its own per tenant, which cannot be part of its parent's statement on the parent's connection. Graphitron generates it only as a split query so far.
+
+*Instead.* Write xref:directives/splitQuery.adoc[`@splitQuery`] on the field. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers how a field is routed.

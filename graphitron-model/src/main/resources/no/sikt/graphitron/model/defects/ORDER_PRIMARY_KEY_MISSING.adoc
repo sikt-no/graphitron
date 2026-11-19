@@ -1,0 +1,3 @@
+`primaryKey: true` over a table with no primary key, named in the detail.
+
+include::_ordering.adoc[]

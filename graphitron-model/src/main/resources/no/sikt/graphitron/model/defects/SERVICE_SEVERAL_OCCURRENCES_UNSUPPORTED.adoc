@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid: a type with no table of its own may be nested under several types, and a `@service` on it means the same under each.
+
+Each place the type is reached from is a read of its own, a producer with its own parent rows, while the field has one generated fetcher, which serves one place so far.
+
+*Instead.* Declare the service on a type reached from one place, for example by giving each place a nesting type of its own, or give the type a `@table` so its rows are read the same way wherever it is reached. See the xref:directives/service.adoc#constraints[`@service` constraints].

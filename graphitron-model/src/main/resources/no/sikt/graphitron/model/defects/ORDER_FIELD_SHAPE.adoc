@@ -1,0 +1,3 @@
+A `fields` element writes neither or both of `name` and `method`, or a `path` beside a `method`.
+
+include::_ordering.adoc[]

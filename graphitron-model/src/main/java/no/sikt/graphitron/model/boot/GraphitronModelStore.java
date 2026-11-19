@@ -806,6 +806,10 @@ public final class GraphitronModelStore implements AutoCloseable {
      * file-backed one closes this connection and would reopen to find the schema present and the
      * seeded rows gone.
      *
+     * <p>The defect guidance follows the file's own rows: {@link DefectGuidance} writes a row per
+     * declared code from the AsciiDoc fragment beside this file, which is prose a SQL literal would
+     * bury, and the rows share the file's lifetime.
+     *
      * <p>The partition dimension's selectivity is declared after the file's statements and before
      * that commit: {@link #partitionSelectivity} carries the form and
      * {@link GraphPartition#DECLARED_SELECTIVITY} the fact. It is stated here because it is a
@@ -819,6 +823,8 @@ public final class GraphitronModelStore implements AutoCloseable {
                 current = sql;
                 statement.execute(sql);
             }
+            current = "the defect guidance fragments under " + DefectGuidance.DIRECTORY;
+            DefectGuidance.write(connection);
             for (String sql : partitionSelectivity(connection)) {
                 current = sql;
                 statement.execute(sql);

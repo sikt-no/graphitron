@@ -1,0 +1,5 @@
+Reported at the `$tenant` entry or the `@tenant`. Valid in a build with database-per-tenant routing: naming a tenant is meaningful at more sites than are routed today.
+
+Graphitron routes by a named tenant only at a root `@service`'s call: it runs that call on the tenant's connection. Nothing routes by `$tenant` or `@tenant` anywhere else yet, so a value named there would be ignored.
+
+*Instead.* Write `$tenant` in a root `@service`'s `argMapping`, or mark a value that service reads. A child service runs on its parent's tenant and needs none; a query field binds the tenant through `@field(name:)` on the tenant column. See xref:directives/tenant.adoc[`@tenant`] and xref:directives/service.adoc#arg-mapping[`argMapping`].

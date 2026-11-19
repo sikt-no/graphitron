@@ -1,0 +1,5 @@
+Reported at the `@accept`. Valid: an accepting type may have a connection anywhere below it.
+
+An accepting type's entity is read on the vouched connection, and so is every field below it: what its statement projects, and every field with a fetcher of its own, a split query or a `@service`, on the connection the entity row hands down. A connection below it pages in a read graphitron does not run on the vouched connection yet.
+
+*Instead.* Read those rows as a list: in the entity's statement, by a split query, or by a `@service`. See the xref:directives/accept.adoc[`@accept` constraints] and xref:../how-to/voucher-handover.adoc[How-to: Voucher handover].

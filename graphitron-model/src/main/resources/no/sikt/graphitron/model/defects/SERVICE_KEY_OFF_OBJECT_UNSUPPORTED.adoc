@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid: a child `@service` may take its keys as jOOQ `Row<N>` or `Record<N>` of the key columns.
+
+Under a parent holding a table's row, those keys are projected from the row. Under a parent holding an object, the keys are read off the one member of the object's class that returns records of the table, and graphitron hands over those records as they are; reducing them to rows or records of the key columns is not generated yet.
+
+*Instead.* Take the keys as the table's own records, which the member returning them hands over, or give the parent type a `@table` so its rows are read and the keys projected from them. See the xref:directives/service.adoc#constraints[`@service` constraints].

@@ -1,0 +1,3 @@
+A list or connection over a table with no primary key, read inside its parent's query, for which no order is stated: no `@defaultOrder`, and no `@orderBy` argument whose input type offers a choice.
+
+include::_ordering.adoc[]

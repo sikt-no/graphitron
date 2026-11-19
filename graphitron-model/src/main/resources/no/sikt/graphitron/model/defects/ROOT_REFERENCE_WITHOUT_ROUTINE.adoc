@@ -1,0 +1,5 @@
+Reported at the `@reference`. A path on a root field is meaningful once something gives it a start, and graphitron takes that start only from a xref:directives/routine.adoc[`@routine`] written before the `@reference`.
+
+A `@reference` path departs from the row of the type that declares the field. A root field has no such row, so the path departs from nothing; a leading `@routine` gives it one, the routine's result rows. A `@routine` written only after the `@reference` does not, the path having to be part of the table-bound read the routine starts. A write on `Mutation` is a root field like any other here.
+
+*Instead.* Write the `@routine` before the `@reference` on the field, or move the field onto a `@table` type whose rows the path can depart from.

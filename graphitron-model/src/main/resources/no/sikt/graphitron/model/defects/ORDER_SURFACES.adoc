@@ -1,0 +1,3 @@
+The application writes other than exactly one of `index`, `primaryKey: true` and `fields`.
+
+include::_ordering.adoc[]

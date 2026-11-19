@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid: a discriminated interface may have participants on tables of their own, and a field graphitron fetches reads them.
+
+A `@service` answering a discriminated interface or union is lifted by reading each participant off the one shared row its discriminator sits on. A participant on a table of its own needs a read of that table too, which the service's lift does not do yet.
+
+*Instead.* Keep every participant on the shared table, or read the rows with a field graphitron fetches rather than a `@service`. See xref:directives/discriminate.adoc[`@discriminate`] and the xref:directives/service.adoc#constraints[`@service` constraints].

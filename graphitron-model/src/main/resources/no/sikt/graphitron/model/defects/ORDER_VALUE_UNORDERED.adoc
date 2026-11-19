@@ -1,0 +1,3 @@
+A value of an xref:directives/orderBy.adoc[`@orderBy`] argument's sort enum has neither `@order` nor `@index`.
+
+include::_ordering.adoc[]

@@ -1,0 +1,5 @@
+Reported at the `argMapping`. Valid: an `argMapping` path may step through a list and land on any field of the elements.
+
+Where a path steps through a list above its last name, graphitron reads each element's value for a scalar, or for an enum the parameter takes by its name as a `String`, and hands each list over as a `java.util.List`. Landing such a path on a node id, an input object, or an enum the parameter takes as its Java constant, or collecting the elements in a `Set`, a `Collection` or another container, is not read yet.
+
+*Instead.* Hand the parameter the list itself, take the enum by name, land the path on a scalar, or declare the parameter a `List` for each list the path steps through. xref:directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] describes the paths.

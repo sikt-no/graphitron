@@ -1,0 +1,5 @@
+Reported at the field. Valid in a build with database-per-tenant routing (`<tenantColumn>`): the field's foreign key lands on the tenant column, so each parent row names the tenant whose database holds the rows it reaches.
+
+The field is declared on a type with no `@table` of its own, nested under a type over a global table. Routing it by its parent row's tenant needs to know, for each place the nesting type is reached, which row that is, and graphitron does not state that for a nesting type yet.
+
+*Instead.* Declare the field on a type with its own `@table`, so its parent's row is the row it routes by, or read the rows through an argument that names the tenant. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers how a field is routed.

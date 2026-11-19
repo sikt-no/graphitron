@@ -1,0 +1,3 @@
+The argument is a node id of a node on another table than the field reads, or takes an input object with such an id whose columns no one foreign key from the field's table carries back; the node's table is named in the detail.
+
+include::_lookup-key.adoc[]

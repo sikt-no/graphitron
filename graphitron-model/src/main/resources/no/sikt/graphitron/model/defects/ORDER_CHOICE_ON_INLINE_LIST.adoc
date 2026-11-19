@@ -1,0 +1,5 @@
+Reported at the `@orderBy` argument. The schema is valid: a client's choice of order on a list is meaningful wherever the list is read.
+
+A list read inside its parent's query is selected as part of that statement, and graphitron does not yet carry a client's choice of order into it; accepting the argument and ignoring it would hand back rows in an order the client did not ask for, so the build stops instead.
+
+*Instead.* Read the list in a query of its own with xref:directives/splitQuery.adoc[`@splitQuery`], where the choice is applied, or drop the `@orderBy` argument and fix one order with xref:directives/defaultOrder.adoc[`@defaultOrder`].

@@ -1,0 +1,3 @@
+Reported at the `@condition`, not at an element field. Its `argMapping` reaches below the list, whether the `@condition` is on the list field itself or on the field and reaching through it; bind the whole list instead.
+
+include::_list-of-input-filter.adoc[]

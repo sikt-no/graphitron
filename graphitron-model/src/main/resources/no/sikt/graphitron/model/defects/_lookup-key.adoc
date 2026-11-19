@@ -1,0 +1,3 @@
+A lookup narrows the field's rows by the keys the caller passes, each a column of the table the field reads. A key the build cannot state as such a column would narrow by fewer keys than were written and read more rows than asked for, so the build stops instead. The three refusals of a `@lookupKey`, each at the `@lookupKey` application, are `LOOKUP_KEY_ON_CONNECTION`, `LOOKUP_KEY_NOT_IDENTIFYING` and `LOOKUP_KEY_OFF_TABLE`.
+
+*Next step.* Drop `@asConnection` or `@lookupKey`; key a single child by its table's primary key or a unique key whose columns refuse `NULL`, or return a list; or, for a node id of another node, drop `@lookupKey` and let the id filter through the foreign key. xref:directives/lookupKey.adoc#constraints[`@lookupKey` constraints] lists the rules.

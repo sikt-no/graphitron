@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid in a build with database-per-tenant routing (`<tenantColumn>`): the service reads a tenant's rows by a key landing on the tenant column, from parents on a global table.
+
+Each parent row names its own tenant, so the parents would have to be grouped by tenant and the service called once per group, on that tenant's connection. Graphitron generates that grouping for fields it fetches but not for a service yet.
+
+*Instead.* Read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds, where it runs on its parent's tenant. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers how calls are routed.

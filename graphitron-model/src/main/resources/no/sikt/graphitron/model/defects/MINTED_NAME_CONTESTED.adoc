@@ -1,0 +1,20 @@
+Reported at each `@asConnection` that coins the name, naming the first contested coordinate it coins, by name, in the detail.
+
+Graphitron generates the Connection, Edge and `PageInfo` types and their fields for each `@asConnection` field, and several fields may generate the same name, which is fine as long as they all describe it the same way. Two shapes make them disagree:
+
+* Two fields share a `connectionName:` over different element types, so the shared Connection's `nodes` and its Edge's `node` would have two types:
++
+[source,graphql]
+----
+type Query {
+  films: [Film!]! @asConnection(connectionName: "Shared")
+  tongues: [Language!]! @asConnection(connectionName: "Shared")
+}
+----
++
+Both fields draw the code, each naming `Shared.nodes; SharedEdge.node`.
+* A `connectionName:` names a type the same field also generates in another role, such as `@asConnection(connectionName: "PageInfo")`: the Connection and the page info would be one type.
+
+Graphitron generates none of the contested names rather than picking one, and stops the build.
+
+*Next step.* Give the connections distinct names, usually by dropping the deprecated `connectionName:` so each field gets its own, or give the fields sharing one name the same element type. xref:directives/asConnection.adoc#constraints[`@asConnection` constraints] lists the rules.

@@ -1,0 +1,3 @@
+Reported at the argument or input field the record is built at, naming an unfilled component as `Class#component`.
+
+An input object built into a Java record is passed to the record's canonical constructor, which takes every component at once. A component no input field fills, directly or through a grouping, has no value to pass. A class built through setters is not refused: a property nothing sets keeps its default.

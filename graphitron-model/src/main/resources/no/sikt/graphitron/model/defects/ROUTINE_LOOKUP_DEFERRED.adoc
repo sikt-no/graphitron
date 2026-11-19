@@ -1,0 +1,5 @@
+Reported at the field. Valid: a root field may call a `@routine` and narrow its rows by `@lookupKey` arguments.
+
+Graphitron classifies the combination, but does not generate the lookup over a routine's result yet.
+
+*Instead.* Drop `@lookupKey` and pass the keys to the routine as parameters through `argMapping`, so the routine narrows its own rows, or read the rows from the table with a `@lookupKey` field and no `@routine`. See xref:directives/routine.adoc[`@routine`] and xref:directives/lookupKey.adoc[`@lookupKey`].

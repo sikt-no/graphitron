@@ -1,0 +1,18 @@
+Reported at each `@asConnection` that asks for the type, naming the type and what it lacks in the detail.
+
+Where the schema declares a Connection, Edge, `PageInfo` or facets type that an `@asConnection` field would otherwise generate, graphitron uses the declaration as written and checks it against what the shape requires. Where the Relay Cursor Connections specification states the shape, that is the requirement and nothing more: `edges` (a list) and `pageInfo` (`PageInfo!`) on a connection, `node` and `cursor` (neither a list) on an edge, and `hasNextPage: Boolean!`, `hasPreviousPage: Boolean!`, `startCursor` and `endCursor` on `PageInfo`. `nodes` and `totalCount` are optional. Where no external specification exists, the facets type of a connection with facets and its value types, graphitron's own shape is the requirement. For example:
+
+[source,graphql]
+----
+type Query {
+  films: [Film!]! @asConnection
+}
+
+type QueryFilmsConnection {
+  edges: [QueryFilmsConnectionEdge!]!
+}
+----
+
+draws the code at the `@asConnection`, reading `QueryFilmsConnection lacks pageInfo`. A `connectionName:` naming a type that is not a connection at all, such as the element type itself (`@asConnection(connectionName: "Film")`), draws it too, the detail listing every field the type lacks.
+
+*Next step.* Add or correct the fields the detail names, or remove the declaration and let graphitron generate the type. xref:directives/asConnection.adoc#constraints[`@asConnection` constraints] lists the rules.

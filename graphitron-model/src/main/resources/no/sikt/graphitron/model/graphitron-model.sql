@@ -7822,6 +7822,17 @@ COMMENT ON COLUMN graphitron_defect_type.basis IS 'what the verdict rests on, wh
 COMMENT ON COLUMN graphitron_defect_type.lsp_code IS 'the diagnostic code an editor shows and filters by, null where none is published. The one part of a defect''s name a consumer reads as data rather than as prose, which is what keeps the code column load-bearing rather than a label';
 COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-facing sentence. The message a consumer renders quotes this and the finding''s detail; neither is stored per row';
 
+CREATE TABLE graphitron_defect_guidance (
+  code     VARCHAR NOT NULL,
+  guidance VARCHAR NOT NULL,
+  PRIMARY KEY (code),
+  FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
+  CHECK (CHAR_LENGTH(TRIM(guidance)) > 0)
+);
+COMMENT ON TABLE graphitron_defect_guidance IS 'How an author fixes or works around one defect, written once as AsciiDoc: one row per defect code whose fragment is written. For example MUTATION_UPSERT says the schema is valid, why the upsert is not generated yet, and what to write instead.';
+COMMENT ON COLUMN graphitron_defect_guidance.code IS 'the defect the guidance is for, a graphitron_defect_type key and the whole key: one fragment per code, so the defects reference page, the editor and the MCP server read the one text';
+COMMENT ON COLUMN graphitron_defect_guidance.guidance IS 'the fragment''s AsciiDoc, its includes of shared prose expanded, so a reader holds the whole text without the directory it was written in. Never blank: a code with nothing to add beyond its statement has no row rather than an empty one';
+
 CREATE TABLE federation_version (
   source_name VARCHAR   NOT NULL,
   version     VARCHAR   NOT NULL,
@@ -28239,6 +28250,10 @@ INSERT INTO meta_stated_relation VALUES
    'One relation whose rows this file supplies: what one of its rows is, an example of one, and why it is stated rather than gathered.',
    'For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.',
    'The roster names itself, as meta_relation does, because a roster exempting itself is a roster with one unchecked member. What it exists for is a category the schema had without naming: a relation whose rows are a function of this file, which meta_relation cannot describe because that declaration needs a grain in a corpus and an owning gatherer, and a stated relation reads no corpus and has no producer. Every instance was grandfathered onto the undeclared roster instead, which is a list of what nobody has got to rather than a statement about anything, and which only shrinks; a new stated relation therefore had nowhere legal to go. The gatherer roster could not absorb them either: it keys on a class a gate loads, so declaring one would mean naming a producer that does not exist. Splitting the roster rather than widening meta_relation keeps the two claims apart: a declared relation names who fills it and from what, and a stated one asserts there is no such thing to name.'),
+  ('graphitron_defect_guidance',
+   'How an author fixes or works around one defect, written once as AsciiDoc: one row per defect code whose fragment is written.',
+   'For example MUTATION_UPSERT says the schema is valid, why the upsert is not generated yet, and what to write instead.',
+   'Stated for graphitron_defect_type''s reason, the guidance being as much this generator''s vocabulary as the codes it explains, but written as one AsciiDoc fragment per code under the defects resource directory beside this file rather than as a literal here, since it is paragraphs, lists and cross-references a SQL string would bury. The store writes the fragments when it creates the schema, straight after this file''s own rows, so the rows have this file''s lifetime and the store''s stamp, which hashes the module''s resources, moves with any edit to them. A fragment is required for every UNSUPPORTED code, an author needing to know what to write instead, and optional for a code whose statement already says how to fix it; DefectGuidanceGateTest holds both directions.'),
   ('graphitron_defect_type',
    'One rule a schema can break, declared once: what to call it, how bad it is, what the verdict rests on, and the sentence that states the rule.',
    'For example CONNECTION_RETURN is an error resting on graphitron''s directive contract, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.',

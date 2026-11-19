@@ -1,0 +1,5 @@
+Reported at the `@accept`. Valid: a database-per-tenant subgraph may accept vouchers.
+
+A vouched connection is keyed by the vouched-for values alone, and nothing pairs a voucher yet with the tenant of the key it decodes to, so an accepting type could read a voucher on the wrong tenant's database.
+
+*Instead.* Accept vouchers only in a build with no `<tenantColumn>`, or resolve the entity without a voucher. See the xref:directives/accept.adoc[`@accept` constraints].

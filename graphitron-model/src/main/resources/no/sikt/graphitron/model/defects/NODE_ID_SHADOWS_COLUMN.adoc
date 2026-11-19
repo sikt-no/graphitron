@@ -1,0 +1,3 @@
+The type is a node, so its `id` field is a candidate for the encoded global ID; the bound table also has a column of that name, so it is equally a candidate for that column's value. Both readings are legitimate and they are different values on the wire, so graphitron refuses to pick one for you. The node identity may come from a table publishing `\\__NODE_TYPE_ID` / `\\__NODE_KEY_COLUMNS`, or from a type that declared `@node` explicitly over its table.
+
+*Next step.* Write the reading you meant on the field. `@nodeId` publishes the encoded global ID; xref:directives/field.adoc[`@field(name: "id")`] exposes the raw column, at the cost of that type no longer round-tripping through `Query.node(id:)`. The xref:directives/node.adoc[`@node` reference] covers both.

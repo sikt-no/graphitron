@@ -1,0 +1,5 @@
+Reported at the `@service` field. Valid: an outcome's xref:directives/error.adoc[`@error`] type may claim the `VALIDATION` handler wherever the service runs.
+
+Validation runs once per fetch, before the call, at a root `@service` whose result lifts onto at most one table. Under an object the call is batched over many parents, and a result on several participants' tables is lifted in several reads, and neither validates its arguments yet.
+
+*Instead.* Move the call to a root field, or drop the `VALIDATION` handler from the outcome's error type. See the xref:directives/service.adoc#constraints[`@service` constraints].

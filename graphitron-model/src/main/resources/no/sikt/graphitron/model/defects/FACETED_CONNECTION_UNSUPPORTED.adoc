@@ -1,0 +1,5 @@
+Reported at the connection field. The schema is valid; the build stops until graphitron generates the shape.
+
+The facet counts are computed by the root `Query` fetcher, over the rows of one table. A faceted connection under another type, fetched in a batch over its parents, or one over an interface or a union, has no fetcher that computes them yet.
+
+*Instead.* Move the connection to the root `Query` type, or remove `@asFacet` from its filter. xref:directives/asFacet.adoc#constraints[`@asFacet` constraints] lists where facets are generated.

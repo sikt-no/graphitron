@@ -1,0 +1,5 @@
+Reported at each declaring directive, the `@defaultOrder` or the `@orderBy`. Valid: an ordering on a union or interface field is meaningful.
+
+A field returning a union or interface with no table of its own is read as one statement per participant table, and graphitron combines the results on their primary keys. The declared ordering is not applied to the combined rows yet, so they would arrive in participant primary-key order whatever the declaration says. A list or connection on a root field reaching that read applies the ordering on every participant and is not refused; under a parent's row, or at a root field graphitron reads another way (a single value, a `@service`, a `@lookupKey`, a `@routine`, `Query.nodes`), it is.
+
+*Instead.* Remove the declaration and rely on participant primary-key order, return a single `@table` type, or give the interface a `@table` of its own so the field is one statement. See xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types].

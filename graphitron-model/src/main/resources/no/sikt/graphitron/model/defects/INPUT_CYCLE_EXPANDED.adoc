@@ -1,0 +1,10 @@
+Reported at the input field that reaches the type again, the detail naming the type.
+
+An input object is read field by field, nested inputs included, and one whose fields lead back to its own type, directly or through another input type, has no last level. Graphitron refuses it where it reads the value as a whole:
+
+* under a class a `@service` or a `@condition` builds the input into;
+* under a field whose rows a plain filter input narrows, whatever an overriding `@condition` says.
+
+Taking the same input type in two sibling fields is no cycle; only a type inside itself is.
+
+*Next step.* Break the cycle in the input type, or take the nested part as a parameter of its own. xref:directives/field.adoc[`@field`] covers how a filter input binds its columns.

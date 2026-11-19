@@ -1,0 +1,5 @@
+Reported at the `@reference`. Valid: an expression could be computed on the table a `@reference` path arrives at.
+
+The `@externalField` method takes the table the field's values are rows of, and graphitron binds the expression there; binding it at the end of a written path, joined in from the parent's row, is not generated yet.
+
+*Instead.* Remove the `@reference` and reach the joined table inside the method, or read the field from a type over the joined table. See the xref:directives/externalField.adoc[`@externalField` constraints].

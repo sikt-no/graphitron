@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the table named in the detail. Valid: a node over any table may be decoded.
+
+Graphitron decodes a node id into its node's key through the node table's generated jOOQ record, and jOOQ generated none for this table, for example because the jOOQ code generation excludes its records.
+
+*Instead.* Generate records for the table in your jOOQ configuration, or take the id somewhere it is not decoded, for example as a plain `ID` without `@nodeId` that your own code decodes.
