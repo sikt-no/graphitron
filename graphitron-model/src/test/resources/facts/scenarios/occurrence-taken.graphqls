@@ -1,8 +1,15 @@
 # What takes each argument and input field. A column a filter compares is taken by the comparison;
 # an @orderBy argument and a connection's page arguments graphitron reads itself, and they cover
-# what is under them. An input object is not taken for its own sake, only through its fields.
+# what is under them. An input object is not taken for its own sake, only through its fields. The
+# node fetchers take the id they decode, Query.node's id and Query.nodes's ids, and nodeByKey's key,
+# an argument no node fetcher reads, is taken by nothing. What else takes them is left out of the
+# population below: an argument named id lands on a node's id by its name alone, so node's id is
+# compared too where nodes's ids is not, which the node fetcher's own query is to settle.
 
-type Film @table(name: "film") {
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+    id: ID! @nodeId
     filmId: Int! @field(name: "film_id")
     title: String
 }
@@ -27,13 +34,27 @@ type Query {
     films(filter: FilmFilter, rating: MpaaRating @field(name: "rating")): [Film!]!
     filmsPaged(order: [FilmOrderBy] @orderBy, first: Int, after: String): [Film!]!
         @asConnection @defaultOrder(primaryKey: true)
+    node(id: ID!): Node
+    nodes(ids: [ID!]!): [Node]!
+    nodeByKey(key: ID!): Node
 }
 
-extend schema @expectEquals(relation: "graphitron_occurrence_taken", where: "coordinate LIKE 'Query.%'", rows: """
+extend schema @expectEquals(relation: "graphitron_occurrence_taken", where: "coordinate LIKE 'Query.%' AND coordinate NOT LIKE 'Query.node%'", rows: """
   coordinate,                        taken_by, covers_below
   Query.films(filter.title:),        COMPARED, FALSE
   Query.films(rating:),              COMPARED, FALSE
   Query.filmsPaged(order:),          ORDER,    TRUE
   Query.filmsPaged(first:),          PAGE,     TRUE
   Query.filmsPaged(after:),          PAGE,     TRUE
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_taken", rows: """
+  coordinate,        taken_by
+  Query.node(id:),   NODE
+  Query.nodes(ids:), NODE
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_taken", rows: """
+  coordinate
+  Query.nodeByKey(key:)
   """)
