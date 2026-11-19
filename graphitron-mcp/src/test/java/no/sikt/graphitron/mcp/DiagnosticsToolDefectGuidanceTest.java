@@ -39,13 +39,13 @@ class DiagnosticsToolDefectGuidanceTest {
     }
 
     @Test
-    @DisplayName("a defect whose statement says it all carries its code and link and no guidance")
-    void codeWithoutGuidance() {
+    @DisplayName("a non-deferral defect carries its code, its link and its guidance too")
+    void everyDefectCarriesGuidance() {
         var conflict = diagnostics("defects/mutation-upsert", "Mutation.upsertOrService").stream()
             .filter(e -> "CLAIMS_CONFLICT".equals(e.get("defectCode")))
             .findFirst().orElseThrow();
         assertThat(conflict.get("reference"))
             .isEqualTo("https://graphitron.sikt.no/manual/reference/defects.html#claims-conflict");
-        assertThat(conflict).doesNotContainKey("guidance");
+        assertThat((String) conflict.get("guidance")).isNotBlank();
     }
 }

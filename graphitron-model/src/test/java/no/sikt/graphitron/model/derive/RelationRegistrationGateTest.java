@@ -724,9 +724,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_claim_kind", Arm.UNSHADOWED);
         registrations.put("graphitron_claim_inclusion", Arm.UNSHADOWED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
-        // The guidance beside the codes, written from the fragments when the schema is created;
-        // what pins it is DefectGuidanceGateTest, against the fragment directory.
-        registrations.put("graphitron_defect_guidance", Arm.UNSHADOWED);
         registrations.put("graphitron_occurrence_source_precedence", Arm.UNSHADOWED);
         registrations.put("graphitron_path_need_precedence", Arm.UNSHADOWED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement

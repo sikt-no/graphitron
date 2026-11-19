@@ -7811,27 +7811,19 @@ CREATE TABLE graphitron_defect_type (
   basis     VARCHAR NOT NULL,
   lsp_code  VARCHAR,
   statement VARCHAR NOT NULL,
+  guidance  VARCHAR,
   PRIMARY KEY (code),
   CHECK (severity IN ('error', 'warning')),
+  CHECK (CHAR_LENGTH(TRIM(guidance)) > 0),
   CHECK (basis IN ('SPECIFICATION', 'GRAPHITRON', 'UNSUPPORTED'))
 );
-COMMENT ON TABLE graphitron_defect_type IS 'One rule a schema can break, declared once: what to call it, how bad it is, what the verdict rests on, and the sentence that states the rule. For example CONNECTION_RETURN is an error resting on graphitron''s directive contract, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.';
+COMMENT ON TABLE graphitron_defect_type IS 'One rule a schema can break, declared once: what to call it, how bad it is, what the verdict rests on, the sentence that states the rule, and how an author fixes it. For example CONNECTION_RETURN is an error resting on graphitron''s directive contract, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.';
 COMMENT ON COLUMN graphitron_defect_type.code IS 'the defect''s name, and the whole key. Declared here rather than captured, so it carries no graph and no instant: the vocabulary is a property of this generator and not of anybody''s schema';
 COMMENT ON COLUMN graphitron_defect_type.severity IS 'whether a build stops on it, stated once per defect rather than once per row. A function of the code and nothing else, which is why it lives beside the code and not on the findings';
 COMMENT ON COLUMN graphitron_defect_type.basis IS 'what the verdict rests on, which is also what an author does about it: SPECIFICATION where the GraphQL specification forbids the schema, GRAPHITRON where graphitron''s directives give it no meaning and changing them removes the defect, UNSUPPORTED where it means something under both and graphitron does not do it yet, so an author works around it rather than fixing it. A function of the code exactly as the severity is; never the generator''s fault, the generator running only on a schema that validates';
 COMMENT ON COLUMN graphitron_defect_type.lsp_code IS 'the diagnostic code an editor shows and filters by, null where none is published. The one part of a defect''s name a consumer reads as data rather than as prose, which is what keeps the code column load-bearing rather than a label';
 COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-facing sentence. The message a consumer renders quotes this and the finding''s detail; neither is stored per row';
-
-CREATE TABLE graphitron_defect_guidance (
-  code     VARCHAR NOT NULL,
-  guidance VARCHAR NOT NULL,
-  PRIMARY KEY (code),
-  FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
-  CHECK (CHAR_LENGTH(TRIM(guidance)) > 0)
-);
-COMMENT ON TABLE graphitron_defect_guidance IS 'How an author fixes or works around one defect, written once as AsciiDoc: one row per defect code whose fragment is written. For example MUTATION_UPSERT says the schema is valid, why the upsert is not generated yet, and what to write instead.';
-COMMENT ON COLUMN graphitron_defect_guidance.code IS 'the defect the guidance is for, a graphitron_defect_type key and the whole key: one fragment per code, so the defects reference page, the editor and the MCP server read the one text';
-COMMENT ON COLUMN graphitron_defect_guidance.guidance IS 'the fragment''s AsciiDoc, its includes of shared prose expanded, so a reader holds the whole text without the directory it was written in. Never blank: a code with nothing to add beyond its statement has no row rather than an empty one';
+COMMENT ON COLUMN graphitron_defect_type.guidance IS 'how an author fixes or works around the defect, as AsciiDoc: what reaches it, why the rule holds, and what to write instead. Every code has it. Kept out of this file only because it is paragraphs, lists and cross-references a SQL literal would bury: it is written as one fragment per code under the defects resource directory beside this file, its includes of shared prose expanded, and the store sets it on each row when it creates its schema, then makes the column NOT NULL, so a code without a fragment fails creation';
 
 CREATE TABLE federation_version (
   source_name VARCHAR   NOT NULL,
@@ -28250,14 +28242,10 @@ INSERT INTO meta_stated_relation VALUES
    'One relation whose rows this file, or a resource shipped beside it, supplies: what one of its rows is, an example of one, and why it is stated rather than gathered.',
    'For example lint_rule is stated, its rows being the vocabulary the schema''s own constraints rest on.',
    'The roster names itself, as meta_relation does, because a roster exempting itself is a roster with one unchecked member. What it exists for is a category the schema had without naming: a relation whose rows are a function of this file, which meta_relation cannot describe because that declaration needs a grain in a corpus and an owning gatherer, and a stated relation reads no corpus and has no producer. Every instance was grandfathered onto the undeclared roster instead, which is a list of what nobody has got to rather than a statement about anything, and which only shrinks; a new stated relation therefore had nowhere legal to go. The gatherer roster could not absorb them either: it keys on a class a gate loads, so declaring one would mean naming a producer that does not exist. Splitting the roster rather than widening meta_relation keeps the two claims apart: a declared relation names who fills it and from what, and a stated one asserts there is no such thing to name.'),
-  ('graphitron_defect_guidance',
-   'How an author fixes or works around one defect, written once as AsciiDoc: one row per defect code whose fragment is written.',
-   'For example MUTATION_UPSERT says the schema is valid, why the upsert is not generated yet, and what to write instead.',
-   'Stated for graphitron_defect_type''s reason, the guidance being as much this generator''s vocabulary as the codes it explains, but written as one AsciiDoc fragment per code under the defects resource directory beside this file rather than as a literal here, since it is paragraphs, lists and cross-references a SQL string would bury. The store writes the fragments when it creates the schema, straight after this file''s own rows, so the rows have this file''s lifetime and the store''s stamp, which hashes the module''s resources, moves with any edit to them. A fragment is required for every UNSUPPORTED code, an author needing to know what to write instead, and optional for a code whose statement already says how to fix it; DefectGuidanceGateTest holds both directions.'),
   ('graphitron_defect_type',
-   'One rule a schema can break, declared once: what to call it, how bad it is, what the verdict rests on, and the sentence that states the rule.',
+   'One rule a schema can break, declared once: what to call it, how bad it is, what the verdict rests on, the sentence that states the rule, and how an author fixes it.',
    'For example CONNECTION_RETURN is an error resting on graphitron''s directive contract, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.',
-   'Declared rather than captured, so no graph partition and no instant: which defects exist is a property of this generator and not of anybody''s schema, which is lint_rule''s reason beside it. Severity, basis and the editor''s code live here because each is a function of the defect and nothing else, so carrying any of them on a finding would repeat one value per row; a routine write''s seat once made exactly that argument about severity, found no relation to put it in, and stated it in prose per value instead, which is the gap this row closes. Basis is the axis that prose was really carrying: what the verdict rests on, and so whether an author edits the schema or works around what graphitron does not do yet; never the generator''s fault, the generator running only on a schema that validates. A code whose basis depends on which row it is is two codes, and splitting it is the same argument as the collapse run the other way, payload sameness merging relations and action difference splitting codes. The statement is the rule in one author-facing sentence, and it plus a finding''s detail is what a consumer composes a message from, which is why no finding stores prose.'),
+   'Declared rather than captured, so no graph partition and no instant: which defects exist is a property of this generator and not of anybody''s schema, which is lint_rule''s reason beside it. Severity, basis and the editor''s code live here because each is a function of the defect and nothing else, so carrying any of them on a finding would repeat one value per row; a routine write''s seat once made exactly that argument about severity, found no relation to put it in, and stated it in prose per value instead, which is the gap this row closes. Basis is the axis that prose was really carrying: what the verdict rests on, and so whether an author edits the schema or works around what graphitron does not do yet; never the generator''s fault, the generator running only on a schema that validates. A code whose basis depends on which row it is is two codes, and splitting it is the same argument as the collapse run the other way, payload sameness merging relations and action difference splitting codes. The statement is the rule in one author-facing sentence, and it plus a finding''s detail is what a consumer composes a message from, which is why no finding stores prose. The guidance is the one column these literals do not supply: it is AsciiDoc written one fragment per code under the defects resource directory, which the store sets on each row as it creates the schema, the text being part of the defect type and kept out of this file only for its length and markup (Alf, 2026-11-19).'),
   ('graphitron_occurrence_source_precedence',
    'One rule that claims where an occurrence''s values come from, declared once: the kind it claims, the stage writing its claims and its place in the order deciding between claims.',
    'For example ownServiceRecord claims a TABLE, written ahead of the depths, and wins over every other rule.',
@@ -30528,7 +30516,7 @@ INSERT INTO graphitron_claim_kind VALUES
 INSERT INTO graphitron_claim_inclusion VALUES
   ('LOOKUP', 'ROUTINE', 'ROUTINE_LOOKUP_DEFERRED');
 
-INSERT INTO graphitron_defect_type VALUES
+INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) VALUES
   ('WRITE_TABLES_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_TABLES_DISAGREE',
    'A @mutation writes one table, and the tables it is read on are not one: the table its return or the fields re-reading the written rows bind, and the one @mutation(table:) names, disagree, so nothing says which table is written.'),
   ('CONDITION_ON_WRITE_RESULT', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_ON_WRITE_RESULT',

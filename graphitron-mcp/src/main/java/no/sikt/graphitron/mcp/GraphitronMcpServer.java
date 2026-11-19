@@ -950,7 +950,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 + "rejections, \"compile\" for graphitron:dev generated-code compile errors. A stored "
                 + "defect also carries its defectCode, a reference link to its entry in the "
                 + "defects reference, and the guidance saying how to fix it or what to write "
-                + "instead, where its entry has one. Reports "
+                + "instead. Reports "
                 + "the snapshot's availability and freshness alongside so you can tell whether the "
                 + "diagnostics are current relative to the schema. Closes the authoring loop: edit, "
                 + "then read your own diagnostics back. When the count runs past a page, start with "

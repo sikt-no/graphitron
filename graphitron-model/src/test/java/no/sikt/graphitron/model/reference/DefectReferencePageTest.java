@@ -25,9 +25,9 @@ class DefectReferencePageTest {
                 assertThat(page).contains("[#" + DefectReferencePage.anchor(entry.code()) + "]\n=== `"
                     + entry.code() + "`");
             }
-            var upsert = entries.stream().filter(e -> e.code().equals("MUTATION_UPSERT")).findFirst().orElseThrow();
-            assertThat(upsert.guidance()).isNotBlank();
-            assertThat(page).contains(upsert.guidance().strip());
+            for (var entry : entries) {
+                assertThat(page).contains(entry.guidance().strip());
+            }
         });
     }
 
@@ -40,14 +40,17 @@ class DefectReferencePageTest {
     }
 
     @Test
-    @DisplayName("the floors refuse an empty set, a blank statement and an orphaned fragment")
+    @DisplayName("the floors refuse an empty set, a blank statement, a missing guidance and an orphaned fragment")
     void floors() {
-        var ok = new Entry("A_CODE", "error", "GRAPHITRON", "GRAPHITRON_A_CODE", "A rule.", null);
+        var ok = new Entry("A_CODE", "error", "GRAPHITRON", "GRAPHITRON_A_CODE", "A rule.", "Do this instead.");
         assertThatThrownBy(() -> DefectReferencePage.render(List.of(), Set.of()))
             .hasMessageContaining("no declared codes");
         assertThatThrownBy(() -> DefectReferencePage.render(
-            List.of(new Entry("B", "error", "GRAPHITRON", null, " ", null)), Set.of()))
+            List.of(new Entry("B", "error", "GRAPHITRON", null, " ", "Fix it.")), Set.of()))
             .hasMessageContaining("blank statement");
+        assertThatThrownBy(() -> DefectReferencePage.render(
+            List.of(new Entry("C", "error", "GRAPHITRON", null, "A rule.", null)), Set.of()))
+            .hasMessageContaining("C has no guidance");
         assertThatThrownBy(() -> DefectReferencePage.render(List.of(ok), Set.of("GONE")))
             .hasMessageContaining("GONE.adoc names a code the store does not declare");
         assertThat(DefectReferencePage.render(List.of(ok), Set.of())).contains("[#a-code]");

@@ -19,7 +19,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_GUIDANCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
@@ -100,10 +100,10 @@ final class DiagnosticsTool {
                     ps.CODE.eq(DIAGNOSTIC.DEFECT_CODE)))
             .convertFrom(rows -> rows.map(r -> r.value1()));
         // A stored defect's guidance, by the code the view carries on its written-entry arm.
-        var dg = GRAPHITRON_DEFECT_GUIDANCE;
-        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives, dg.GUIDANCE)
+        var defectType = GRAPHITRON_DEFECT_TYPE.as("defect_type");
+        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives, defectType.GUIDANCE)
             .from(DIAGNOSTIC)
-            .leftJoin(dg).on(dg.CODE.eq(DIAGNOSTIC.DEFECT_CODE))
+            .leftJoin(defectType).on(defectType.CODE.eq(DIAGNOSTIC.DEFECT_CODE))
             .where(conditions)
             .orderBy(DIAGNOSTIC.SOURCE.asc(),
                 DIAGNOSTIC.FILE.asc().nullsLast(),
@@ -113,7 +113,7 @@ final class DiagnosticsTool {
                 DIAGNOSTIC.MESSAGE.asc())
             .fetch(r -> entry(r.into(DIAGNOSTIC), ordered(Stream.concat(
                 r.get(claimDirectives).stream(), r.get(stepDirectives).stream()).toList()),
-                r.get(dg.GUIDANCE)));
+                r.get(defectType.GUIDANCE)));
 
         var paged = McpWire.page(entries, args, DEFAULT_LIMIT);
         var fields = new LinkedHashMap<String, Object>();
@@ -139,8 +139,8 @@ final class DiagnosticsTool {
      * (the stored file path rendered as a URI through the file dimension's own spelling, plus its
      * 1-based position mapped to the 0-based wire shape every goto-definition consumer reads) only
      * when the row has one. A stored defect adds its {@code defectCode}, the {@code reference} link to
-     * its entry on the defects reference page, and the {@code guidance} that entry carries, where one
-     * is written: the one text the page, the editor and this tool serve.
+     * its entry on the defects reference page, and the {@code guidance} its defect type carries: the
+     * one text the page, the editor and this tool serve.
      *
      * <p>The kind is transformed rather than parsed into an enum first. Parsing added validation the
      * store performs at write time, the {@code rejection_validation_error.kind} column carrying a

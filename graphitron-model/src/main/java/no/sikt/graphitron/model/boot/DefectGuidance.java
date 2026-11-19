@@ -22,8 +22,10 @@ import java.util.stream.Stream;
 
 /**
  * The fix guidance for the store's defect codes: one hand-written AsciiDoc fragment per code,
- * under {@value #DIRECTORY} on this module's classpath, which the store writes into
- * {@code graphitron_defect_guidance} when it creates its schema.
+ * under {@value #DIRECTORY} on this module's classpath, which the store sets as
+ * {@code graphitron_defect_type.guidance} when it creates its schema. The guidance is part of the
+ * defect type; it is written here rather than in the DDL only because a SQL literal would bury its
+ * paragraphs and markup, and every declared code has one.
  *
  * <p>A fragment is named after its code, {@code MUTATION_UPSERT.adoc}. A file whose name starts
  * with an underscore is shared prose, never a fragment of its own: a fragment includes it with a
@@ -102,11 +104,11 @@ public final class DefectGuidance {
     }
 
     /**
-     * Writes a row for every declared code that has a fragment. Run once, as the schema is created,
-     * after the DDL's own rows: the codes it reads are those rows.
+     * Sets every declared code's guidance from its fragment, then makes the column NOT NULL. Run
+     * once, as the schema is created, after the DDL's own rows: the codes it reads are those rows.
      *
-     * @throws IllegalStateException where an {@code UNSUPPORTED} code has no fragment: a deferral
-     *         owes the author what to write instead, so no store is created without it
+     * @throws IllegalStateException where a declared code has no fragment: the guidance is part of
+     *         the defect type, so no store is created without it
      */
     static void write(Connection connection) throws SQLException {
         var codes = new ArrayList<String>();
@@ -117,32 +119,28 @@ public final class DefectGuidance {
                 codes.add(rows.getString(1));
             }
         }
-        try (PreparedStatement insert = connection.prepareStatement(
-                "INSERT INTO graphitron_defect_guidance (code, guidance) VALUES (?, ?)")) {
+        var missing = new ArrayList<String>();
+        try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE graphitron_defect_type SET guidance = ? WHERE code = ?")) {
             for (String code : codes) {
                 var guidance = fragment(code);
-                if (guidance.isPresent()) {
-                    insert.setString(1, code);
-                    insert.setString(2, guidance.get());
-                    insert.addBatch();
+                if (guidance.isEmpty()) {
+                    missing.add(code);
+                    continue;
                 }
+                update.setString(1, guidance.get());
+                update.setString(2, code);
+                update.addBatch();
             }
-            insert.executeBatch();
-        }
-        var missing = new ArrayList<String>();
-        try (PreparedStatement select = connection.prepareStatement(
-                "SELECT t.code FROM graphitron_defect_type t"
-                    + " LEFT JOIN graphitron_defect_guidance g ON g.code = t.code"
-                    + " WHERE t.basis = 'UNSUPPORTED' AND g.code IS NULL ORDER BY t.code");
-             ResultSet rows = select.executeQuery()) {
-            while (rows.next()) {
-                missing.add(rows.getString(1));
-            }
+            update.executeBatch();
         }
         if (!missing.isEmpty()) {
-            throw new IllegalStateException("UNSUPPORTED defect codes with no guidance fragment under "
-                + DIRECTORY + ": " + String.join(", ", missing) + "; write <CODE>.adoc saying what is"
-                + " valid, why it is not generated yet and what to write instead");
+            throw new IllegalStateException("defect codes with no guidance fragment under " + DIRECTORY
+                + ": " + String.join(", ", missing) + "; write <CODE>.adoc saying what reaches the"
+                + " defect, why the rule holds and what to write instead");
+        }
+        try (var statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE graphitron_defect_type ALTER COLUMN guidance SET NOT NULL");
         }
     }
 

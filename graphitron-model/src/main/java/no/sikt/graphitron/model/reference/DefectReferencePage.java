@@ -14,21 +14,19 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_GUIDANCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 
 /**
  * Renders the defects reference page of the user manual from a booted store: one anchored entry
  * per code {@code graphitron_defect_type} declares, carrying its statement, severity, basis and
- * editor code, and the fix guidance {@code graphitron_defect_guidance} holds for it. Generated at
+ * editor code and fix guidance. Generated at
  * the docs build and never committed, so the store stays the only source and the page cannot
  * drift from it.
  *
  * <p>Generated-not-committed has no diff to show drift, so the floors here fail the build
  * instead of rendering a plausible page: no declared codes, a blank statement, a statement that
- * cannot be held inert, and a guidance fragment naming a code the store does not declare. An
- * {@code UNSUPPORTED} code with no guidance never reaches here: the store refuses to create
- * itself without it. A link into the page naming a code no longer declared
+ * cannot be held inert, and a guidance fragment naming a code the store does not declare. A code
+ * with no guidance never reaches here: the store refuses to create itself without it. A link into the page naming a code no longer declared
  * is the docs build's own link check, which runs over the rendered page.
  *
  * <p>An entry's anchor is its code in lower kebab case, {@code MUTATION_UPSERT} at
@@ -44,7 +42,7 @@ public final class DefectReferencePage {
 
     private DefectReferencePage() {}
 
-    /** One declared code as the page renders it; {@code guidance} is null where none is written. */
+    /** One declared code as the page renders it. */
     public record Entry(String code, String severity, String basis, String lspCode, String statement,
                         String guidance) {}
 
@@ -67,10 +65,8 @@ public final class DefectReferencePage {
     /** Every declared code with its guidance, by code. */
     public static List<Entry> read(DSLContext dsl) {
         var t = GRAPHITRON_DEFECT_TYPE;
-        var g = GRAPHITRON_DEFECT_GUIDANCE;
-        return dsl.select(t.CODE, t.SEVERITY, t.BASIS, t.LSP_CODE, t.STATEMENT, g.GUIDANCE)
+        return dsl.select(t.CODE, t.SEVERITY, t.BASIS, t.LSP_CODE, t.STATEMENT, t.GUIDANCE)
             .from(t)
-            .leftJoin(g).on(g.CODE.eq(t.CODE))
             .orderBy(t.CODE)
             .fetch(r -> new Entry(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6()));
     }
@@ -106,6 +102,9 @@ public final class DefectReferencePage {
             } else if (entry.statement().contains("+") || entry.statement().contains("\n")) {
                 faults.add(entry.code() + "'s statement holds a '+' or a line break, which the page"
                     + " cannot hold inert");
+            }
+            if (entry.guidance() == null || entry.guidance().isBlank()) {
+                faults.add(entry.code() + " has no guidance");
             }
             if (!BASIS_ORDER.contains(entry.basis())) {
                 faults.add(entry.code() + " has a basis the page has no section for: " + entry.basis());
@@ -151,9 +150,7 @@ public final class DefectReferencePage {
         if (entry.lspCode() != null) {
             page.append("Editor code:: `").append(entry.lspCode()).append("`\n");
         }
-        if (entry.guidance() != null) {
-            page.append("\n").append(entry.guidance().strip()).append("\n");
-        }
+        page.append("\n").append(entry.guidance().strip()).append("\n");
     }
 
     /** The anchor of a basis's section; {@code #deferrals} is the one other pages link to. */
@@ -207,7 +204,7 @@ public final class DefectReferencePage {
         * *Basis* says what the verdict rests on, and so what you do about it: change the schema \
         for `SPECIFICATION` and `GRAPHITRON`, or work around graphitron for `UNSUPPORTED`.
         * *Editor code* is the code the editor shows beside the message and filters by.
-        * What follows, where an entry has it, is the fix guidance: what reaches the defect, and what \
+        * What follows is the fix guidance: what reaches the defect, and what \
         to write instead.
 
         A deferral, a defect whose basis is `UNSUPPORTED`, is a schema graphitron recognises and does \
