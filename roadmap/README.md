@@ -48,9 +48,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-11-16 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-19 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-14 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
+| `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Review | 2026-11-19 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -627,7 +627,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1192` [**A fan-out worker releases its connection lease when it finishes**](fan-out-worker-releases-its-lease.md) — Backlog, architecture, blocked by [signed-reference-entities-across-subgraphs](signed-reference-entities-across-subgraphs.md)
 - `R1201` [**@outbox events are types in the sending schema, built from the mutation input and result**](outbox-events-are-schema-types.md) — Backlog, feature, blocked by [transactional-outbox-directive](transactional-outbox-directive.md)
-- `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — In Progress, feature
+- `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — In Review, feature
 - `R1181` [**A connection ordered on a date or timestamp column holding infinity cannot page past it**](infinity-in-a-date-or-timestamp-order-column.md) — Backlog, bug
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R1108` [**The user manual documents the owned-connection engine as the primary path**](manual-catches-up-with-owned-connection-engine.md) — Backlog, docs

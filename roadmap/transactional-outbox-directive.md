@@ -1,13 +1,13 @@
 ---
 id: R1113
 title: "@outbox: emit a transactional outbox message in the mutation field transaction"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: runtime-connection
 depends-on: []
 created: 2026-10-27
-last-updated: 2026-11-16
+last-updated: 2026-11-19
 ---
 
 # @outbox: emit a transactional outbox message in the mutation field transaction
@@ -406,7 +406,7 @@ Where the tests differ from the test list above, for the reviewer to judge:
 
 * *Registration sites.* The failure registration is emitted at three fetcher builders (`buildDmlFetcher`, `buildSingleRecordTwoStepFetcher`, `buildBulkRecordTwoStepFetcher`); only the `buildDmlFetcher` `INSERT` path and the service path have an `on: ERROR` fixture. Nothing pins that the registration comes before the acquisition beyond the mount-failure test implying it.
 * *Oracle classification.* ORA-00028 and ORA-02392 to 02399 have no positive case: the classifier matches the dialect by family name, since the open-source jOOQ edition has no Oracle constant to pass, so the test can pin only that Oracle's codes are ignored on PostgreSQL.
-* *Tenant timeout.* Covered at the unit tier on fake JDBC (abort at settle, fresh connection, write), not on PostgreSQL: the multi-tenant fixture has no `on: ERROR` field, so neither the film row nor the session members are asserted there. The pool-exhausted bound is tested with a server-ended session rather than a timed-out tenant, and no test times a following field.
+* *Tenant timeout.* Covered at the unit tier on fake JDBC (abort at settle, fresh connection, write), not on PostgreSQL: the multi-tenant fixture has no `on: ERROR` field, so neither the film row nor the session members are asserted there; R1193 is filed for it. The pool-exhausted bound is tested with a server-ended session rather than a timed-out tenant, and no test times a following field.
 * *Server-side `transaction_timeout`.* Pinned (pgjdbc raises `25P04`, classified as ending the session over the transaction) but not driven end to end.
 * *Smaller differences.* The `ERROR` emit that cannot be written is refused by a trigger rather than a check constraint; the type choice is checked through GraphQL for two `@error` members and at the unit tier for the third; under `ROLLBACK_ONLY` the row being written is inferred from a log line before it is shown gone; a failed session mount surfaces as a rejected request, as decision 13 and the reference say.
 
