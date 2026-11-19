@@ -58,6 +58,15 @@ public final class FilmCarrierService {
         return filmsByIds(ids == null ? null : List.copyOf(ids), dsl);
     }
 
+    /**
+     * The films with the given IDs, in input order, as an {@code Iterable} that is no collection, so
+     * whoever reads them can only iterate.
+     */
+    public static Iterable<FilmRecord> filmsByIdsAsIterable(List<Integer> ids, DSLContext dsl) {
+        List<FilmRecord> films = filmsByIds(ids, dsl);
+        return films::iterator;
+    }
+
     /** The films rated any of {@code ratings}, by the rating's name; a collection, for the same reason. */
     public static List<FilmRecord> filmsByRatingNames(Collection<String> ratings, DSLContext dsl) {
         if (ratings == null || ratings.isEmpty()) return List.of();

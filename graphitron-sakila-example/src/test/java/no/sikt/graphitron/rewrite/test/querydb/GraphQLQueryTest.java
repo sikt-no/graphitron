@@ -8401,6 +8401,16 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsByIdsAsIterable_anIterableThatIsNoCollectionIsLiftedInItsOrder() {
+        // The service hands back an Iterable that is no collection; the body copies it into a list
+        // once and lifts the films onto their rows in the order it iterates them.
+        Map<String, Object> data = execute("{ filmsByIdsAsIterable(ids: [2, 1]) { title } }");
+        assertThat((List<Map<String, Object>>) data.get("filmsByIdsAsIterable"))
+            .extracting(f -> f.get("title"))
+            .containsExactly("ACE GOLDFINGER", "ACADEMY DINOSAUR");
+    }
+
+    @Test
     void copiesAtStores_handsEachFilmTheSecondKeyColumnOfEachCompositeId() {
         // argMapping "storeIds: units.store_id": store_id is the second of InventoryUnit's
         // (inventory_id, store_id) key, so each id hands the child service the store it names. The
@@ -10361,6 +10371,18 @@ class GraphQLQueryTest {
             mutation { serviceDeleteFilmsByIds(ids: [9002, 9001]) { filmIds } }
             """);
         assertThat(data).extractingByKey("serviceDeleteFilmsByIds", as(MAP))
+            .extractingByKey("filmIds", as(LIST)).containsExactly(
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9002),
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmsByIdsAsSet_aSetIsReadAsTheProducerHandedIt() {
+        Map<String, Object> data = execute("""
+            mutation { serviceDeleteFilmsByIdsAsSet(ids: [9002, 9001]) { filmIds } }
+            """);
+        assertThat(data).extractingByKey("serviceDeleteFilmsByIdsAsSet", as(MAP))
             .extractingByKey("filmIds", as(LIST)).containsExactly(
                 no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9002),
                 no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));

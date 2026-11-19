@@ -81,6 +81,14 @@ public final class FilmCarrierWithErrorsService {
     }
 
     /**
+     * {@link #deleteFilmsByIds} handing back a {@link java.util.Set}, insertion-ordered, rather than a
+     * list: a service may hand back any iterable (Alf, 2026-11-18), and the id carrier reads it as one.
+     */
+    public static java.util.Set<FilmRecord> deleteFilmsByIdsAsSet(java.util.List<Integer> ids, DSLContext dsl) {
+        return new java.util.LinkedHashSet<>(deleteFilmsByIds(ids, dsl));
+    }
+
+    /**
      * The {@code @splitQuery}-list carrier arm (the opptak {@code leggTilTagger -> { saker: [Sak!]
      * @splitQuery, errors }} shape): returns the films with the given ids in input order, or
      * throws the mapped "missing film" {@code @error} when any id is unknown (exercises the

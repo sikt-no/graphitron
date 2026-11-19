@@ -12279,6 +12279,7 @@ INSERT INTO code_delivery_container VALUES
   ('java.util.List', '0', TRUE),
   ('java.util.Set', '0', TRUE),
   ('java.util.Collection', '0', TRUE),
+  ('java.lang.Iterable', '0', TRUE),
   ('java.util.Optional', '0', FALSE),
   ('java.util.concurrent.CompletableFuture', '0', FALSE),
   ('org.jooq.Result', '0', TRUE),
@@ -22706,7 +22707,7 @@ CREATE TABLE graphitron_occurrence_producer_empty (
 COMMENT ON TABLE graphitron_occurrence_producer_empty IS 'The empty answer a service producer has for a call given nothing: one row per service occurrence whose result is a collection the generated code can build empty. For example Mutation.rateFilms, returning [Film!]! over film, answers an empty list, and a service returning a single Film has no row.';
 COMMENT ON COLUMN graphitron_occurrence_producer_empty.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_producer_empty.coordinate IS 'the service producer''s occurrence; with the graph, the grain';
-COMMENT ON COLUMN graphitron_occurrence_producer_empty.empty IS 'the collection it answers empty: LIST, a list of table-bound records or a method returning a List or Collection; SET, a method returning a Set; RESULT, a method returning a jOOQ Result, built empty over the record''s table';
+COMMENT ON COLUMN graphitron_occurrence_producer_empty.empty IS 'the collection it answers empty: LIST, a list of table-bound records or a method returning a List, a Collection or an Iterable; SET, a method returning a Set; RESULT, a method returning a jOOQ Result, built empty over the record''s table';
 COMMENT ON COLUMN graphitron_occurrence_producer_empty.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
 
 CREATE VIEW graphitron_occurrence_producer_empty_rule (graph_name, coordinate, empty) AS
@@ -22730,7 +22731,8 @@ SELECT r.graph_name, r.coordinate,
     ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
    AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
  WHERE r.table_name IS NULL
-   AND m.result_erased_class IN ('java.util.List', 'java.util.Collection', 'java.util.Set', 'org.jooq.Result');
+   AND m.result_erased_class IN ('java.util.List', 'java.util.Collection', 'java.lang.Iterable', 'java.util.Set',
+                                 'org.jooq.Result');
 COMMENT ON VIEW graphitron_occurrence_producer_empty_rule IS 'One row the empty answer rule computes, in the shape graphitron_occurrence_producer_empty stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_empty, which is the name every reader spells.';
 
 -- The connection each producer of a graph whose ConnectionKey has a part runs on, a tenant column or an

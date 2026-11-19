@@ -42,7 +42,10 @@ import java.util.Optional;
  * <p>Where the call hands back records of the table its target binds, the body lifts them: the
  * records go to the producer's lift, {@link LiftEmitter#lift}, which reads the target's rows for
  * them, and the body answers those rows. Under an object every parent's records are gathered in the
- * batch's order first, so one statement lifts the whole batch.
+ * batch's order first, so one statement lifts the whole batch. Records handed back in an
+ * {@code Iterable} that is no list, a set or a plain iterable, are copied into a list once before
+ * the lift, which reads them by position; a value the call hands back unlifted reaches graphql-java
+ * as it is, which reads any {@code Iterable} for a list field.
  */
 public final class CallEmitter {
 
@@ -55,6 +58,7 @@ public final class CallEmitter {
     private static final ClassName COLLECTION = ClassName.get("java.util", "Collection");
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
     private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName STREAM_SUPPORT = ClassName.get("java.util.stream", "StreamSupport");
 
     /**
      * The batch's keys as the frame hands them over: the record type of the parent's key, and the
@@ -186,8 +190,9 @@ public final class CallEmitter {
                 method.returns(ParameterizedTypeName.get(outcome, lifted(lift.get())))
                     .addStatement("$T answered = $L", answer, invocation);
                 if (lift.get().list()) {
-                    method.addStatement("return new $T.Success<>($T.$L(env, dsl, answered).stream().filter($T::nonNull).toList())",
-                        outcome, lift.get().host(), lift.get().method(), ClassName.get("java.util", "Objects"));
+                    method.addStatement("return new $T.Success<>($T.$L(env, dsl, $L).stream().filter($T::nonNull).toList())",
+                        outcome, lift.get().host(), lift.get().method(), asList(answer, CodeBlock.of("answered")),
+                        ClassName.get("java.util", "Objects"));
                 } else {
                     method.addStatement("return new $T.Success<>($T.$L(env, dsl, answered))", outcome,
                         lift.get().host(), lift.get().method());
@@ -205,8 +210,9 @@ public final class CallEmitter {
             if (lift.get().list()) {
                 // A record the call handed back as null, or whose row is gone, leaves the list, as
                 // the classified emitters leave it.
-                method.addStatement("return $T.$L(env, dsl, answered).stream().filter($T::nonNull).toList()",
-                    lift.get().host(), lift.get().method(), ClassName.get("java.util", "Objects"));
+                method.addStatement("return $T.$L(env, dsl, $L).stream().filter($T::nonNull).toList()",
+                    lift.get().host(), lift.get().method(), asList(answer, CodeBlock.of("answered")),
+                    ClassName.get("java.util", "Objects"));
             } else {
                 method.addStatement("return $T.$L(env, dsl, answered)", lift.get().host(), lift.get().method());
             }
@@ -228,8 +234,12 @@ public final class CallEmitter {
         var recordList = ParameterizedTypeName.get(LIST, RECORD);
         var arrayList = ClassName.get("java.util", "ArrayList");
         method.addStatement("$T answered = $L", answer, invocation);
-        if (polymorphic.list()) {
+        if (polymorphic.list() && isCollection(answer)) {
             method.addStatement("$T records = answered == null ? $T.of() : new $T<>(answered)", recordList, LIST, arrayList);
+        } else if (polymorphic.list()) {
+            // An Iterable that is no collection is copied element by element, in its order.
+            method.addStatement("$T records = new $T<>()", recordList, arrayList)
+                .addStatement("if (answered != null) answered.forEach(records::add)");
         } else {
             method.addStatement("$T records = answered == null ? $T.of() : $T.of(answered)", recordList, LIST, LIST);
         }
@@ -273,6 +283,33 @@ public final class CallEmitter {
     /** What a lift answers for one record, or for one list of them: a row, or a list of rows. */
     private static TypeName lifted(Lift lift) {
         return lift.list() ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+    }
+
+    /** Whether {@code type} is a list already, a jOOQ {@code Result} being one. */
+    private static boolean isList(TypeName type) {
+        return type instanceof ParameterizedTypeName p && (LIST.equals(p.rawType()) || RESULT.equals(p.rawType()));
+    }
+
+    /** Whether {@code type} is a collection, which a list is copied from directly. */
+    private static boolean isCollection(TypeName type) {
+        return isList(type) || type instanceof ParameterizedTypeName p
+            && (SET.equals(p.rawType()) || COLLECTION.equals(p.rawType()));
+    }
+
+    /** The list type {@code type}'s elements are copied into, or {@code type} itself where it is a list. */
+    private static TypeName asList(TypeName type) {
+        return isList(type) ? type
+            : ParameterizedTypeName.get(LIST, ((ParameterizedTypeName) type).typeArguments().getFirst());
+    }
+
+    /**
+     * {@code value}, of the many-delivering {@code type}, as the list a lift reads by position: itself
+     * where it is a list, else its elements copied once in its order. A null stays null.
+     */
+    private static CodeBlock asList(TypeName type, CodeBlock value) {
+        return isList(type) ? value
+            : CodeBlock.of("$L == null ? null : $T.stream($L.spliterator(), false).toList()", value,
+                STREAM_SUPPORT, value);
     }
 
     /** The class a static method is called on, or the object an instance method runs on, made here. */
@@ -329,15 +366,20 @@ public final class CallEmitter {
         void liftBack(MethodSpec.Builder method, FrameKey frame, TypeName answer, CodeBlock invocation, Lift lift) {
             var row = lifted(lift);
             var out = ParameterizedTypeName.get(MAP, frame.keyType(), row);
+            TypeName held = lift.list() ? asList(value) : value;
             method.returns(out)
                 .addStatement("$T answered = $L", answer, invocation)
-                .addStatement("$T inOrder = new $T<>(ordered.size())", ParameterizedTypeName.get(LIST, value),
+                .addStatement("$T inOrder = new $T<>(ordered.size())", ParameterizedTypeName.get(LIST, held),
                     ClassName.get("java.util", "ArrayList"))
                 .beginControlFlow("for (int i = 0; i < ordered.size(); i++)");
-            if (byKey) {
-                method.addStatement("inOrder.add(answered == null ? null : answered.get(converted.get(i)))");
+            var each = byKey
+                ? CodeBlock.of("answered == null ? null : answered.get(converted.get(i))")
+                : CodeBlock.of("answered == null || i >= answered.size() ? null : answered.get(i)");
+            if (held.equals(value)) {
+                method.addStatement("inOrder.add($L)", each);
             } else {
-                method.addStatement("inOrder.add(answered == null || i >= answered.size() ? null : answered.get(i))");
+                method.addStatement("$T each = $L", value, each)
+                    .addStatement("inOrder.add($L)", asList(value, CodeBlock.of("each")));
             }
             method.endControlFlow()
                 .addStatement("$T rows = $T.$L(env, dsl, inOrder)", ParameterizedTypeName.get(LIST, row), lift.host(),
@@ -352,9 +394,8 @@ public final class CallEmitter {
 
     /**
      * The batch for a method taking {@code source} and answering {@code answer}, or why there is none: its
-     * keys in any container the store's {@code code_delivery_container} delivers many through, a jOOQ
-     * {@code Result} of the parent's table records among them, and its answer a Map by key or a List,
-     * a jOOQ {@code Result} included, in the keys' order.
+     * keys in a Set, a List or a Collection, or a jOOQ {@code Result} of the parent's table records,
+     * and its answer a Map by key or a List, a jOOQ {@code Result} included, in the keys' order.
      */
     private static Object batch(FrameKey frame, TypeName source, TypeName answer, String coordinate) {
         if (!(source instanceof ParameterizedTypeName taken)

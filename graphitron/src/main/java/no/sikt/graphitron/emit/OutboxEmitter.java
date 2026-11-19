@@ -126,18 +126,18 @@ public final class OutboxEmitter {
             .addModifiers(Modifier.STATIC)
             .returns(ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class)))
             .addParameter(Object.class, "value")
-            .addJavadoc("A Java value, as an argument map or list carries it, as a JSON-valued field: a map\n"
-                + "an object of its entries, a collection an array of its elements, an enum its name,\n"
-                + "and a scalar itself.\n")
+            .addJavadoc("A Java value, as an argument map or list or a service's answer carries it, as a\n"
+                + "JSON-valued field: a map an object of its entries, any other iterable an array of its\n"
+                + "elements, an enum its name, and a scalar itself.\n")
             .beginControlFlow("if (value instanceof $T<?, ?> map)", MAP)
             .addStatement("$T<$T<?>> entries = new $T<>()", LIST, JSON_ENTRY, ARRAY_LIST)
             .addStatement("map.forEach((k, v) -> entries.add($T.key($T.valueOf(k)).value($L(v))))",
                 DSL, String.class, JSON_VALUE_HELPER)
             .addStatement("return $T.jsonbObject(entries)", DSL)
             .endControlFlow()
-            .beginControlFlow("if (value instanceof $T<?> collection)", java.util.Collection.class)
+            .beginControlFlow("if (value instanceof $T<?> iterable)", Iterable.class)
             .addStatement("$T<$T<?>> items = new $T<>()", LIST, FIELD, ARRAY_LIST)
-            .addStatement("collection.forEach(v -> items.add($L(v)))", JSON_VALUE_HELPER)
+            .addStatement("iterable.forEach(v -> items.add($L(v)))", JSON_VALUE_HELPER)
             .addStatement("return $T.jsonbArray(items)", DSL)
             .endControlFlow()
             .beginControlFlow("if (value instanceof $T<?> e)", Enum.class)

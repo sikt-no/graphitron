@@ -269,6 +269,11 @@ type Query {
         className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
         method: "filmsByIdSet"
     })
+    # The films as a plain Iterable, no collection: copied into a list once and lifted onto their rows.
+    filmsByIdsAsIterable(ids: [Int!]!): [Film!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+        method: "filmsByIdsAsIterable"
+    })
     filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
         method: "filmsByIds"
@@ -6152,6 +6157,12 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
             method: "deleteFilmsByIds"
+        })
+    # The list arm handed back as a Set: the id carrier reads any iterable.
+    serviceDeleteFilmsByIdsAsSet(ids: [Int!]!): FilmIdsCarrierPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "deleteFilmsByIdsAsSet"
         })
 
     # The non-null list siblings of the three carriers above: the error arm (id 999) and a producer

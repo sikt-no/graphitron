@@ -770,13 +770,14 @@ public final class FetcherEmitter {
         if (many) {
             var javaUtilList = ClassName.get("java.util", "List");
             var stringClass = ClassName.get("java.lang", "String");
-            var listOfRecord = ParameterizedTypeName.get(javaUtilList, recordType);
+            // Read as any iterable: a service may hand back a list, a set or any iterable of records.
+            var iterableOfRecord = ParameterizedTypeName.get(ClassName.get("java.lang", "Iterable"), recordType);
             var listOfString = ParameterizedTypeName.get(javaUtilList, stringClass);
             var arrayListOfString = ParameterizedTypeName.get(
                 ClassName.get("java.util", "ArrayList"), stringClass);
-            emitRecordSourceLocal(body, listOfRecord, outcomeWrapped, outputPackage, carrier.qualifiedName(), answer);
+            emitRecordSourceLocal(body, iterableOfRecord, outcomeWrapped, outputPackage, carrier.qualifiedName(), answer);
             emitDirectNullSourceGuard(body, outcomeWrapped);
-            body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
+            body.add("    $T ids = new $T();\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", recordType);
             body.add("        if (row == null) continue;\n");
             body.add("        ids.add($T.$L(", encoder.encoderClass(), encoder.methodName());
