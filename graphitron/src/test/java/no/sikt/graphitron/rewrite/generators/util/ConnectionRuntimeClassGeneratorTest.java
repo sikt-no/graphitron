@@ -1,5 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterSpec;
@@ -17,6 +21,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import javax.lang.model.element.Modifier;
 import javax.sql.DataSource;
@@ -289,12 +294,26 @@ class ConnectionRuntimeClassGeneratorTest {
         events.clear();
         rollbackThrows = new java.sql.SQLException("This connection has been closed.", "08003");
         valid = false;
-
-        release(pinned);
+        var warnings = new ListAppender<ILoggingEvent>();
+        warnings.start();
+        var logger = (Logger) LoggerFactory.getLogger(SCHEMA_PACKAGE + ".PinnedConnection");
+        logger.addAppender(warnings);
+        try {
+            release(pinned);
+        } finally {
+            logger.detachAppender(warnings);
+        }
 
         assertThat(events)
             .as("asked whether the connection is still valid, then evicted; no unmount, no reset, never returned")
             .containsExactly("isValid", "abort");
+        assertThat(warnings.list)
+            .as("the failed rollback is logged as a warning, with the failure it was")
+            .anySatisfy(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getThrowableProxy()).isNotNull();
+                assertThat(event.getThrowableProxy().getMessage()).isEqualTo(rollbackThrows.getMessage());
+            });
     }
 
     @Test

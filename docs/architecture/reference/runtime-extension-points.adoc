@@ -85,7 +85,11 @@ aborted through JDBC before its release runs. The generated
 `ConnectionSources.mounting(pool, mount, unmount)` is the ready-made source: it
 takes a connection from the pool the key names, mounts identity on it, and at
 release unmounts, resets (on PostgreSQL) and returns it, evicting it when any of
-that fails.
+that fails. A failed unmount or reset fails the operation, since the identity on
+the connection cannot be proven cleared. A failed rollback before the unmount on a
+connection the driver no longer reports valid does not: the server has ended the
+session, and the identity and transaction with it, so the connection is evicted,
+the failure logged as a warning, and the response the operation computed stands.
 
 === Session identity through `<sessionState>`
 
