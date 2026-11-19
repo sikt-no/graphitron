@@ -46,8 +46,11 @@
 -- no.sikt.graphitron.model.StageOrderGateTest parses each rule to hold it.
 --
 -- The planner needs statistics to use the keys and indexes these tables declare, and H2 gathers
--- none on its own here, the store opening with ANALYZE_AUTO=0. The capture pass states them, once
--- before the derivation gatherer's stages and once after them. On a store none of whose stage
+-- none on its own here, the store opening with ANALYZE_AUTO=0. A created store analyses the rows it
+-- seeded, and the capture pass analyses the tables it changed, once before the derivation
+-- gatherer's stages and once after them, each table on its own: analysing the whole store would
+-- re-read every graph's rows, and would reset the declared selectivity below on every table still
+-- empty. On a store none of whose stage
 -- tables holds a row, the statistics taken before would describe every one of them as empty, so
 -- the stages commit and analyse each step before the next plans; DerivationStratum's own javadoc
 -- carries why that is safe exactly there and nowhere else.

@@ -284,6 +284,7 @@ public final class GraphitronModelStore implements AutoCloseable {
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
+        analyzeSeeded(connection);
         return new GraphitronModelStore(connection, null, true, url, Reaped.none());
     }
 
@@ -384,6 +385,7 @@ public final class GraphitronModelStore implements AutoCloseable {
             }
             create(connection);
             stamp(connection);
+            analyzeSeeded(connection);
             markUsed(directory);
             return new GraphitronModelStore(connection, directory, false, url, reaped);
         } catch (StoreUnavailableException e) {
@@ -857,6 +859,37 @@ public final class GraphitronModelStore implements AutoCloseable {
             .map(table -> "ALTER TABLE \"" + table + "\" ALTER COLUMN \"" + GraphPartition.COLUMN
                 + "\" SELECTIVITY " + GraphPartition.DECLARED_SELECTIVITY)
             .toList();
+    }
+
+    /**
+     * States statistics for the rows a created store holds, the {@code meta_} rows the DDL seeds and
+     * the stamp, one {@code ANALYZE TABLE} per base table holding any. A capture analyses only the
+     * tables it changes, so a table only creation writes would otherwise never be analysed; an empty
+     * table is left alone, since analysing it would replace the partition column's declared
+     * selectivity with H2's default.
+     */
+    private static void analyzeSeeded(Connection connection) {
+        try (Statement statement = connection.createStatement()) {
+            for (String sql : seededStatistics(connection)) {
+                statement.execute(sql);
+            }
+        } catch (SQLException e) {
+            closeQuietly(connection);
+            throw new IllegalStateException("could not analyse the created store: " + e.getMessage(), e);
+        }
+    }
+
+    private static java.util.List<String> seededStatistics(Connection connection) throws SQLException {
+        var analyze = new java.util.ArrayList<String>();
+        try (Statement statement = connection.createStatement();
+             var tables = statement.executeQuery("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
+                 + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_TYPE = 'BASE TABLE'"
+                 + " AND ROW_COUNT_ESTIMATE > 0 ORDER BY TABLE_NAME")) {
+            while (tables.next()) {
+                analyze.add("ANALYZE TABLE \"" + tables.getString(1) + "\"");
+            }
+        }
+        return analyze;
     }
 
     /**

@@ -64,9 +64,10 @@ class ThreadConfinedStoreTest {
 
     /**
      * The other half of a booted state, and the half no row count can see: a body that analyses
-     * leaves selectivities behind on the tables the clear truncates and on the populated
-     * {@code meta_} tables it does not, and on an empty graph-keyed table the analysis also drops
-     * the partition declaration. The next body has to see none of that. Compared with a created
+     * leaves selectivities behind on the tables the clear truncates, and on an empty graph-keyed
+     * table the analysis also drops the partition declaration. The populated {@code meta_} tables the
+     * clear keeps were analysed when the store was created, so an analysis of their unchanged rows
+     * leaves them as a created store carries them. The next body has to see none of that. Compared with a created
      * store's snapshot rather than with the two values spelled out, because "what a created store
      * carries" is the claim, and the drift is asserted first so the comparison is never vacuous.
      */
@@ -82,10 +83,10 @@ class ThreadConfinedStoreTest {
             dsl.execute("ANALYZE");
             assertThat(drift(selectivities(dsl), created).keySet())
                 .as("columns the analysis moved off a created store's values: on a table the clear"
-                    + " truncates, on a meta_ table it keeps, and a partition column")
+                    + " truncates, and a partition column")
                 .anyMatch(column -> column.startsWith("STORE_GRAPH."))
-                .anyMatch(column -> column.startsWith("META_"))
-                .anyMatch(column -> column.endsWith("." + GraphPartition.COLUMN));
+                .anyMatch(column -> column.endsWith("." + GraphPartition.COLUMN))
+                .noneMatch(column -> column.startsWith("META_"));
         });
         withSeededStore(dsl -> {
             Map<String, Integer> borrowed = selectivities(dsl);

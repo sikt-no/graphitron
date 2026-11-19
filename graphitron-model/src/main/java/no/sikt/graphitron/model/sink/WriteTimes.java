@@ -70,6 +70,9 @@ public final class WriteTimes implements ExecuteListener {
     private final transient Map<Key, Total> totals = new LinkedHashMap<>();
     private final transient Map<Key, Total> reads = new LinkedHashMap<>();
     private final transient Map<StageKey, Total> stageTotals = new LinkedHashMap<>();
+
+    /** The tables a statement changed a row of since the capture last analysed them. */
+    private final transient java.util.Set<String> changed = new java.util.LinkedHashSet<>();
     private String graph;
     private LocalDateTime capturedAt;
     private String gatherer = Progress.CAPTURE;
@@ -136,6 +139,7 @@ public final class WriteTimes implements ExecuteListener {
         totals.clear();
         reads.clear();
         stageTotals.clear();
+        changed.clear();
         graph = graphName;
         capturedAt = startedAt;
         gatherer = Progress.CAPTURE;
@@ -163,6 +167,24 @@ public final class WriteTimes implements ExecuteListener {
 
     private synchronized void stage(String name) {
         stage = name;
+    }
+
+    /**
+     * The tables a statement of the running capture changed a row of since the last call, which
+     * empties the set: what the capture's next {@code ANALYZE} has to restate, every other table's
+     * statistics describing rows it did not touch. Empty where {@code dsl}'s store was built without
+     * the listener, which cannot say what changed.
+     */
+    public static java.util.Optional<java.util.Set<String>> takeChanged(DSLContext dsl) {
+        var times = of(dsl);
+        if (times == null) {
+            return java.util.Optional.empty();
+        }
+        synchronized (times) {
+            var tables = java.util.Set.copyOf(times.changed);
+            times.changed.clear();
+            return java.util.Optional.of(tables);
+        }
     }
 
     /** The capture finished: its totals are written under the instant it began. */
@@ -279,6 +301,9 @@ public final class WriteTimes implements ExecuteListener {
             total.rows += rows;
             total.nanos += nanos;
             total.prepareNanos += prepareNanos;
+            if (writes && rows > 0) {
+                changed.add(relation);
+            }
             if (writes && stage != null) {
                 var staged = stageTotals.computeIfAbsent(new StageKey(gatherer, relation, stage),
                     k -> new Total());

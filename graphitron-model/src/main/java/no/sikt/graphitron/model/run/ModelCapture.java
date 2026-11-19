@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.run;
 import no.sikt.graphitron.model.derive.StageProgress;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.sink.WriteTimes;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
 import no.sikt.graphitron.model.capture.code.CodeCapture;
@@ -109,7 +110,7 @@ public final class ModelCapture {
             && classes.sources().stream().allMatch(ModelCapture::unchanged)
             && documents.stream().allMatch(ModelCapture::unchanged);
         if (!unchanged) {
-            dsl.execute("ANALYZE");
+            analyze(dsl);
         }
         if (progress == null) {
             FactCapture.derive(dsl, graph, assembled.assembly());
@@ -117,7 +118,7 @@ public final class ModelCapture {
             FactCapture.derive(dsl, graph, assembled.assembly(), progress);
         }
         if (!unchanged) {
-            dsl.execute("ANALYZE");
+            analyze(dsl);
         }
         Progress.completed(dsl, graph.name(), Progress.CAPTURE);
         return schemas;
@@ -133,6 +134,24 @@ public final class ModelCapture {
                  ClasspathSourceCapture.ClasspathSource.Skipped _ -> true;
             case ClasspathSourceCapture.ClasspathSource.Read _ -> false;
         };
+    }
+
+    /**
+     * Restates the statistics of the tables the capture changed since it last did, one
+     * {@code ANALYZE TABLE} each: the rest describe rows this reading did not touch. A whole-store
+     * {@code ANALYZE} would re-read every graph's rows in a store holding many, and would reset the
+     * partition column's declared selectivity on every table still empty, which a table it skips
+     * keeps. A store built without the write listener cannot say what changed, and is analysed whole.
+     */
+    private static void analyze(DSLContext dsl) {
+        var changed = WriteTimes.takeChanged(dsl);
+        if (changed.isEmpty()) {
+            dsl.execute("ANALYZE");
+            return;
+        }
+        for (var table : changed.get()) {
+            dsl.execute("ANALYZE TABLE \"" + table + "\"");
+        }
     }
 
     /** Whether {@code document} is what this graph's rows were already derived from, in place. */

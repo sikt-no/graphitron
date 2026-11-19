@@ -40,10 +40,12 @@ public final class StoreStatistics {
     private StoreStatistics() {}
 
     /**
-     * Puts every base table's every column back to the state a created store carries, touching only
-     * the columns that have left it: {@link #UNANALYSED} everywhere except the partition column,
+     * Puts every empty base table's every column back to the state a created store carries, touching
+     * only the columns that have left it: {@link #UNANALYSED} everywhere except the partition column,
      * which goes back to {@link GraphPartition#DECLARED_SELECTIVITY}. Views are skipped because a
-     * view has no selectivity of its own to state.
+     * view has no selectivity of its own to state. A table holding rows is left alone: after a clear
+     * those are the tables creation seeded, which creation analyses, so analysing their unchanged rows
+     * again states the values a created store carries.
      *
      * <p>One catalog read finds the drifted columns and one {@code ALTER} per hit puts each back, so
      * a case whose writes never crossed H2's own analysis threshold, which is nearly every case,
@@ -63,7 +65,10 @@ public final class StoreStatistics {
      * {@code ANALYZE} it was nearly the reset's whole cost, ten times what the {@code ALTER}s took.
      */
     public static void reset(DSLContext dsl) {
-        Set<String> baseTables = Set.copyOf(ThreadConfinedStore.baseTables(dsl));
+        Set<String> baseTables = Set.copyOf(dsl.fetch("""
+            SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_TYPE = 'BASE TABLE' AND ROW_COUNT_ESTIMATE = 0
+            """).getValues(0, String.class));
         dsl.fetch("""
             SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = 'PUBLIC'

@@ -324,10 +324,11 @@ class WarmStartRefreshTest {
 
     /**
      * A reading every gatherer vouches unchanged derives the rows the statistics were last taken
-     * over, so it runs no ANALYZE; one whose configuration moved runs both again, an output package
+     * over, so it runs no ANALYZE; one whose configuration moved analyses again, an output package
      * being configuration a derivation reads. The catalog's entry is on the classpath, as a build's
-     * is, since a catalog no entry holds is never vouched. Counted from the statements the capture sends, so
-     * the cold capture's two show the count can see them at all.
+     * is, since a catalog no entry holds is never vouched. Counted from the statements the capture
+     * sends, one {@code ANALYZE TABLE} per table it changed, so the cold capture's show the count can
+     * see them at all.
      */
     @Test
     @DisplayName("a reading that changed nothing skips ANALYZE, and a changed output package runs it again")
@@ -343,7 +344,7 @@ class WarmStartRefreshTest {
         var counting = new org.jooq.impl.DefaultExecuteListenerProvider(new org.jooq.ExecuteListener() {
             @Override
             public void executeStart(org.jooq.ExecuteContext ctx) {
-                if ("ANALYZE".equalsIgnoreCase(String.valueOf(ctx.sql()).strip())) {
+                if (String.valueOf(ctx.sql()).strip().toUpperCase().startsWith("ANALYZE")) {
                     analyzed.incrementAndGet();
                 }
             }
@@ -357,10 +358,10 @@ class WarmStartRefreshTest {
                 return analyzed.get();
             };
             current[0] = "com.example.first";
-            assertThat(capture.getAsInt()).as("the cold capture analyses before and after deriving").isEqualTo(2);
+            assertThat(capture.getAsInt()).as("the cold capture analyses what it wrote").isPositive();
             assertThat(capture.getAsInt()).as("the same reading again analyses nothing").isZero();
             current[0] = "com.example.second";
-            assertThat(capture.getAsInt()).as("a changed output package analyses again").isEqualTo(2);
+            assertThat(capture.getAsInt()).as("a changed output package analyses again").isPositive();
             assertThat(capture.getAsInt()).as("and its stamp is the one compared next time").isZero();
         }
     }

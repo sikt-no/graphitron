@@ -56,9 +56,11 @@ public final class GraphPartition {
      * itself, so until that call the declared value is all any planner has, and the gatherers
      * writing the corpus read under it.
      *
-     * <p>An {@code ANALYZE} overwrites it with the measured value, which is correct and not a loss:
-     * on a store holding one partition the measured value is this one. The declaration is the floor
-     * that holds in the window before any analysis has run.
+     * <p>Analysing a table that holds rows overwrites it with the measured value, which is correct
+     * and not a loss: on a store holding one partition the measured value is this one. Analysing an
+     * empty table resets it to H2's default instead, which is why the store and the capture analyse
+     * only the tables holding rows they wrote, each on its own, and never the whole store. The
+     * declaration is the floor that holds on every table no analysis has reached.
      */
     public static final int DECLARED_SELECTIVITY = 1;
 
