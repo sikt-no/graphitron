@@ -525,10 +525,13 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     lands with no entry and nothing fails. This belongs to this item because defects moved (Alf,
     2026-11-19). Working plan (principles-architect, 2026-11-19): a defects reference page rendered
     at docs build time from a booted store, not checked in, as `render-schema-reference` renders the
-    schema reference, one anchored entry per code from its row; hand-written fix guidance, where the
-    statement alone does not say how to fix it, lives once, in a companion fragment per code that the
-    entry includes, and "Named structural errors" moves into those fragments, per code. The build
-    fails on a fragment naming a code the store does not declare, on an empty set of defect types or
+    schema reference, one anchored entry per code from its row; hand-written fix guidance lives once, in
+    an AsciiDoc fragment per code, which the model build gathers into the store beside the defect
+    types, so the page, the LSP and the MCP serve the same guidance (Alf, 2026-11-19); a fragment is
+    required for every `UNSUPPORTED` deferral and written for a `GRAPHITRON` code where its statement
+    does not say how to fix it (Alf, 2026-11-19); "Named structural errors" moves into those
+    fragments, per code. The build fails on a fragment naming a code the store does not declare, on
+    a deferral with no fragment, on an empty set of defect types or
     a blank statement, and, through `check-adoc-xrefs`, on a link to a code no longer declared. The
     glossary keeps the walk's kinds until the walk goes, linking to the new page;
     `defects-as-facts.adoc` § "Adding a defect" gains the fragment step.
