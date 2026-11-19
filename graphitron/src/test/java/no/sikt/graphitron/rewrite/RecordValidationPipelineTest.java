@@ -24,13 +24,13 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
-import static no.sikt.graphitron.model.Tables.SQL_COLUMN_RECORD_ACCESSOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A VALIDATION channel over a {@code @service} parameter bound to a jOOQ record: the record is a
  * validation target, the pre-step's {@code ConstraintViolations.Paths} constant is declared for it,
  * and a column the store found no getter for reaches the report as {@code validation-column-unchecked}.
+ * That column is renamed_getter_draft.description, whose getter the fixture catalog's codegen renames.
  * Structural assertions only; the generated method body is pinned at the execution tier.
  */
 @PipelineTier
@@ -48,20 +48,35 @@ class RecordValidationPipelineTest {
         type SakPayload { data: String errors: [SakError] }
         """;
 
-    private static final String FIELDS = """
+    private static final String FILM = """
         type Film implements Node @table(name: "film") @node { id: ID! title: String }
+        type Query { films: [Film!]! }
+        """;
+
+    private static final String FIELDS = FILM + """
         input FilmDraftInput {
             id: ID @nodeId(typeName: "Film")
             title: String @field(name: "title")
             description: String @field(name: "description")
         }
         input FilmKeyInput { id: ID! @nodeId(typeName: "Film") }
-        type Query { films: [Film!]! }
         type Mutation {
             draftFilms(in: [FilmDraftInput!]!): SakPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithFilmRecords"})
             keyFilm(in: FilmKeyInput!): SakPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithFilmRecord"})
+        }
+        """;
+
+    /** A record whose description column has no getter of jOOQ's default name, and whose title has one. */
+    private static final String RENAMED_GETTER = FILM + """
+        input DraftInput {
+            title: String @field(name: "title")
+            description: String @field(name: "description")
+        }
+        type Mutation {
+            saveDrafts(in: [DraftInput!]!): SakPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithRenamedGetterDrafts"})
         }
         """;
 
@@ -96,31 +111,31 @@ class RecordValidationPipelineTest {
 
     @Test
     void everyColumnWithAGetterIsCheckedSoNothingIsReported(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(validateOnly(tmp, CHANNEL + FIELDS, LintConfig.empty(), false))).isEmpty();
+        assertThat(unchecked(validateOnly(tmp, CHANNEL + FIELDS, LintConfig.empty()))).isEmpty();
     }
 
     @Test
     void aColumnWithNoGetterIsReportedFromAValidateOnlyRun(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(validateOnly(tmp, CHANNEL + FIELDS, LintConfig.empty(), true)))
+        assertThat(unchecked(validateOnly(tmp, CHANNEL + RENAMED_GETTER, LintConfig.empty())))
             .singleElement()
             .satisfies(w -> assertThat(w.message())
-                .contains("Mutation.draftFilms", "'description'", "getDescription()"));
+                .contains("Mutation.saveDrafts", "RenamedGetterDraftRecord", "'description'", "getDescription()"));
     }
 
     @Test
     void aColumnWithNoGetterIsReportedFromAGeneratingRun(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(generating(tmp, CHANNEL + FIELDS, LintConfig.empty(), true))).hasSize(1);
+        assertThat(unchecked(generating(tmp, CHANNEL + RENAMED_GETTER, LintConfig.empty()))).hasSize(1);
     }
 
     @Test
     void withoutTheChannelNoColumnIsReported(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(validateOnly(tmp, NO_VALIDATION_CHANNEL + FIELDS, LintConfig.empty(), true))).isEmpty();
+        assertThat(unchecked(validateOnly(tmp, NO_VALIDATION_CHANNEL + RENAMED_GETTER, LintConfig.empty()))).isEmpty();
     }
 
     @Test
     void theRuleIdSuppressesTheFinding(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(validateOnly(tmp, CHANNEL + FIELDS,
-            new LintConfig(Set.of("validation-column-unchecked"), List.of()), true))).isEmpty();
+        assertThat(unchecked(validateOnly(tmp, CHANNEL + RENAMED_GETTER,
+            new LintConfig(Set.of("validation-column-unchecked"), List.of())))).isEmpty();
     }
 
     // ===== Helpers =====
@@ -142,37 +157,19 @@ class RecordValidationPipelineTest {
             .toList();
     }
 
-    private static List<BuildWarning> validateOnly(Path tmp, String sdl, LintConfig lint, boolean dropGetter)
-            throws IOException {
-        return warnings(tmp, sdl, lint, dropGetter, generator -> generator.buildOutput().warnings());
+    private static List<BuildWarning> validateOnly(Path tmp, String sdl, LintConfig lint) throws IOException {
+        return warnings(tmp, sdl, lint, generator -> generator.buildOutput().warnings());
     }
 
-    private static List<BuildWarning> generating(Path tmp, String sdl, LintConfig lint, boolean dropGetter)
-            throws IOException {
-        return warnings(tmp, sdl, lint, dropGetter, generator -> generator.runPass().output().warnings());
+    private static List<BuildWarning> generating(Path tmp, String sdl, LintConfig lint) throws IOException {
+        return warnings(tmp, sdl, lint, generator -> generator.runPass().output().warnings());
     }
 
-    private static List<BuildWarning> warnings(Path tmp, String sdl, LintConfig lint, boolean dropGetter,
+    private static List<BuildWarning> warnings(Path tmp, String sdl, LintConfig lint,
             java.util.function.Function<GraphQLRewriteGenerator, List<BuildWarning>> pass) throws IOException {
         var run = context(tmp, sdl, lint);
-        if (dropGetter) {
-            // A store of its own, for now: the case deletes a catalog-wide row, which a shared store
-            // cannot take. A classpath fixture whose generated getter is renamed replaces it.
-            try (var opened = CapturedGraphs.own(run.withStoreDirectory(tmp.resolve("store")))) {
-                dropDescriptionGetter(opened);
-                return pass.apply(new GraphQLRewriteGenerator(run, opened));
-            }
-        }
         return CapturedGraphs.read(run, opened ->
             pass.apply(new GraphQLRewriteGenerator(run, opened.handle(), opened.schema())));
-    }
-
-    /** What a generator strategy renaming film.description's getter leaves: no accessor row. */
-    private static void dropDescriptionGetter(no.sikt.graphitron.model.run.CapturedGraph opened) {
-        var a = SQL_COLUMN_RECORD_ACCESSOR;
-        opened.store().dsl().deleteFrom(a)
-            .where(a.TABLE_NAME.eq("film"), a.COLUMN_NAME.eq("description"))
-            .execute();
     }
 
     private static RunContext context(Path tmp, String sdl, LintConfig lint) throws IOException {

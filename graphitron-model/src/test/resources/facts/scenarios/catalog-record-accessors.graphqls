@@ -4,15 +4,22 @@
 # The name is the one jOOQ's default generator strategy writes: get, then each underscore-separated
 # word of the SQL name capitalised. film_id is the multi-word case, read through getFilmId; the
 # property drops the get and lower-cases what is left of the first letter, so it reads filmId. A
-# column whose record declares no such getter has no row, which the hand-written catalog in
-# JooqFactCaptureTest pins.
+# column whose record declares no such getter has no row: the fixture codegen renames
+# renamed_getter_draft.description's getter to readDescription, so that column has none while title
+# beside it keeps getTitle.
 extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
 extend schema @assertContains(relation: "sql_column_record_accessor", rows: """
-  table_schema, table_name, column_name,      getter_name,       property_name
-  public,       film,       film_id,          getFilmId,         filmId
-  public,       film,       title,            getTitle,          title
-  public,       film,       description,      getDescription,    description
-  public,       film,       rental_duration,  getRentalDuration, rentalDuration
-  public,       language,   language_id,      getLanguageId,     languageId
+  table_schema, table_name,           column_name,     getter_name,       property_name
+  public,       film,                 film_id,         getFilmId,         filmId
+  public,       film,                 title,           getTitle,          title
+  public,       film,                 description,     getDescription,    description
+  public,       film,                 rental_duration, getRentalDuration, rentalDuration
+  public,       language,             language_id,     getLanguageId,     languageId
+  public,       renamed_getter_draft, title,           getTitle,          title
+  """)
+
+extend schema @assertAbsent(relation: "sql_column_record_accessor", rows: """
+  table_schema, table_name,           column_name
+  public,       renamed_getter_draft, description
   """)

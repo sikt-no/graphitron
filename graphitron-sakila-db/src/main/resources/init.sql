@@ -2456,6 +2456,17 @@ CREATE TABLE embedded_period (
     ends_on   date
 );
 
+-- A table whose record reads one column through a renamed getter: this module's codegen names
+-- description's getter readDescription, which is a configuration a consumer's generator strategy
+-- can have. The record then declares no getDescription, so a capture finds no getter for that
+-- column the way it would at such a consumer, and title keeps its default one beside it. Named for
+-- that; no other example reads it.
+CREATE TABLE renamed_getter_draft (
+    draft_id    integer      PRIMARY KEY,
+    title       varchar(100) NOT NULL,
+    description text
+);
+
 -- Execution-tier fixture for the null contract of a single-object child with its own table, and
 -- of nested objects holding references and lists. presence_detail holds at most one row per host
 -- (the UNIQUE host_id), every mapped column nullable, so a row can exist with nothing in it. The

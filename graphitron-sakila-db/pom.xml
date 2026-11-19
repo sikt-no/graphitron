@@ -97,12 +97,21 @@
                                 <name>no.sikt.graphitron.rewrite.fixtures.codegen.NodeIdFixtureGenerator</name>
                                 <!-- nodeidfixture.case_twins has columns "Code" and "code", which the
                                      default naming spells alike. The capitalised one is named
-                                     apart here, the way a consumer's codegen would have to; every
-                                     other name keeps the default. A matcher expression is matched
-                                     ignoring case unless it says otherwise, hence (?-i). -->
+                                     apart here, the way a consumer's codegen would have to.
+                                     public.renamed_getter_draft.description reads through
+                                     readDescription, the case init.sql's comment on the table
+                                     explains. Every other name keeps the default. A matcher
+                                     expression is matched ignoring case unless it says otherwise,
+                                     hence (?-i). -->
                                 <strategy>
                                     <matchers>
                                         <fields>
+                                            <field>
+                                                <expression>(?-i)public\.renamed_getter_draft\.description</expression>
+                                                <fieldGetter>
+                                                    <expression>readDescription</expression>
+                                                </fieldGetter>
+                                            </field>
                                             <field>
                                                 <expression>(?-i)nodeidfixture\.case_twins\.Code</expression>
                                                 <fieldIdentifier>

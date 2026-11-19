@@ -16,10 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The getter a record reads a column through, against a catalog written by hand.
  *
  * <p>{@link JooqFactCaptureTest} reads the generated fixture catalog, which is the better witness for
- * everything that catalog can show. It cannot show these two: its records come from jOOQ's default
- * strategy over lower-case names, so every getter sits where the default rule looks. The
- * hand-written catalog has an upper-case Oracle-style table, whose getters the rule has to spell
- * {@code getBilde} rather than {@code getBILDE}, and a record one of whose getters was renamed.
+ * everything that catalog can show, its renamed_getter_draft record with a renamed getter among
+ * them. It cannot show an upper-case name: its tables are lower-case. The hand-written catalog has an
+ * upper-case Oracle-style table, whose getters the rule has to spell {@code getBilde} rather than
+ * {@code getBILDE}, and a record one of whose getters was renamed.
  */
 class JooqRecordAccessorCaptureTest {
 
