@@ -1811,14 +1811,6 @@ someone to profile.
   into two upserts and `OccurrenceSources.write` into four, so H2 plans the whole union that many
   times a depth; together they are a sixth to a fifth of the verification build's CPU, all of it
   planning (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
-* **A long-lived store's statement cache is bounded by what it holds, not by its count** `open`, off the
-  critical path. The dev executor and the language server open their stores as `StoreUse.LONG_LIVED`,
-  1,024 prepared statements a session, and H2 keeps each with its compiled plan and the tokens it was
-  parsed from; a rule view expands into a large plan, so one long editor or dev session can hold far
-  more than the roughly 137 MB a store measured after one capture, growing with what the session
-  reads. The test population held the same and outgrew a 4 GB fork until it took `POPULATION`'s 64.
-  Measured on a long session against a consumer schema first, then sized: a smaller count, or a cache
-  that leaves the rule views' large statements out.
 * **No view reads a view, and every rule view is simple, claimed by B** `open`. The store's rulings
   (`fact-model.adoc` § Every relation has a grain) are not yet met: on 2026-11-15, 6 views read
   another view, 1 of them a rule view. A service call's parameter fills are stored at the candidate
