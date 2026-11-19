@@ -13,8 +13,9 @@
 # no column of films_for_actor's and is COLUMN_UNRESOLVED, where title, naming the result's title,
 # and actorId and minLength, which the parameters take, draw nothing. A filter on a union compares
 # each participant's table: username names a column of staff and none of customer, so
-# Query.occupants(username:) is COLUMN_UNRESOLVED, where email, a column of both, draws nothing. A
-# filter's input field naming no column is input-object-build's.
+# Query.occupants(username:) is COLUMN_UNRESOLVED, where email, a column of both, draws nothing, and
+# so is Query.occupantsBy(bogus:), a column of neither. A filter's input field naming no column is
+# input-object-build's.
 
 type Film @table(name: "film") { title: String }
 type ActorFilm { filmId: Int @field(name: "film_id") title: String }
@@ -36,6 +37,7 @@ type Query {
     languageBogus: String @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
     @defaultOrder(primaryKey: true)
   occupants(username: [String!], email: String): [Occupant!]!
+  occupantsBy(bogus: String): [Occupant!]!
   actorFilmsBy(actorId: Int!, minLength: Int, title: String, bogus: String): [ActorFilm!]
     @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
@@ -53,6 +55,7 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   COLUMN_UNRESOLVED, Query.filmsByLanguage(languageBogus:), languageBogus
   COLUMN_UNRESOLVED, Query.actorFilmsBy(bogus:), bogus
   COLUMN_UNRESOLVED, Query.occupants(username:), username
+  COLUMN_UNRESOLVED, Query.occupantsBy(bogus:), bogus
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
@@ -71,14 +74,17 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
 
 # Under each defect, the table its name was looked for in, whose columns the message offers: film for
 # the filters on Film, language at the end of languageBogus's path, the function's result for
-# actorFilmsBy, and customer alone for occupants, staff having the column.
+# actorFilmsBy, customer alone for occupants's username, staff having the column, and both for
+# occupantsBy's bogus.
 extend schema @expectEquals(relation: "graphitron_entry_defect_table", where: "code = 'COLUMN_UNRESOLVED'", rows: """
   source_line, table_name
-  26,          film
   27,          film
   28,          film
-  32,          film
-  36,          language
-  38,          customer
-  39,          films_for_actor
+  29,          film
+  33,          film
+  37,          language
+  39,          customer
+  40,          customer
+  40,          staff
+  41,          films_for_actor
   """)
