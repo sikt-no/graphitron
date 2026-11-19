@@ -296,15 +296,20 @@ parallelises a module's tests is priced against that before it is tried.
       `graphitron_occurrence`, `graphitron_join_path_step_rule` over `sql_table`), where the indexes
       they need exist but go unpicked without statistics.
 16. **A capture analyses only the tables it wrote** (Alf 2026-11-19: we know what changes, so analyse
-    with precision). Open. A capture runs `ANALYZE` over the whole store twice, so in a populated
-    store it re-reads every graph's rows to restate statistics for the few tables one graph changed.
-    `WriteTimes` already observes each table a capture writes and the rows it changed, in H2's own
-    names; analysing those tables since the previous `ANALYZE` is the precise set, and
-    `StageWriteGateTest` keeps it inside what `meta_stage_write` declares. A declared set would be
-    imprecise, and would have running code read `meta_relation`, which `modeling-discipline.adoc`
-    rules out today. Priced by the probe above and by a pair, with `RulePlanGateTest` as the plan
-    control. The engine findings in 15 belong in `fact-model.adoc` with it, since the production
-    stores on disk pay them too.
+    with precision). Done 2026-11-19. `WriteTimes` keeps the tables a statement changed a row of, and
+    the capture analyses each with `ANALYZE TABLE`; a created store analyses the rows it seeded. Fork
+    CPU against the whole-store pass in interleaved pairs: the model 1,286 against 1,301 s (pair 0:
+    1,242 against 1,280 s), graphitron 668 against 716 s (669 against 700 s). It also keeps
+    `GraphPartition`'s declaration, which a whole-store `ANALYZE` reset on every empty table.
+    `audits/2026-11-19-what-h2-spends-a-capture-on.md` holds the research; the engine facts are in the
+    `store-performance` skill.
+17. **The cold planning of the widest rules.** Open. In a fresh store the 29 entry-defect rules cost
+    515 ms to plan, 400 of it three of them: `occurrence-producers`, `occurrence-depth-defects` and
+    `occurrence-builds`, unions whose arms join many inputs per query block. Rewriting the stage's
+    `MERGE` as `INSERT ... SELECT` was measured and buys nothing. `ViewComplexityTest` now ranks every
+    view and arm statically on every model build (`target/view-complexity/`), and picked those three.
+    Next: bisect their arms cold, and hand the arms that carry the cost to R876, which owns the rules.
+    A gate over the report comes once a measure has held against a few changes.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every

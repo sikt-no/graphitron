@@ -1,0 +1,100 @@
+# What H2 spends a capture on, 2026-11-19
+
+A working document, not a roadmap item; it lives in `audits/` so the roadmap-tool ignores it. It is
+R1131's research behind queue steps 15 to 17: where the test suites' H2 time goes, why, and what
+makes it cheaper. It follows the `store-performance` skill, and its figures come from the agent
+sandbox (4 cores, 15 GB), so whole-build numbers do not compare with the workstation's.
+
+## Where the H2 time goes
+
+From a JFR recording of graphitron-model's test fork (trunk 2df1c2027 with targeted analysis, stack
+depth 256), every sample with an H2 frame classified by phase, by what H2 was doing, and by the
+nearest graphitron frame. 27,923 of 33,326 samples (84%) are in H2.
+
+| what H2 is doing | share of H2 samples |
+|---|---:|
+| preparing: join-order search, re-planning nested views per candidate order | 25.0% |
+| executing: index seeks and scans | 25.8% |
+| preparing: planning a view | 8.3% |
+| preparing: parsing SQL | 7.0% |
+| executing: writing rows, index maintenance, constraints | 6.3% |
+| executing: `ANALYZE` | 5.2% |
+| executing: evaluating conditions | 5.1% |
+| preparing: plain join-order search | 3.7% |
+
+About 44% of H2's time is preparing statements. The innermost methods are planning bookkeeping, not
+data work: `ConditionAndOrN.setEvaluatable` and `Comparison.setEvaluatable` together 10.6%,
+`ExpressionVisitor.addDependency` 3.7%, index cost estimates about 6%, and
+`StringUtils.quoteIdentifierOrLiteral` 3%.
+
+By caller: `EntryDefects.derive` 13.8% (10% its join-order search), `GraphitronModelStore.create`
+8.3% (parsing the DDL and planning every view a store creates), `ModelCapture.analyze` 5.3%, and the
+derivation stages after them at 1 to 3% each.
+
+## Why: a fresh store plans everything cold
+
+H2 keeps prepared statements and view plans per session. A store a test opens fresh plans every
+statement it runs from scratch, and the suites open hundreds. Measured on the 29 entry-defect rules,
+the first execution of each against a graph with no rows (so execution is almost free and planning
+is what is timed), median of three:
+
+| | in a store that has captured 40 graphs | in a fresh store |
+|---|---:|---:|
+| all 29 rules as bare `SELECT`s | 5 ms | 515 ms |
+| as `INSERT ... SELECT` | 6 ms | 510 ms |
+| as the `MERGE ... USING` the stage sends | 10 ms | 519 ms |
+
+So rewriting the stage's `MERGE` as `INSERT ... SELECT`, a hypothesis taken from the stack shapes,
+buys nothing: the cost is planning the rule view, whatever wraps it. And a probe that reuses one
+session measures the warm cost, which here was a hundredth of the cold one.
+
+Three rules carry 400 of the 515 ms cold: `occurrence-producers` 172 ms, `occurrence-depth-defects`
+130 ms, `occurrence-builds` 98 ms. None reads a view. Each is a union of 19 to 25 arms, many of whose
+query blocks join seven or more inputs, which is where H2's join-order search stops being exhaustive
+and is most expensive.
+
+## A static measure that ranks them
+
+`ViewComplexityTest` parses every view with jOOQ's parser, splits it at its top-level `UNION`s, and
+weighs each query block by the join orders a search of its inputs considers. Against the cold costs:
+
+| rule | cold first execution | static weight | widest block | blocks of 7 or more |
+|---|---:|---:|---:|---:|
+| `occurrence-depth-defects` | 130 ms | 96,536 | 11 | 12 |
+| `occurrence-producers` | 172 ms | 69,515 | 12 | 8 |
+| `occurrence-builds` | 98 ms | 35,346 | 8 | 6 |
+| `occurrence-tenants` | 5 ms | 34,412 | 10 | 4 |
+| `occurrence-bindings` | 17 ms | 12,658 | 8 | 2 |
+| the other 24 | 0.5 to 17 ms | under 7,100 | 1 to 8 | 0 or 1 |
+
+It picks the three expensive rules and misranks `occurrence-tenants`. It reads 264 views in about
+0.9 s of CPU with no store; jOOQ 3.20.11 and 3.21.10 give identical reports. Three arms the parser
+refuses are named in the report (`graphitron_call_context_key_rule`,
+`graphitron_outbox_target_rule`, `graphitron_outbox_routine_target_rule`), and four views over a
+`VALUES` list are named as such.
+
+## Analysis
+
+`ModelCapture` ran a whole-store `ANALYZE` twice per capture. Measured on H2 2.5.250 with a table
+holding rows and an empty one, both with `graph_name` declared at selectivity 1: `ANALYZE TABLE f`
+measured `f` and left the other alone; a whole-store `ANALYZE` reset the empty table's declared
+value to 50, H2's default. So the whole-store pass undid `GraphPartition`'s declaration on every
+stage table still empty at the capture's first `ANALYZE`.
+
+Two experiments, each an interleaved pair of graphitron-model and graphitron against the
+whole-store pass on the same tree, listed as pair 1 / pair 0 (fork CPU):
+
+| analysis policy | model fork | graphitron fork |
+|---|---:|---:|
+| whole store, twice per capture | 1,301 s / 1,280 s | 716 s / 700 s |
+| only the tables the capture changed | 1,286 s / 1,242 s | 668 s / 669 s |
+
+| analysis policy (an earlier tree) | model fork | graphitron fork |
+|---|---:|---:|
+| whole store, twice per capture | 1,241 s / 1,299 s | 658 s / 660 s |
+| none, H2's own (`ANALYZE_AUTO` default) | 1,256 s / 1,221 s | 648 s / 666 s |
+
+Targeted analysis is the policy kept: a few percent cheaper and the declaration intact. Letting H2 analyse itself removed `ANALYZE` (5.2% of the
+model fork's samples, 11.6% of graphitron's) but its plans cost about as much again, and
+`RulePlanGateTest` caught three rules probing by `graph_name` alone where the indexes they need exist
+but go unpicked without statistics.
