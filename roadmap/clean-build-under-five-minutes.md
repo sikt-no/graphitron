@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-18
+last-updated: 2026-11-19
 ---
 
 # A clean build runs in under five minutes
@@ -275,6 +275,36 @@ parallelises a module's tests is priced against that before it is tried.
     - For later: a warm sweep delete is now and then 100 to 1,000 times its cold cost
       (`GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN` 2.45 s against 2 ms, `SQL_COLUMN_SPELLING` 3.0 s against
       0.43 s), with and without the `ANALYZE`s. One look with the store-performance skill.
+15. **The population's stores are held in memory.** Done 2026-11-19. On disk they cost more and
+    saved nothing. Recorded interleaved pairs of graphitron-model and graphitron on 2df1c2027, JFR in
+    every fork, the backing the only difference: the model fork's CPU 1,679 s on disk against 1,286 s
+    in memory, graphitron's 1,150 s against 705 s, wall 1,045 s against 784 s, and the peak heap after
+    GC the same (4,861 against 4,859 MB, 3,229 against 3,244 MB). File I/O was 31.6% of graphitron's
+    samples on disk and 0.8% in memory: H2 reading pages back through its small default page cache,
+    and serializing a rewritten page for every one a capture changed.
+    - Measured with H2's own instruments: a 40-graph store dumped with `SCRIPT TO`, loaded with
+      `RUNSCRIPT` into an in-memory store, a file store and a file store with a 1 GB page cache, and
+      the same captures timed under `QUERY_STATISTICS` and `org.h2.util.Profiler` at depth 256. The
+      default file store read 178 MB back to capture a few; with the large cache it read nothing, and
+      its appended writes (chunks 40% live) still cost 11 to 17%. Manual `ANALYZE` was 80% of the
+      file store's extra statement time and about a third of a capture's work even in memory.
+    - Tried and set aside: letting H2 analyse itself (no `ANALYZE_AUTO=0`, no manual `ANALYZE`). It
+      removes the `ANALYZE`s, 5.2% of the model fork's samples and 11.6% of graphitron's, but the plans
+      it makes without statistics cost as much again: the model fork 1,256 s against 1,241 s,
+      graphitron 648 s against 658 s, within the noise. `RulePlanGateTest` caught three rules probing
+      by `graph_name` alone (`graphitron_argmapping_step_head_rule` and `_next_rule` over
+      `graphitron_occurrence`, `graphitron_join_path_step_rule` over `sql_table`), where the indexes
+      they need exist but go unpicked without statistics.
+16. **A capture analyses only the tables it wrote** (Alf 2026-11-19: we know what changes, so analyse
+    with precision). Open. A capture runs `ANALYZE` over the whole store twice, so in a populated
+    store it re-reads every graph's rows to restate statistics for the few tables one graph changed.
+    `WriteTimes` already observes each table a capture writes and the rows it changed, in H2's own
+    names; analysing those tables since the previous `ANALYZE` is the precise set, and
+    `StageWriteGateTest` keeps it inside what `meta_stage_write` declares. A declared set would be
+    imprecise, and would have running code read `meta_relation`, which `modeling-discipline.adoc`
+    rules out today. Priced by the probe above and by a pair, with `RulePlanGateTest` as the plan
+    control. The engine findings in 15 belong in `fact-model.adoc` with it, since the production
+    stores on disk pay them too.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
