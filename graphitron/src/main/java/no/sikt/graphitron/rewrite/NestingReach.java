@@ -56,12 +56,21 @@ public record NestingReach(Map<String, ChildField.NestingField> representatives,
     }
 
     /**
-     * Whether a nested type owns any fetcher: at least one of its fields classified. The one
-     * gate shared by the emitted {@code <Type>Fetchers} class's membership row and the
-     * registrations body, so the reference site and the emit site cannot drift.
+     * Whether a nested type owns any fetcher: at least one of its fields classified, with no store
+     * to own any. See {@link #ownsFetchers(List, FetcherOwnership)}.
      */
     public static boolean ownsFetchers(List<? extends GraphitronField> nestedFields) {
-        return nestedFields.stream().anyMatch(f -> !(f instanceof GraphitronField.UnclassifiedField));
+        return ownsFetchers(nestedFields, FetcherOwnership.NONE);
+    }
+
+    /**
+     * Whether a nested type owns any fetcher: at least one of its fields
+     * {@link FetcherOwnership#hasFetcher has one}, a field the store owns among them. The one gate
+     * shared by the emitted {@code <Type>Fetchers} class's membership row and the registrations body,
+     * so the reference site and the emit site cannot drift.
+     */
+    public static boolean ownsFetchers(List<? extends GraphitronField> nestedFields, FetcherOwnership ownership) {
+        return nestedFields.stream().anyMatch(ownership::hasFetcher);
     }
 
     static NestingReach compute(GraphitronSchema schema) {

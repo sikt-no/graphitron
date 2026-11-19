@@ -19,10 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * On every fact document a schema problem does not stop, every {@code @service} the store does not
- * emit ({@link ServiceEmission#census}) carries an error defect: one whose site is the field, one of
+ * emit ({@link ServiceEmission#verdict}) carries an error defect: one whose site is the field, one of
  * its arguments, an input field under them, or the named type of any of these. A service the store
- * accepts and does not emit, with nothing stated against it, is a generator that falls back or
- * fails where the author was told nothing. A service on a field nothing fetches, under a type no root
+ * accepts and does not emit, with nothing stated against it, is a generator that fails where the
+ * author was told nothing. A service on a field nothing fetches, under a type no root
  * reaches, never runs and is not judged; the failure message lists them.
  *
  * <p>The services that do not hold yet are listed in {@code uncovered-services.txt}, each with the

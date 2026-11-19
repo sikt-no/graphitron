@@ -45,9 +45,9 @@ Two helpers build a jOOQ record from an input object:
 * `BuildEmitter.recordHelper`, emitted from the fact store (the database of schema, catalog and classpath facts the generator reads). It is correct: it loads every sent value through `fromArray`, then sets every explicit null, then decodes node ids through `NodeIdEncoder.decodeInto`, which writes each key column with `set`. No `fromArray` reaches the record after a null is set, and its javadoc says why.
 * `JooqRecordInstantiationEmitter`, the classified model's helper, which is being retired. It still has the defect, for a later key decode and for a later plain value alike, and the javadoc on `emitKeyDecode` calls it one.
 
-Which helper a `@service` field gets is decided by `ServiceEmission.verdict`: `EMITTED` means the store-fed fetcher and the first helper, anything else falls back to the classified fetcher and the second. `EmissionCensusTest.theCensusOfTheExampleSchemasServices` pins every service of the example schema as `EMITTED`, the `assignOccupantRecord` family included, so nothing in this repository reaches the second helper any more.
+Which helper a `@service` field gets was decided by `ServiceEmission.verdict`: `EMITTED` meant the store-fed fetcher and the first helper, anything else fell back to the classified fetcher and the second. Since R876's service flip every service the store owns takes the first; `ServiceVerdictCoverageGateTest` holds that every fact document's service is emitted or carries a stored error defect.
 
-A consumer's schema can still reach it, through a verdict other than `EMITTED` that no build error accompanies. Closing that is not this item's: it belongs to the node "Every service verdict is emitted or a stored deferral" of R876 (`derived-read-cost-is-a-shape-problem.md`), which closes when the verdict can only be `EMITTED` on any graph the store accepts, and deletes the classified fallback in the same commit. That node records that on sis every service not emitted already carries a stored error defect (a build error the store states as a row), so on current trunk a sis service is either built by the correct helper or refused by the build.
+No consumer's schema reaches it since R876's service flip (`derived-read-cost-is-a-shape-problem.md`): a service the store owns is emitted from the store or the build stops on a generator bug, and a verdict other than `EMITTED` on a graph the store accepts is that bug, so there is no fallback to the classified fetcher. The second helper is reached only by the classified model's own tests, and it goes with the walk's service code, under R876's node "The walk's service path is gone".
 
 ### Consumer report
 
@@ -85,7 +85,7 @@ Once the two cases are on trunk, sis runs `EndreKullMutationIT.endreKull_eksplis
 
 ## Roadmap entries
 
-* The R876 node "Every service verdict is emitted or a stored deferral" gains a sentence naming this erasure among what its closing removes, with `JooqRecordInstantiationEmitter` beside the fallback it deletes, so the residual has an owner after this file is gone.
+* The R876 node "The walk's service path is gone" gains a sentence naming this erasure among what its subtract removes, with `JooqRecordInstantiationEmitter` beside the service leaves it deletes, so the residual has an owner after this file is gone.
 * On Done, `changelog.md` records the two cases, the sis outcome, and that hand-off.
 
 ## Other solutions we've considered

@@ -6,7 +6,7 @@
 # and under the holder it is still called once per parent. Nested in a table's row the same holds:
 # under CityNames, in City's row, filmCount's keys have nowhere to go either. Under a table's row it
 # holds as well, a context argument the only thing the method takes: UserGreetingService.greet under
-# Film, which EmissionCensusTest held inline and the walk refuses too, as declaring no Sources parameter.
+# Film, which the walk refuses too, as declaring no Sources parameter.
 
 type Film @table(name: "film") {
   title: String

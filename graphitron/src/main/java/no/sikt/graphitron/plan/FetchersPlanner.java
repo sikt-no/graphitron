@@ -1,6 +1,7 @@
 package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.command.TypeUnitCommand;
+import no.sikt.graphitron.rewrite.FetcherOwnership;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.NestingReach;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -29,6 +30,15 @@ public final class FetchersPlanner {
      */
 
     public static List<TypeUnitCommand> produce(GraphitronSchema schema, String outputPackage) {
+        return produce(schema, outputPackage, FetcherOwnership.NONE);
+    }
+
+    /**
+     * {@link #produce(GraphitronSchema, String)}, a nested type's fields asking {@code ownership}
+     * whether they have a fetcher: a field the store owns does, whatever the classified model made of it.
+     */
+    public static List<TypeUnitCommand> produce(GraphitronSchema schema, String outputPackage,
+                                                FetcherOwnership ownership) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<TypeUnitCommand>();
         var hosting = new java.util.HashSet<String>();
@@ -48,7 +58,7 @@ public final class FetchersPlanner {
             if (hosting.contains(name)) {
                 continue;
             }
-            if (NestingReach.ownsFetchers(reach.wiringFor(name).nestedFields())) {
+            if (NestingReach.ownsFetchers(reach.wiringFor(name).nestedFields(), ownership)) {
                 rows.add(new TypeUnitCommand.FetchersUnit(name, units.fetchers(name)));
             }
         }

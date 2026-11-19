@@ -124,7 +124,24 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                                    ResolvedKeyProjections.Projections projections,
                                    StoreHandle store) {
         return produce(schema, federationLink, usesOneOf, outputPackage, projections, store,
-            store == null ? SessionIdentityRows.empty() : SessionIdentityRows.read(store));
+            no.sikt.graphitron.rewrite.FetcherOwnership.NONE);
+    }
+
+    /**
+     * {@link #produce(GraphitronSchema, boolean, boolean, String, ResolvedKeyProjections.Projections, StoreHandle)},
+     * the fetcher-hosting rows asking {@code ownership} which fields have a fetcher: a field the store
+     * owns does, whatever the classified model made of it, so its type is planned a fetchers class and
+     * a registrations body.
+     */
+    public static EmitPlan produce(GraphitronSchema schema,
+                                   boolean federationLink,
+                                   boolean usesOneOf,
+                                   String outputPackage,
+                                   ResolvedKeyProjections.Projections projections,
+                                   StoreHandle store,
+                                   no.sikt.graphitron.rewrite.FetcherOwnership ownership) {
+        return produce(schema, federationLink, usesOneOf, outputPackage, projections, store,
+            store == null ? SessionIdentityRows.empty() : SessionIdentityRows.read(store), ownership);
     }
 
     /**
@@ -194,7 +211,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                                     String outputPackage,
                                     ResolvedKeyProjections.Projections projections,
                                     StoreHandle store,
-                                    SessionIdentityRows sessionIdentity) {
+                                    SessionIdentityRows sessionIdentity,
+                                    no.sikt.graphitron.rewrite.FetcherOwnership ownership) {
         var units = new GeneratedUnits(outputPackage);
         var globals = new ArrayList<GlobalCommand>();
 
@@ -245,14 +263,16 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var conditions = ConditionCommands.produce(schema, outputPackage);
         // Each routine write's frame, connection and lift are read beside its rows, so its fetcher is
         // the frame around its body, and a records result's body hands its keys to its lift.
+        var frames = store == null ? List.<FrameQuery.Row>of() : FrameQuery.read(store);
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty()
-            : RoutineWriteQuery.read(store).framed(FrameQuery.read(store),
+            : RoutineWriteQuery.read(store).framed(frames,
                 ConnectionQuery.read(store), LiftQuery.read(store));
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage,
             store == null ? no.sikt.graphitron.emit.VoucherBindingQuery.Rows.empty()
                 : no.sikt.graphitron.emit.VoucherBindingQuery.read(store));
+        requireEveryServiceKeyIsProjected(frames, projectionRelation, units);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
             projectionRelation.dslProjections(), store);
         var keyProjections = KeyProjectionCommands.produce(projections);
@@ -262,7 +282,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             projectionRelation,
             launchers,
             FetcherEdgeCommands.produce(schema, conditions, outputPackage),
-            typeUnits(store, schema, outputPackage),
+            typeUnits(store, schema, outputPackage, ownership),
             routineWrites,
             keyProjections,
             errorChannels,
@@ -313,6 +333,51 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     }
 
     /**
+     * Refuses a plan in which a service under an object batches on a key its parent's projection does
+     * not select.
+     *
+     * <p>A frame under a table-bound type reads its batch key off the parent row by the parent
+     * table's primary key columns. The projection is still planned from the classified model, which
+     * projects a child's key columns only for a child it classified as reading them, so a service it
+     * refused and the store emits would read columns the parent row does not carry: a failure at run
+     * time, which this turns into one at generation. The store accepting such a graph is the bug, so
+     * the throw names the field and the column rather than refusing the author.
+     *
+     * <p>A frame at a root has no parent, and one reading its key through a member of the parent's
+     * class, or off a parent that is the record itself, reads no projected row; neither is asked.
+     */
+    private static void requireEveryServiceKeyIsProjected(List<FrameQuery.Row> frames,
+            ProjectionRelation projections, GeneratedUnits units) {
+        for (var frame : frames) {
+            if (!frame.parentRow()) {
+                continue;
+            }
+            String coordinate = frame.coordinate();
+            String fieldName = coordinate.substring(coordinate.lastIndexOf('.') + 1);
+            var anchor = units.typeClass(frame.declaringType());
+            var selected = projections.rows().stream()
+                .filter(row -> row instanceof no.sikt.graphitron.command.ProjectionCommand.AnchorUnit
+                    && row.unit().equals(anchor))
+                .flatMap(row -> row.contributions().stream())
+                .filter(c -> c instanceof no.sikt.graphitron.command.Contribution.Project p
+                    && p.field().equals(fieldName))
+                .flatMap(c -> ((no.sikt.graphitron.command.Contribution.Project) c).terms().stream())
+                .filter(no.sikt.graphitron.command.SelectTerm.Column.class::isInstance)
+                .map(term -> ((no.sikt.graphitron.command.SelectTerm.Column) term).column().sqlName())
+                .collect(java.util.stream.Collectors.toSet());
+            var parent = frame.parent().get();
+            for (var column : parent.key()) {
+                if (!selected.contains(column.sqlName())) {
+                    throw new IllegalStateException("Graphitron generator bug: @service "
+                        + frame.declaringType() + "." + fieldName + " batches on " + parent.sqlName() + "."
+                        + column.sqlName() + ", which " + frame.declaringType() + "'s projection does not"
+                        + " select: the store accepted the graph, so it should have refused this");
+                }
+            }
+        }
+    }
+
+    /**
      * The per-type compilation units this run emits, composed from the three planners that decide
      * them. Composed here rather than in one producer: input-record membership is a reach fact,
      * the fetcher arms ask which types host fetchers, and a schema shape asks which have a
@@ -320,11 +385,12 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * wants all three answers at once.
      */
     private static TypeUnitRelation typeUnits(StoreHandle store, GraphitronSchema schema,
-                                              String outputPackage) {
+                                              String outputPackage,
+                                              no.sikt.graphitron.rewrite.FetcherOwnership ownership) {
         var rows = new java.util.ArrayList<no.sikt.graphitron.command.TypeUnitCommand>();
         rows.addAll(InputRecordPlanner.produce(store, schema, outputPackage));
-        rows.addAll(FetchersPlanner.produce(schema, outputPackage));
-        rows.addAll(SchemaShapePlanner.produce(schema, outputPackage));
+        rows.addAll(FetchersPlanner.produce(schema, outputPackage, ownership));
+        rows.addAll(SchemaShapePlanner.produce(schema, outputPackage, ownership));
         return new TypeUnitRelation(rows);
     }
 
@@ -363,7 +429,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                                                String outputPackage,
                                                SessionIdentityRows sessionIdentity) {
         return produce(schema, federationLink, usesOneOf, outputPackage,
-            ResolvedKeyProjections.Projections.empty(), null, sessionIdentity);
+            ResolvedKeyProjections.Projections.empty(), null, sessionIdentity,
+            no.sikt.graphitron.rewrite.FetcherOwnership.NONE);
     }
 
     /** A fixed-substrate global command committing exactly one unit. */

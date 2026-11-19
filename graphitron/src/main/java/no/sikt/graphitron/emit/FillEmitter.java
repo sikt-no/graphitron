@@ -76,7 +76,10 @@ public final class FillEmitter {
         }
     }
 
-    /** What the emitter makes of a call: its fills, or the first parameter it cannot fill. */
+    /**
+     * What the emitter makes of a call: its fills. A parameter it cannot fill throws, naming the
+     * parameter and why: the store refuses every such call, so meeting one is a generator bug.
+     */
     public sealed interface Result {
         /**
          * The locals to declare in the body, then the arguments to call the method with, and the
@@ -109,9 +112,6 @@ public final class FillEmitter {
             record AClass(BuildQuery.Build build) implements Into {}
             record ARecord(BuildQuery.RecordBuild build) implements Into {}
         }
-
-        /** A parameter whose value has to be built first, and why. */
-        record NeedsBuilding(int position, String parameterName, String reason) implements Result {}
     }
 
     /**
@@ -169,7 +169,7 @@ public final class FillEmitter {
                 case "ARGUMENT" -> {
                     var landing = fill.landing().orElseThrow();
                     if (unreadThroughList(landing, type)) {
-                        return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
+                        throw unfilled(row, fill,
                             String.join(".", landing.path()) + " is read through a list, which only a scalar or an enum"
                                 + " taken by name is here");
                     }
@@ -182,7 +182,7 @@ public final class FillEmitter {
                         continue;
                     }
                     if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Refused refused) {
-                        return new Result.NeedsBuilding(fill.position(), fill.parameterName(), refused.reason());
+                        throw unfilled(row, fill, refused.reason());
                     }
                     if (!landing.nodeId() && "INPUT_OBJECT".equals(landing.typeKind())) {
                         var build = builds.get(fill.position());
@@ -201,7 +201,7 @@ public final class FillEmitter {
                             built.add(new Result.Built(madeLocal, landing.path(), isList(madeType),
                                 new Result.Into.ARecord(columns.build())));
                         } else {
-                            return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
+                            throw unfilled(row, fill,
                                 build instanceof BuildQuery.Result.Refused refused ? refused.reason()
                                     : "nothing says how input object " + String.join(".", landing.path())
                                         + " is made into " + type);
@@ -214,7 +214,7 @@ public final class FillEmitter {
                         continue;
                     }
                     if (landing.nodeId() || !SCALAR_OR_ENUM.contains(landing.typeKind())) {
-                        return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
+                        throw unfilled(row, fill,
                             landing.nodeId() ? "it takes a node id, which is decoded into its key"
                                 : "it takes " + landing.typeKind().toLowerCase().replace('_', ' ')
                                     + " " + String.join(".", landing.path())
@@ -242,6 +242,11 @@ public final class FillEmitter {
             }
         }
         return new Result.Emitted(statements, arguments, helpers, built);
+    }
+
+    /** A parameter of {@code row}'s call nothing here fills, and why. */
+    private static IllegalStateException unfilled(FillQuery.Row row, FillQuery.Fill fill, String reason) {
+        return new IllegalStateException("parameter " + fill.parameterName() + " of " + row.coordinate() + ": " + reason);
     }
 
     /**

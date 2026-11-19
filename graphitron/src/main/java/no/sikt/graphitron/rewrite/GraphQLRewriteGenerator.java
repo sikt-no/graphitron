@@ -359,24 +359,32 @@ public class GraphQLRewriteGenerator {
         // the only refusals that field has. Which fields those are was read where the walk was handed
         // its registry.
         var storeOwned = attributed.storeOwned();
-        // A @service fetcher the store emits is the store's to wire, at any depth.
-        var walkErrors = new GraphitronSchemaValidator(services::emits).validate(schema).stream()
+        // A @service is the store's whole: it wires the field at any depth, and judges the field, its
+        // arguments and the input types only its arguments reach, so the walk's verdict there is not
+        // asked either.
+        var silenced = services.walkSilenced();
+        var walkErrors = new GraphitronSchemaValidator(services::owns).validate(schema).stream()
             .filter(error -> !storeOwned.contains(error.coordinate()))
+            .filter(error -> error.coordinate() == null || !silenced.contains(error.coordinate()))
             .toList();
         var fused = new ArrayList<>(walkErrors);
         fused.addAll(storeFacts.violations());
         // The decode-coverage rule, stated where its two operands meet and nowhere else: the
         // store's census of authored decoding @nodeId instructions, and the walk's own ledger of
-        // what it did about each. See NodeIdDecodeCoverage.
+        // what it did about each. See NodeIdDecodeCoverage. A violation is keyed by its use site and
+        // attaches to the field there, so one under a service's arguments sits at the service and
+        // is the store's to judge, the walk installing no decode for a field it does not emit.
         fused.addAll(NodeIdDecodeCoverage.violations(
-            storeFacts.nodeIdDecodeCoverage(), bundle.decodeLedger()));
+                storeFacts.nodeIdDecodeCoverage(), bundle.decodeLedger()).stream()
+            .filter(error -> !silenced.contains(error.coordinate()))
+            .toList());
         var errors = List.copyOf(fused);
         if (!errors.isEmpty() || !projection.emit()) {
             return new Captured(walkErrors, errors, null, warnings);
         }
         return new Captured(walkErrors, errors,
             EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
-                storeFacts.keyProjections(), store), warnings);
+                storeFacts.keyProjections(), store, FetcherOwnership.of(services)), warnings);
     }
 
     private GraphIdentity graphIdentity() {
@@ -464,66 +472,6 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * The store's error-severity defects as build errors. A class a code reference names that the
-     * reading did not read is explained from the classpath: the dependency that carries it and
-     * that the module does not declare, which the defect itself cannot know. An unknown
-     * {@code $session} member is explained by the members the handle does offer.
-     */
-    private List<ValidationError> refusals(no.sikt.graphitron.emit.ServiceEmission services) {
-        var stored = storedRefusals();
-        if (!stored.isEmpty()) {
-            return stored;
-        }
-        var out = new ArrayList<>(unemittedOutboxes(services));
-        out.addAll(unemittedProjections(services));
-        return List.copyOf(out);
-    }
-
-    /**
-     * An {@code argMapping} pair projecting a key column of a node id into a {@code @service}
-     * parameter whose field the store does not emit yet: only the fetcher the store emits reads a
-     * projection there, so the field is deferred, naming why its fetcher is not emitted, rather than
-     * handed the encoded id. A deferral and not a store defect: which fetchers this generator emits is
-     * a fact about its code, as the sites {@code ArgmappingProjectionDefects} defers are.
-     */
-    private List<ValidationError> unemittedProjections(no.sikt.graphitron.emit.ServiceEmission services) {
-        return no.sikt.graphitron.emit.BuildQuery.projected(store).stream()
-            .filter(row -> !no.sikt.graphitron.emit.ServiceEmission.EMITTED.equals(services.verdict(row.callCoordinate())))
-            .map(row -> {
-                var rejection = no.sikt.graphitron.model.diagnostics.Rejection.deferred(
-                    "The argMapping entry '" + row.entry() + "' projects a key column of a node id into a @service"
-                    + " parameter, which only the fetcher the store emits reads, and this field's is not emitted"
-                    + " from the store yet (" + services.verdict(row.callCoordinate()) + "): hand the parameter the"
-                    + " node's record or a tuple of its key instead.");
-                return ValidationError.forField(row.fieldCoordinate(), rejection,
-                    new graphql.language.SourceLocation(row.line(), row.column(), row.sourceName()));
-            })
-            .toList();
-    }
-
-    /**
-     * A {@code @service} mutation's {@code @outbox} whose field the store does not emit yet: its
-     * messages are written by the store-emitted fetcher alone, so the field is refused, naming why
-     * the fetcher is not emitted, rather than accepted without its messages. The refusal goes with
-     * the last service the classified emitters still build.
-     */
-    private List<ValidationError> unemittedOutboxes(no.sikt.graphitron.emit.ServiceEmission services) {
-        return no.sikt.graphitron.emit.OutboxQuery.read(store).rows().stream()
-            .filter(row -> row.producer() instanceof no.sikt.graphitron.emit.OutboxQuery.Service)
-            .filter(row -> !services.emits(row.typeName() + "." + row.fieldName()))
-            .map(row -> {
-                String coordinate = row.typeName() + "." + row.fieldName();
-                var rejection = no.sikt.graphitron.model.diagnostics.Rejection.structural(
-                    "An @outbox on a @service is written by the fetcher the store emits, and this field's is not"
-                    + " emitted from the store yet ("
-                    + services.verdict(coordinate) + "): remove the @outbox until it is.");
-                return ValidationError.forField(coordinate, rejection,
-                    new graphql.language.SourceLocation(row.at().line(), row.at().column(), row.at().sourceName()));
-            })
-            .toList();
-    }
-
-    /**
      * The {@code <lint>} block's disabled rule ids, against the lint rules and the store's defect
      * codes: an unknown id or an error's code fails the run before anything is judged.
      */
@@ -542,6 +490,12 @@ public class GraphQLRewriteGenerator {
             .toList();
     }
 
+    /**
+     * The store's error-severity defects as build errors. A class a code reference names that the
+     * reading did not read is explained from the classpath: the dependency that carries it and
+     * that the module does not declare, which the defect itself cannot know. An unknown
+     * {@code $session} member is explained by the members the handle does offer.
+     */
     private List<ValidationError> storedRefusals() {
         var nameability = new ClasspathNameability(ctx.classpathRoots());
         return EntryDefectVerdict.rows(store.dsl(), store.graphName()).stream()
@@ -570,15 +524,15 @@ public class GraphQLRewriteGenerator {
         var accepted = acceptedSchema(attributed);
         // The store's verdict comes next: a graph it refuses is not classified, so an author meets
         // the stored defect and never the walk's account of the same fault.
-        // The @service fetchers the store emits, read once: the outbox refusal asks it which fields
-        // it emits, and the fetcher generator emits them in the classified ones' place.
-        var services = no.sikt.graphitron.emit.ServiceEmission.read(store);
-        var refused = refusals(services);
+        var refused = storedRefusals();
         var storedWarnings = storedWarnings();
         if (!refused.isEmpty()) {
             return new PassProducts(List.of(), refused,
                 suppressed(storeWarnings(store, schemas.narrowings())), storedWarnings, null);
         }
+        // The @service fetchers the store emits, read once on a graph it accepts: the walk leaves the
+        // fields it owns to it, and the fetcher generator emits them in the classified ones' place.
+        var services = no.sikt.graphitron.emit.ServiceEmission.read(store);
 
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, accepted, ctx,
             no.sikt.graphitron.emit.AuthoredTenantsQuery.read(store),
@@ -627,7 +581,8 @@ public class GraphQLRewriteGenerator {
             connectionKeyShape);
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
-        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
+        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes(),
+            FetcherOwnership.of(services));
 
         EmissionLog emittedThisRun = new EmissionLog();
         // The representative tenant column, rendered beside the key type: its DataType and

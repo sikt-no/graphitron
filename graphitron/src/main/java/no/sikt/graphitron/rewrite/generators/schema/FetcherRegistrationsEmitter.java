@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators.schema;
 import no.sikt.graphitron.command.TypeUnitCommand;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.rewrite.FetcherOwnership;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;
@@ -67,6 +68,16 @@ public final class FetcherRegistrationsEmitter {
      */
     public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage,
             List<TypeUnitCommand.SchemaShapeUnit> rows) {
+        return emit(schema, outputPackage, rows, FetcherOwnership.NONE);
+    }
+
+    /**
+     * {@link #emit(GraphitronSchema, String, List)}, registering the fields {@code ownership} says
+     * have a fetcher: a field the store owns is registered whatever the classified model made of it,
+     * and a classified service nothing in the schema leads to is not.
+     */
+    public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage,
+            List<TypeUnitCommand.SchemaShapeUnit> rows, FetcherOwnership ownership) {
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
 
         var nestedTypeMap = new LinkedHashMap<String, NestedTypeWiring>();
@@ -96,7 +107,7 @@ public final class FetcherRegistrationsEmitter {
                     // is a mixed-source type whose merged body (dual-shape coordinates as a
                     // run-time source-shape dispatch) is rendered here, never as a nested body.
                     || type instanceof GraphitronType.ResultType) {
-                body = typeBody(schema, name, units, outputPackage, nestedTypeMap.get(name))
+                body = typeBody(schema, name, units, outputPackage, nestedTypeMap.get(name), ownership)
                     .orElseThrow(() -> new IllegalStateException(
                         "schema-shape row for '" + name + "' is flagged registersFetchers but its"
                         + " hosting-classification body is empty; the producer's flag rule and the"
@@ -114,7 +125,7 @@ public final class FetcherRegistrationsEmitter {
                         + " the reach fold disagree");
                 }
                 body = nestedBody(schema, new NestedTypeWiring(name, wiring.nestedFields(),
-                        wiring.returnType().table()), units, outputPackage)
+                        wiring.returnType().table()), units, outputPackage, ownership)
                     .orElseThrow(() -> new IllegalStateException(
                         "schema-shape row for '" + name + "' is flagged registersFetchers but its"
                         + " nested body is empty; the producer's flag rule and the ownsFetchers"
@@ -127,10 +138,11 @@ public final class FetcherRegistrationsEmitter {
 
 
     private static Optional<CodeBlock> typeBody(GraphitronSchema schema, String typeName,
-            no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage, NestedTypeWiring dualWiring) {
+            no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage, NestedTypeWiring dualWiring,
+            FetcherOwnership ownership) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
-            .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
+            .filter(ownership::hasFetcher)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         if (fields.isEmpty()) {
@@ -144,12 +156,12 @@ public final class FetcherRegistrationsEmitter {
     }
 
     private static Optional<CodeBlock> nestedBody(GraphitronSchema schema, NestedTypeWiring ntw,
-            no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage) {
+            no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage, FetcherOwnership ownership) {
         // Every nested object type that owns a fetcher gets its own <Type>Fetchers class, and
         // each field's read (reified or method-backed) references into it. The gate is shared with
         // TypeFetcherGenerator.collectNestedFetcherClasses (which emits the class) via
         // FetcherEmitter.nestedTypeOwnsFetchers so the two sites cannot drift.
-        if (!FetcherEmitter.nestedTypeOwnsFetchers(ntw.fields())) {
+        if (!FetcherEmitter.nestedTypeOwnsFetchers(ntw.fields(), ownership)) {
             return Optional.empty();
         }
         ClassName nestedFetchersClass = fetchersClass(units, ntw.nestedTypeName());
@@ -159,6 +171,9 @@ public final class FetcherRegistrationsEmitter {
         var body = CodeBlock.builder();
         body.add("codeRegistry").indent();
         for (var field : ntw.fields()) {
+            if (!ownership.hasFetcher(field)) {
+                continue;
+            }
             // A nested-only (pure NestingType) coordinate is never dual-shape (a mixed-source type is a
             // ResultType, emitted via typeBody), so resultType and dualWiring are null and the dispatch
             // path in registrationEntry short-circuits. The schema still reaches FetcherEmitter.bind,

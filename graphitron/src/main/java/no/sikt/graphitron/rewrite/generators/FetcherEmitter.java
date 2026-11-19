@@ -117,15 +117,16 @@ public final class FetcherEmitter {
     }
 
     /**
-     * Whether a nested object type owns any fetcher, i.e. any classified field. Every classified
-     * field {@link #bind}s to a fetcher, so a nested type owning one gets its own
+     * Whether a nested object type owns any fetcher, i.e. any field {@code ownership} says has one.
+     * Every such field {@link #bind}s to a fetcher, so a nested type owning one gets its own
      * {@code <Type>Fetchers} class and the registration references into it. The gate's one home
      * is the reach fold ({@link no.sikt.graphitron.rewrite.NestingReach#ownsFetchers}), which
      * the type-unit producer's membership and the registrations emitter read; this is the
      * legacy tree's delegation.
      */
-    public static boolean nestedTypeOwnsFetchers(List<? extends GraphitronField> nestedFields) {
-        return no.sikt.graphitron.rewrite.NestingReach.ownsFetchers(nestedFields);
+    public static boolean nestedTypeOwnsFetchers(List<? extends GraphitronField> nestedFields,
+                                                 no.sikt.graphitron.rewrite.FetcherOwnership ownership) {
+        return no.sikt.graphitron.rewrite.NestingReach.ownsFetchers(nestedFields, ownership);
     }
 
     /**

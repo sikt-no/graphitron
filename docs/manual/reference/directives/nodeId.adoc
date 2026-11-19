@@ -132,8 +132,7 @@ type Film @table(name: "film") @node {
 
 A parameter that is not of the column's type, or not a `List` of it for a list of ids, is refused
 at the `@service` reference, naming the declaration that would take it. A list projected at a
-`@routine` or `@condition` parameter is not emitted yet and fails the build saying so, and so does
-a projection at a `@service` whose fetcher is not emitted from the store yet, the message naming why.
+`@routine` or `@condition` parameter is not emitted yet and fails the build saying so.
 
 A path that reaches the node id through an input object, `pick.film`, projects too where the node's
 key has one column, and must name the column where it has several. An xref:outbox.adoc[`@outbox`]

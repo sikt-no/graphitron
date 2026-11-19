@@ -82,21 +82,18 @@ public final class FrameQuery {
 
     /**
      * One frame: the producing occurrence, the type declaring its field, its outcome if any, and
-     * under an object the parent's table it takes its key off; at a root there is none.
+     * under an object the parent's table it takes its key off; at a root there is none. A parent row
+     * is a row of the table the declaring type binds, which its projection selects; otherwise the
+     * parent holds an object the key is read off.
      */
     public record Row(String coordinate, String declaringType, Optional<Outcome> outcome,
-                      Optional<ParentTable> parent, Optional<Accessor> accessor) {
+                      Optional<ParentTable> parent, Optional<Accessor> accessor, boolean parentRow) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(declaringType, "declaringType");
             Objects.requireNonNull(outcome, "outcome");
             Objects.requireNonNull(parent, "parent");
             Objects.requireNonNull(accessor, "accessor");
-        }
-
-        /** A frame read off a parent row of a table, or off a parent that is that table's record. */
-        public Row(String coordinate, String declaringType, Optional<Outcome> outcome, Optional<ParentTable> parent) {
-            this(coordinate, declaringType, outcome, parent, Optional.empty());
         }
 
         public boolean root() {
@@ -119,7 +116,7 @@ public final class FrameQuery {
             .select(p.COORDINATE, f.TYPE_NAME, p.START, po.OUTCOME_TYPE_NAME, po.ERRORS_FIELD_NAME,
                 t.TABLE_NAME, s.TABLES_CLASS_FQN, t.JOOQ_NAME,
                 key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME),
-                ka.SLOT_CLASS_NAME, ka.SLOT_METHOD_NAME, t.RECORD_CLASS_FQN)
+                ka.SLOT_CLASS_NAME, ka.SLOT_METHOD_NAME, t.RECORD_CLASS_FQN, tt.TYPE_NAME)
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
@@ -146,7 +143,8 @@ public final class FrameQuery {
                 "ROOT".equals(rec.value3())
                     ? Optional.empty()
                     : Optional.of(new ParentTable(rec.value6(), rec.value7(), rec.value8(), rec.value9())),
-                Optional.ofNullable(rec.value10()).map(cls -> new Accessor(cls, rec.value11(), rec.value12()))));
+                Optional.ofNullable(rec.value10()).map(cls -> new Accessor(cls, rec.value11(), rec.value12())),
+                rec.value13() != null));
     }
 
     /** The table's primary key, in key order. */

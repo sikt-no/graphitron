@@ -1940,6 +1940,11 @@ input FilmDraftInput {
     title: String!
 }
 
+input FilmDraftNotedInput {
+    title: String!
+    note: String
+}
+
 # Binds FilmBundleDraft. `limits` names no member of it, so its capacity flattens onto the record;
 # `films` binds a List<@Valid FilmDraft> member.
 input FilmBundleDraftInput {
@@ -5935,6 +5940,13 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService",
             method: "countDistinct", argMapping: "drafts: in"
+        })
+
+    # One input built into a FilmDraft, its note, which FilmDraft has no member for, handed to its own parameter.
+    countNotedFilmDraft(in: FilmDraftNotedInput!): FilmDraftsCountedPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService",
+            method: "countNoted", argMapping: "draft: in, note: in.note"
         })
 
     # The same channel over one input bound to a record through a grouping input, a list member and

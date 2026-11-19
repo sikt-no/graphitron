@@ -167,13 +167,13 @@ class LauncherRelationClosureTest {
 
     /**
      * Row → emit: every row's {@code (owner, method)} ref names a method the run declared. A
-     * service the store emits keeps its row in the relation but is rendered from the store, with no
+     * service the store owns keeps its row in the relation but is rendered from the store, with no
      * launcher behind it, so its row is not asked for one.
      */
     @Test
     void everyRowResolvesToAnEmittedMethod() {
         for (LauncherCommand row : launchers.rows()) {
-            if (services.emits(coordinateOf(row))) continue;
+            if (services.owns(coordinateOf(row))) continue;
             String unitFqcn = row.unit().owner().fqcn();
             Map<String, Set<String>> byPath = walk.declaredMethods().get(unitFqcn);
             assertThat(byPath)

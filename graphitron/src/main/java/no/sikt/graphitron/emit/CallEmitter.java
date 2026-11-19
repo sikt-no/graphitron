@@ -85,7 +85,11 @@ public final class CallEmitter {
 
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
 
-    /** What the emitter makes of a call: its body and the helpers its fills need, or why it cannot. */
+    /**
+     * What the emitter makes of a call: its body and the helpers its fills need. A call it cannot
+     * make a body for throws, naming why: the store refuses every such call, so meeting one is a
+     * generator bug.
+     */
     public sealed interface Result {
         record Emitted(MethodSpec body, List<MethodSpec> helpers, List<FieldSpec> constants)
                 implements Result {
@@ -99,8 +103,6 @@ public final class CallEmitter {
                 this(body, helpers, List.of());
             }
         }
-
-        record NeedsBuilding(String reason) implements Result {}
     }
 
     /**
@@ -138,10 +140,10 @@ public final class CallEmitter {
                               Optional<Lift> lift, Optional<Polymorphic> polymorphic,
                               Optional<ValidationEmitter.Runtime> validation) {
         if (polymorphic.isPresent() && (frameKey.isPresent() || lift.isPresent())) {
-            return new Result.NeedsBuilding(call.coordinate() + " lifts polymorphically, which only a root call does");
+            throw new IllegalStateException(call.coordinate() + " lifts polymorphically, which only a root call does");
         }
         if (validation.isPresent() && (frameKey.isPresent() || polymorphic.isPresent())) {
-            return new Result.NeedsBuilding(call.coordinate() + " validates, which only a root call lifting at most"
+            throw new IllegalStateException(call.coordinate() + " validates, which only a root call lifting at most"
                 + " onto one table does");
         }
         var answer = SessionIdentityRows.typeOf(call.resultType());
@@ -152,22 +154,17 @@ public final class CallEmitter {
         Batch batch = null;
         if (frameKey.isPresent()) {
             if (sourceType.isEmpty()) {
-                return new Result.NeedsBuilding(call.coordinate() + " runs under an object and takes no keys");
+                throw new IllegalStateException(call.coordinate() + " runs under an object and takes no keys");
             }
             var planned = batch(frameKey.get(), sourceType.get(), answer, call.coordinate());
             if (planned instanceof String reason) {
-                return new Result.NeedsBuilding(reason);
+                throw new IllegalStateException(reason);
             }
             batch = (Batch) planned;
             method.addParameter(ParameterizedTypeName.get(SET, frameKey.get().keyType()), "frameKeys");
         }
         method.addParameter(ENV, "env").addParameter(DSL_CONTEXT, "dsl");
-        var filled = FillEmitter.emit(fills, sourceType, runtime, builds);
-        if (filled instanceof FillEmitter.Result.NeedsBuilding refused) {
-            return new Result.NeedsBuilding("parameter " + refused.parameterName() + " of " + call.coordinate()
-                + ": " + refused.reason());
-        }
-        var emitted = (FillEmitter.Result.Emitted) filled;
+        var emitted = (FillEmitter.Result.Emitted) FillEmitter.emit(fills, sourceType, runtime, builds);
         if (batch != null) {
             batch.declareKeys(method, frameKey.get());
         }

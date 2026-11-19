@@ -94,9 +94,6 @@ The walk's read path is gone
 │   ├── A leaf a filter compares is stated once
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
-    ├── The service fields are emitted from the store
-    │   ├── A producer's fetcher parts are emitted from the store
-    │   └── Every service verdict is emitted or a stored deferral
     └── The walk's test service shapes are fact documents or walk-only refusals
 ```
 
@@ -756,9 +753,6 @@ static method needs no holder.
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
 * **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
-* **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
-  call, the re-read and the polymorphic re-read each have an emitter reading the store; what remains
-  is routine writes, which take the frame but not yet the re-read, today an unordered `IN` (a bug).
 * **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store" and "The walk's service path is gone". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
 * **The projection units are rendered from the store** `blocked`, on the facts below. The flip goes
   as soon as it can, each piece when the store states it whole and the walk keeps the rest
@@ -1062,150 +1056,76 @@ static method needs no holder.
   so graphql-java converts arguments both ways and every `valueOf` in the emitters goes; the store
   states each enum's Java class and whether a class is an enum, and uses that disagree are decided
   there. Output serializes unchanged, graphql-java matching a constant or its name either way.
-* **The service fields are emitted from the store** `open`, E's. The flip: every `@service` field's fetcher is assembled by the parts' emitters, and
-  the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
-  changes on purpose, its behaviour does not, save a behaviour ruled a defect. It goes field by
-  field as the parts land: `ServiceEmission` emits a field the store states whole, the classified
-  emitters the rest, and `EmissionCensusTest` pins the count: all 133 of the example schema's
-  services on 2026-11-13. In FS-plattform at main 946fc4aa20 every `@service` is emitted from the
-  store (opptak 264 of 264 on 2026-11-14). Tenant routing is done in the flip rather than
-  deferred, since sis's port to the rewrite, Filip's `sis/upgrade-graphitron` at 68d0313ebf,
-  configures `INSTITUSJONSNR_EIER` and has 73 services with a frame: a root call runs on the
-  connection the store states for it, `graphitron_occurrence_connection`, and so does a child call,
-  inheriting the key its producer chain hands down or running unscoped, save a child service routed by
-  its row's tenant, which the store routes but no frame emitted from the store groups by tenant yet,
-  censused `FAN_OUT_BY_ROW_TENANT`. That census also found four sis inputs whose field binds no column of the record's
-  table, to show Filip: `Mutation.leggTilBegrensningerForEmnevalgIStudieoppbygningsdeler`'s
-  `studienivaIntervall.fraStudienivaId` on `EMNEVALG_I_EMNEKOMBINASJON`, and `telefonnummertype` on
-  `PERSON_TELEFON` under `opprettStudenter`, `registrerInnreisendeUtvekslinger` and
-  `registrerInnreisendeUtvekslingerGittPersonId`. Two Java
-  refusals stand in for the store until then, transitional (Alf, 2026-11-13: "as long as we shed it
-  very soon"): `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes`, refusing a
-  key-column projection and an `@outbox` at a `@service` whose fetcher is not emitted from the store.
-  Both go with the last classified service, deleted in the flip's commit. Before the flip, every
-  refusal the store-fed emitters raise in Java becomes a stored defect, one rule per code at the
-  stage whose facts it reads; among them `BuildQuery.place`'s refusal of an id of several node types
-  in an input built into a jOOQ record, a slot the store states no decode shape for. Three are
-  `DiscriminatedQuery`'s, each of basis `UNSUPPORTED` and raised by the first stage holding its facts
-  (A, 2026-11-16): a participant on a table of its own, `SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED`,
-  at the `@service` field by occurrence-participants, which writes the participants; an object with
-  no table of its own read down a path rather than off the row,
-  `SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED`, and a scalar read more than one step off the shared
-  table, `SCALAR_PATH`, at the participant's field by occurrence-bindings, the first stage holding the
-  nesting fields and the paths' steps. `SCALAR_PATH` is the one code for a scalar a site cannot read
-  down a path: a read-side rule elsewhere adds an arm to it rather than minting another. That commit
-  deletes `DiscriminatedQuery.Row.refusal` and the refusal in `LiftEmitter.discriminatedLift`,
-  `DiscriminatedQuery` reading only lifting occurrences and treating what the store refuses as a
-  broken invariant. opptak's `settMeldingLest`/`settMeldingUlest` lift through their
-  participants' projection units, where the nullable `avsender` is a nesting field, present wherever
-  its parent is (Alf, 2026-11-15), so the flip leaves them emitted.
-  The fold's shared-alias set (`DiscriminatedQuery.Row.sharedAliasFieldNames` and the selective
-  `restrictTo` in `LiftEmitter.discriminatedLift`) exists because the walk's projection units alias a
-  nesting field's or an interface-declared field's terms with no owner. F's store-fed units stamp
-  each alias with the occurrence's declaring type (Alf, 2026-11-13), so once the lift calls those
-  units the set and the selective `restrictTo` are deleted and each participant restricts with
-  `Set.of()`.
-  On the flip, add `Mutation.countNotedFilmDraft` over `FilmDraftService.countNoted` with its
-  execution test and census entry; the walk's `InputBeanResolver` refuses it until then.
-  * **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
-    At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
-    `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and
-    `BuildQuery.decodeParameter` read it. What is left is the bean member an input field fills, which
-    `BuildQuery.bind` still judges with `NodeIdDecodeQuery.resolve`, and a record of another table
-    the id reaches through a foreign key. The model (Alf, 2026-11-10): the class each input object
-    occurrence is built into, a `MEMBER` binding beside `VALUE` keyed into `code_write_slot` (matched
-    on the bound name for a service and the GraphQL name for a condition), the node id slot stored
-    per call parameter for every call kind, and the shape relation widened to those slots. The first
-    two are stated: `graphitron_occurrence_built_class` and `graphitron_occurrence_binding_member`,
-    which `BuildQuery` reads in place of matching member names. The slot is stored too:
-    `graphitron_occurrence_node_id_slot`, a supertype over the call parameter, the built class's
-    member and the built record an id lands on, each subtype written by one plain rule.
-    * **`BuildQuery`'s refusals are defects** `open`, E's. A class nothing constructs, a field
-      filling no member, a list that cannot group, two fields on one member, a `@condition` taking a
-      jOOQ record and a record's field naming no column are entry defects at the field, and a node id
-      with no route onto a record under a `@service` is `NODE_ID_LANDS_ON_TABLE`. What is left: a
-      list of node ids written onto a record and a nested input object filling a member typed as a
-      jOOQ record, both refused only in Java, and the Java refusals themselves, which go once nothing
-      falls back to the classified emitter.
-    * **A record's column defects read the column binding** `open`, off the critical path. The
-      output and input arms of `COLUMN_UNRESOLVED` and `COLUMN_AMBIGUOUS` each work out spelling
-      resolution from `sql_column_spelling`; reading what `graphitron_occurrence_column` leaves
-      unbound, as `BuildQuery` does, they judge the binding the emitter writes. `COLUMN_AMBIGUOUS` on
-      a record has no pinning case yet.
-    * **A shared input built into several classes names which in its defect** `open`, off the
-      critical path. A build defect's detail is the least class or member where an input is built
-      into several, so which class and occurrence failed is lost; a detail relation, as the
-      parameter defects have, names each.
-    * **Grouping under a record is decided once** `open`, off the critical path.
-      `BuildQuery.columns` decides in Java that a nested input object under a jOOQ record groups onto
-      it, which `graphitron_occurrence_built_class` states as a `GROUPING` row; it reads the row.
-      * **A nested input under a jOOQ record binds to the embeddable it names** `open`, E's, off the
-        critical path; an embeddable is an EMBEDDABLE field of `sql_table_field`, its record class the
-        value class (Alf, 2026-11-18). Alf, 2026-11-17: under a jOOQ record a
-        nested input unnests and its leaves look for the record's fields, an unmatched leaf its own
-        defect; where the record has an embedded field matching the nested input, the input binds to
-        it rather than unnesting, and graphitron should support it. Store side only: a
-        `graphitron_occurrence_built_class` branch ahead of `GROUPING` builds the input into the
-        embeddable's record, and the record build writes it. Open: whether the write is per column,
-        grouped, or `set` of the whole embeddable.
-    * **A built class at a parameter names its call parameter** `open`, off the critical path.
-      `BuildQuery.roots` recomputes the class a parameter takes from `code_method_parameter` to find
-      its `PARAMETER` row; tied to the call parameter it lands on, the row is read directly.
-    * **A class's entry in the graph is resolved once** `open`, off the critical path. The graph's
-      first entry declaring a class, by name, is spelled in `graphitron_occurrence_source_object`,
-      `graphitron_occurrence_producer_result` and `graphitron_occurrence_built_class`; one stored
-      resolution of a class to its entry is read by all three.
-  * **A record's writer per column is stated in the store** `open`, off the critical path. Which input
-    field writes each column of a jOOQ record, a live one over a deprecated one, is decided in
-    `BuildQuery`, again in `BuildEmitter`'s conflict label and a third time in `ValidationEmitter`'s
-    violation paths; stated per column, two live writers become a defect at the input type and every
-    emitter reads the writer it is told.
-  * **The unchecked-column advisory reads the store** `open`, off the critical path.
-    `validation-column-unchecked` partitions the classified model's column bindings while a service
-    the store emits takes its checks from `BuildQuery`'s column writes; read off the validating
-    producer's occurrence columns anti-joined to `sql_column_record_accessor`, the advisory and the
-    checks state one fact.
-  * **A child service whose source collects no table's records is refused** `open`. A child
-    `@service` whose `Sources` parameter collects records of no table falls between
-    `SOURCE_PARAMETER_MISSING` and the key-row arms, and which code refuses it is undecided (Alf,
-    2026-11-10).
-  * **A table-bound field read off a member's value is judged** `open`. `FilmBlurbHolder.blurb`,
-    whose member hands back a `FilmBlurb` object while the field's type is bound to `film`, is
-    refused by the walk ("requires a typed accessor") and passes the store, `NO_KEY_FROM_PARENT`
-    reading the member's value; whether that is intended or a defect is missing is Alf's to decide.
-  * **A class states whether it is nested** `open`, off the critical path. The code census finds a
-    nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
-    and reading nested classes reached through another class's members closes the one hop the census
-    reads today.
-  * **Every service verdict is emitted or a stored deferral** `open`, E's. The service flip completes by refusal (Alf, 2026-11-15:
-    "we refuse it so we can flip"): every verdict `ServiceEmission.verdict` returns other than
-    `EMITTED` follows a stored error defect, of an existing code or one of its own, raised by the
-    first stage holding its facts, or is impossible on what the store writes and thrown as a generator
-    bug. Landed: several occurrences, a connection, a row-tenant fan-out, a discriminated target, a
-    polymorphic or validating child, a list of node ids or one of several types built, a batch shape,
-    a key off an object, and an argument path to a node id, an input object or a Java enum. What
-    remains, each an arm of an existing code: an argument path into a container other than a `List`;
-    a root service whose result names no class at a table-bound target (`SERVICE_RETURN_MISMATCH`);
-    a discriminated field with an outcome, to pin; a child service under a type nested in a `@table`
-    type or under an object of an unread class (B's, with `City.names`); an input field another binder
-    takes in a bean with no member for it, which is emitted rather than refused, after
-    `graphitron_occurrence_taken`; the refusals no accepted graph reaches, thrown; and a gate that on
-    every fact graph a service not emitted carries an error defect. It closes when, on any graph the store's verdict accepts, the verdict can only be `EMITTED`; then
-    the walk's fallback for the fields `ServiceEmission.emits` refuses goes, and
-    `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes` go in the same commit.
-    Until then a `@service(transactionControl: SERVICE)` field `ServiceEmission.emits` refuses falls
-    back to the walk, which runs it in the field's transaction, so the gap this node closes also
-    covers that argument; on sis and opptak every refused service already has a stored error defect
-    on the field or its input types (`PARAMETER_UNFILLED`, `CODE_REFERENCE_*`, `MEMBER_UNKNOWN`,
-    `GROUPING_LIST`, `NODE_ID_TYPE_NAME_UNDECLARED_STUB`).
-    Unused in FS-plattform for the two measured so far: sis
-    73 and opptak 251 service producers, none returning a connection, none fanning out by row tenant.
-    What of `ServiceCatalog` stays when the walk's service path goes, and who owns it, is named in the
-    model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
-    `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
-    `pathLeafDeclaresNodeId`, `resolvePathLeafType`).
-    The refusals only the walk makes block the flip too, since the walk's fallback cannot go while
-    it alone refuses them: "A `@splitQuery` on a write payload's data field is judged in the store" (Alf's to rule) and "splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C".
+* **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
+  At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
+  `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and
+  `BuildQuery.decodeParameter` read it. What is left is the bean member an input field fills, which
+  `BuildQuery.bind` still judges with `NodeIdDecodeQuery.resolve`, and a record of another table
+  the id reaches through a foreign key. The model (Alf, 2026-11-10): the class each input object
+  occurrence is built into, a `MEMBER` binding beside `VALUE` keyed into `code_write_slot` (matched
+  on the bound name for a service and the GraphQL name for a condition), the node id slot stored
+  per call parameter for every call kind, and the shape relation widened to those slots. The first
+  two are stated: `graphitron_occurrence_built_class` and `graphitron_occurrence_binding_member`,
+  which `BuildQuery` reads in place of matching member names. The slot is stored too:
+  `graphitron_occurrence_node_id_slot`, a supertype over the call parameter, the built class's
+  member and the built record an id lands on, each subtype written by one plain rule.
+  * **`BuildQuery`'s refusals are defects** `open`, E's. A class nothing constructs, a field
+    filling no member, a list that cannot group, two fields on one member, a `@condition` taking a
+    jOOQ record and a record's field naming no column are entry defects at the field, and a node id
+    with no route onto a record under a `@service` is `NODE_ID_LANDS_ON_TABLE`. What is left: a
+    list of node ids written onto a record and a nested input object filling a member typed as a
+    jOOQ record, both refused only in Java, and the Java refusals themselves, which go once nothing
+    falls back to the classified emitter.
+  * **A record's column defects read the column binding** `open`, off the critical path. The
+    output and input arms of `COLUMN_UNRESOLVED` and `COLUMN_AMBIGUOUS` each work out spelling
+    resolution from `sql_column_spelling`; reading what `graphitron_occurrence_column` leaves
+    unbound, as `BuildQuery` does, they judge the binding the emitter writes. `COLUMN_AMBIGUOUS` on
+    a record has no pinning case yet.
+  * **A shared input built into several classes names which in its defect** `open`, off the
+    critical path. A build defect's detail is the least class or member where an input is built
+    into several, so which class and occurrence failed is lost; a detail relation, as the
+    parameter defects have, names each.
+  * **Grouping under a record is decided once** `open`, off the critical path.
+    `BuildQuery.columns` decides in Java that a nested input object under a jOOQ record groups onto
+    it, which `graphitron_occurrence_built_class` states as a `GROUPING` row; it reads the row.
+    * **A nested input under a jOOQ record binds to the embeddable it names** `open`, E's, off the
+      critical path; an embeddable is an EMBEDDABLE field of `sql_table_field`, its record class the
+      value class (Alf, 2026-11-18). Alf, 2026-11-17: under a jOOQ record a
+      nested input unnests and its leaves look for the record's fields, an unmatched leaf its own
+      defect; where the record has an embedded field matching the nested input, the input binds to
+      it rather than unnesting, and graphitron should support it. Store side only: a
+      `graphitron_occurrence_built_class` branch ahead of `GROUPING` builds the input into the
+      embeddable's record, and the record build writes it. Open: whether the write is per column,
+      grouped, or `set` of the whole embeddable.
+  * **A built class at a parameter names its call parameter** `open`, off the critical path.
+    `BuildQuery.roots` recomputes the class a parameter takes from `code_method_parameter` to find
+    its `PARAMETER` row; tied to the call parameter it lands on, the row is read directly.
+  * **A class's entry in the graph is resolved once** `open`, off the critical path. The graph's
+    first entry declaring a class, by name, is spelled in `graphitron_occurrence_source_object`,
+    `graphitron_occurrence_producer_result` and `graphitron_occurrence_built_class`; one stored
+    resolution of a class to its entry is read by all three.
+* **A record's writer per column is stated in the store** `open`, off the critical path. Which input
+  field writes each column of a jOOQ record, a live one over a deprecated one, is decided in
+  `BuildQuery`, again in `BuildEmitter`'s conflict label and a third time in `ValidationEmitter`'s
+  violation paths; stated per column, two live writers become a defect at the input type and every
+  emitter reads the writer it is told.
+* **The unchecked-column advisory reads the store** `open`, off the critical path.
+  `validation-column-unchecked` partitions the classified model's column bindings while a service
+  the store emits takes its checks from `BuildQuery`'s column writes; read off the validating
+  producer's occurrence columns anti-joined to `sql_column_record_accessor`, the advisory and the
+  checks state one fact.
+* **A child service whose source collects no table's records is refused** `open`. A child
+  `@service` whose `Sources` parameter collects records of no table falls between
+  `SOURCE_PARAMETER_MISSING` and the key-row arms, and which code refuses it is undecided (Alf,
+  2026-11-10).
+* **A table-bound field read off a member's value is judged** `open`. `FilmBlurbHolder.blurb`,
+  whose member hands back a `FilmBlurb` object while the field's type is bound to `film`, is
+  refused by the walk ("requires a typed accessor") and passes the store, `NO_KEY_FROM_PARENT`
+  reading the member's value; whether that is intended or a defect is missing is Alf's to decide.
+* **A class states whether it is nested** `open`, off the critical path. The code census finds a
+  nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
+  and reading nested classes reached through another class's members closes the one hop the census
+  reads today.
 * **A decode shape references the node id it decodes** `open`, E's, off the critical path. `graphitron_occurrence_node_id_shape` references `graphitron_occurrence_binding`, not the `graphitron_occurrence_node_id` rows the decode reads, which have no key on (coordinate, bound) to reference; that a shape's bound has its node id rows holds by the shape rule's joins, and `BuildQuery.decodeSlot` throws as a generator bug where it does not. A key there, without a column made for it, moves that into the DDL.
 * **A record-class decode reads what its shape row states** `open`, E's, off the critical path. `NodeIdDecodeQuery.resolve` decides a node id's decode into another table's record from its own reads where the store already decided it: it takes the first path at the coordinate from the record's table to the node's, where the shape rule vouches only for a one-step path carrying every key column back, so two stated paths could make it pick one the store did not; and it maps a record class to a table by the first source it reads, where the store resolves one declared in two sources by the least source name. Reading the slot record columns and the record table off the shape row the rule wrote makes the two agree by construction.
 * **A @tenantFanOut scatter is stated as a connection outcome** `open`, off the critical path. A field marked `@tenantFanOut` reads every tenant the request may see, one statement per tenant, a route `graphitron_occurrence_connection` has no outcome for: under a global parent it gets no row, and `UNROUTED_CHILD` leaves it out by the marker rather than by a stated route. Stating the scatter as an outcome beside `ROUTED`, `INHERIT` and `UNSCOPED` lets the exemption go and the emitter read the route off the store; sakila's multitenant `Language.films` is the case that pins it.
@@ -1249,9 +1169,14 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "The walk's test service shapes are fact documents or walk-only refusals". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service path is gone** `blocked`, E's, on "The walk's test service shapes are fact documents or walk-only refusals". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
-  a `$context` pair, reading `graphitron_call_context_key`.
+  a `$context` pair, reading `graphitron_call_context_key`. What of `ServiceCatalog` stays has its
+  owners: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
+  `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
+  `pathLeafDeclaresNodeId`, `resolvePathLeafType`). A nesting parent whose only cause is a
+  refused child service the store owns stays a walk error until the walk's service path is gone; the
+  subtract emits it.
   * **The walk's test service shapes are fact documents or walk-only refusals** `open`, E's, blocks
     the subtract. About 520 inline `@service` occurrences in about 100 `graphitron` test files run
     only through the walk (`ServiceEmission.none()`: `TestSchemaHelper.buildSchema`, `buildBundle`,
@@ -1265,8 +1190,8 @@ static method needs no holder.
     the flip lands.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
-* **A `@splitQuery` on a write payload's data field is judged in the store** `open`, blocks the
-  service flip. `MutationInputResolver.validateReturnType` refuses it; the store makes the data field
+* **A `@splitQuery` on a write payload's data field is judged in the store** `open`, off the
+  critical path. `MutationInputResolver.validateReturnType` refuses it; the store makes the data field
   a `LOOKUP` producer and says nothing. Refused or admitted is Alf's to rule.
 * **A list field over an accessor returning one record is refused in the store** `open`, off the
   critical path. `FieldBuilder.collectAccessorMatches` refuses it; `LIST_OVER_ONE_VALUE` covers
@@ -1274,7 +1199,7 @@ static method needs no holder.
 * **A hop-0 filter on a record parent's split query is refused in the store** `open`, off the
   critical path. `BuildContext.buildParentCorrelation` refuses a `condition:` filter on the first
   hop where the parent is no catalog table; the store has no code for it.
-* **splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C** `open`, blocks the service flip. It is a warning defect rather than a lint arm, `lint_violation` being the derivation family's, and lands with the walk's lint removed in one commit. The rule is CLASSIFIER, raised by FieldBuilder at a field returning a @table type under a class-backed parent and at a @service payload's data field. The payload arm goes silent when the service subtract deletes it, and the record-parent arm with the walk. In the store it is a lint_violation arm: the parent holds an object (graphitron_result OBJECT) and the field returns a table-bound type. It reads the fetchers stage's relations, so its case is a fact document rather than LintRuleCasesTest's AST-only corpus, and the move settles how that catalogue test counts it. It also reaches a DML payload's data field, which the walk does not warn on.
+* **splitquery-redundant-on-record-parent is an ENGINE lint over the store's results, claimed by C** `open`, off the critical path. It is a warning defect rather than a lint arm, `lint_violation` being the derivation family's, and lands with the walk's lint removed in one commit. The rule is CLASSIFIER, raised by FieldBuilder at a field returning a @table type under a class-backed parent and at a @service payload's data field. The payload arm goes silent when the service subtract deletes it, and the record-parent arm with the walk. In the store it is a lint_violation arm: the parent holds an object (graphitron_result OBJECT) and the field returns a table-bound type. It reads the fetchers stage's relations, so its case is a fact document rather than LintRuleCasesTest's AST-only corpus, and the move settles how that catalogue test counts it. It also reaches a DML payload's data field, which the walk does not warn on.
 * **A payload's data field bound to another table than its service's records is refused in the store** `open`, off the critical path. A `@service` handing back a table's records into a payload whose data field's type carries `@table` lifts them for that field by their keys, which holds only where the two tables are one. The walk refuses the other case at the carrier; in the store `SERVICE_RETURN_MISMATCH` checks a bound type only and `SERVICE_PAYLOAD_IN_A_LIST` its own list case, and no rule compares the data field's table with the records'. A document first finds what, if anything, fires there; then one rule raises it at the data field.
 * **An empty routed answer over a non-lifted jOOQ Result names its table** `open`, off the critical path. `ConnectionQuery` builds a service's empty `RESULT` answer over the producer result's table, which is its lift. Since a service is lifted only where its field's type is (Alf, 2026-11-18), a `Result` of a table's records under a type without `@table` has a `RESULT` row and no lifted table, so a call naming no tenant would build its empty answer over nothing. No document reaches it yet (a type without `@table` is unscoped unless `$tenant` names one); the record's own table, read off its class, is what the empty answer needs.
 * **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
@@ -1343,7 +1268,7 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
   every argument or input field `override: true` switches off that no call binds, and every
   `@lookupKey` or `@orderBy` argument a call does bind. Both lists empty, or only author errors,
   is the evidence the flag can go; anything else comes to Alf before the nodes below.
-* **What binds an argument is stated** `blocked`, on "A producer's fetcher parts are emitted from the store".
+* **What binds an argument is stated** `open`.
   What binds each argument and input-field occurrence is stated beside its `PARAMETER` bindings: a
   call, or the generator, or nothing; binding an input-typed argument binds every field inside it,
   and binding one input field leaves its siblings to the generator. Nothing is `ARGUMENT_UNBOUND` at

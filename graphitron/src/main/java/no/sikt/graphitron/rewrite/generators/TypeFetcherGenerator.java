@@ -127,9 +127,12 @@ public class TypeFetcherGenerator {
      * sites that write a table read to write a message beside their write. {@code recordAccessors}
      * is the store's record getters, from which a VALIDATION pre-step learns the columns of a jOOQ
      * record parameter it can check. {@code services} is the {@code @service} fetchers the store
-     * emits, which take the place of the classified model's; a field it does not emit keeps its
-     * classified fetcher, and a caller with no store passes
-     * {@link no.sikt.graphitron.emit.ServiceEmission#none()}. {@code connectionKeyShape} is the build's
+     * emits: every field it {@link no.sikt.graphitron.emit.ServiceEmission#owns owns} is emitted from
+     * it, whatever the classified model made of the field, or the generation throws; a field the
+     * classified model took for a service and the store states no fetcher for is not emitted at all.
+     * Only a caller with no store, the classified model's own tests, passes
+     * {@link no.sikt.graphitron.emit.ServiceEmission#none()}, which leaves every service to its
+     * classified fetcher. {@code connectionKeyShape} is the build's
      * connection key, which the walk's untenanted acquisition reads for one question,
      * {@link TenantDslEmitter#readsHandedDownKey}; a caller with no store passes
      * {@link no.sikt.graphitron.emit.ConnectionKeyShape#none()}.
@@ -161,6 +164,7 @@ public class TypeFetcherGenerator {
         // nesting/pivot-reached type whose content comes from the reach fold's one representative
         // wiring. The @error rows are their own arm, rendered from the row's own refs below.
         var reach = schema.nestingReach();
+        var ownership = no.sikt.graphitron.rewrite.FetcherOwnership.of(services);
         var result = new ArrayList<TypeSpec>(rows.size() + errorRows.size());
         for (var row : rows) {
             var type = schema.type(row.typeName());
@@ -179,6 +183,7 @@ public class TypeFetcherGenerator {
                 }
                 var nestedFields = wiring.nestedFields().stream()
                     .map(f -> (GraphitronField) f)
+                    .filter(ownership::hasFetcher)
                     .sorted(Comparator.comparing(GraphitronField::name))
                     .toList();
                 // The schema, and the run's own carrier fact, so a nested field routes on the
@@ -291,8 +296,12 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.ServiceEmission services,
             no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape) {
         var type = schema.type(typeName);
+        // A field the store owns is kept whatever the classified model made of it, an unclassified
+        // one included, so it is emitted from the store rather than left to graphql-java's default
+        // fetcher; a classified service nothing in the schema leads to is left out.
+        var ownership = no.sikt.graphitron.rewrite.FetcherOwnership.of(services);
         var fields = schema.fieldsOf(typeName).stream()
-            .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
+            .filter(ownership::hasFetcher)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
@@ -398,8 +407,9 @@ public class TypeFetcherGenerator {
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
      * only attached to input-object types (which {@link #generate} doesn't process), and
      * {@link GraphitronField.UnclassifiedField} is filtered out inside {@link #generateForType}
-     * before dispatch. The switch still has a "cannot occur" arm for it (so the compiler sees the
-     * switch as exhaustive) but the arm throws {@link AssertionError} rather than emitting code.
+     * before dispatch, or emitted from the store where the store owns it. The switch still has a
+     * "cannot occur" arm for it (so the compiler sees the switch as exhaustive) but the arm throws
+     * {@link AssertionError} rather than emitting code.
      */
     public static final Set<Class<? extends GraphitronField>> NOT_DISPATCHED_LEAVES = Set.of(
         GraphitronField.UnclassifiedField.class,
@@ -685,10 +695,15 @@ public class TypeFetcherGenerator {
         // filter's decode of the same node type share one lifted body.
         ctx.setNodeIdDecodeHelpers(registry);
         for (var field : fields) {
-            // A @service fetcher the store emits takes the place of the classified one; the store
+            // A field the store owns is emitted from the store, or the emission throws; the store
             // says which, so no variant is named here.
             if (emitFromStore(ctx, builder, field, outputPackage)) {
                 continue;
+            }
+            // A classified service the store does not own reaches its classified arm only without a
+            // store; with one, it is a generator bug.
+            if (no.sikt.graphitron.rewrite.FetcherOwnership.CLASSIFIED_SERVICES.contains(field.getClass())) {
+                ctx.services().requireNoClassifiedService(field.qualifiedName());
             }
             switch (field) {
                 case ChildField.ColumnBackedField cf -> {
@@ -1676,9 +1691,10 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Adds {@code field}'s fetcher as the store emits it, where it does, and says whether it did: the
-     * frame under the field's name, its body and fill helpers, its lift, and the lifted table's derived
-     * source table nested once per class.
+     * Adds {@code field}'s fetcher as the store emits it, where the store owns the field, and says
+     * whether it did: the frame under the field's name, its body and fill helpers, its lift, and the
+     * lifted table's derived source table nested once per class. An owned field the store's parts do
+     * not emit throws.
      */
     private static boolean emitFromStore(TypeFetcherEmissionContext ctx, TypeSpec.Builder builder,
                                          GraphitronField field, String outputPackage) {

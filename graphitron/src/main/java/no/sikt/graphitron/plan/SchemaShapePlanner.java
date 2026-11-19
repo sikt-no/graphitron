@@ -1,6 +1,7 @@
 package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.command.TypeUnitCommand;
+import no.sikt.graphitron.rewrite.FetcherOwnership;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.NestingReach;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -32,6 +33,16 @@ public final class SchemaShapePlanner {
      */
     public static List<TypeUnitCommand.SchemaShapeUnit> produce(GraphitronSchema schema,
                                                             String outputPackage) {
+        return produce(schema, outputPackage, FetcherOwnership.NONE);
+    }
+
+    /**
+     * {@link #produce(GraphitronSchema, String)}, a type's fields asking {@code ownership} whether
+     * they have a fetcher: a field the store owns does, whatever the classified model made of it.
+     */
+    public static List<TypeUnitCommand.SchemaShapeUnit> produce(GraphitronSchema schema,
+                                                            String outputPackage,
+                                                            FetcherOwnership ownership) {
         var units = new GeneratedUnits(outputPackage);
         var reach = schema.nestingReach();
         var rows = new ArrayList<TypeUnitCommand.SchemaShapeUnit>();
@@ -66,7 +77,7 @@ public final class SchemaShapePlanner {
                     return;
                 }
                 rows.add(new TypeUnitCommand.SchemaShapeUnit(name, units.schemaShape(name), form,
-                    registersFetchers(schema, reach, name, entry.getValue())));
+                    registersFetchers(schema, reach, name, entry.getValue(), ownership)));
             });
         return List.copyOf(rows);
     }
@@ -78,14 +89,15 @@ public final class SchemaShapePlanner {
      * registers itself; the shared page info where it declares a specification field, each reading the generated
      * {@code PageInfo}'s member; the facets and facet value types always, each field reading its
      * generated record's component;
-     * fetcher-hosting classifications exactly when the type owns a classified coordinate (an
-     * all-unclassified body would be empty and its call site an orphan); everything else via
+     * fetcher-hosting classifications exactly when a coordinate of the type
+     * {@link FetcherOwnership#hasFetcher has a fetcher} (a body without one would be empty and its
+     * call site an orphan); everything else via
      * the reach fold's {@link NestingReach#ownsFetchers} gate. A hosting classification that is
      * also reach-fold-visible answers from the hosting arm, matching the merged-view body the
      * registrations emitter renders for it.
      */
     private static boolean registersFetchers(GraphitronSchema schema, NestingReach reach,
-                                             String name, GraphitronType type) {
+                                             String name, GraphitronType type, FetcherOwnership ownership) {
         if (type instanceof GraphitronType.ConnectionType || type instanceof GraphitronType.EdgeType) {
             return false;
         }
@@ -99,10 +111,9 @@ public final class SchemaShapePlanner {
                 || type instanceof GraphitronType.NodeType
                 || type instanceof GraphitronType.RootType
                 || type instanceof GraphitronType.ResultType) {
-            return schema.fieldsOf(name).stream()
-                .anyMatch(f -> !(f instanceof no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField));
+            return schema.fieldsOf(name).stream().anyMatch(ownership::hasFetcher);
         }
         return reach.representatives().containsKey(name)
-            && NestingReach.ownsFetchers(reach.wiringFor(name).nestedFields());
+            && NestingReach.ownsFetchers(reach.wiringFor(name).nestedFields(), ownership);
     }
 }

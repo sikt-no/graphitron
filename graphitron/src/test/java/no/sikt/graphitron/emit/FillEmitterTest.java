@@ -225,13 +225,12 @@ class FillEmitterTest {
     }
 
     @Test
-    void anInputObjectIsLeftToBuildingByName() {
+    void anInputObjectNothingSaysHowToBuildThrowsNamingItsParameter() {
         var row = row("Query.countDrafts");
-        assertThat(FillEmitter.emit(row, Optional.empty(), RUNTIME))
-            .isInstanceOfSatisfying(FillEmitter.Result.NeedsBuilding.class, refused -> {
-                assertThat(refused.parameterName()).isEqualTo("drafts");
-                assertThat(refused.reason()).contains("input object in");
-            });
+        assertThatThrownBy(() -> FillEmitter.emit(row, Optional.empty(), RUNTIME))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("parameter drafts of ")
+            .hasMessageContaining("input object in");
     }
 
     @Test

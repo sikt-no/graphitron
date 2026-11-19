@@ -10,7 +10,9 @@ import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +27,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -40,17 +44,17 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
  * the target's rows where the call hands back records of its table. The frame takes the field's own
  * name, the method the wiring registers, and the rest sit beside it in the type's fetchers class.
  *
- * <p>A field is emitted here when the store states every part of it and none of what is not yet
- * emitted from the store applies; otherwise it stays with the classified model's emitters, and
- * {@link #census} says why. Today that is a service, at a root or under an object whose field has one
- * occurrence, whose answer is a record, a scalar or the records of its target's table, in a build with no tenant column, whose outcome claims no
- * validation, whose arguments build no jOOQ record and reach no input field
- * deeper than the argument itself, and whose target is not a connection; a discriminated interface's rows are told apart by
- * its column where {@link DiscriminatedQuery} states every participant. A field whose call uses no jOOQ context takes none, so it opens no connection.
+ * <p>Every field the store states a service producer occurrence of is {@link #owns owned} here and
+ * emitted here, whatever the classified model made of it: the store states every part of it, at a
+ * root or under an object whose field has one occurrence, and refuses the graph where it cannot. An
+ * owned field whose parts do not hold is a generator bug, and {@link #emit} throws naming what
+ * failed rather than leave the field to the classified model's emitters. A discriminated
+ * interface's rows are told apart by its column where {@link DiscriminatedQuery} states every
+ * participant. A field whose call uses no jOOQ context takes none, so it opens no connection.
  */
 public final class ServiceEmission {
 
-    /** Why a service is not emitted here yet; the census reads these. */
+    /** The {@link #verdict} of a service whose parts all hold. */
     public static final String EMITTED = "EMITTED";
 
     /**
@@ -101,8 +105,8 @@ public final class ServiceEmission {
     }
 
     /**
-     * The names the census renders a body with: it asks the call emitter whether it emits a body,
-     * so the census and {@link #emit} decide by the one emitter, and the body itself is dropped.
+     * The names {@link #verdict} renders a body with: it asks the call emitter whether it emits a
+     * body, so the verdict and {@link #emit} decide by the one emitter, and the body itself is dropped.
      */
     private static final ClassName CENSUS_HOST = ClassName.get("census", "Census");
     private static final FillEmitter.Runtime CENSUS_FILL = new FillEmitter.Runtime(
@@ -111,8 +115,14 @@ public final class ServiceEmission {
     private static final ValidationEmitter.Runtime CENSUS_VALIDATION = new ValidationEmitter.Runtime(
         CENSUS_HOST, CENSUS_HOST, env -> CodeBlock.of("null"), CENSUS_HOST);
 
-    /** Every service producer occurrence the store states, by coordinate: what the census reads. */
-    private final Set<String> services;
+    /** Whether a store was read: {@link #none()} has none, and leaves every field to the classified model. */
+    private final boolean stored;
+    /** The fields the store states a service producer occurrence of, by their declared coordinate. */
+    private final Set<String> owned;
+    /** The fields the store states a fetcher for, by their declared coordinate. */
+    private final Set<String> fetched;
+    /** The coordinates whose walk errors are the store's to judge; see {@link #walkSilenced()}. */
+    private final Set<String> silenced;
     private final Map<String, FrameQuery.Row> frames;
     private final Map<String, CallQuery.Row> calls;
     private final Map<String, FillQuery.Row> fills;
@@ -132,14 +142,19 @@ public final class ServiceEmission {
     /** The tenant column's Java type, in a database-per-tenant graph whose tables agree on one. */
     private final Optional<String> tenantType;
 
-    private ServiceEmission(Set<String> services, Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
+    private ServiceEmission(boolean stored, Set<String> owned, Set<String> fetched,
+                            Set<String> silenced,
+                            Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
                             Set<String> validating, Set<String> serviceControlled,
                             Map<String, DiscriminatedQuery.Row> discriminated,
                             Set<String> toldApart,
                             Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
-        this.services = services;
+        this.stored = stored;
+        this.owned = owned;
+        this.fetched = fetched;
+        this.silenced = silenced;
         this.frames = frames;
         this.calls = calls;
         this.fills = fills;
@@ -154,9 +169,12 @@ public final class ServiceEmission {
         this.tenantType = tenantType;
     }
 
-    /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
+    /**
+     * Owns nothing: every service keeps its classified fetcher, for a caller with no store, which only
+     * the classified model's own tests are.
+     */
     public static ServiceEmission none() {
-        return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Set.of(),
+        return new ServiceEmission(false, Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Set.of(),
             Map.of(),
             Set.of(), Map.of(), Optional.empty());
     }
@@ -174,8 +192,12 @@ public final class ServiceEmission {
             LiftQuery.Row::coordinate);
         var targets = new HashMap<String, String>();
         lifts.forEach((coordinate, row) -> targets.put(coordinate, row.targetType()));
+        var owned = owned(store);
         return new ServiceEmission(
-            services,
+            true,
+            owned,
+            fetched(store),
+            walkSilenced(store, services, owned),
             // The services' frames: a routine write's is framed by its own emitter.
             byCoordinate(FrameQuery.read(store).stream().filter(f -> services.contains(f.coordinate())).toList(),
                 FrameQuery.Row::coordinate),
@@ -202,6 +224,54 @@ public final class ServiceEmission {
             .where(tc.GRAPH_NAME.eq(store.graphName()))
             .fetch(c.BINDING_TYPE);
         return types.size() == 1 ? Optional.of(types.getFirst()) : Optional.empty();
+    }
+
+    /** The fields the store states a service producer occurrence of, by their declared coordinate. */
+    private static Set<String> owned(StoreHandle store) {
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var o = GRAPHITRON_OCCURRENCE;
+        return Set.copyOf(store.dsl().selectDistinct(o.ELEMENT_COORDINATE)
+            .from(p)
+            .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
+            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
+            .fetch(o.ELEMENT_COORDINATE));
+    }
+
+    /** The fields the store states a fetcher for, by their declared coordinate. */
+    private static Set<String> fetched(StoreHandle store) {
+        var fe = GRAPHITRON_FETCHER;
+        var coordinate = fe.TYPE_NAME.concat(".").concat(fe.FIELD_NAME);
+        return Set.copyOf(store.dsl().select(coordinate).from(fe)
+            .where(fe.GRAPH_NAME.eq(store.graphName()))
+            .fetch(coordinate));
+    }
+
+    /**
+     * The coordinates the classified model's errors are not asked at, the store judging them: each
+     * owned field, its arguments, and the input fields and input types reached through a service's
+     * arguments and through nothing else. An input field or input type also reached through another
+     * field's arguments keeps the classified model's errors, which that field still answers to.
+     */
+    private static Set<String> walkSilenced(StoreHandle store, Set<String> services, Set<String> owned) {
+        var o = GRAPHITRON_OCCURRENCE;
+        var f = GRAPHITRON_FIELD;
+        var underService = new HashSet<String>();
+        var underOther = new HashSet<String>();
+        store.dsl().select(o.FIELD_COORDINATE, o.KIND, o.ELEMENT_COORDINATE, f.TYPE_NAME)
+            .from(o)
+            .leftJoin(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE),
+                o.KIND.eq("INPUT_FIELD"))
+            .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"))
+            .forEach(r -> {
+                var into = services.contains(r.value1()) ? underService : underOther;
+                into.add(r.value3());
+                if (r.value4() != null) {
+                    into.add(r.value4());
+                }
+            });
+        underService.removeAll(underOther);
+        underService.addAll(owned);
+        return Collections.unmodifiableSet(underService);
     }
 
     private static <R> Map<String, R> byCoordinate(List<R> rows, Function<R, String> coordinate) {
@@ -275,18 +345,33 @@ public final class ServiceEmission {
     }
 
     /**
-     * Every service producer the store states, with {@link #EMITTED} or why it is not emitted here
-     * yet, by coordinate: one with no frame is {@code NO_FRAME}, which on a graph the store accepts is
-     * a regression rather than a deferral.
+     * {@link #EMITTED} where the service producer occurrence at {@code coordinate} is emitted here,
+     * otherwise which of its parts does not hold; a body the call emitter refuses throws its reason.
+     * Read by the coverage gate alone, which proves every service the store accepts is emitted;
+     * {@link #emit} throws on the same verdicts.
      */
-    public Map<String, String> census() {
-        var out = new java.util.TreeMap<String, String>();
-        services.forEach(c -> out.put(c, verdict(c)));
-        return out;
+    public String verdict(String coordinate) {
+        var stated = statedVerdict(coordinate);
+        if (!EMITTED.equals(stated)) {
+            return stated;
+        }
+        var frame = frames.get(coordinate);
+        var lift = Optional.ofNullable(lifts.get(coordinate))
+            .map(row -> new CallEmitter.Lift(CENSUS_HOST, "lift", row.list()));
+        CallEmitter.body(calls.get(coordinate), fills.get(coordinate), builds.getOrDefault(coordinate, Map.of()),
+            CENSUS_FILL, "census", frame.parent().map(ServiceEmission::frameKey), lift,
+            Optional.ofNullable(polymorphic.get(coordinate)).map(row -> new CallEmitter.Polymorphic(row.list(),
+                row.participants().stream().map(p -> new CallEmitter.Polymorphic.Member(p.typeName(),
+                    CENSUS_HOST, CENSUS_HOST, "lift")).toList())),
+            validating.contains(coordinate) ? Optional.of(CENSUS_VALIDATION) : Optional.empty());
+        return EMITTED;
     }
 
-    /** {@link #EMITTED} where {@code coordinate}'s fetcher is emitted here, otherwise why not. */
-    public String verdict(String coordinate) {
+    /**
+     * {@link #EMITTED} where every part the store states of the occurrence at {@code coordinate} holds,
+     * otherwise the first that does not.
+     */
+    private String statedVerdict(String coordinate) {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
@@ -303,18 +388,54 @@ public final class ServiceEmission {
                 SessionIdentityRows.typeOf(f.parameterType()))).orElse(false))) {
             return "ARGUMENT_PATH";
         }
-        var lift = Optional.ofNullable(lifts.get(coordinate))
-            .map(row -> new CallEmitter.Lift(CENSUS_HOST, "lift", row.list()));
-        if (CallEmitter.body(call, filled, builds.getOrDefault(coordinate, Map.of()), CENSUS_FILL, "census",
-                frame.parent().map(ServiceEmission::frameKey), lift,
-                Optional.ofNullable(polymorphic.get(coordinate)).map(row -> new CallEmitter.Polymorphic(row.list(),
-                    row.participants().stream().map(p -> new CallEmitter.Polymorphic.Member(p.typeName(),
-                        CENSUS_HOST, CENSUS_HOST, "lift")).toList())),
-                validating.contains(coordinate) ? Optional.of(CENSUS_VALIDATION) : Optional.empty())
-                instanceof CallEmitter.Result.NeedsBuilding) {
-            return "CALL_REFUSED";
-        }
         return EMITTED;
+    }
+
+    /**
+     * Whether the store states a service producer occurrence of the field at {@code fieldCoordinate}:
+     * such a field is emitted here, whatever the classified model made of it, or the generation fails.
+     */
+    public boolean owns(String fieldCoordinate) {
+        return owned.contains(fieldCoordinate);
+    }
+
+    /**
+     * Whether a store was read and states no fetcher for the field at {@code fieldCoordinate}: nothing
+     * in the schema leads to the field, so it gets no fetcher and no registration. Always false for
+     * {@link #none()}, which has no store to ask.
+     */
+    public boolean unfetched(String fieldCoordinate) {
+        return stored && !fetched.contains(fieldCoordinate);
+    }
+
+    /**
+     * The coordinates the classified model's validation errors are dropped at, the store judging what
+     * is there: every owned field, its arguments, and the input fields and input types reached through
+     * a service's arguments and through no other field's. Empty for {@link #none()}.
+     */
+    public Set<String> walkSilenced() {
+        return silenced;
+    }
+
+    /**
+     * Refuses a field the classified model took for a service and the store does not own, though it
+     * states a fetcher for it: with a store read, every service a fetcher is stated for is owned, so
+     * the classified model's fetcher would stand in for one the store should have stated. Passes for
+     * {@link #none()}, whose callers emit the classified model's fetchers on purpose.
+     */
+    public void requireNoClassifiedService(String fieldCoordinate) {
+        if (stored) {
+            throw new IllegalStateException("Graphitron generator bug: @service " + fieldCoordinate
+                + " has a fetcher, but the store states no service producer occurrence of it, so it is not"
+                + " emitted from the store");
+        }
+    }
+
+    /** The throw for an owned field whose parts do not hold, naming the {@code verdict}. */
+    private static IllegalStateException notEmitted(String fieldCoordinate, String verdict, Throwable cause) {
+        return new IllegalStateException("Graphitron generator bug: @service " + fieldCoordinate
+            + " is not emitted from the store (" + verdict + "): the store accepted the graph, so it should"
+            + " have refused this", cause);
     }
 
     /**
@@ -345,8 +466,9 @@ public final class ServiceEmission {
     }
 
     /**
-     * The fetcher of the field at {@code coordinate} named {@code fieldName}, or empty where it is not
-     * emitted here, {@link #verdict} saying why.
+     * The fetcher of the field at {@code fieldCoordinate} named {@code fieldName}, or empty where the
+     * field is not {@link #owns owned} here. An owned field whose parts do not hold throws, naming
+     * which.
      */
     public Optional<Emitted> emit(String fieldCoordinate, String fieldName, Runtime runtime) {
         return emit(fieldCoordinate, fieldName, runtime, Optional.empty());
@@ -359,10 +481,16 @@ public final class ServiceEmission {
      */
     public Optional<Emitted> emit(String fieldCoordinate, String fieldName, Runtime runtime,
                                   Optional<Outbox> outbox) {
-        if (!emits(fieldCoordinate)) {
+        if (!owns(fieldCoordinate)) {
             return Optional.empty();
         }
         var occurrences = occurrencesOf(fieldCoordinate);
+        String verdict = occurrences.isEmpty() ? "NO_FRAME"
+            : occurrences.size() > 1 ? "SEVERAL_OCCURRENCES"
+            : statedVerdict(occurrences.getFirst());
+        if (!EMITTED.equals(verdict)) {
+            throw notEmitted(fieldCoordinate, verdict, null);
+        }
         String coordinate = occurrences.getFirst();
         var frameRow = frames.get(coordinate);
         Optional<CallEmitter.FrameKey> frameKey = frameRow.parent().map(ServiceEmission::frameKey);
@@ -408,13 +536,13 @@ public final class ServiceEmission {
             members = Optional.of(new CallEmitter.Polymorphic(poly.list(), each));
         }
         boolean validates = validating.contains(coordinate);
-        var body = CallEmitter.body(call, fills.get(coordinate), builds.getOrDefault(coordinate, Map.of()),
-            runtime.fill(), bodyName, frameKey, liftRef, members,
-            validates ? Optional.of(runtime.validation()) : Optional.empty());
-        if (!(body instanceof CallEmitter.Result.Emitted emitted)) {
-            throw new IllegalStateException(coordinate + " is censused as emitted but its body is not, "
-                + "though the census asks the same emitter: "
-                + ((CallEmitter.Result.NeedsBuilding) body).reason());
+        CallEmitter.Result.Emitted emitted;
+        try {
+            emitted = (CallEmitter.Result.Emitted) CallEmitter.body(call, fills.get(coordinate),
+                builds.getOrDefault(coordinate, Map.of()), runtime.fill(), bodyName, frameKey, liftRef, members,
+                validates ? Optional.of(runtime.validation()) : Optional.empty());
+        } catch (IllegalStateException refused) {
+            throw notEmitted(fieldCoordinate, "CALL_REFUSED, " + refused.getMessage(), refused);
         }
         boolean listed = liftRef.map(CallEmitter.Lift::list).orElse(members.map(CallEmitter.Polymorphic::list).orElse(false));
         TypeName valueType = liftRef.isPresent() || members.isPresent()
@@ -553,15 +681,6 @@ public final class ServiceEmission {
             copy.addJavadoc(method.javadoc());
         }
         return copy.build();
-    }
-
-    /**
-     * Whether the fetcher of the field at {@code fieldCoordinate} is emitted here: the field has
-     * one occurrence with a frame, and its verdict is {@link #EMITTED}.
-     */
-    public boolean emits(String fieldCoordinate) {
-        var occurrences = occurrencesOf(fieldCoordinate);
-        return occurrences.size() == 1 && EMITTED.equals(verdict(occurrences.getFirst()));
     }
 
     /** The occurrences of the field at {@code fieldCoordinate} the store states a frame for. */

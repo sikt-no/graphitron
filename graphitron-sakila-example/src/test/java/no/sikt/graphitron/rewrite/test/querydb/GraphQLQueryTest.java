@@ -9477,6 +9477,26 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void countNotedFilmDraft_anInputFieldTheBuiltClassHasNoMemberForReachesItsOwnParameter() {
+        // The input is built into a FilmDraft, which has no member for the note, and the note is
+        // handed to its own parameter: the service answers the note's length.
+        var rawResult = executeRaw("""
+            mutation {
+                countNotedFilmDraft(in: { title: "ONE", note: "four" }) {
+                    count
+                    errors { __typename }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countNotedFilmDraft", as(MAP));
+        payload.containsEntry("count", 4);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void countFilmDrafts_emptyList_runsTheServiceWithNoErrors() {
         // An empty list has no element to validate, so the pre-step finds nothing and the service runs.
         var rawResult = executeRaw("mutation { countFilmDrafts(in: []) { count errors { __typename } } }");

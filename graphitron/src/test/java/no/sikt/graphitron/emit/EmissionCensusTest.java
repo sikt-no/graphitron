@@ -21,15 +21,16 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Which of the sakila example's services and conditions the store emits, and why each of the rest
- * stays with the classified model's emitters: censuses the flips move through, one exclusion at a
- * time, over one capture of the example's schema. Every condition emitted compiles.
+ * Which of the sakila example's connections, conditions and projection units the store emits, and
+ * why each of the rest stays with the classified model's emitters: censuses the flips move through,
+ * one exclusion at a time, over one capture of the example's schema. Every condition emitted
+ * compiles. The services have no census: the store emits every one it accepts, which
+ * {@link ServiceVerdictCoverageGateTest} proves.
  */
 @PipelineTier
 class EmissionCensusTest {
@@ -45,7 +46,6 @@ class EmissionCensusTest {
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     /** What each census reads of the sakila example's schema, captured once for all of them. */
-    private static ServiceEmission services;
     private static ConnectionsQuery.Shapes connections;
     private static List<ConditionQuery.Row> conditions;
     private static NodeIdDecodeQuery decodes;
@@ -59,7 +59,6 @@ class EmissionCensusTest {
         FACTS.readInline("sakila-example", sdl, CatalogInput.of(testContext()),
             TestSchemaHelper.sakilaExampleClasspath(), graph -> {
                 var handle = graph.handle();
-                services = ServiceEmission.read(handle);
                 connections = ConnectionsQuery.read(handle);
                 conditions = ConditionQuery.read(handle);
                 decodes = NodeIdDecodeQuery.read(handle);
@@ -68,40 +67,6 @@ class EmissionCensusTest {
                 return null;
             });
     }
-
-    @Test
-    void theCensusOfTheExampleSchemasServices() {
-        Map<String, String> census = services.census();
-        var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
-            Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
-        byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(155);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED))
-            .as("a list argument into a Set parameter, copied into a set, scalars and input objects")
-            .contains("Query.filmsByIdSet", "Mutation.countDistinctFilmDrafts");
-        assertThat(byVerdict.get(ServiceEmission.EMITTED))
-            .as("a single-table discriminated row whose participants nest objects and read their own paths")
-            .contains("Query.fanItemsByService");
-        assertThat(byVerdict.get(ServiceEmission.EMITTED))
-            .as("a node id decoded through a converter-backed key column")
-            .contains("Query.converterIdChangeValue");
-        assertThat(byVerdict.get(ServiceEmission.EMITTED))
-            .as("a key column projected out of each of a list of node ids, one key and a composite's second")
-            .contains("Query.filmsByProjectedIds", "Film.copiesAtStores");
-        assertThat(byVerdict.get(ServiceEmission.EMITTED))
-            .as("an id of several node types, at a parameter, a bean member and a member's list")
-            .contains("Mutation.assignOccupantByArgument", "Mutation.assignOccupantRecord",
-                "Mutation.assignOccupantRecordList");
-        assertThat(byVerdict.get(ServiceEmission.EMITTED))
-            .as("a bean member that is a list of jOOQ records, each built on its table's columns")
-            .contains("Query.filmRecordBundle");
-        assertThat(byVerdict.get(ServiceEmission.EMITTED))
-            .as("a child service of a plain object nested in a table's row, its keys read off that row")
-            .contains("NamedCity.names.lowercase", "NamedCity.names.uppercase");
-        // A service the store does not emit is a change to look at, not to re-pin.
-        assertThat(byVerdict).containsOnlyKeys(ServiceEmission.EMITTED);
-    }
-
 
     @Test
     void theCensusOfTheExampleSchemasConnections() {
@@ -355,27 +320,5 @@ class EmissionCensusTest {
             .containsEntry("UNSTATED", List.of("Film.blurb.description", "PivotNestingHost.texts.en",
                 "PivotNestingHost.texts.nb", "PivotNestingHost.texts.nn", "PivotNestingHost.texts.se"))
             .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "PIVOT", "SCALAR_PATH", "UNSTATED");
-    }
-
-    /**
-     * A refusal the call emitter makes on its own, past every exclusion the census reads off the
-     * store, is censused as one: a service under an object taking no keys is not emitted here, and
-     * the generator leaves it to the classified model rather than failing on it.
-     */
-    @Test
-    void aBodyTheCallEmitterRefusesIsCensusedAsRefused() throws Exception {
-        String sdl = """
-            type Film @table(name: "film") {
-              title: String
-              greeting: String @service(service: {
-                className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"},
-                contextArguments: ["userId"])
-            }
-            type Query { films: [Film!]! }
-            """;
-        var refusing = FACTS.readInline("call-refused", sdl, CatalogInput.of(testContext()),
-            TestSchemaHelper.sakilaExampleClasspath(), graph -> ServiceEmission.read(graph.handle()));
-        assertThat(refusing.census()).containsEntry("Film.greeting", "CALL_REFUSED");
-        assertThat(refusing.emits("Film.greeting")).isFalse();
     }
 }
