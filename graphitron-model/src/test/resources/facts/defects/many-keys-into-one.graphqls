@@ -1,14 +1,25 @@
 # A field taking many rows off what its parent holds and declaring one: an insert taking a list
 # yields many rows, so a single field re-reading them draws the defect at that field. The same insert
 # re-read through a field declaring a list draws nothing.
+#
+# A @service batches one key per parent: CreateFilmsPayload's only member returning film records,
+# films(), returns a list of them, so FilmsCreated.keyCensus, keyed by film records, takes many keys
+# off one parent and draws the defect, not NO_KEY_FROM_PARENT.
 
 type Film @table(name: "film") { title: String }
 type FilmInserted { film: Film }
 type FilmsInserted { films: [Film] }
 input FilmIn { title: String }
+type FilmsCreated {
+  keyCensus: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
+}
 
 type Query {
   films: [Film]
+  created: [FilmsCreated!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
+    method: "recentlyCreatedFilmsBatched"})
 }
 
 type Mutation {
@@ -19,9 +30,11 @@ type Mutation {
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,               coordinate
   MANY_KEYS_INTO_ONE, FilmInserted.film
+  MANY_KEYS_INTO_ONE, FilmsCreated.keyCensus
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,               coordinate
   MANY_KEYS_INTO_ONE, FilmsInserted.films
+  NO_KEY_FROM_PARENT, FilmsCreated.keyCensus
   """)

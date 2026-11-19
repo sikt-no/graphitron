@@ -26951,10 +26951,15 @@ UNION ALL
 -- A service under a parent holding one class of object takes its keys through the one member of that
 -- class returning records of the table its source parameter collects, which
 -- graphitron_occurrence_producer_lift states; where it states none, at the field's definition: NO_KEY_FROM_PARENT where no member returns
--- such a record, KEY_ROW_AMBIGUOUS where two do, the detail the class. A selection's keyless field is
--- NO_KEY_FROM_PARENT's arm above, and one taking many keys into one MANY_KEYS_INTO_ONE's.
+-- such a record, KEY_ROW_AMBIGUOUS where two do, the detail the class. Where none returns one but a
+-- member delivers a collection of them, MANY_KEYS_INTO_ONE: a service batches one key per parent, so
+-- many keys off one parent have no one answer to take, whether or not the field is a list. A
+-- selection's keyless field is NO_KEY_FROM_PARENT's arm above, and one taking many keys into one
+-- MANY_KEYS_INTO_ONE's.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN c.found > 1 THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
+       CASE WHEN c.found > 1 THEN 'KEY_ROW_AMBIGUOUS'
+            WHEN c.found_many > 0 THEN 'MANY_KEYS_INTO_ONE'
+            ELSE 'NO_KEY_FROM_PARENT' END,
        c.class_name, 'occurrence-depth-defects'
   FROM (SELECT p.graph_name, p.type_name, p.field_name, rc.class_name,
                (SELECT COUNT(*) FROM code_read_slot s
@@ -26967,7 +26972,18 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                             AND kt.fit = 'RECORD'
                           WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                             AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
-                            AND kt.delivery = 'MANY')) AS found
+                            AND kt.delivery = 'MANY')) AS found,
+               (SELECT COUNT(*) FROM code_read_slot s
+                 WHERE s.class_name = rc.class_name AND s.delivery = 'MANY' AND s.element_class IN (
+                         SELECT mp.element_class FROM code_method_parameter mp
+                           JOIN graphitron_call_parameter_table kt
+                             ON kt.graph_name = p.graph_name AND kt.source_name = ps.method_source_name
+                            AND kt.class_name = ps.method_class_name AND kt.method_name = ps.method_name
+                            AND kt.descriptor = ps.method_descriptor AND kt.position = mp.position
+                            AND kt.fit = 'RECORD'
+                          WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
+                            AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
+                            AND kt.delivery = 'MANY')) AS found_many
           FROM graphitron_producer p
           JOIN graphitron_producer_service ps
             ON ps.graph_name = p.graph_name AND ps.type_name = p.type_name AND ps.field_name = p.field_name
@@ -30852,7 +30868,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('LIST_ELEMENT_NOT_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NOT_ONE_VALUE',
    'An input field of a list of input objects a filter compares as rows is itself a list, and one cell of a row holds one value: declare one value, or move the field out of the element type.'),
   ('MANY_KEYS_INTO_ONE', 'error', 'GRAPHITRON', 'GRAPHITRON_MANY_KEYS_INTO_ONE',
-   'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list.'),
+   'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list. A @service batches one key per parent, so one taking its keys through a member delivering a collection of them is refused whatever its field declares: give the parent''s class a member returning one record.'),
   ('NO_KEY_FROM_PARENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_KEY_FROM_PARENT',
    'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.'),
   ('SERVICE_PAYLOAD_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_PAYLOAD_IN_A_LIST',
