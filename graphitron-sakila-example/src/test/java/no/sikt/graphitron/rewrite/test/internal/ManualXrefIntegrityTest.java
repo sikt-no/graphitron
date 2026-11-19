@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -40,6 +41,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ManualXrefIntegrityTest {
 
     private static final String DOCS_MANUAL_PATH = "docs/manual";
+
+    /**
+     * Manual pages the docs build renders into its staging tree rather than reads from
+     * {@code docs/manual/}, relative to the manual: they have no source file to resolve to. A link
+     * to one is checked there instead, anchor included, by the docs module's
+     * {@code check-adoc-xrefs} step, which runs over the staged tree after they are rendered.
+     */
+    private static final Set<Path> GENERATED = Set.of(Path.of("reference", "defects.adoc"));
 
     /**
      * Matches an AsciiDoc {@code xref:<target>[<text>]}.
@@ -89,6 +98,7 @@ class ManualXrefIntegrityTest {
                 if (filePart.isEmpty()) continue; // edge: xref:#anchor[] forms after a stripped path
                 Path resolved = adoc.getParent().resolve(filePart).normalize();
                 if (Files.isRegularFile(resolved)) continue;
+                if (GENERATED.contains(manualDir.relativize(resolved))) continue;
                 Path sourceRel = manualDir.relativize(adoc);
                 failures.add(sourceRel + ":" + (lineNo + 1)
                     + ": xref:" + target + " -> " + resolved + " (missing)");
