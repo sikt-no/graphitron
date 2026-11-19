@@ -32,6 +32,11 @@ import java.util.stream.Stream;
  * line of its own, {@code include::_name.adoc[]}, and the store holds the fragment with every such
  * include expanded, so a reader of the row needs nothing but the row.
  *
+ * <p>A fragment is best-effort guidance until someone reviews it. Review is marked by the
+ * fragment's first line, an AsciiDoc line comment {@code // reviewed: <who> <date>}, which never
+ * renders; the store strips it from the text and holds what follows the colon as
+ * {@code graphitron_defect_type.guidance_reviewed}, NULL where the fragment carries no mark.
+ *
  * <p>The store reads one fragment per declared code rather than listing the directory, which works
  * under any class loader. The other direction, a fragment naming no declared code, is what
  * {@link #fragmentCodes()} lists the directory for: the gate over the fragments and the defects
@@ -43,13 +48,50 @@ public final class DefectGuidance {
     /** The classpath directory the fragments live in. */
     public static final String DIRECTORY = "/no/sikt/graphitron/model/defects/";
 
+    private static final Pattern REVIEWED = Pattern.compile("^// reviewed:(.*)$");
+
     private static final Pattern INCLUDE = Pattern.compile("^include::(_[A-Za-z0-9_.-]+\\.adoc)\\[\\]\\s*$");
 
     private DefectGuidance() {}
 
-    /** The fragment for {@code code} with its includes expanded, or empty where none is written. */
-    public static Optional<String> fragment(String code) {
-        return read(DIRECTORY + code + ".adoc").map(DefectGuidance::expand);
+    /**
+     * One code's guidance as the store holds it: the text with its includes expanded and its review
+     * mark stripped, and who reviewed it and when, null where it is still best effort.
+     */
+    public record Fragment(String guidance, String reviewed) {}
+
+    /** The fragment for {@code code}, or empty where none is written. */
+    public static Optional<Fragment> fragment(String code) {
+        return read(DIRECTORY + code + ".adoc").map(text -> parse(code, text));
+    }
+
+    /**
+     * Splits a fragment's review mark off its text and expands its includes.
+     *
+     * @throws IllegalStateException where the mark names no reviewer, or a review mark sits anywhere
+     *         but the first line, where it would be read as text
+     */
+    static Fragment parse(String code, String text) {
+        String reviewed = null;
+        String body = text;
+        int firstBreak = text.indexOf('\n');
+        String first = firstBreak < 0 ? text : text.substring(0, firstBreak);
+        var mark = REVIEWED.matcher(first.strip());
+        if (mark.matches()) {
+            reviewed = mark.group(1).strip();
+            if (reviewed.isEmpty()) {
+                throw new IllegalStateException(code + ".adoc's review mark names no reviewer;"
+                    + " write // reviewed: <who> <date>");
+            }
+            body = firstBreak < 0 ? "" : text.substring(firstBreak + 1);
+        }
+        for (String line : body.split("\n", -1)) {
+            if (REVIEWED.matcher(line.strip()).matches()) {
+                throw new IllegalStateException(code + ".adoc carries a review mark below its first line;"
+                    + " move it to the top");
+            }
+        }
+        return new Fragment(expand(body), reviewed);
     }
 
     /**
@@ -121,15 +163,16 @@ public final class DefectGuidance {
         }
         var missing = new ArrayList<String>();
         try (PreparedStatement update = connection.prepareStatement(
-                "UPDATE graphitron_defect_type SET guidance = ? WHERE code = ?")) {
+                "UPDATE graphitron_defect_type SET guidance = ?, guidance_reviewed = ? WHERE code = ?")) {
             for (String code : codes) {
-                var guidance = fragment(code);
-                if (guidance.isEmpty()) {
+                var fragment = fragment(code);
+                if (fragment.isEmpty()) {
                     missing.add(code);
                     continue;
                 }
-                update.setString(1, guidance.get());
-                update.setString(2, code);
+                update.setString(1, fragment.get().guidance());
+                update.setString(2, fragment.get().reviewed());
+                update.setString(3, code);
                 update.addBatch();
             }
             update.executeBatch();

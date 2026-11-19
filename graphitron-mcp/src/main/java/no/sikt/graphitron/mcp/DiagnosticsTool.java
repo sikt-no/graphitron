@@ -101,7 +101,8 @@ final class DiagnosticsTool {
             .convertFrom(rows -> rows.map(r -> r.value1()));
         // A stored defect's guidance, by the code the view carries on its written-entry arm.
         var defectType = GRAPHITRON_DEFECT_TYPE.as("defect_type");
-        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives, defectType.GUIDANCE)
+        var entries = dsl.select(DIAGNOSTIC.asterisk(), claimDirectives, stepDirectives, defectType.GUIDANCE,
+                defectType.GUIDANCE_REVIEWED)
             .from(DIAGNOSTIC)
             .leftJoin(defectType).on(defectType.CODE.eq(DIAGNOSTIC.DEFECT_CODE))
             .where(conditions)
@@ -113,7 +114,7 @@ final class DiagnosticsTool {
                 DIAGNOSTIC.MESSAGE.asc())
             .fetch(r -> entry(r.into(DIAGNOSTIC), ordered(Stream.concat(
                 r.get(claimDirectives).stream(), r.get(stepDirectives).stream()).toList()),
-                r.get(defectType.GUIDANCE)));
+                r.get(defectType.GUIDANCE), r.get(defectType.GUIDANCE_REVIEWED)));
 
         var paged = McpWire.page(entries, args, DEFAULT_LIMIT);
         var fields = new LinkedHashMap<String, Object>();
@@ -139,8 +140,9 @@ final class DiagnosticsTool {
      * (the stored file path rendered as a URI through the file dimension's own spelling, plus its
      * 1-based position mapped to the 0-based wire shape every goto-definition consumer reads) only
      * when the row has one. A stored defect adds its {@code defectCode}, the {@code reference} link to
-     * its entry on the defects reference page, and the {@code guidance} its defect type carries: the
-     * one text the page, the editor and this tool serve.
+     * its entry on the defects reference page, the {@code guidance} its defect type carries (the one
+     * text the page, the editor and this tool serve), and {@code guidanceReviewed}, false where that
+     * guidance is still best effort.
      *
      * <p>The kind is transformed rather than parsed into an enum first. Parsing added validation the
      * store performs at write time, the {@code rejection_validation_error.kind} column carrying a
@@ -150,7 +152,7 @@ final class DiagnosticsTool {
      * JVM {@code INVALID_SCHEMA} came out with a dotless i.
      */
     private static Map<String, Object> entry(DiagnosticRecord row, List<String> directives,
-                                             String guidance) {
+                                             String guidance, String guidanceReviewed) {
         var entry = new LinkedHashMap<String, Object>();
         entry.put("source", row.getSource());
         entry.put("severity", row.getSeverity());
@@ -167,6 +169,7 @@ final class DiagnosticsTool {
             entry.put("defectCode", row.getDefectCode());
             entry.put("reference", DefectReferencePage.link(row.getDefectCode()));
             McpWire.putIfNotNull(entry, "guidance", guidance);
+            entry.put("guidanceReviewed", guidanceReviewed != null);
         }
         if (row.getFile() != null) {
             var location = new LinkedHashMap<String, Object>();

@@ -47,5 +47,6 @@ class DiagnosticsToolDefectGuidanceTest {
         assertThat(conflict.get("reference"))
             .isEqualTo("https://graphitron.sikt.no/manual/reference/defects.html#claims-conflict");
         assertThat((String) conflict.get("guidance")).isNotBlank();
+        assertThat(conflict).containsKey("guidanceReviewed");
     }
 }

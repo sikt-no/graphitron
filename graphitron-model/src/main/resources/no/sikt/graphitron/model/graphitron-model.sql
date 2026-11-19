@@ -7812,9 +7812,11 @@ CREATE TABLE graphitron_defect_type (
   lsp_code  VARCHAR,
   statement VARCHAR NOT NULL,
   guidance  VARCHAR,
+  guidance_reviewed VARCHAR,
   PRIMARY KEY (code),
   CHECK (severity IN ('error', 'warning')),
   CHECK (CHAR_LENGTH(TRIM(guidance)) > 0),
+  CHECK (CHAR_LENGTH(TRIM(guidance_reviewed)) > 0),
   CHECK (basis IN ('SPECIFICATION', 'GRAPHITRON', 'UNSUPPORTED'))
 );
 COMMENT ON TABLE graphitron_defect_type IS 'One rule a schema can break, declared once: what to call it, how bad it is, what the verdict rests on, the sentence that states the rule, and how an author fixes it. For example CONNECTION_RETURN is an error resting on graphitron''s directive contract, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.';
@@ -7823,6 +7825,7 @@ COMMENT ON COLUMN graphitron_defect_type.severity IS 'whether a build stops on i
 COMMENT ON COLUMN graphitron_defect_type.basis IS 'what the verdict rests on, which is also what an author does about it: SPECIFICATION where the GraphQL specification forbids the schema, GRAPHITRON where graphitron''s directives give it no meaning and changing them removes the defect, UNSUPPORTED where it means something under both and graphitron does not do it yet, so an author works around it rather than fixing it. A function of the code exactly as the severity is; never the generator''s fault, the generator running only on a schema that validates';
 COMMENT ON COLUMN graphitron_defect_type.lsp_code IS 'the diagnostic code an editor shows and filters by, null where none is published. The one part of a defect''s name a consumer reads as data rather than as prose, which is what keeps the code column load-bearing rather than a label';
 COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-facing sentence. The message a consumer renders quotes this and the finding''s detail; neither is stored per row';
+COMMENT ON COLUMN graphitron_defect_type.guidance_reviewed IS 'who reviewed the guidance and when, as the fragment''s first line marks it (// reviewed: Alf 2026-11-19), the mark stripped from the text; NULL where the guidance is still best effort, which the defects reference page and the MCP server say beside it. Nothing fails on a NULL: review is a backlog, not a gate';
 COMMENT ON COLUMN graphitron_defect_type.guidance IS 'how an author fixes or works around the defect, as AsciiDoc: what reaches it, why the rule holds, and what to write instead. Every code has it. Kept out of this file only because it is paragraphs, lists and cross-references a SQL literal would bury: it is written as one fragment per code under the defects resource directory beside this file, its includes of shared prose expanded, and the store sets it on each row when it creates its schema, then makes the column NOT NULL, so a code without a fragment fails creation';
 
 CREATE TABLE federation_version (

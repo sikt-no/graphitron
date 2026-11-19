@@ -226,7 +226,12 @@ neither judges a payload key's id against a parameter's arity.
   page, the LSP and the MCP all read the one column (Alf, 2026-11-19), the LSP and the MCP reaching
   it by the `defect_code` the `diagnostic` view carries on its written-entry arm. The page is the
   manual's defects reference, one entry per code at `#<code-in-kebab-case>`, rendered at every docs
-  build.
+  build. A fragment is best effort until someone reviews it (Alf, 2026-11-19): the reviewer marks it
+  with a first line `// reviewed: <who> <date>`, an AsciiDoc comment that never renders, which the
+  store strips and holds as `graphitron_defect_type.guidance_reviewed`. The page marks an unreviewed
+  entry as best effort, the MCP says `guidanceReviewed: false`, and the docs build prints how many
+  remain. Nothing fails on an unreviewed fragment: review is a backlog, not a gate, so a new code is
+  written best effort and marked once read.
 . Pin it in a fact document: the schema, then the expected rows of each relation the case touches
   with the defect rows beside the fact rows, since the defect is half the answer for that field;
   and beside them a near miss that draws nothing. Where the document goes:

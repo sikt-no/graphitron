@@ -42,17 +42,21 @@ class DefectReferencePageTest {
     @Test
     @DisplayName("the floors refuse an empty set, a blank statement, a missing guidance and an orphaned fragment")
     void floors() {
-        var ok = new Entry("A_CODE", "error", "GRAPHITRON", "GRAPHITRON_A_CODE", "A rule.", "Do this instead.");
+        var ok = new Entry("A_CODE", "error", "GRAPHITRON", "GRAPHITRON_A_CODE", "A rule.", "Do this instead.", null);
         assertThatThrownBy(() -> DefectReferencePage.render(List.of(), Set.of()))
             .hasMessageContaining("no declared codes");
         assertThatThrownBy(() -> DefectReferencePage.render(
-            List.of(new Entry("B", "error", "GRAPHITRON", null, " ", "Fix it.")), Set.of()))
+            List.of(new Entry("B", "error", "GRAPHITRON", null, " ", "Fix it.", null)), Set.of()))
             .hasMessageContaining("blank statement");
         assertThatThrownBy(() -> DefectReferencePage.render(
-            List.of(new Entry("C", "error", "GRAPHITRON", null, "A rule.", null)), Set.of()))
+            List.of(new Entry("C", "error", "GRAPHITRON", null, "A rule.", null, null)), Set.of()))
             .hasMessageContaining("C has no guidance");
         assertThatThrownBy(() -> DefectReferencePage.render(List.of(ok), Set.of("GONE")))
             .hasMessageContaining("GONE.adoc names a code the store does not declare");
-        assertThat(DefectReferencePage.render(List.of(ok), Set.of())).contains("[#a-code]");
+        assertThat(DefectReferencePage.render(List.of(ok), Set.of())).contains("[#a-code]")
+            .contains("NOTE: Best-effort guidance, not yet reviewed.");
+        var reviewed = new Entry("A_CODE", "error", "GRAPHITRON", null, "A rule.", "Do this instead.",
+            "Alf 2026-11-19");
+        assertThat(DefectReferencePage.render(List.of(reviewed), Set.of())).doesNotContain("Best-effort");
     }
 }

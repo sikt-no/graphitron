@@ -44,7 +44,7 @@ public final class DefectReferencePage {
 
     /** One declared code as the page renders it. */
     public record Entry(String code, String severity, String basis, String lspCode, String statement,
-                        String guidance) {}
+                        String guidance, String guidanceReviewed) {}
 
     /** CLI: {@code <output-file>}. Boots a fresh store, renders, and writes the page. */
     public static void main(String[] args) throws IOException {
@@ -59,16 +59,18 @@ public final class DefectReferencePage {
         Path out = Path.of(args[0]).toAbsolutePath().normalize();
         Files.createDirectories(out.getParent());
         Files.writeString(out, page, StandardCharsets.UTF_8);
-        System.out.println("render-defects-reference: " + entries.size() + " codes into " + out);
+        long unreviewed = entries.stream().filter(e -> e.guidanceReviewed() == null).count();
+        System.out.println("render-defects-reference: " + entries.size() + " codes into " + out
+            + "; " + unreviewed + " with guidance not yet reviewed");
     }
 
     /** Every declared code with its guidance, by code. */
     public static List<Entry> read(DSLContext dsl) {
         var t = GRAPHITRON_DEFECT_TYPE;
-        return dsl.select(t.CODE, t.SEVERITY, t.BASIS, t.LSP_CODE, t.STATEMENT, t.GUIDANCE)
+        return dsl.select(t.CODE, t.SEVERITY, t.BASIS, t.LSP_CODE, t.STATEMENT, t.GUIDANCE, t.GUIDANCE_REVIEWED)
             .from(t)
             .orderBy(t.CODE)
-            .fetch(r -> new Entry(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6()));
+            .fetch(r -> new Entry(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7()));
     }
 
     /** The anchor of {@code code}'s entry: the code in lower kebab case. */
@@ -150,7 +152,11 @@ public final class DefectReferencePage {
         if (entry.lspCode() != null) {
             page.append("Editor code:: `").append(entry.lspCode()).append("`\n");
         }
-        page.append("\n").append(entry.guidance().strip()).append("\n");
+        page.append("\n");
+        if (entry.guidanceReviewed() == null) {
+            page.append("NOTE: Best-effort guidance, not yet reviewed.\n\n");
+        }
+        page.append(entry.guidance().strip()).append("\n");
     }
 
     /** The anchor of a basis's section; {@code #deferrals} is the one other pages link to. */
@@ -205,7 +211,8 @@ public final class DefectReferencePage {
         for `SPECIFICATION` and `GRAPHITRON`, or work around graphitron for `UNSUPPORTED`.
         * *Editor code* is the code the editor shows beside the message and filters by.
         * What follows is the fix guidance: what reaches the defect, and what \
-        to write instead.
+        to write instead. Guidance not yet reviewed by the maintainers is marked as best effort: \
+        it is drawn from the rule and its tests, and may be incomplete.
 
         A deferral, a defect whose basis is `UNSUPPORTED`, is a schema graphitron recognises and does \
         not generate yet. The schema is not wrong, so the editor and the MCP server mark it as not \
