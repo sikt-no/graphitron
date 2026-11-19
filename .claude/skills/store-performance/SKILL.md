@@ -375,6 +375,33 @@ already and each has a shape you can recognise in a plan:
   invisible at the call site. If the relation you are holding has one, it is the most specific thing
   written about your problem anywhere.
 
+Four things about the engine itself, each measured on this store and each a trap if unknown:
+
+- **Plans live per session, so a fresh store pays them all.** H2 keeps prepared statements and the
+  plans of the views they read per session. A store a test opens fresh plans everything it runs from
+  scratch, which is what the suites mostly pay; a probe that reuses one session measures the warm
+  cost, which has come out a hundredth of the cold one. When the question is what the tests pay, time
+  the first execution in a fresh store, against a graph with no rows so the planning is what you time.
+- **A query block's width is what its planning costs, not a view's size.** H2 searches join orders
+  per query block, exhaustively up to seven inputs, and re-plans each view a block reads per order it
+  tries. A union of many narrow arms plans cheaply and one of wide arms does not. `ViewComplexityTest`
+  writes `target/view-complexity/views.tsv` and `arms.tsv` on every model build, ranking every view
+  and arm by that from the DDL alone; read it before you time anything, and treat it as suspects to
+  price, since it has misranked.
+- **A whole-store `ANALYZE` resets a declared selectivity on every empty table** to H2's default,
+  where `ANALYZE TABLE` touches only the table it names. The capture analyses only the tables it
+  changed for that reason; an experiment that adds a bare `ANALYZE` changes the statistics of tables
+  it never wrote.
+- **A file-backed store is not a lighter one.** Its default page cache is small, so an accumulating
+  store reads its pages back, and every changed page is appended rather than rewritten. Measured as an
+  accumulating test store it cost more CPU and saved no heap; an open store's heap is mostly its schema
+  and statement cache.
+
+To see what H2 is doing rather than that it is busy, classify a recording's samples under H2 by
+phase (a `Parser`, `prepare` or `Optimizer` frame means preparing), by the operation (join-order
+search, view planning, index access, row writes) and by the nearest graphitron frame. That cut, not a
+split into H2 and the rest, is what located the cold planning cost.
+
 **A recorded measurement is evidence about the schema it was measured on, and general forms
 generalise where measurements do not.** This is not a caveat, it is a live hazard: a recorded reason
 naming the expensive term of one derivation has been carried forward onto a consumer schema where the
