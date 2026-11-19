@@ -21,7 +21,7 @@ type Query {
     unread: [Film!]!
         @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NotOnTheClasspath", method: "get"})
 
-    "A service naming no method resolves to nothing, the fallback being the external field's alone."
+    "A service naming no method resolves to nothing, the fallback being the external field's alone; SERVICE_WITHOUT_METHOD refuses it."
     unnamed: [Film!]!
         @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService"})
 }
@@ -53,8 +53,9 @@ extend schema @assertContains(relation: "code_class", rows: """
   """)
 
 # What each reference that did not resolve draws instead, at the position it was written. The
-# service naming no method draws nothing: the fallback to the field's own name is the external
-# field's alone. The external field resolves, but to a service method returning no org.jooq.Field,
+# service naming no method draws no code-reference code, the fallback to the field's own name being
+# the external field's alone; it is refused as written, SERVICE_WITHOUT_METHOD, pinned by
+# defects/service-without-method and left out here. The external field resolves, but to a service method returning no org.jooq.Field,
 # which an @externalField cannot call: CODE_REFERENCE_METHOD_UNFIT, pinned by
 # defects/external-field-expression and left out here.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
