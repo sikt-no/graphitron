@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecor
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.Result;
+import org.jooq.Row1;
 
 import java.util.List;
 import java.util.Map;
@@ -14,7 +15,8 @@ import java.util.Set;
  * {@code SERVICE_RETURN_MISMATCH}: records of another table, values of another class than the
  * field's scalar, many where the field is one, one where it is a list, at a root and per key under
  * Film. Never called. The film_list answers are records of a table with no primary key to read them
- * back by, refused as {@code KEY_TABLE_WITHOUT_PRIMARY_KEY}.
+ * back by, refused as {@code KEY_TABLE_WITHOUT_PRIMARY_KEY}. Among those handed: one record into a
+ * payload that holds a film, and each language's films keyed by the language's key as a row.
  */
 public final class FilmReturnShapeService {
 
@@ -34,6 +36,14 @@ public final class FilmReturnShapeService {
 
     public static FilmRecord oneAsFilms() {
         return null;
+    }
+
+    public static FilmRecord filmForPayload() {
+        return null;
+    }
+
+    public static Map<Row1<Integer>, List<FilmRecord>> filmsByLanguageRow(Set<Row1<Integer>> languageIds) {
+        return Map.of();
     }
 
     public static Map<FilmRecord, List<LanguageRecord>> languagesByFilm(Set<FilmRecord> films) {

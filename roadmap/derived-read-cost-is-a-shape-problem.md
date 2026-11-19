@@ -94,9 +94,10 @@ The walk's read path is gone
 │   ├── A leaf a filter compares is stated once
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
-    └── The service fields are emitted from the store
-        ├── A producer's fetcher parts are emitted from the store
-        └── Every service verdict is emitted or a stored deferral
+    ├── The service fields are emitted from the store
+    │   ├── A producer's fetcher parts are emitted from the store
+    │   └── Every service verdict is emitted or a stored deferral
+    └── The walk's test service shapes are fact documents or walk-only refusals
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1245,9 +1246,20 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "The walk's test service shapes are fact documents or walk-only refusals". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
+  * **The walk's test service shapes are fact documents or walk-only refusals** `open`, E's, blocks
+    the subtract. About 520 inline `@service` occurrences in about 100 `graphitron` test files run
+    only through the walk (`ServiceEmission.none()`: `TestSchemaHelper.buildSchema`, `buildBundle`,
+    `TypeFetcherRenderTestSupport`, `storeBackedFetchers`, the validator unit tests), nearly all
+    naming test-only stubs a fact capture cannot read; before the walk's service code is deleted they
+    are deduplicated into distinct shapes, and each becomes a fact document or is shown to be a
+    refusal only the walk makes. It does not block the flip (A, 2026-11-19): at the flip what
+    production meets is covered three ways, the coverage gate on every fact document,
+    sakila-example's census and every FS-plattform module generating, and these stubs are test-only
+    by construction; a shape FS generation turns up that no fact document holds goes into one before
+    the flip lands.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
 * **A `@splitQuery` on a write payload's data field is judged in the store** `open`, blocks the

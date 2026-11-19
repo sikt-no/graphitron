@@ -24,4 +24,12 @@ public final class FilmRecordDraftService {
     public static FilmDraftsCountedPayload countOne(FilmDraft draft, FilmRecord film) {
         return new FilmDraftsCountedPayload(2, List.of());
     }
+
+    /**
+     * One record carrying only its key, decoded from a node id, so a validation channel has no
+     * written column of it to check. Counts it as one.
+     */
+    public static FilmDraftsCountedPayload countKeyed(FilmRecord in) {
+        return new FilmDraftsCountedPayload(1, List.of());
+    }
 }

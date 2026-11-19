@@ -1,6 +1,12 @@
 # What a call's input build does not place yet, each at the input field: a list of node ids, and the
 # id of several node types, inside an input object built into a jOOQ record, which writes one node's
 # key into its columns.
+#
+# The same list under a mutation whose @outbox the store-emitted fetcher alone writes, as
+# ServiceOutboxRejectionPipelineTest held it inline (modifyFilm): with no fetcher the walk could
+# fall back to, the deferral is what refuses the field.
+
+extend schema @withConfiguration(outboxTable: "outbox")
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -16,6 +22,11 @@ input FilmRecordEitherInput {
   title: String @field(name: "title")
   filmId: ID @nodeId(typeName: "FilmOrActor")
 }
+input ModifyFilmInput {
+  filmId: ID! @nodeId(typeName: "Film")
+  title: String @field(name: "title")
+  relatedIds: [ID!] @nodeId(typeName: "Film")
+}
 
 type Query {
   countRecordIds(in: [FilmRecordIdsInput!]!): FilmDraftsCountedPayload @service(service: {
@@ -24,8 +35,15 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
 }
 
+type Mutation {
+  modifyFilm(in: ModifyFilmInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecord"})
+    @outbox(event: "FilmModified", argMapping: "film: in.filmId")
+}
+
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'BUILD_%'", rows: """
   code,                                   coordinate
   BUILD_NODE_ID_LIST_UNSUPPORTED,         FilmRecordIdsInput.filmIds
+  BUILD_NODE_ID_LIST_UNSUPPORTED,         ModifyFilmInput.relatedIds
   BUILD_NODE_ID_SEVERAL_TYPES_UNSUPPORTED, FilmRecordEitherInput.filmId
   """)

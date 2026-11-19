@@ -3,14 +3,31 @@
 # does from its parent's key and a service under a table batches on its parents' keys. A field the query of its producer reads, a column or an inline child,
 # produces nothing. What a producer calls is a subtype of it: a service's method and, for an instance
 # method, the constructor its object is made with.
+#
+# Two service producers LauncherRelationClosureTest and MethodClosureOracleTest held inline:
+# Language.filmsViaService, a child answering each language's films keyed by the language's key as a
+# row; and Mutation.runFilm, a root handing one film record to a payload that holds it.
 
-type Language @table(name: "language") { name: String }
+type Language @table(name: "language") {
+  name: String
+  filmsViaService: [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+      method: "filmsByLanguageRow"})
+}
 type Film @table(name: "film") {
   title: String
   language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
   titleLowercase: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmService",
       method: "titleLowercase"})
+}
+
+type FilmRunPayload { film: Film }
+
+type Mutation {
+  runFilm: FilmRunPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+      method: "filmForPayload"})
 }
 
 type Query {
@@ -30,6 +47,8 @@ extend schema @assertContains(relation: "graphitron_occurrence_producer", rows: 
   Query.titleByFilmIdViaInstance, SERVICE, ROOT
   Film.language,                  SELECT,  CHILD
   Film.titleLowercase,            SERVICE, CHILD
+  Language.filmsViaService,       SERVICE, CHILD
+  Mutation.runFilm,               SERVICE, ROOT
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_producer", rows: """

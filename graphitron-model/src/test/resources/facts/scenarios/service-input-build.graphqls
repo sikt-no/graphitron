@@ -6,6 +6,11 @@
 # not sent, and a node id is decoded into the record's own key. A bean declared inside its service
 # (FilmSurveyService.FilmPanel), and the nested bean its list member names, are built as a top-level
 # class is: the capture reads them by name, for their construction as for their slots.
+#
+# Three record shapes RecordValidationPipelineTest and MethodClosureOracleTest held inline: a list of
+# records and a record carrying only its node id, each on a mutation whose payload's errors carry a
+# VALIDATION handler (draftFilms, keyFilm), and a record written from an input naming its column by
+# the field's own name, with no @field (consumeFilm).
 
 input FilmDraftInput { title: String! }
 input FilmBundleLimitsInput { capacity: Int }
@@ -25,10 +30,20 @@ enum FilmMood { HAPPY, SAD }
 input FilmSurveyInput { count: Int!, mood: FilmMood, note: String }
 input FilmPanelEntryInput { title: String }
 input FilmPanelInput { note: String, films: [FilmPanelEntryInput!] }
+input FilmRecordValidatedDraftInput {
+  id: ID @nodeId(typeName: "Film")
+  title: String @field(name: "title")
+  description: String @field(name: "description")
+}
+input FilmRecordKeyInput { id: ID! @nodeId(typeName: "Film") }
+input FilmRecordInput { title: String }
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! }
 type FilmDraftsCountedPayload { count: Int }
+type FilmDraftInvalid @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+union FilmDraftError = FilmDraftInvalid
+type FilmDraftsValidatedPayload { count: Int errors: [FilmDraftError] }
 
 type Query {
   countFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload @service(service: {
@@ -49,7 +64,19 @@ type Query {
   countFilmPanel(in: FilmPanelInput!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmSurveyService",
       method: "countPanel", argMapping: "panel: in"})
+  consumeFilm(in: FilmRecordInput): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyFilmRecord"})
   films: [Film!]!
+}
+
+type Mutation {
+  draftFilms(in: [FilmRecordValidatedDraftInput!]!): FilmDraftsValidatedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "count", argMapping: "drafts: in"})
+  keyFilm(in: FilmRecordKeyInput!): FilmDraftsValidatedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService",
+      method: "countKeyed"})
 }
 
 # Each call's one parameter takes its argument whole; what the argument is built into is the build.
@@ -61,6 +88,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter", ro
   Query.countFilmRecordDatedDrafts, 0,  drafts,         ARGUMENT, Query.countFilmRecordDatedDrafts(in:)
   Query.countFilmSurvey,      0,        survey,         ARGUMENT, Query.countFilmSurvey(in:)
   Query.countFilmPanel,       0,        panel,          ARGUMENT, Query.countFilmPanel(in:)
+  Query.consumeFilm,          0,        in,             ARGUMENT, Query.consumeFilm(in:)
+  Mutation.draftFilms,        0,        drafts,         ARGUMENT, Mutation.draftFilms(in:)
+  Mutation.keyFilm,           0,        in,             ARGUMENT, Mutation.keyFilm(in:)
   """)
 
 # The class each input object is built into: the parameter's at the argument, a list's element; a
@@ -78,6 +108,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_built_class", rows:
   Query.countFilmSurvey(in:),               no.sikt.graphitron.rewrite.test.services.FilmSurvey,                PARAMETER,    BOUND
   Query.countFilmPanel(in:),                no.sikt.graphitron.rewrite.test.services.FilmSurveyService$FilmPanel, PARAMETER, BOUND
   Query.countFilmPanel(in.films:),          no.sikt.graphitron.rewrite.test.services.FilmSurveyService$FilmPanelEntry, MEMBER, BOUND
+  Query.consumeFilm(in:),                   no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PARAMETER, BOUND
+  Mutation.draftFilms(in:),                 no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PARAMETER, BOUND
+  Mutation.keyFilm(in:),                    no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PARAMETER, BOUND
   """)
 
 # The member each field fills, of the class its parent is built into: a grouping's field fills the
@@ -118,4 +151,6 @@ extend schema @assertContains(relation: "code_write_slot",
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows: """
   coordinate,                                   kind,   landing_class,                                                           slot_shape
   Query.countFilmRecordDatedDrafts(in.filmId:), RECORD, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, SINGLE
+  Mutation.draftFilms(in.id:),                  RECORD, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, SINGLE
+  Mutation.keyFilm(in.id:),                     RECORD, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, SINGLE
   """)

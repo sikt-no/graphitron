@@ -1,0 +1,32 @@
+# A service parameter a $session member fills takes the member's type or its box: SessionMemberHandle's
+# brukerId is a primitive long, which a Long and a long parameter both take. Its sokerId is a boxed
+# Long, which a long parameter cannot take, since a null member has no primitive, and a member the
+# handle does not offer fills nothing. The service shapes SessionIdentityRejectionPipelineTest held
+# inline, the accepted beside the refused.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.services.SessionMemberHandle"
+)
+
+type Query {
+  brukerBoxed: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SessionMemberService",
+      method: "brukerOf", argMapping: "brukerId: $session.brukerId"})
+  brukerPrimitive: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SessionMemberService",
+      method: "brukerOfPrimitive", argMapping: "brukerId: $session.brukerId"})
+  sokerPrimitive: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SessionMemberService",
+      method: "sokerOfPrimitive", argMapping: "sokerId: $session.sokerId"})
+  brukerUnknown: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SessionMemberService",
+      method: "brukerOf", argMapping: "brukerId: $session.nope"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('SESSION_BINDING_TYPE_MISMATCH', 'SESSION_MEMBER_UNKNOWN')", rows: """
+  code,                          coordinate
+  SESSION_BINDING_TYPE_MISMATCH, Query.sokerPrimitive
+  SESSION_MEMBER_UNKNOWN,        Query.brukerUnknown
+  """)
