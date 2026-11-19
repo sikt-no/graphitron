@@ -212,6 +212,9 @@ census it replaced is gone.
 * **The client exception resolves through the code family, as a class the run is about to write** `open`, off the critical path.
   `graphitron_error_handler_source_rule` builds the class's name from the output package, which is the emitter's naming held in a rule (Alf, 2026-11-17: the model names no class the generator emits); the generating run hands its own classes to the code capture instead, so the handler resolves as any class does and the rule's special case goes,
   which first needs a ruling on whether the code family may hold a class a run has not yet compiled, and `scenarios/error-handler-client-exception` pins what must not change.
+* **Whether a capture read a classpath is a stored fact, not inferred from code_class rows** `open`, off the critical path.
+  `graphitron_code_reference_entry_defect_rule` raises its class and method codes only where some `code_class` row hangs off one of the graph's sources, so whether a classpath was read is inferred from what the reading happened to find; `store_source.source_kind` names a directory or a jar entry but no kind says a graph's classpath was read, so a capture handed no classpath, as graphitron's inline test captures are, looks the same as one whose classpath held no class.
+  The input fact is captured first, as the modeling discipline asks (capture, then derive), and the guard reads it.
 * **A graph's `code_` and `sql_` answers are a function of its own sources, whatever else the store holds** `open`.
   A classpath entry or catalog source is shared by every graph that reads it, so what the store holds
   for it may depend on the source alone; of two entries declaring one class name, the first in the
