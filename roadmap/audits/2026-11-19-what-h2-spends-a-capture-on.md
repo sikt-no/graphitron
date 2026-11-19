@@ -98,3 +98,33 @@ Targeted analysis is the policy kept: a few percent cheaper and the declaration 
 model fork's samples, 11.6% of graphitron's) but its plans cost about as much again, and
 `RulePlanGateTest` caught three rules probing by `graph_name` alone where the indexes they need exist
 but go unpicked without statistics.
+
+## The three rules, arm by arm
+
+Each top-level arm timed alone, cold: `SELECT COUNT(*) FROM (<arm>) x (<the view's columns>) WHERE
+x.graph_name = '<a graph with no rows>'` in a store of its own, median of three, the view's leading
+`WITH` carried onto every arm. The arms add up to more than the whole view, since each pays planning
+the view shares, so they rank rather than sum.
+
+| rule, whole view cold | the arms that carry it (cold ms) |
+|---|---|
+| `occurrence-producers`, 153 ms | 18 (66), 10 (51), 15 (41), 17 (37), 1 (28): 78% of the arms' total |
+| `occurrence-depth-defects`, 127 ms | 20 (38), 22 (32), 8 (27): 46%, the rest spread thin |
+| `occurrence-builds`, 114 ms | 14 (77), 6 (58), 13 (35): 54% |
+
+Every one of them has a query block joining seven inputs, the most H2 searches exhaustively (5,040
+orders), with correlated `EXISTS` or `NOT EXISTS` guards over several of the joined tables. The
+dearest, producers' arm 18 (`SERVICE_RETURN_MISMATCH`), joins producer, occurrence, field, element,
+result, call method and `code_method`, then guards with five correlated subqueries under `OR` and
+`CASE`; builds' arm 14 (`NODE_ID_LANDS_ON_TABLE`) joins seven and guards with four `NOT EXISTS`, three
+of them the same probe of `graphitron_argmapping_landing` at three coordinates. That matches the
+recording's innermost frames: evaluability bookkeeping repeated per candidate order. The arms and
+the two levers (narrower blocks, a repeated guard stored once) are handed to R876's node "No view
+reads a view, and every rule view is simple".
+
+The static weight ranks arms less well than views: of its top five arms per rule, 2, 1 and 3 are in
+the measured top five. Two reasons, both for `ViewComplexityTest` to take up. Its weight keeps rising
+past seven inputs, where H2 switches to a cheaper partial search (producers' arm 16 joins twelve and
+costs 16 ms); it should peak at seven. And among seven-input blocks it cannot tell a 66 ms arm from a
+15 ms one; the correlated conditions over the block are the likely discriminator, and it does not
+count them yet. A shared `WITH` is also counted once though H2 inlines it at each reference.

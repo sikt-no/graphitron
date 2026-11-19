@@ -308,8 +308,11 @@ parallelises a module's tests is priced against that before it is tried.
     `occurrence-builds`, unions whose arms join many inputs per query block. Rewriting the stage's
     `MERGE` as `INSERT ... SELECT` was measured and buys nothing. `ViewComplexityTest` now ranks every
     view and arm statically on every model build (`target/view-complexity/`), and picked those three.
-    Next: bisect their arms cold, and hand the arms that carry the cost to R876, which owns the rules.
-    A gate over the report comes once a measure has held against a few changes.
+    Their arms are bisected cold (the audit, § "The three rules, arm by arm"): in each, a few arms
+    joining seven inputs with correlated guards carry most of the cost, and they are handed to R876's
+    node "No view reads a view, and every rule view is simple" with the two levers. Next here: the
+    report's weight peaks at seven inputs and counts the correlated conditions per block, so it ranks
+    arms as it ranks views; a gate over it comes once a measure has held against a few changes.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
