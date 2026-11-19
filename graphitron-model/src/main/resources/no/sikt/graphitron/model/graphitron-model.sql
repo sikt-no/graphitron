@@ -21476,7 +21476,22 @@ SELECT s.graph_name, c.source_name, c.source_line, c.source_column,
                     AND NOT df.non_null))) s
   JOIN graphitron_connection_carrier c
     ON c.graph_name = s.graph_name AND c.coordinate = s.carrier_coordinate
- GROUP BY s.graph_name, c.source_name, c.source_line, c.source_column;
+ GROUP BY s.graph_name, c.source_name, c.source_line, c.source_column
+UNION ALL
+-- An output field whose @field(name:) starts with $ and is no sigil graphitron knows, at that
+-- @field: a member or column name never starts with $, so the name can never resolve. $errors, the
+-- one sigil left, is inert and draws its own warning; $source, which once bound a payload's data
+-- field to the producer's value, is retired, the data field binding that value without it. The
+-- detail is the name as written.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'FIELD_NAME_SIGIL_UNKNOWN', f.bound_name, 'federation-vocabulary'
+  FROM graphitron_field f
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.type_name AND t.kind IN ('OBJECT', 'INTERFACE')
+  JOIN graphql_directive_application da
+    ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+ WHERE f.bound_name LIKE '$%' AND f.bound_name <> '$errors';
 COMMENT ON VIEW graphitron_federation_vocabulary_entry_defect_rule IS 'One row the federation-vocabulary stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example types Film and FILM in one graph give one TYPE_NAME_CASE_COLLISION row at each declaration.';
 
 -- The binding-claims stage's own defects: a @nodeId or a node's id the claims just written judge, at
@@ -26820,6 +26835,8 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
     ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
    AND jp.target_type = n.target_type
  WHERE o.kind = 'FIELD' AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+   -- A name starting with $ that is no sigil is FIELD_NAME_SIGIL_UNKNOWN's, raised at federation-vocabulary.
+   AND NOT (f.bound_name LIKE '$%' AND f.bound_name <> '$errors')
    AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
@@ -26889,6 +26906,8 @@ SELECT n.graph_name, COALESCE(da.source_name, gf.source_name),
                       AND a.field_name = f.field_name)
    AND NOT EXISTS (SELECT 1 FROM code_jooq_class j WHERE j.class_name = n.start_class)
    AND NOT EXISTS (SELECT 1 FROM code_tuple_class t WHERE t.class_name = n.start_class)
+   -- A name starting with $ that is no sigil is FIELD_NAME_SIGIL_UNKNOWN's, raised at federation-vocabulary.
+   AND NOT (f.bound_name LIKE '$%' AND f.bound_name <> '$errors')
  GROUP BY n.graph_name, COALESCE(da.source_name, gf.source_name),
           COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
 UNION ALL
@@ -31147,6 +31166,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
    'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, or a filter''s argument or input field compares one the table it filters does not have, under its own name or the one @field(name:) gives it, or an ordering''s fields element names one, so there is nothing to select, write, compare or sort by: the name is misspelt, or the column lives on another table.'),
+  ('FIELD_NAME_SIGIL_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_FIELD_NAME_SIGIL_UNKNOWN',
+   'An output field''s @field(name:) starts with $ and is no sigil graphitron knows, so it names no column or member and never can. $errors is the one sigil left; $source is retired: drop it, the payload''s data field binds the producer''s value without it.'),
   ('MEMBER_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_UNRESOLVED',
    'A field read off an object names a member its class does not offer, under its own name or the one @field(name:) gives it: a record offers its components and any other class its get and is getters, so a bare accessor or a public field is no member, and there is nothing to read. Name a member the class offers, or give the class one.'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',

@@ -17,7 +17,6 @@ import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.reference.DefectReferencePage;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
-import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.DiagnosticCodeDescription;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -79,10 +78,6 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
  * and a schema full of red names is the wrong thing to show them. That guard used to be an
  * {@code isEmpty()} test per surface against a projection that could be half-populated, and it is one
  * three-valued answer per census now, so no arm can hold the two questions in the wrong order.
- *
- * <p>What is left of the classifier's projection here is one thing, and it is not a binding: whether a
- * site admits the {@code $source} sigil, which is the carrier classification. It needs no store, so it
- * is settled in the walk.
  */
 public final class Diagnostics {
 
@@ -160,14 +155,6 @@ public final class Diagnostics {
          */
         record MemberName(Range range, String typeName, String fieldName, String memberName)
             implements Finding {}
-
-        /**
-         * A written {@code $source}, against the coordinates a mutation payload's data arrives at.
-         * Its own arm rather than a member name because the sigil resolves against nothing a scope
-         * offers: what admits it is the site being a carrier's data channel, which is a fact about
-         * the enclosing type's role rather than about any table or class.
-         */
-        record SourceSigil(Range range, String typeName, String fieldName) implements Finding {}
 
         /**
          * A parsed {@code argMapping} string, judged whole. One finding for the entire value rather
@@ -591,10 +578,8 @@ public final class Diagnostics {
     }
 
     /**
-     * Collects a {@code @field(name:)} (or other {@code CatalogColumnBinding}) coordinate, as one of
-     * two findings: a written {@code $source} asks where a payload's data arrives, and anything else
-     * asks what the site's scope offers. The two are different questions rather than two readings of
-     * one, which is why the sigil takes its own arm and returns before the member arm collects.
+     * Collects a {@code @field(name:)} (or other {@code CatalogColumnBinding}) coordinate as a member
+     * name, asking what the site's scope offers.
      */
     private static void collectMemberName(
         Directives.Directive directive, Node valueNode, FileSnapshot file,
@@ -609,11 +594,6 @@ public final class Diagnostics {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
-        if (FieldSourceSigilGrammar.isUpstreamRoot(memberName)) {
-            questions.sigilSite(typeName.get(), fieldName);
-            findings.add(new Finding.SourceSigil(rangeOf(file, valueNode), typeName.get(), fieldName));
-            return;
-        }
         questions.memberSite(typeName.get(), fieldName);
         findings.add(new Finding.MemberName(rangeOf(file, valueNode), typeName.get(), fieldName, memberName));
     }
@@ -765,12 +745,6 @@ public final class Diagnostics {
                 judgeMethodName(answers, range, classFqn, methodName, out);
             case Finding.MemberName(var range, var typeName, var fieldName, var memberName) ->
                 judgeMemberName(answers, range, typeName, fieldName, memberName, out);
-            case Finding.SourceSigil(var range, var typeName, var fieldName) -> {
-                if (answers.sourceSigilSite(typeName, fieldName) == DiagnosticFacts.Resolution.UNKNOWN) {
-                    out.add(diagnostic(range, DiagnosticSeverity.Error,
-                        FieldSourceSigilGrammar.notDefinedHereMessage()));
-                }
-            }
             case Finding.ArgMappingValue value -> judgeArgMapping(answers, source, value, out);
         }
     }

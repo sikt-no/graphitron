@@ -1,0 +1,46 @@
+# An output field's @field(name:) starting with $ that is no sigil graphitron knows names nothing it
+# can ever read, and is refused at the @field, the detail the name as written. $source is retired:
+# FilmListPayload.films, the data field of a @service payload, once bound the producer's value with
+# it and binds it without; FilmTitle.label reads a column of film and FilmKeySummary.label a member
+# of FilmKeySummary, and neither draws COLUMN_UNRESOLVED or MEMBER_UNRESOLVED besides. $errors, the
+# one sigil left, stays accepted on an errors field, where it is inert.
+
+type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+  path: [String!]!
+  message: String!
+}
+union CarrierError = SimpleErr
+
+type Film @table(name: "film") { title: String }
+type FilmTitle @table(name: "film") { label: String @field(name: "$source") }
+type FilmKeySummary { label: String @field(name: "$source") }
+input FilmInput { title: String }
+
+type FilmListPayload { films: [Film!] @field(name: "$source") }
+type FilmsPayload { films: [Film!] errors: [CarrierError] @field(name: "$errors") }
+
+type Query {
+  titles: [FilmTitle]
+  summaries: [FilmKeySummary!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
+}
+
+type Mutation {
+  rerunFilms: FilmListPayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+  createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT, table: "film")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'FIELD_NAME_SIGIL_UNKNOWN'", rows: """
+  code,                     coordinate,            detail
+  FIELD_NAME_SIGIL_UNKNOWN, FilmListPayload.films, $source
+  FIELD_NAME_SIGIL_UNKNOWN, FilmTitle.label,       $source
+  FIELD_NAME_SIGIL_UNKNOWN, FilmKeySummary.label,  $source
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,              coordinate
+  COLUMN_UNRESOLVED, FilmTitle.label
+  MEMBER_UNRESOLVED, FilmKeySummary.label
+  """)

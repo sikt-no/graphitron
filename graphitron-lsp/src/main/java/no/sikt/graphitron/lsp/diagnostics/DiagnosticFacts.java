@@ -1,6 +1,5 @@
 package no.sikt.graphitron.lsp.diagnostics;
 
-import no.sikt.graphitron.lsp.facts.CarrierDataField;
 import no.sikt.graphitron.lsp.facts.NodeContainerMember;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
@@ -17,7 +16,6 @@ import org.jooq.Field;
 import org.jooq.Record1;
 import org.jooq.Records;
 import org.jooq.Select;
-import org.jooq.TableField;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -173,8 +171,6 @@ final class DiagnosticFacts {
         private final Set<String> nodeTypeNames = new LinkedHashSet<>();
         private final Set<FieldCoord> memberSites = new LinkedHashSet<>();
         private final Set<String> memberTypeNames = new LinkedHashSet<>();
-        private final Set<FieldCoord> sigilSites = new LinkedHashSet<>();
-        private final Set<String> sigilTypeNames = new LinkedHashSet<>();
         private final Set<String> directiveNames = new LinkedHashSet<>();
         private final Set<String> nestedArgFieldNames = new LinkedHashSet<>();
         private final Set<String> replayFiles = new LinkedHashSet<>();
@@ -214,19 +210,6 @@ final class DiagnosticFacts {
             memberTypeNames.add(typeName);
             if (fieldName != null) {
                 memberSites.add(new FieldCoord(typeName, fieldName));
-            }
-        }
-
-        /**
-         * A written {@code $source} asks two things at once, and the second is about the type rather
-         * than the coordinate: whether the store holds the parent at all, which is what separates a
-         * site the sigil does not belong at from one nothing has been captured for yet. A site with no
-         * enclosing field contributes only the type question, having no coordinate to admit.
-         */
-        void sigilSite(String typeName, String fieldName) {
-            sigilTypeNames.add(typeName);
-            if (fieldName != null) {
-                sigilSites.add(new FieldCoord(typeName, fieldName));
             }
         }
 
@@ -271,8 +254,6 @@ final class DiagnosticFacts {
             nodeTypeNames.addAll(other.nodeTypeNames);
             memberSites.addAll(other.memberSites);
             memberTypeNames.addAll(other.memberTypeNames);
-            sigilSites.addAll(other.sigilSites);
-            sigilTypeNames.addAll(other.sigilTypeNames);
             directiveNames.addAll(other.directiveNames);
             nestedArgFieldNames.addAll(other.nestedArgFieldNames);
             replayFiles.addAll(other.replayFiles);
@@ -281,7 +262,7 @@ final class DiagnosticFacts {
         boolean isEmpty() {
             return tableNames.isEmpty() && foreignKeyNames.isEmpty() && classNames.isEmpty()
                 && methods.isEmpty() && nodeTypeNames.isEmpty() && memberTypeNames.isEmpty()
-                && sigilTypeNames.isEmpty() && directiveNames.isEmpty() && replayFiles.isEmpty();
+                && directiveNames.isEmpty() && replayFiles.isEmpty();
         }
     }
 
@@ -404,27 +385,12 @@ final class DiagnosticFacts {
         List<BackingRow> backingReached,
         List<RedirectRow> redirects,
         List<SlotRow> slots,
-        List<FieldCoord> sigilSites,
-        List<String> declaredSigilTypeNames,
         List<String> declaredDirectiveNames,
         boolean anyDirective,
         List<DirectiveArgRow> directiveArguments,
         List<InputFieldRow> inputFields,
         List<ReplayRow> replay
     ) {
-
-        /**
-         * Whether the {@code $source} sigil belongs at this coordinate, and if not, whether the store
-         * is in a position to say so. {@link Resolution#RESOLVES} is an admitted site,
-         * {@link Resolution#UNKNOWN} a captured type the sigil does not belong on, and
-         * {@link Resolution#NO_CENSUS} a parent the store has never seen, where a buffer naming a type
-         * no capture has read is the ordinary reason and a judgement asserting the sigil is misplaced
-         * would be asserting it about a shape nothing has resolved.
-         */
-        Resolution sourceSigilSite(String typeName, String fieldName) {
-            return resolution(fieldName != null && sigilSites.contains(new FieldCoord(typeName, fieldName)),
-                declaredSigilTypeNames.contains(typeName));
-        }
 
         /** What the catalog says about a table name an author wrote. */
         Resolution tableName(String spelling) {
@@ -733,7 +699,7 @@ final class DiagnosticFacts {
     static Answers none() {
         return new Answers(false, List.of(), false, List.of(), false, List.of(), false, List.of(),
             List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of(), List.of(), false, List.of(), List.of(), List.of());
+            List.of(), false, List.of(), List.of(), List.of());
     }
 
     /** Every question the document asked, answered in one statement. */
@@ -766,8 +732,6 @@ final class DiagnosticFacts {
                 backingArm(store, questions.memberTypeNames, TypeBackingClass.REACHED),
                 redirectArm(store, questions.memberTypeNames),
                 slotArm(store, questions.memberTypeNames),
-                sigilSiteArm(store, questions.sigilSites),
-                declaredTypeArm(store, questions.sigilTypeNames),
                 multiset(selectDistinct(GRAPHITRON_DIRECTIVE.DIRECTIVE_NAME)
                     .from(GRAPHITRON_DIRECTIVE)
                     .where(GRAPHITRON_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
@@ -1204,51 +1168,5 @@ final class DiagnosticFacts {
             .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.SLOT_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
-    }
-
-    /**
-     * Which of the coordinates carrying a written {@code $source} are sites the sigil belongs at.
-     * The narrowing is {@link CarrierDataField#sigilSite}'s, shared with the completion that offers
-     * the sigil, so the two surfaces cannot come to disagree about where it belongs.
-     */
-    private static Field<List<FieldCoord>> sigilSiteArm(
-        StoreHandle store, Collection<FieldCoord> sites
-    ) {
-        var site = GRAPHQL_FIELD;
-        return multiset(selectDistinct(site.TYPE_NAME, site.FIELD_NAME)
-            .from(site)
-            .where(site.GRAPH_NAME.eq(store.graphName()))
-            .and(coordinateIn(site.TYPE_NAME, site.FIELD_NAME, sites))
-            .and(CarrierDataField.sigilSite(site.GRAPH_NAME, site.TYPE_NAME, site.FIELD_NAME))
-            .orderBy(site.TYPE_NAME, site.FIELD_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(FieldCoord::new)));
-    }
-
-    /**
-     * Which of the types a written {@code $source} sits inside the store holds a declaration for. The
-     * census this arm defers on is the graph's own SDL, so no row means the parent is a type no
-     * capture has read rather than one the store judged.
-     */
-    private static Field<List<String>> declaredTypeArm(
-        StoreHandle store, Collection<String> typeNames
-    ) {
-        return multiset(selectDistinct(GRAPHQL_TYPE.TYPE_NAME)
-            .from(GRAPHQL_TYPE)
-            .where(GRAPHQL_TYPE.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHQL_TYPE.TYPE_NAME.in(typeNames))
-            .orderBy(GRAPHQL_TYPE.TYPE_NAME))
-            .convertFrom(rows -> rows.map(Record1::value1));
-    }
-
-    /** A disjunction over whole coordinates, which is what keys the arms a coordinate's rows come from. */
-    private static Condition coordinateIn(
-        TableField<?, String> typeColumn, TableField<?, String> fieldColumn,
-        Collection<FieldCoord> sites
-    ) {
-        Condition any = falseCondition();
-        for (var site : sites) {
-            any = any.or(typeColumn.eq(site.typeName()).and(fieldColumn.eq(site.fieldName())));
-        }
-        return any;
     }
 }

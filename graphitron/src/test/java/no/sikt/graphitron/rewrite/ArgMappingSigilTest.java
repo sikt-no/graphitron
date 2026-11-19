@@ -13,7 +13,7 @@ import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 
 /**
  * Unit-tier rule-table pin for {@link ArgMappingSigil}, the shared owner of the argMapping
- * sigil vocabulary, in the {@link FieldSourceSigilParseTest} shape: the literal set, the
+ * sigil vocabulary: the literal set, the
  * pre-tokenization scan (lift recognized sigil entries, pass everything else through to the
  * residual verbatim), the per-site admission predicate, and the canonical rejections. Both
  * routings into the owner are pinned here too: {@code ArgBindingMap.parseArgMapping}'s

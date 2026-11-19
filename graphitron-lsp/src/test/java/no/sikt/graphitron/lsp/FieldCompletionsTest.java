@@ -6,7 +6,6 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -240,86 +239,6 @@ class FieldCompletionsTest {
         var items = runBacked(source, cursor);
 
         assertThat(items).isEmpty();
-    }
-
-    // ===== $source sigil completion =====
-
-    /**
-     * The site the sigil belongs at, driven from a captured carrier rather than from a declared map:
-     * an {@code @service} payload whose data channel is the encoded key of the record the producer
-     * returned. The parent is bound to no table and stands for no class, so the sigil is the whole of
-     * what this coordinate offers.
-     */
-    @Test
-    void sourceSigil_atCarrierDataField_isSuggested() {
-        String source = """
-            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
-            union WriteError = DbErr
-            type Film @table(name: "film") { title: String }
-            type CreateFilmPayload {
-                filmId: ID @field(name: "")
-                errors: [WriteError]
-            }
-            type Query { films: [Film] }
-            type Mutation {
-                createFilm: CreateFilmPayload
-                    @service(service: {className: "com.example.FilmService", method: "create"})
-            }
-            """;
-        int line = 4;
-        int col = source.split("\n")[line].indexOf('"') + 1;
-        Point cursor = new Point(line, col);
-
-        assertThat(runCaptured(source, cursor)).extracting(CompletionItem::getLabel)
-            .containsExactly(FieldSourceSigilGrammar.UPSTREAM_ROOT);
-    }
-
-    /**
-     * The same payload shape under a DML write, which is not a site the sigil is documented at: the
-     * value a {@code @service} carrier's data field binds to is the producer method's return, and a
-     * write has no such return. The projection this arm replaced offered the sigil here, its map
-     * being keyed on classification arms both producers share.
-     */
-    @Test
-    void sourceSigil_onADmlCarrierDataField_isNotSuggested() {
-        String source = """
-            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
-            union WriteError = DbErr
-            type Film @table(name: "film") { title: String }
-            type DeleteFilmPayload {
-                deletedId: ID @field(name: "")
-                errors: [WriteError]
-            }
-            type Query { films: [Film] }
-            type Mutation {
-                deleteFilm(filmId: Int): DeleteFilmPayload @mutation(typeName: DELETE, table: "film")
-            }
-            """;
-        int line = 4;
-        int col = source.split("\n")[line].indexOf('"') + 1;
-        Point cursor = new Point(line, col);
-
-        assertThat(runCaptured(source, cursor)).isEmpty();
-    }
-
-    /**
-     * A coordinate of the same shape that no mutation field's payload reaches: carrier-ness comes
-     * from the producing field and never from the payload's own look, so the sigil is not offered
-     * and neither is anything else, the type being one the store scopes to no table and no class.
-     */
-    @Test
-    void sourceSigil_awayFromACarrierDataField_isNotSuggested() {
-        String source = """
-            type FilmIdHolder {
-                deletedId: ID @field(name: "")
-            }
-            type Query { holder: FilmIdHolder }
-            """;
-        int line = 1;
-        int col = source.split("\n")[line].indexOf('"') + 1;
-        Point cursor = new Point(line, col);
-
-        assertThat(runCaptured(source, cursor)).isEmpty();
     }
 
     // ===== @field(name:) on @reference path field completes terminal-table columns =====

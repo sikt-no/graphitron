@@ -1,25 +1,13 @@
 package no.sikt.graphitron.model.grammar;
 
 /**
- * The sigil literals an author may write in place of a member name in {@code @field(name:)}, and
- * the message that says where one of them is admitted.
+ * The sigil literals an author may still write in place of a member name in {@code @field(name:)}.
  *
- * <p>{@code $source} binds the SDL field to the upstream Java value as a whole rather than to a
- * member of it; {@code $errors} is inert, kept parseable on an errors field so a schema carrying
- * it still builds. Both are values the author types, so recognising one is the same kind of question as the
- * splits beside it here: what did the written value say.
- *
- * <p>It lives in the module both readers depend on because the literal and the rejection message
- * have to agree across a module boundary. The generator rejects a sigil written at a site that does
- * not admit it, and the language server marks the same site while the author is still typing; a
- * literal spelled twice, or a message worded twice, is the two surfaces disagreeing about the same
- * value. What the generator does with an admitted sigil stays with the generator, which holds the
- * parse into its own sealed result and everything downstream of it.
+ * <p>{@code $errors} is the one left: inert, kept parseable on an errors field so a schema carrying
+ * it still builds, and the generator warns that it can be removed. Recognising it is the same kind of
+ * question as the splits beside it here: what did the written value say.
  */
 public final class FieldSourceSigilGrammar {
-
-    /** Binds the SDL field to {@code env.getSource()}, the upstream Java value as a whole. */
-    public static final String UPSTREAM_ROOT = "$source";
 
     /**
      * On an errors-shaped field, an inert sigil: the field's transport follows from its parent, so
@@ -28,21 +16,5 @@ public final class FieldSourceSigilGrammar {
     public static final String ERRORS = "$errors";
 
     private FieldSourceSigilGrammar() {
-    }
-
-    /** Whether {@code value} is the upstream-root sigil. Null-safe: an absent value is not one. */
-    public static boolean isUpstreamRoot(String value) {
-        return UPSTREAM_ROOT.equals(value);
-    }
-
-    /**
-     * The canonical message for an upstream-root sigil written where it is not admitted. Single
-     * source for both the generator's rejection and the language server's squiggle, so an author
-     * reading one and then the other is not told two different things.
-     */
-    public static String notDefinedHereMessage() {
-        return "'" + UPSTREAM_ROOT + "' is not defined at this site; "
-            + "it is only valid on the data field of a payload type returned by a "
-            + "@service-backed mutation.";
     }
 }

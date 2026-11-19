@@ -12,8 +12,7 @@ import java.util.Map;
  * Shared owner of the {@code argMapping} sigil vocabulary: {@code $session} binds a Java
  * parameter to the session handle the {@code <sessionState>} mount returned, and
  * {@code $source.<column>} binds a routine parameter to a column of the row the routine is
- * applied to. One owner in the
- * {@code FieldSourceSigil} shape (the literal set, the parse fork, the admitted-site predicate,
+ * applied to. One owner (the literal set, the parse fork, the admitted-site predicate,
  * the canonical messages, unit-pinnable directly), routed through by both the build-side parse
  * ({@code ArgBindingMap.parseArgMapping}) and fact capture's {@code @service} argMapping site,
  * so the two cannot drift on what a sigil is.

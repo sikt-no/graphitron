@@ -1,0 +1,5 @@
+Reported at the `@field(name:)` on an output field, the detail giving the name as written.
+
+`@field(name:)` names the column or member a field reads, and no column or member name starts with `$`, so a name that does can never resolve. The one sigil left is `$errors`, which is inert on an errors field and draws a warning that it can go. `$source` is retired: it once bound a mutation payload's data field to the value the producer returned, and the data field binds that value without it, so nothing is lost by dropping it.
+
+*Next step.* Remove the `@field` from a payload's data field that wrote `$source`; elsewhere, write the column or member name the field reads. See xref:directives/field.adoc[`@field`].

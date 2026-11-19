@@ -1057,13 +1057,6 @@ class BuildContext {
                 }
                 continue;
             }
-            // Parse-time check on @field(name:). UnknownSigil ($-prefixed values that
-            // aren't recognized literals like $source) reject ahead of the element-shape
-            // dispatch with the canonical FieldSourceSigil.unknownSigilMessage wording.
-            var fieldNameRef = FieldSourceSigil.parseArgFieldNameRef(f, DIR_FIELD, ARG_NAME);
-            if (fieldNameRef instanceof FieldSourceSigil.ParseResult.UnknownSigil unknown) {
-                return new DmlPayloadScan.Reject(FieldSourceSigil.unknownSigilMessage(unknown.raw()));
-            }
             // Forbidden-directives check. The listed directives signal a different fetcher
             // contract than a payload carrier's data-field path, so their presence routes the
             // type away from the DML-payload mold. @field is intentionally NOT on this list.

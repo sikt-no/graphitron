@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -305,94 +304,6 @@ class DiagnosticsTest {
         var file = file("""
             extend type Foo {
                 bar: Int @field(name: "title")
-            }
-            """);
-
-        var diags = compute(file, catalogOnly);
-
-        assertThat(diags).isEmpty();
-    }
-
-    // ===== $source sigil diagnostics =====
-
-    /**
-     * The site the sigil belongs at, captured rather than declared: an {@code @service} payload whose
-     * data channel is the encoded key of the record the producer returned. The sigil is valid there,
-     * so nothing is said about it.
-     */
-    @Test
-    void sourceSigil_atCarrierDataField_producesNoDiagnostic() {
-        var diags = computeCaptured("""
-            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
-            union WriteError = DbErr
-            type Film @table(name: "film") { title: String }
-            type CreateFilmPayload {
-                filmId: ID @field(name: "$source")
-                errors: [WriteError]
-            }
-            type Query { films: [Film] }
-            type Mutation {
-                createFilm: CreateFilmPayload
-                    @service(service: {className: "com.example.FilmService", method: "create"})
-            }
-            """);
-
-        assertThat(diags).isEmpty();
-    }
-
-    /**
-     * The same payload under a DML write, which the documented rule does not admit: the sigil binds
-     * a producer method's return and a write has none, so the canonical message fires. The projection
-     * this arm replaced was silent here, its carrier map being keyed on classification arms the two
-     * producers share.
-     */
-    @Test
-    void sourceSigil_onADmlCarrierDataField_producesTheNotDefinedHereDiagnostic() {
-        var diags = computeCaptured("""
-            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
-            union WriteError = DbErr
-            type Film @table(name: "film") { title: String }
-            type DeleteFilmPayload {
-                deletedId: ID @field(name: "$source")
-                errors: [WriteError]
-            }
-            type Query { films: [Film] }
-            type Mutation {
-                deleteFilm(filmId: Int): DeleteFilmPayload @mutation(typeName: DELETE, table: "film")
-            }
-            """);
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage())
-            .isEqualTo(FieldSourceSigilGrammar.notDefinedHereMessage());
-    }
-
-    /**
-     * A captured type no mutation payload reaches: the store answers the question definitely, so the
-     * canonical "not defined here" message is earned rather than guessed.
-     */
-    @Test
-    void sourceSigil_atNonCarrierSite_producesCanonicalNotDefinedHereDiagnostic() {
-        var diags = computeCaptured("""
-            type Foo { bar: Int @field(name: "$source") }
-            type Query { foo: Foo }
-            """);
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage())
-            .isEqualTo(FieldSourceSigilGrammar.notDefinedHereMessage());
-    }
-
-    /**
-     * The parent is a type nothing has captured, which is what a buffer naming a type its save has
-     * not reached looks like. Silence rather than a verdict: a judgement that the sigil is misplaced
-     * here would be a judgement about a shape the store has never read.
-     */
-    @Test
-    void sourceSigil_atATypeTheStoreHasNotSeen_isSilent() {
-        var file = file("""
-            type RenamedMidEdit {
-                films: [Film!] @field(name: "$source")
             }
             """);
 

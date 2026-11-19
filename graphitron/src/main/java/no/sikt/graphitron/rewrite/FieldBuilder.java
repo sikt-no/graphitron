@@ -166,6 +166,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
@@ -4772,12 +4773,10 @@ class FieldBuilder {
      * parses, so a schema carrying it keeps building, and this warning says it can go.
      */
     private void warnIfErrorsSigil(GraphQLFieldDefinition fieldDef, String parentTypeName) {
-        if (FieldSourceSigil.parseArgFieldNameRef(fieldDef, DIR_FIELD, ARG_NAME)
-                instanceof FieldSourceSigil.ParseResult.Ok ok
-                && ok.ref() instanceof FieldSourceSigil.FieldNameRef.ErrorsSigil) {
+        if (argString(fieldDef, DIR_FIELD, ARG_NAME).filter(FieldSourceSigilGrammar.ERRORS::equals).isPresent()) {
             ctx.addWarning(new BuildWarning.NoRule(
                 parentTypeName + "." + fieldDef.getName() + ": @field(name: \""
-                + FieldSourceSigil.ERRORS_LITERAL + "\") is no longer needed: an errors field "
+                + FieldSourceSigilGrammar.ERRORS + "\") is no longer needed: an errors field "
                 + "reads its errors from the payload its producer returns. Remove the directive.",
                 locationOf(fieldDef)));
         }
@@ -5273,64 +5272,6 @@ class FieldBuilder {
         return builder.apply(returnExpression);
     }
 
-
-    /**
-     * Type-match check at the payload-data-field {@code $source}
-     * admission site. Runs when an {@code @service} mutation returns a structurally carrier-
-     * shaped payload (single {@code @table}-typed data field) whose data field opts into the
-     * {@code $source} sigil via {@code @field(name: "$source")}: compares the producer's
-     * reflected return {@link com.palantir.javapoet.TypeName} against the data table's
-     * record class through {@link FieldSourceSigil#sourceSigilTypeMatches}.
-     *
-     * <p>The detection is structural (consults the payload SDL directly), so no
-     * forbidden-directives loop runs at this site.
-     *
-     * <p>Returns {@code null} when the check passes (or when no carrier shape / no
-     * {@code $source} sigil applies); on mismatch, returns the canonical
-     * {@link FieldSourceSigil#typeMismatchMessage} for the caller to wrap into an
-     * {@link UnclassifiedField}.
-     */
-    private String checkSourceSigilTypeMatch(
-            String returnTypeName,
-            no.sikt.graphitron.rewrite.model.MethodRef method) {
-        var shape = detectStructuralServicePayloadShape(returnTypeName);
-        if (shape == null) return null;
-        var dataField = findStructuralPayloadDataField(returnTypeName);
-        if (dataField == null) return null;
-        var parsed = FieldSourceSigil.parseArgFieldNameRef(dataField, DIR_FIELD, ARG_NAME);
-        boolean isSourceSigil = parsed instanceof FieldSourceSigil.ParseResult.Ok ok
-            && ok.ref() instanceof FieldSourceSigil.FieldNameRef.UpstreamRoot;
-        if (!isSourceSigil) return null;
-        var mismatch = FieldSourceSigil.sourceSigilTypeMatches(
-            method.returnType(), method.className(), method.methodName(),
-            CatalogRefs.recordClass(shape.table()),
-            shape.arrival() == Arity.MANY);
-        return mismatch.orElse(null);
-    }
-
-    /**
-     * Re-walk the payload SDL to retrieve the structurally-detected carrier's
-     * data field definition. Mirrors {@link #detectStructuralServicePayloadShape}'s walk but
-     * returns the field definition rather than its resolved table/cardinality; both helpers
-     * land at the same single {@code @table}-typed data field on payloads that
-     * {@link #detectStructuralServicePayloadShape} admits.
-     */
-    private GraphQLFieldDefinition findStructuralPayloadDataField(String payloadSdlName) {
-        if (payloadSdlName == null) return null;
-        var payloadType = ctx.schema.getType(payloadSdlName);
-        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
-        GraphQLFieldDefinition dataField = null;
-        for (var f : payloadObj.getFieldDefinitions()) {
-            String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            // The payload data field is two hops below the field being classified;
-            // resolving its table-backed fact from the pure TableIndex (a fixed point) avoids a
-            // deep in-progress-registry read.
-            if (ctx.tables.forName(unwrappedFieldType).isEmpty()) continue;
-            if (dataField != null) return null;
-            dataField = f;
-        }
-        return dataField;
-    }
 
     /**
      * Structural detection of a DML payload's error channel. Scans the payload
@@ -5955,16 +5896,6 @@ class FieldBuilder {
                         new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Result r -> {
-                    // When the @service mutation returns a payload type whose
-                    // data field opts into the $source sigil, verify the producer's reflected
-                    // return type matches the SDL element's backing class. The check is colocated
-                    // here because the producer's MethodRef is in scope; the rejection flows
-                    // through the existing UnclassifiedField -> ValidationError -> LSP path.
-                    String sourceSigilError = checkSourceSigilTypeMatch(r.returnType().returnTypeName(), r.method());
-                    if (sourceSigilError != null) {
-                        yield new UnclassifiedField(parentTypeName, name, location,
-                            Rejection.structural(sourceSigilError));
-                    }
                     // The @service-payload strict-return check detects the payload shape
                     // directly from the payload SDL. The check fires only for unbacked payloads
                     // (no resolved backing class); ClassBacked payloads route through the
@@ -5984,14 +5915,6 @@ class FieldBuilder {
                     // A carrier-shaped return that did not bind (the producer return did not
                     // match XRecord / List<XRecord>) resolves to a Scalar over a NestingType;
                     // reject it here so a mismatched producer is an author error, not a silent admit.
-                    // Run the $source-sigil check first (mirrors the Result arm), so a $source-typed
-                    // data field gets the more specific $source diagnostic; otherwise the generic
-                    // carrier strict-return diagnostic applies.
-                    String sourceSigilError = checkSourceSigilTypeMatch(s.returnType().returnTypeName(), s.method());
-                    if (sourceSigilError != null) {
-                        yield new UnclassifiedField(parentTypeName, name, location,
-                            Rejection.structural(sourceSigilError));
-                    }
                     String carrierError = classifyServicePayloadProducerByName(s.returnType().returnTypeName(), s.method());
                     if (carrierError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location,

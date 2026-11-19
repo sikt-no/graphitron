@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
 import io.github.treesitter.jtreesitter.Point;
-import no.sikt.graphitron.lsp.facts.CarrierDataField;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
@@ -13,7 +12,6 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -39,9 +37,8 @@ import java.util.List;
  * </ul>
  *
  * <p>Every question this provider asks is the store's. What the enclosing type resolves against is
- * one read, what either scope then offers is the next ({@link CatalogColumns} for a table,
- * {@link ClassMemberSlots} for a class), and whether the {@code $source} sigil belongs at this site
- * is {@link CarrierDataField}.
+ * one read, and what either scope then offers is the next ({@link CatalogColumns} for a table,
+ * {@link ClassMemberSlots} for a class).
  */
 public final class FieldCompletions {
 
@@ -79,12 +76,6 @@ public final class FieldCompletions {
     private static List<CompletionItem> completionsFor(
         StoreHandle store, CompletionContext context, String typeName, String fieldName
     ) {
-        // At the payload data field site, prepend $source as a top-level completion. Where the
-        // sigil belongs is the store's answer, and a coordinate it holds no row for is one the
-        // sigil does not belong at, which is the same reading as a coordinate it declines.
-        boolean isPayloadDataField = fieldName != null
-            && CarrierDataField.admitsSigil(store, typeName, fieldName);
-        var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
         // Prefer the site's own resolved scope over the enclosing type's backing: a @reference
         // path's terminal table, or the table the named type is itself bound to, is where the
         // column named here lives. A Silent scope offers nothing rather than falling back on the
@@ -95,10 +86,10 @@ public final class FieldCompletions {
             if (scope.isPresent()) {
                 switch (scope.get()) {
                     case FieldColumnTable.Scope.Resolved(var table) -> {
-                        return mergeWithSigil(sigilItems, tableColumnItems(store, table, context));
+                        return tableColumnItems(store, table, context);
                     }
                     case FieldColumnTable.Scope.Silent ignored -> {
-                        return mergeWithSigil(sigilItems, List.of());
+                        return List.of();
                     }
                 }
             }
@@ -106,7 +97,7 @@ public final class FieldCompletions {
         // The parent's own scope, which is one read: whether the type resolves against a table or
         // against a class, and which one, come back together, and a type the store scopes to
         // neither offers nothing.
-        var rest = TypeMemberScope.of(store, typeName)
+        return TypeMemberScope.of(store, typeName)
             .map(scope -> switch (scope) {
                 case TypeMemberScope.Scope.Tables(var candidates) ->
                     tableColumnItems(store, candidates, context);
@@ -114,24 +105,6 @@ public final class FieldCompletions {
                     memberSlotItems(store, className, context);
             })
             .orElse(List.of());
-        return mergeWithSigil(sigilItems, rest);
-    }
-
-    private static List<CompletionItem> mergeWithSigil(
-        List<CompletionItem> sigilItems, List<CompletionItem> rest
-    ) {
-        if (sigilItems.isEmpty()) return rest;
-        var combined = new java.util.ArrayList<CompletionItem>(sigilItems.size() + rest.size());
-        combined.addAll(sigilItems);
-        combined.addAll(rest);
-        return List.copyOf(combined);
-    }
-
-    private static CompletionItem sourceSigilItem(CompletionContext context) {
-        return CompletionItems.replacing(
-            FieldSourceSigilGrammar.UPSTREAM_ROOT,
-            CompletionItemKind.Keyword, context.replaceRange(),
-            "Root-value sigil — bind to the upstream Java value as a whole");
     }
 
     /**
