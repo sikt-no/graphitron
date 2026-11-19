@@ -988,8 +988,8 @@ final class InputBeanResolver {
      * Record arm: a bidirectional bijection between record components and SDL input fields.
      * <ul>
      *   <li><b>Every component must bind</b> (direction A). The canonical constructor takes every
-     *       component, so a component with no SDL field bound to it fails at classify time rather
-     *       than as an under-arity constructor call in the generated code.</li>
+     *       component, so a component with no SDL field bound to it is the store's
+     *       {@code MEMBER_UNFILLED}, whose verdict stops the build before this runs.</li>
      *   <li><b>Every SDL field must be consumed</b> (direction B). A field whose binding key names
      *       no component would have its value silently dropped (it never reaches the constructor);
      *       for a record's total-mirror contract that is a hard fail.</li>
@@ -1003,20 +1003,13 @@ final class InputBeanResolver {
             BindingAxis axis) {
         var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
         var consumedKeys = new HashSet<String>();
-        // Direction A: every component must bind. componentsByName iterates in component order.
+        // Direction A: every component binds, a component nothing fills being the store's
+        // MEMBER_UNFILLED. componentsByName iterates in component order.
         for (var ce : componentsByName.entrySet()) {
             String component = ce.getKey();
             IndexEntry entry = sdlByBindingKey.get(component);
             if (entry == null) {
-                return new Built.Fail(Rejection.structural(
-                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-                    + className + "': record '" + beanClass.getName() + "' component '" + component
-                    + "' has no SDL input field bound to it on type '" + iot.getName() + "' — every"
-                    + " record component must bind (the canonical constructor needs them all); add a"
-                    + " field named '" + component + "' to the input type"
-                    + (axis.fieldNamesMember()
-                        ? ", or @field(name: \"" + component + "\") to the field that should populate it"
-                        : ", or rename the component after the field that should populate it")));
+                continue;
             }
             consumedKeys.add(component);
             FieldResult r = bindField(entry.field(), entry.path(), entry.definition(), ce.getValue(),

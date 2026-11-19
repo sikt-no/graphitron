@@ -34,6 +34,9 @@ input FilmPlainFilterInput { title: String nope: String }
 input FilmNestedFilterInput { title: String inner: FilmInnerFilterInput }
 input FilmInnerFilterInput { title: String nope: String }
 input FilmTitleCellInput { title: String nope: String }
+# FilmTitleFilter(String title) is a record a @condition builds: an input with no title leaves its one
+# component unfilled, and its note fills nothing.
+input FilmUntitledInput { note: String }
 # A @routine's parameters take actorId and minLength; title filters the function's result, and foo
 # names none of its columns.
 type ActorFilm { filmId: Int @field(name: "film_id") title: String }
@@ -168,6 +171,9 @@ type Query {
   # releaseYear fills no member, but the filter, not overridden, compares it as a column.
   filmsByPlainFilter(filter: FilmPlainFilterInput): [Film!]! @defaultOrder(primaryKey: true)
   filmsByTitleCells(cells: [FilmTitleCellInput!]): [Film!]! @defaultOrder(primaryKey: true)
+  filmsByUntitledRecord(by: FilmUntitledInput): [Film!]! @defaultOrder(primaryKey: true)
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+      method: "filmTitleRecord", argMapping: "filter: by"}, override: true)
   filmsByNestedFilter(filter: FilmNestedFilterInput): [Film!]! @defaultOrder(primaryKey: true)
   actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
     @routine(name: "films_for_actor",
@@ -214,4 +220,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.countBundleTwoGroups(in:),     MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#films
   Query.countBundleRenamedGroup(in:),  MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
   Query.countBlankNameDraft(in:),      MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.services.FilmDraft#title
+  Query.filmsByUntitledRecord(by:),    MEMBER_UNFILLED,            no.sikt.graphitron.rewrite.test.conditions.FilmTitleFilter#title
+  FilmUntitledInput.note,              MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.conditions.FilmTitleFilter
   """)

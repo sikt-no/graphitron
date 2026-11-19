@@ -163,9 +163,6 @@ class ConditionParameterCarrierPipelineTest {
     void unbuildableBeansAreRefusedWithTheSharedMessages() {
         assertThat(refusal(fieldLevel("filter: CarrierFilter", "carrierNoNoArgConstructor", "input: filter")))
             .contains("has no public no-arg constructor");
-        assertThat(refusal(fieldLevel("filter: CarrierFilter", "carrierRecordExtraComponent", "input: filter")))
-            .contains("component 'rating'")
-            .contains("every record component must bind");
         assertThat(refusal(fieldLevel("filter: CarrierFilter", "carrierInterface", "input: filter")))
             .contains("is abstract or an interface");
     }

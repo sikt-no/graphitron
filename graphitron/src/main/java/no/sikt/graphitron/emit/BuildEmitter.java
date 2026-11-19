@@ -207,8 +207,12 @@ public final class BuildEmitter {
             for (var slot : build.slots()) {
                 var member = build.members().stream()
                     .filter(m -> m.slot().position() == slot.position()).findFirst();
-                arguments.add(member.isEmpty() ? defaultOf(SessionIdentityRows.typeOf(slot.slotType()))
-                    : member.get().decode().isPresent() && !member.get().list()
+                // A component no field fills is MEMBER_UNFILLED, refused before emission.
+                if (member.isEmpty()) {
+                    throw new IllegalStateException("record component " + slot.slotName() + " of "
+                        + type + " is filled by no member; MEMBER_UNFILLED refuses that before emission");
+                }
+                arguments.add(member.get().decode().isPresent() && !member.get().list()
                         ? CodeBlock.of("$L", records.get(slot.slotName()))
                     : value(member.get(), name, runtime, counter, out));
             }

@@ -1253,9 +1253,6 @@ static method needs no holder.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
-* **A record component no field fills is refused in the store, claimed by C** `open`, off the critical path.
-  `InputBeanResolver.bindRecord` refuses a positional class whose component no input field fills;
-  the store states the other direction only, `MEMBER_UNKNOWN`.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
 * **A `@splitQuery` on a write payload's data field is judged in the store** `open`, off the

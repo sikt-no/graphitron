@@ -10934,27 +10934,6 @@ class GraphitronSchemaBuilderTest {
 
         // ===== @field(name:) input-bean binding rejections =====
 
-        SERVICE_INPUT_BEAN_RECORD_COMPONENT_UNBOUND_REJECTED(
-            "R200 direction A: a record component with no SDL field bound to it → UnclassifiedField; the canonical constructor needs every component (the old loop emitted a silent under-arity call)",
-            """
-            enum TestInputBeanEnum { LOW HIGH }
-            input MissingNestedComponentInput { title: String, rating: TestInputBeanEnum }
-            type FilmDetails { title: String }
-            type Query { x: String }
-            type Mutation {
-                runWithInputBean(input: MissingNestedComponentInput): FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
-            }
-            """,
-            schema -> {
-                var f = schema.field("Mutation", "runWithInputBean");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("TestInputBean")
-                    .contains("component 'nested'")
-                    .contains("every record component must bind");
-            }),
-
         SERVICE_INPUT_BEAN_RECORD_FIELD_UNCONSUMED_REJECTED(
             "R200 direction B: an SDL input field that binds to no record component → UnclassifiedField; a record's input correspondence is total, so an unconsumed field (silent data drop) fails, unlike a JavaBean's tolerated partial population",
             """
