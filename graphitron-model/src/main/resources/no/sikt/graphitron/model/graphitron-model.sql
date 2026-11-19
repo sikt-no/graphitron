@@ -19729,6 +19729,50 @@ SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
  GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
        COALESCE(da.source_column, el.source_column)
 UNION ALL
+-- A filter on a union or an interface whose argument or input field names a column of one
+-- participant's table and none of another's, at the @field where one is written and at the
+-- declaration otherwise: the filter is compared on each participant's table, read off
+-- graphitron_occurrence_column, which holds one row per landing, so on the table lacking it no
+-- predicate compares the value and the participant cannot be filtered. The detail is the spelling.
+SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column),
+       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name)), 'occurrence-tenants'
+  FROM graphitron_occurrence o
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_path_need_table n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
+  -- The participant the need reaches, a table-bound type.
+  JOIN graphitron_tabletype tt ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
+  LEFT JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+   -- Compared on some landing: a column of another participant's table.
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+   -- And none on this one.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate
+                      AND c.table_source_name = COALESCE(jp.target_source_name, n.landing_source_name)
+                      AND c.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+                      AND c.table_name = COALESCE(jp.target_table, n.landing_table))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
+                      AND p.kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+   -- An overriding condition stands in for every participant's predicate.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+ GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column)
+UNION ALL
 -- An input field nothing takes, under the class its input object is built into (Alf, 2026-11-17):
 -- neither it nor anything inside it is taken (graphitron_occurrence_taken), a member of that class
 -- by the name the class matches on, exactly, case included, among them. Its value would reach
@@ -19768,8 +19812,9 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
 COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_rule IS 'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.';
 
 -- The table a filter's argument or input field naming no column was looked for in, under its
--- COLUMN_UNRESOLVED: the arm of graphitron_occurrence_tenant_entry_defect_rule restated row for row, so
--- the defect and the table it names agree, one row per defect and landing. The diagnostic view ranks
+-- COLUMN_UNRESOLVED: the two filter arms of graphitron_occurrence_tenant_entry_defect_rule restated row
+-- for row, so the defect and the table it names agree, one row per defect and landing; on a union or
+-- an interface, each participant table lacking the column. The diagnostic view ranks
 -- that table's columns against the spelling, so every reader of a defect offers the same names.
 CREATE VIEW graphitron_occurrence_tenant_entry_defect_table_rule
   (graph_name, source_name, source_line, source_column, code,
@@ -19837,8 +19882,46 @@ SELECT DISTINCT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE
                      JOIN graphitron_occurrence_taken t
                        ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
                       AND t.taken_by <> 'LOOKUP_KEY'
-                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate);
-COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_table_rule IS 'One table a COLUMN_UNRESOLVED filter defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk. For example Query.filmsBy(bogus:) looks for bogus in film, and the occurrence-tenants stage writes a row naming film under its defect.';
+                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate)
+UNION
+SELECT DISTINCT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column), 'COLUMN_UNRESOLVED',
+       COALESCE(jp.target_source_name, n.landing_source_name), COALESCE(jp.target_schema, n.landing_schema),
+       COALESCE(jp.target_table, n.landing_table)
+  FROM graphitron_occurrence o
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_path_need_table n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
+  -- The participant the need reaches, a table-bound type.
+  JOIN graphitron_tabletype tt ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
+  LEFT JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+   -- Compared on some landing: a column of another participant's table.
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+   -- And none on this one.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate
+                      AND c.table_source_name = COALESCE(jp.target_source_name, n.landing_source_name)
+                      AND c.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+                      AND c.table_name = COALESCE(jp.target_table, n.landing_table))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
+                      AND p.kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+   -- An overriding condition stands in for every participant's predicate.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_table_rule IS 'One table a COLUMN_UNRESOLVED filter defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk. For example Query.filmsBy(bogus:) looks for bogus in film, and the occurrence-tenants stage writes a row naming film under its defect; Query.occupants(username:) over Customer | Staff a row naming customer, the participant lacking it.';
 -- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect_table.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect_table.source_name';
 -- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect_table.source_line';
@@ -31870,8 +31953,8 @@ INSERT INTO meta_relation VALUES
    'The stage''s own defects, decided from the pairs, the directive applications and the bindings it has just written, so each reads only what is upstream of it.'),
   ('graphitron_occurrence_tenant_entry_defect_table_rule', 'entry-defect-table', 'graphitron',
    'One table a COLUMN_UNRESOLVED filter defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example Query.filmsBy(bogus:) looks for bogus in film, and the occurrence-tenants stage writes a row naming film under its defect.',
-   'The filter arm of the stage''s COLUMN_UNRESOLVED restated row for row, so the defect and the table it was looked for in agree; the table is the fact, and ranking its columns against the spelling is the diagnostic view''s, so the build, the editor and the MCP server offer the same names.'),
+   'For example Query.filmsBy(bogus:) looks for bogus in film, and the occurrence-tenants stage writes a row naming film under its defect; Query.occupants(username:) over Customer | Staff a row naming customer, the participant lacking it.',
+   'The filter arms of the stage''s COLUMN_UNRESOLVED restated row for row, so the defect and the table it was looked for in agree; the table is the fact, and ranking its columns against the spelling is the diagnostic view''s, so the build, the editor and the MCP server offer the same names.'),
   ('graphitron_occurrence_producer_empty', 'graph-occurrence', 'graphitron',
    'The empty answer a service producer has for a call given nothing: one row per service occurrence whose result is a collection the generated code can build empty.',
    'For example Mutation.rateFilms, returning [Film!]! over film, answers an empty list, and a service returning a single Film has no row.',
