@@ -1193,12 +1193,6 @@ static method needs no holder.
   projection `ProjectionCommands` derives from it lost its test with the walk's service tests;
   `ServiceKeyProjectionTest` covers the nesting case only. A plan-tier case for a direct table-parent
   child, `Film.titleUppercase`, asserts the projection is exactly `film_id`.
-* **A discriminated service the store cannot lift is refused in the store, claimed by C** `open`, off the
-  critical path. `ServiceEmission.statedVerdict` still refuses in Java a service whose participants
-  a discriminator tells apart where it has no lift, or a lift not at the root. The stored codes judge
-  participant shapes instead: `SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED` leaves out outcome fields and
-  union returns, and nothing refuses a root discriminated service with no lift row. A stored refusal
-  of exactly that shape lets the rung become a generator-bug throw.
 * **An object type handed back as two classes by two services is judged in the store** `open`, off
   the critical path. `FilmShelf` returned by one service as a bean and by another as a
   `FilmLookupPayload` record, both offering `title`, is one OBJECT result with two result-class rows

@@ -47,6 +47,14 @@ type Language @table(name: "language") {
   name: String
 }
 
+# A discriminated interface over fan_base, answered with film records: no lift reads them as its rows.
+interface FanItem @table(name: "fan_base") @discriminate(on: "fan_kind") {
+  name: String @field(name: "label")
+}
+type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: "ALPHA") {
+  name: String @field(name: "label")
+}
+
 type Query {
   films: [Film!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
@@ -70,6 +78,8 @@ type Query {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
   oneFilmIntoIds: FilmIdsPayload @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "oneAsFilms"})
+  fanItemsAsFilms: [FanItem!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
   topRating: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "topRating"})
 }
 
@@ -128,6 +138,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   SERVICE_RETURN_MISMATCH, Film.languageAsPlainRecord,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, org.jooq.Record>"
   SERVICE_RETURN_MISMATCH, Query.filmsWithActorsIntoOne, java.util.List<no.sikt.graphitron.rewrite.test.services.FilmWithActors>
   SERVICE_RETURN_MISMATCH, Film.ratingRaw,            java.util.Map
+  SERVICE_RETURN_MISMATCH, Query.fanItemsAsFilms,      java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>
   SERVICE_RETURN_MISMATCH, Film.ratingGeneric,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, T>"
   SERVICE_RETURN_MISMATCH, Film.ratingByFilmId,"java.util.Map<java.lang.Integer, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating>"
   """)

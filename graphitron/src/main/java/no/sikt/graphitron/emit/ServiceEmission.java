@@ -347,15 +347,24 @@ public final class ServiceEmission {
 
     /**
      * {@link #EMITTED} where every part the store states of the occurrence at {@code coordinate} holds,
-     * otherwise the first that does not.
+     * otherwise the first that does not; a shape the store refuses, met here, throws as a generator bug.
      */
     private String statedVerdict(String coordinate) {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
         // A field with several service occurrences is not judged here: the store refuses it as
         // SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED, and emit throws on it.
-        if (toldApart.contains(coordinate) && (!lifts.containsKey(coordinate) || !lifts.get(coordinate).root())) {
-            return "DISCRIMINATED";
+        // A discriminated service's rows are lifted participant by participant off the shared table's
+        // records, at a root only; the store refuses every other shape, so meeting one is a bug.
+        if (toldApart.contains(coordinate) && !lifts.containsKey(coordinate)) {
+            throw new IllegalStateException("Graphitron generator bug: @service " + coordinate
+                + " answers a discriminated interface with no lift, which SERVICE_RETURN_MISMATCH refuses as an"
+                + " answer that is not the shared table's records");
+        }
+        if (toldApart.contains(coordinate) && !lifts.get(coordinate).root()) {
+            throw new IllegalStateException("Graphitron generator bug: @service " + coordinate
+                + " answers a discriminated interface under an object, which SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED"
+                + " refuses");
         }
         var call = calls.get(coordinate);
         if (call == null) return "NO_CALL";
