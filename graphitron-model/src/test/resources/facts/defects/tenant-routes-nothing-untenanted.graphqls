@@ -1,7 +1,7 @@
 # A tenant named in a build with no tenant column: nothing routes by a tenant there, so @tenant on a
-# root @service's argument, a $tenant pair in its argMapping and a $tenant pair in a @condition's are
-# each refused as naming nothing, the condition's no longer as a site not supported yet. The same
-# calls naming no tenant draw nothing.
+# root @service's argument and a $tenant pair in a @condition's argMapping are each refused as naming
+# nothing, the condition's no longer as a site not supported yet; a $tenant pair in a @service's is
+# refused the same way, as tenant-routes-nothing pins. The same call naming no tenant draws nothing.
 
 type Film @table(name: "film") { title: String }
 
@@ -9,9 +9,6 @@ type Query {
   filmMarked(id: Int! @tenant): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById"})
-  filmPaired(id: Int!, org: Int!): Film
-    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
-      method: "filmById", argMapping: "id: id, $tenant: org"})
   film(id: Int!): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById"})
@@ -23,6 +20,5 @@ type Query {
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'TENANT%'", rows: """
   code,                  coordinate,             detail
   TENANT_ROUTES_NOTHING, Query.filmMarked(id:),
-  TENANT_ROUTES_NOTHING, Query.filmPaired,
   TENANT_ROUTES_NOTHING, Query.filmsOnCondition,
   """)
