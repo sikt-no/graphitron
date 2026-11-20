@@ -91,16 +91,19 @@ class MixedSourceNestingReachValidationTest {
             .anyMatch(m -> m.contains("FilmDetails.description"));
     }
 
-    // FilmThing is reached both as a nesting projection of @table Film and as a @service result whose
-    // producer returns a jOOQ TableRecord, so it binds to a JooqTableRecordType (a JooqRecordCarrier).
+    // FilmThing is reached both as a nesting projection of @table Film and as an @externalField result
+    // whose Field carries a jOOQ TableRecord, so it binds to a JooqTableRecordType (a JooqRecordCarrier).
     // Both arms would be Record reads with independently derived read names: unsupported in v1, rejected by
     // the reified shape-set rule rather than a fused type-level check.
     private static final String JOOQ_RECORD_CARRIER_NESTING_MIX = """
         type FilmThing { title: String }
         type Film @table(name: "film") { thing: FilmThing }
+        type Inventory @table(name: "inventory") {
+            filmRef: FilmThing @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+        }
         type Query {
             film: Film
-            prodThing: FilmThing @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmRecordResult"})
+            inventory: Inventory
         }
         """;
 

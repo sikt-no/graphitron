@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Source-shape mirror. {@link ChildField#sourceShape()} is a leaf-exhaustive switch the
  * model documents as "a projection of the parent's backing": a {@code @table}-backed (catalog)
- * parent puts a table row at {@code env.getSource()}; a {@code @service} / DML payload or DTO parent
- * hands back a domain record. Since
+ * parent puts a table row at {@code env.getSource()}; a DML payload or DTO parent hands back a
+ * domain record. Since
  * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} consumes source-shape (the
  * {@code holds-records} half), a leaf wired with the wrong {@code sourceShape} arm would silently
  * flip a re-fetch verdict with no failing test.
@@ -32,11 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * hand-off (a nesting leaf passes its table row through; a pivot leaf hands its slots the
  * graphitron-built jOOQ record).
  *
- * <p>One corpus document is load-bearing here rather than merely covered: the
- * {@code service-child-class-backed-parent} document is the only one hosting service children on a
- * parent that is not a table. Both service leaves are minted on both parent kinds, so neither leaf's
- * identity answers what arrives at the fetcher, and without that document this mirror never sees the
- * {@code Record} answer on either of them.
+ * <p>The {@code Record} arm reaches the walk through the DML payload documents ({@code dml-payloads}
+ * among them): a payload's data field re-projects off the written record.
  *
  * <p>{@link #everyChildFieldLeafIsCoveredOrDocumented()} keeps it honest as the leaf set grows:
  * every concrete {@link ChildField} sealed leaf is either observed by the corpus walk or carries a
@@ -132,14 +129,14 @@ class SourceShapeProjectionTest {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmPayload { film: Film }
+            input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
             type Query { x: String }
             type Mutation {
-                runFilm: FilmPayload
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
+                updateFilm(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
             }
             """);
-        // FilmPayload is record-backed: the @service producer hands back a FilmRecord, so the carrier
-        // data field re-projects off a produced record: SourceShape.Record.
+        // FilmPayload is record-backed: the DML producer hands back the written FilmRecord, so the
+        // carrier data field re-projects off a produced record: SourceShape.Record.
         var film = (ChildField) schema.field("FilmPayload", "film");
         assertThat(film.sourceShape()).isEqualTo(SourceShape.Record);
         assertThat(film.sourceShape()).isEqualTo(projectedFromParentBacking(schema, film));

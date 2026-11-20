@@ -25,17 +25,21 @@ import no.sikt.graphitron.model.diagnostics.BuildWarning;
 @PipelineTier
 class RecordDirectiveIgnoredWarningTest {
 
+    /** The record-handing producer: an {@code @externalField} on a table-bound parent. */
+    private static final String EXTENSIONS = "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions";
+
     @Test
     void matches_directiveClassNameEqualsReflectedClass_warnsRedundant() {
         var schema = TestSchemaHelper.buildSchema("""
             type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
-            type Query {
+            type Inventory @table(name: "inventory") {
                 film: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                    @externalField(reference: {className: "%s", method: "filmRef"})
             }
-            """);
+            type Query { inventories: [Inventory!]! }
+            """.formatted(EXTENSIONS));
 
         assertThat(schema.warnings())
             .extracting(BuildWarning::message)
@@ -49,17 +53,18 @@ class RecordDirectiveIgnoredWarningTest {
             type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
-            type Query {
-                language: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+            type Inventory @table(name: "inventory") {
+                card: FilmDetails
+                    @externalField(reference: {className: "%s", method: "filmCardData"})
             }
-            """);
+            type Query { inventories: [Inventory!]! }
+            """.formatted(EXTENSIONS));
 
         assertThat(schema.warnings())
             .extracting(BuildWarning::message)
             .anyMatch(m -> m.contains("FilmDetails")
                 && m.contains("derives a different backing class")
-                && m.contains("LanguageRecord"));
+                && m.contains("FilmCardData"));
     }
 
     @Test
@@ -120,20 +125,21 @@ class RecordDirectiveIgnoredWarningTest {
 
     @Test
     void multiProducerRejection_suppressesWarning() {
-        // Two @service producers reach FilmDetails returning different records: the producer-agreement
-        // check surfaces RecordBindingMultiProducer and the typed error supersedes the directive-ignored
-        // warning at the same site.
+        // Two @externalField producers reach FilmDetails returning different records: the
+        // producer-agreement check surfaces RecordBindingMultiProducer and the typed error supersedes
+        // the directive-ignored warning at the same site.
         var schema = TestSchemaHelper.buildSchema("""
             type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
-            type Query {
+            type Inventory @table(name: "inventory") {
                 viaFilm: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-                viaLanguage: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                    @externalField(reference: {className: "%1$s", method: "filmRef"})
+                viaCard: FilmDetails
+                    @externalField(reference: {className: "%1$s", method: "filmCardData"})
             }
-            """);
+            type Query { inventories: [Inventory!]! }
+            """.formatted(EXTENSIONS));
 
         var t = schema.type("FilmDetails");
         assertThat(t).isInstanceOf(GraphitronType.UnclassifiedType.class);

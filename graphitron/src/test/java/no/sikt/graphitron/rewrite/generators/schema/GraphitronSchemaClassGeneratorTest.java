@@ -477,11 +477,14 @@ class GraphitronSchemaClassGeneratorTest {
             message: String!
         }
         union SakError = ValidationErr | DbErr
+        type Film @table(name: "film") { title: String }
+        input FilmInput { filmId: Int! @field(name: "film_id") title: String @field(name: "title") }
         type SakPayload {
-            data: String
+            film: Film
             errors: [SakError]
         }
-        type Query { sak: SakPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"}) }
+        type Query { x: String }
+        type Mutation { sak(in: FilmInput!): SakPayload @mutation(typeName: UPDATE, table: "film") }
         """;
 
     @Test

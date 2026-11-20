@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * L4 pipeline tests for {@link GraphitronDevExecutorGenerator}: drive the generator against a real
- * classified schema with multiple {@code @service(contextArguments: [...])} sites and pin that the
+ * classified schema with multiple {@code @condition(contextArguments: [...])} sites and pin that the
  * executor emits with the frozen JDK-only signature regardless of how many contextArguments the
  * classifier resolved (the schema-varying binding is absorbed into the body, never the signature).
  *
@@ -27,21 +27,21 @@ class GraphitronDevExecutorGeneratorPipelineTest {
 
     @Test
     void executeSignature_staysJdkOnlyWhenTheClassifierResolvesContextArguments() {
-        // Two @service sites with disjoint contextArguments (userId: String, fnr: Long), the same
+        // Two @condition sites with disjoint contextArguments (userId: String, brukerId: Long), the same
         // corpus GraphitronFacadeGeneratorPipelineTest uses. The facade's factory grows typed
         // parameters; the executor's signature must not (the host reflects one fixed shape).
         String sdl = """
             type Film @table(name: "film") { title: String }
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query {
-                film: Film
-                ratingByUser: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByUser"
+                customersSeenByUser: [Customer!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "customerSeenByUser"
                 }, contextArguments: ["userId"])
-                ratingByFnr: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByFnr"
-                }, contextArguments: ["fnr"])
+                filmsSeenByBruker: [Film!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub",
+                    method: "sessionBoxed"
+                }, contextArguments: ["brukerId"])
             }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);

@@ -240,7 +240,7 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void payload_recordBackedViaProducer_classifiesAsExistingPath() {
-        // A reflection-backed carrier (FilmCarrier binds to the @service producer's return) keeps
+        // A reflection-backed carrier (FilmCarrier binds to the @externalField producer's return) keeps
         // the existing authored-carrier path: when the SDL shape would otherwise admit as carrier
         // (one @table-element data field), the classifier instead walks the type's fields through
         // classifyChildFieldOnResultType. No payload-carrier BatchedTableField is registered on a
@@ -250,9 +250,10 @@ class SingleRecordPayloadPipelineTest {
             type FilmCarrier {
                 films: [Film!]
             }
-            type Query {
-                carrier: FilmCarrier @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            type Inventory @table(name: "inventory") {
+                carrier: FilmCarrier @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmCardData"})
             }
+            type Query { inventories: [Inventory!]! }
             """);
 
         var dataField = schema.field("FilmCarrier", "films");
@@ -354,12 +355,13 @@ class SingleRecordPayloadPipelineTest {
             type FilmCarrier {
                 films: [Film!]
             }
-            type Query {
-                carrier: FilmCarrier @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            type Inventory @table(name: "inventory") {
+                carrier: FilmCarrier @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmCardData"})
             }
+            type Query { inventories: [Inventory!]! }
             """);
         var carrierType = schema.type("FilmCarrier");
-        // A producer-backed carrier (DummyRecord via @service reflection) routes to a
+        // A producer-backed carrier (FilmCardData via @externalField reflection) routes to a
         // record-backed ResultType (JavaRecordType / PojoResultType.Backed), confirming the
         // carrier-promotion path bound it to a concrete backing.
         assertThat(carrierType).isInstanceOf(GraphitronType.ResultType.class);
@@ -527,9 +529,12 @@ class SingleRecordPayloadPipelineTest {
             type Film @table(name: "film") { title: String }
             type FilmDto { title: String }
             type FilmDtoPayload { film: FilmDto }
+            type Inventory @table(name: "inventory") {
+                aFilmDto: FilmDto @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmCardData"})
+            }
             type Query {
                 x: FilmDtoPayload
-                aFilmDto: FilmDto @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+                inventories: [Inventory!]!
             }
             """);
 
@@ -558,9 +563,10 @@ class SingleRecordPayloadPipelineTest {
             type FilmDto { title: String }
             type FilmDtoPayload { film: FilmDto }
             input FilmInput { %s }
-            type Query {
-                aFilmDto: FilmDto @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            type Inventory @table(name: "inventory") {
+                aFilmDto: FilmDto @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmCardData"})
             }
+            type Query { inventories: [Inventory!]! }
             type Mutation { %s(in: FilmInput!): FilmDtoPayload @mutation(typeName: %s, table: "film") }
             """.formatted(inputBody(kind), mutationName(kind), kind.name());
 
@@ -723,9 +729,10 @@ class SingleRecordPayloadPipelineTest {
             type FilmDto { title: String }
             type FilmDtoPayload { film: FilmDto }
             input FilmInput { %s }
-            type Query {
-                aFilmDto: FilmDto @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            type Inventory @table(name: "inventory") {
+                aFilmDto: FilmDto @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmCardData"})
             }
+            type Query { inventories: [Inventory!]! }
             type Mutation { %s(in: FilmInput!): FilmDtoPayload @mutation(typeName: %s) }
             """.formatted(inputBody(kind), mutationName(kind), kind.name()));
 

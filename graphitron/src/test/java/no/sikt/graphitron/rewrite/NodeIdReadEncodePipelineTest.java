@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * are written against sakila's columns.
  *
  * <p>One coordinate is deliberately not here, and knowing which keeps the fixtures readable: an
- * {@code ID} field on a producer <em>carrier</em> parent (a type a {@code @service} binds directly
+ * {@code ID} field on a producer <em>carrier</em> parent (a type a producer binds directly
  * to a jOOQ table record) is claimed by {@code ChildField.SingleRecordIdField}, which has encoded
  * the whole key tuple off that record since before this leaf carried a direction at all. So the
  * typed-column case below reaches its record through a parent accessor instead, which is the shape
@@ -56,20 +56,24 @@ class NodeIdReadEncodePipelineTest {
         """;
 
     /**
-     * A jOOQ table record reached through a parent accessor. The producer returns the holder, not
-     * the record, so {@code FilmRow} binds table-record-backed without being a producer carrier:
-     * the carrier leaf claims an {@code ID} field on a carrier and this is where the read arm
-     * actually owns one.
+     * A jOOQ table record reached through a parent accessor. The {@code @externalField} hands over
+     * the holder ({@code FilmCardData}), not the record, so {@code FilmRow} binds
+     * table-record-backed through the holder's {@code film()} accessor without being a producer
+     * carrier: the carrier leaf claims an {@code ID} field on a carrier and this is where the read
+     * arm actually owns one.
      */
     private static final String FILM_RECORD_HOLDER = FILM_NODE + """
         type FilmRow {
         %s
         }
         type Holder { film: FilmRow }
-        type Query {
-            holder: Holder @service(service: {className: "%s", method: "makeFilmRecordHolder"})
+        type Inventory @table(name: "inventory") {
+            inventoryId: Int @field(name: "inventory_id")
+            holder: Holder
+                @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmCardData"})
         }
-        """.formatted("%s", SERVICE);
+        type Query { inventories: [Inventory!]! }
+        """;
 
     private static String schemaFor(String readType, String producer) {
         return FILM_NODE + readType + """

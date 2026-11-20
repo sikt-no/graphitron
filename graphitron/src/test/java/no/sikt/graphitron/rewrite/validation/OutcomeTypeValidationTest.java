@@ -25,8 +25,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class OutcomeTypeValidationTest {
 
-    private static final String SERVICE_DECL =
-        "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\", method: \"runSak\"})";
+    /** The outcome's producer: a single-row DML UPDATE returning {@code SakPayload}. */
+    private static final String DML_SAK = """
+            type Film @table(name: "film") { title: String }
+            input FilmInput { filmId: Int! @field(name: "film_id") title: String @field(name: "title") }
+            type Query { x: String }
+            type Mutation { sak(in: FilmInput!): SakPayload @mutation(typeName: UPDATE, table: "film") }
+            """;
 
     @Test
     void outcomeTypeWithTwoErrorsFields_validatorReportsMultipleErrorsFields() {
@@ -45,12 +50,11 @@ class OutcomeTypeValidationTest {
             }
             union SakError = ValidationErr | DbErr
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
                 moreErrors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
         // Precondition that makes the non-vacuity explicit: both fields independently lift to
         // ChildField.ErrorsField on SakPayload, which is what gives validateOutcomeTypeShape two
@@ -87,11 +91,10 @@ class OutcomeTypeValidationTest {
             }
             union SakError = ValidationErr | DbErr
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
         assertThat(validate(schema))
             .extracting(ValidationError::message)
@@ -101,7 +104,7 @@ class OutcomeTypeValidationTest {
     @Test
     void outcomePayloadWithTableDataField_isNotRejected() {
         // A @table-bound DataLoader data field (BatchedTableField) sibling to a WrapperArm
-        // errors field under a root @service payload must validate. The retired allow-list rejected
+        // errors field under a root producer's payload must validate. The retired allow-list rejected
         // it (BatchedTableField was not on OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS) even
         // though the field arm-switches correctly inside its generated DataLoader fetcher; a
         // @table-bound DataLoader data field is a generator capability, not an author error. The
@@ -119,19 +122,16 @@ class OutcomeTypeValidationTest {
                 message: String!
             }
             union SakError = ValidationErr | DbErr
-            type Language @table(name: "language") { name: String }
             type SakPayload {
-                data: String
-                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
         // Precondition: the @table sibling classifies as a DataLoader-backed BatchedTableField (the
         // variant the allow-list excluded), and the errors field is on the WrapperArm transport, so
         // the structural pass actually exercises the pairing rather than passing vacuously.
-        assertThat(schema.field("SakPayload", "language")).isInstanceOf(ChildField.BatchedTableField.class);
+        assertThat(schema.field("SakPayload", "film")).isInstanceOf(ChildField.BatchedTableField.class);
         assertThat(schema.field("SakPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
 
         assertThat(validate(schema))

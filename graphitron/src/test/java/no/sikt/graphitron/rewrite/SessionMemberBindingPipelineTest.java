@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * SDL to classified schema for {@code $session.<member>}: a member binding classifies to the member
- * variants on a {@code @service} and on a {@code @condition}, a session-reading condition takes the
+ * variant on a {@code @condition}, a session-reading condition takes the
  * statement's {@code DSLContext}, and the placements that cannot run one are rejected. The sigil
  * lowers structurally, without judging the session configuration; whether a binding names a member
  * the handle offers, or a parameter of the right type, is the store's verdict and is pinned by
@@ -22,7 +22,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SessionMemberBindingPipelineTest {
 
     private static final String CONDITIONS = "no.sikt.graphitron.rewrite.TestConditionStub";
-    private static final String SERVICES = "no.sikt.graphitron.rewrite.TestServiceStub";
 
     private static GraphitronSchema build(String sdl) {
         return TestSchemaHelper.buildSchema(sdl);
@@ -32,14 +31,6 @@ class SessionMemberBindingPipelineTest {
         return new GraphitronSchemaValidator().validate(schema).stream().map(e -> e.message()).toList();
     }
 
-    private static String serviceSdl(String method, String binding) {
-        return """
-            type Query {
-                bruker: Int @service(service: {className: "%s", method: "%s", argMapping: "%s"})
-            }
-            """.formatted(SERVICES, method, binding);
-    }
-
     private static String conditionSdl(String method, String binding) {
         return """
             type Film @table(name: "film") { title: String }
@@ -47,19 +38,6 @@ class SessionMemberBindingPipelineTest {
                 films: [Film!]! @condition(condition: {className: "%s", method: "%s", argMapping: "%s"})
             }
             """.formatted(CONDITIONS, method, binding);
-    }
-
-    // ===== @service =====
-
-    @Test
-    void serviceMemberBinding_classifiesToTheMemberVariant() {
-        var schema = build(serviceSdl("brukerOf", "brukerId: $session.brukerId"));
-
-        var field = (no.sikt.graphitron.rewrite.model.ServiceField) schema.field("Query", "bruker");
-        assertThat(field.serviceMethodCall().methodArgs()).anySatisfy(entry ->
-            assertThat(entry).isInstanceOfSatisfying(
-                no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandleMember.class,
-                member -> assertThat(member.member()).isEqualTo("brukerId")));
     }
 
     // ===== @condition =====

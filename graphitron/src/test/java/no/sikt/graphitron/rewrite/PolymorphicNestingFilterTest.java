@@ -55,9 +55,10 @@ class PolymorphicNestingFilterTest {
             type Film {
               referrers: [FilmReferrer!]!
             }
-            type Query {
-              film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            type InventoryHost @table(name: "inventory") {
+              filmRef: Film @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
             }
+            type Query { host: InventoryHost }
             """);
 
         var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()

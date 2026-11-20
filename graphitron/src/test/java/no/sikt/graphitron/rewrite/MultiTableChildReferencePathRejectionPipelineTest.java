@@ -125,14 +125,15 @@ class MultiTableChildReferencePathRejectionPipelineTest {
     @Test
     void recordParentInterfaceChild_reference_rejectedStructurally() {
         // Record-backed-parent producer arm (classifyRecordParentPolymorphicChild) reaches the same
-        // gate. Film is produced by a @service returning FilmRecord (JooqTableRecordType parent).
+        // gate. Film is produced by an @externalField handing a FilmRecord (JooqTableRecordType parent).
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type Film {
               referrer: FilmReferrer @reference(path: [{key: "inventory_film_id_fkey"}])
             }
-            type Query {
-              film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            type InventoryHost @table(name: "inventory") {
+              filmRef: Film @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
             }
+            type Query { host: InventoryHost }
             """);
         var rejection = rejectionOf(schema.field("Film", "referrer"));
         assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);

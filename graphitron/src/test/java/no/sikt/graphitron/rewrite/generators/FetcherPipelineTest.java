@@ -72,44 +72,38 @@ class FetcherPipelineTest {
         assertThat(classes).contains("QueryFetchers");
     }
 
+    // ===== record-backed parent: RecordReadField =====
+    //
+    // The @externalField hands back a FilmCardData (a Java record), so FilmCardWrapper is backed by
+    // it and RecordExample by the RecordExampleType its example() component returns.
+
+    private static final String RECORD_READ_SDL = """
+            type RecordExample { fieldA: String }
+            type FilmCardWrapper { example: RecordExample }
+            type Inventory @table(name: "inventory") {
+                filmCardData: FilmCardWrapper
+                    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+            }
+            type Query { inventory: Inventory }
+            """;
+
     @Test
     void recordType_producesAFetchersClass() {
-        var classes = generate("""
-            type Container { value: String }
-            type Query {
-                dummy: String
-                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
-            }
-            """);
-        assertThat(classes).contains("ContainerFetchers");
+        var classes = generate(RECORD_READ_SDL);
+        assertThat(classes).contains("RecordExampleFetchers");
     }
-
-    // ===== record-backed parent — RecordReadField =====
 
     @Test
     void scalarRecordRead_onRecordType_hasWiringEntry() {
-        var sdl = """
-            type Container { value: String }
-            type Query {
-                dummy: String
-                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
-            }
-            """;
-        var bodies = fetcherBodies(sdl);
-        assertThat(TypeSpecAssertions.wiringFor(bodies, "Container", "value")).isPresent();
+        var bodies = fetcherBodies(RECORD_READ_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "RecordExample", "fieldA")).isPresent();
     }
 
     @Test
     void scalarRecordRead_onRecordType_reifiesReadMethod() {
-        var fetchers = findSpec("ContainerFetchers", """
-            type Container { value: String }
-            type Query {
-                dummy: String
-                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
-            }
-            """);
+        var fetchers = findSpec("RecordExampleFetchers", RECORD_READ_SDL);
         // The scalar record read is reified as a named source-only method on the class.
-        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("value");
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("fieldA");
     }
 
     @Test
@@ -117,48 +111,24 @@ class FetcherPipelineTest {
         // A reflection-backed record type reads its scalar field through the (zero-arg) record
         // accessor, reified as a named source-only method and registered wrapped in LightFetcher
         // (COLUMN_FETCHER kind), not an inline lambda.
-        var sdl = """
-            type Container { value: String }
-            type Query {
-                dummy: String
-                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
-            }
-            """;
-        var bodies = fetcherBodies(sdl);
-        assertThat(TypeSpecAssertions.wiringFor(bodies, "Container", "value"))
+        var bodies = fetcherBodies(RECORD_READ_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "RecordExample", "fieldA"))
             .contains(DataFetcherKind.COLUMN_FETCHER);
-        assertThat(findSpec("ContainerFetchers", sdl).methodSpecs())
-            .extracting(MethodSpec::name).contains("value");
+        assertThat(findSpec("RecordExampleFetchers", RECORD_READ_SDL).methodSpecs())
+            .extracting(MethodSpec::name).contains("fieldA");
     }
 
     @Test
     void objectRecordRead_onRecordType_hasWiringEntry() {
-        var sdl = """
-            type FilmStats { count: Int }
-            type FilmDetails { stats: FilmStats }
-            type Query {
-                dummy: String
-                fd: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
-                fs: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
-            }
-            """;
-        var bodies = fetcherBodies(sdl);
-        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmDetails", "stats")).isPresent();
+        var bodies = fetcherBodies(RECORD_READ_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmCardWrapper", "example")).isPresent();
     }
 
     @Test
     void objectRecordRead_onRecordType_reifiesReadMethod() {
-        var fetchers = findSpec("FilmDetailsFetchers", """
-            type FilmStats { count: Int }
-            type FilmDetails { stats: FilmStats }
-            type Query {
-                dummy: String
-                fd: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
-                fs: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
-            }
-            """);
+        var fetchers = findSpec("FilmCardWrapperFetchers", RECORD_READ_SDL);
         // The object record read is reified as a named source-only method on the class.
-        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("stats");
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("example");
     }
 
     // ===== record-backed parent — BatchedTableField =====
@@ -169,9 +139,13 @@ class FetcherPipelineTest {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
+            type Inventory @table(name: "inventory") {
+              filmRef: FilmDetails
+                @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+            }
             type Query {
               film: Film
-              filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+              inventory: Inventory
             }
             """;
 
@@ -196,8 +170,8 @@ class FetcherPipelineTest {
 
     // ===== record-backed parent, lookup-keyed batched read =====
     //
-    // Backing class is the real jOOQ FilmRecord from graphitron-sakila-db — a TableRecord
-    // bound to "film", classifying the parent as JooqTableRecordType. This lets parsePath anchor on
+    // Backing class is the real jOOQ FilmRecord the @externalField's Field<FilmRecord> carries, a
+    // TableRecord bound to "film", classifying the parent as JooqTableRecordType. This lets parsePath anchor on
     // the parent table and resolve the two-hop film → film_actor → actor path, matching the shape
     // the execution tests exercise in graphitron-sakila-example.
 
@@ -210,9 +184,13 @@ class FetcherPipelineTest {
               ])
             }
             type Film @table(name: "film") { details: FilmDetails }
+            type Inventory @table(name: "inventory") {
+              filmRef: FilmDetails
+                @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+            }
             type Query {
               film: Film
-              filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+              inventory: Inventory
             }
             """;
 

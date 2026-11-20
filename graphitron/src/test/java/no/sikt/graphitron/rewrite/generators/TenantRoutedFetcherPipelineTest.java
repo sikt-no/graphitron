@@ -82,54 +82,6 @@ class TenantRoutedFetcherPipelineTest {
             .contains("divinedTenant(env.<Object>getArgument(\"filmId\"), env.<Object>getArgument(\"altFilm\"))");
     }
 
-    // ===== @service roots: divine before the call, route the call, stamp the return =====
-
-    private static final String TENANT_SERVICE = "no.sikt.graphitron.rewrite.TenantServiceStub";
-
-    private static final String SERVICE_TYPES = """
-        interface Node { id: ID! }
-        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
-            id: ID! @nodeId
-            title: String
-        }
-        type RateFilmsPayload { films: [Film!]! }
-        input RateFilmInput { film: ID! @nodeId(typeName: "Film") }
-        type Query { x: String }
-        """;
-
-    private static String service(String method) {
-        return "@service(service: {className: \"" + TENANT_SERVICE + "\", method: \"" + method + "\"})";
-    }
-
-    /**
-     * Every divining service root shape declares the decode helper its tenant read goes through:
-     * the plain and error-channel returns, with and without a {@code DSLContext} parameter, and
-     * the table-returning root whose re-selection the divined tenant routes. That the tenant is
-     * divined before the call, routes it and rides down as {@code localContext} is behaviour, and
-     * {@code TenantDivinedRoutingExecutionTest} pins it against the multi-tenant fixture.
-     */
-    @Test
-    void divingServiceRootsDeclareTheTenantSlotHelperOnTheirFetcherClass() {
-        var shapes = java.util.Map.of(
-            "rateFilm", "rateFilm(in: RateFilmInput!): RateFilmsPayload " + service("rateFilm"),
-            "rateFilmWithDsl", "rateFilmWithDsl(in: RateFilmInput!): RateFilmsPayload " + service("rateFilmWithDsl"),
-            "rateFilmOutcome", "rateFilmOutcome(in: RateFilmInput!): SakPayload " + service("rateFilmOutcome"),
-            "pickFilm", "pickFilm(in: RateFilmInput!): Film " + service("pickFilm"));
-        shapes.forEach((name, field) -> {
-            var sdl = SERVICE_TYPES + """
-                type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
-                union RateError = DbErr
-                type SakPayload { data: String errors: [RateError] }
-                type Mutation { %s }
-                """.formatted(field);
-            var schema = multiTenant(sdl);
-            assertThat(schema.tenantBindingOf("Mutation", name)).as(name)
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.ArgumentBound.class);
-            assertIsTenantSlotHelper(storeBackedMethod(tmp.resolve(name), sdl, "MutationFetchers",
-                "decodeFilmTenantSlot0OrThrow"));
-        });
-    }
-
     /**
      * A tenant-routed DML payload with an errors field: the tenant is divined from the decoded ids
      * and handed down, and the errors ride the typed {@code Outcome} the fetcher returns, so the

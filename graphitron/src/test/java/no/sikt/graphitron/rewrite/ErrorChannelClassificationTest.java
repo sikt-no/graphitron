@@ -20,8 +20,10 @@ import static org.assertj.core.api.Assertions.tuple;
  * {@link WithErrorChannel} carries an {@link ErrorChannel} when the payload type's field set
  * declares an {@code errors}-shaped field: a nullable list of a union or an interface whose every
  * member is {@code @error}, or of one {@code @error} type itself. The channel rides the {@code Outcome} wrapper; no payload class is
- * constructed. The fixtures use {@code SakPayload} (in {@code dummyreferences}) as the payload a
- * service returns.
+ * constructed. The channel rules are exercised through a payload-returning DML {@code @mutation}
+ * ({@code DML_SAK}); the cases whose subject is the {@code @service} outcome path itself (the
+ * handler accessor check, child producers, a backing class's own errors member) use
+ * {@code SakPayload} (in {@code dummyreferences}) as the payload a service returns.
  */
 @UnitTier
 class ErrorChannelClassificationTest {
@@ -45,89 +47,56 @@ class ErrorChannelClassificationTest {
     private static final String SERVICE_DECL =
         "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\", method: \"runSak\"})";
 
-    @Test
-    void mutationServiceRecordField_payloadHasErrorsField_populatesErrorChannel() {
-        var schema = build(UNION_ERROR_PAYLOAD_SDL + """
+    /**
+     * The producer the channel rules are exercised through: a single-row DML UPDATE returning
+     * {@code SakPayload}, whose one data field is a {@code Film}. Each test declares its own
+     * {@code SakPayload} and {@code @error} types ahead of it.
+     */
+    private static final String DML_SAK = """
+            type Film @table(name: "film") { title: String }
+            input FilmInput { filmId: Int! @field(name: "film_id") title: String @field(name: "title") }
             type Query { x: String }
-            type Mutation { behandleSak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "behandleSak");
-        assertThat(f.errorChannel()).isPresent();
-        // @service outcome fields carry ErrorChannel.Mapped (the Outcome wrapper transport) by
-        // the record component's own type; no developer payload class is constructed on the
-        // error path.
-        var ch = f.errorChannel().get();
-        assertThat(ch.mappedErrorTypes())
-            .extracting(et -> et.name())
-            .containsExactly("ValidationErr", "DbErr");
-    }
-
-    @Test
-    void queryServiceRecordField_payloadHasErrorsField_populatesErrorChannel() {
-        var schema = build(UNION_ERROR_PAYLOAD_SDL + """
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
-            .extracting(et -> et.name())
-            .containsExactly("ValidationErr", "DbErr");
-    }
-
-    private static final String INPUT_GRID_SDL = """
-            enum TestInputBeanEnum { LOW HIGH }
-            input TestInputNested { key: String, value: String }
-            input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
-            type Query { x: String }
-            type Mutation {
-                runWithInputGrid(grid: [[TestInputBean!]!]!): SakPayload
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithInputGrid"})
-            }
+            type Mutation { sak(in: FilmInput!): SakPayload @mutation(typeName: UPDATE, table: "film") }
             """;
 
-    @Test
-    void serviceField_listOfListsOfInputObjects_underValidationChannel_classifiesWithNothingToValidate() {
-        // A list of lists of input objects can only bind as a Map pass-through, which is not a class
-        // the consumer wrote, so the VALIDATION handler's pre-step has no target here and the field
-        // classifies like any other.
-        var schema = build(UNION_ERROR_PAYLOAD_SDL + INPUT_GRID_SDL);
-
-        var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputGrid");
-        assertThat(f.errorChannel().orElseThrow().hasValidationHandler()).isTrue();
-        assertThat(f.serviceMethodCall().validationTargets()).isEmpty();
-    }
-
-    @Test
-    void serviceField_listOfListsOfInputObjects_withoutValidationHandler_classifies() {
-        var schema = build("""
+    private static final String UNION_ERROR_DML_PAYLOAD_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
             type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
                 path: [String!]!
                 message: String!
             }
-            union SakError = DbErr
+            union SakError = ValidationErr | DbErr
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            """ + INPUT_GRID_SDL);
+            """;
 
-        var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputGrid");
-        assertThat(f.errorChannel()).isPresent();
+    @Test
+    void dmlPayloadHasErrorsField_populatesErrorChannel() {
+        var schema = build(UNION_ERROR_DML_PAYLOAD_SDL + DML_SAK);
+
+        var channel = channelOf(schema);
+        // The channel rides the Outcome wrapper as ErrorChannel.Mapped; no developer payload
+        // class is constructed on the error path.
+        assertThat(channel).get().isInstanceOf(ErrorChannel.Mapped.class);
+        assertThat(channel.get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("ValidationErr", "DbErr");
     }
 
     @Test
     void payloadWithoutErrorsField_producesNoChannel() {
         var schema = build("""
-            type Plain {
-                data: String
+            type SakPayload {
+                film: Film
             }
-            type Query { plain: Plain %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "plain");
-        assertThat(f.errorChannel()).isEmpty();
+        assertThat(channelOf(schema)).isEmpty();
     }
 
     @Test
@@ -146,13 +115,12 @@ class ErrorChannelClassificationTest {
             }
             union SakError = ValidationA | ValidationB
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var field = schema.field("Query", "sak");
+        var field = schema.field("Mutation", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         var u = (UnclassifiedField) field;
         assertThat(u.reason())
@@ -169,7 +137,7 @@ class ErrorChannelClassificationTest {
         // field, dropping the sibling errors field (the silent errors-drop the wrapper transport
         // exists to prevent). The classifier rejects such an outcome type at classify time, before
         // the wrapper is ever emitted. Surfaces as UnclassifiedField on the carrier (the
-        // resolveServiceOutcomeChannel Reject arm), not on the payload type.
+        // detectStructuralDmlErrorChannel rule violation), not on the payload type.
         var schema = build("""
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -181,17 +149,16 @@ class ErrorChannelClassificationTest {
             }
             union SakError = ValidationErr | DbErr
             type SakPayload {
-                data: String!
+                film: Film!
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var field = schema.field("Query", "sak");
+        var field = schema.field("Mutation", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         var u = (UnclassifiedField) field;
         assertThat(u.reason())
-            .contains("non-null success-projection field 'data'")
+            .contains("non-null success-projection field 'film'")
             .contains("must be nullable");
     }
 
@@ -206,19 +173,23 @@ class ErrorChannelClassificationTest {
     @Test
     void nonNullListSuccessProjectionField_isAccepted() {
         // A non-null plain list answers [] on the ErrorList arm, so it has a value to give there and
-        // the carrier classifies; the list's element nullability does not matter.
-        for (var dataType : java.util.List.of("[String!]!", "[String]!")) {
+        // the carrier classifies; the list's element nullability does not matter. A list data field
+        // pairs with a bulk input, so the producer is a bulk DML INSERT.
+        for (var dataType : java.util.List.of("[Film!]!", "[Film]!")) {
             var schema = build(SAK_ERRORS_SDL + """
+                type Film @table(name: "film") { title: String }
+                input FilmInput { title: String }
                 type SakPayload {
-                    data: %s
+                    films: %s
                     errors: [SakError]
                 }
-                type Query { sak: SakPayload %s }
-                """.formatted(dataType, SERVICE_DECL));
+                type Query { x: String }
+                type Mutation { sak(in: [FilmInput!]!): SakPayload @mutation(typeName: INSERT, table: "film") }
+                """.formatted(dataType));
 
-            assertThat(schema.field("Query", "sak"))
-                .as("data: %s", dataType)
-                .isInstanceOf(QueryField.QueryServiceRecordField.class);
+            assertThat(schema.field("Mutation", "sak"))
+                .as("films: %s", dataType)
+                .isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
         }
     }
 
@@ -260,15 +231,14 @@ class ErrorChannelClassificationTest {
             }
             union SakError = ValidationErr | RuntimeErr
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
+        var channel = channelOf(schema);
+        assertThat(channel).isPresent();
+        assertThat(channel.get().mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("ValidationErr", "RuntimeErr");
     }
@@ -288,15 +258,14 @@ class ErrorChannelClassificationTest {
             }
             union SakError = ValidationErr | ArgErr
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
+        var channel = channelOf(schema);
+        assertThat(channel).isPresent();
+        assertThat(channel.get().mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("ValidationErr", "ArgErr");
     }
@@ -316,13 +285,12 @@ class ErrorChannelClassificationTest {
             }
             union SakError = RuntimeA | RuntimeB
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var field = schema.field("Query", "sak");
+        var field = schema.field("Mutation", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         var u = (UnclassifiedField) field;
         assertThat(u.reason())
@@ -347,13 +315,12 @@ class ErrorChannelClassificationTest {
             }
             union SakError = DupHandlers
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var field = schema.field("Query", "sak");
+        var field = schema.field("Mutation", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         var u = (UnclassifiedField) field;
         assertThat(u.reason())
@@ -376,13 +343,12 @@ class ErrorChannelClassificationTest {
             }
             union SakError = FkA | FkB
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var field = schema.field("Query", "sak");
+        var field = schema.field("Mutation", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         var u = (UnclassifiedField) field;
         assertThat(u.reason())
@@ -406,13 +372,12 @@ class ErrorChannelClassificationTest {
             }
             union SakError = OraA | OraB
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var field = schema.field("Query", "sak");
+        var field = schema.field("Mutation", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         var u = (UnclassifiedField) field;
         assertThat(u.reason())
@@ -437,15 +402,14 @@ class ErrorChannelClassificationTest {
             }
             union SakError = FkErr | DbErr
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
+        var channel = channelOf(schema);
+        assertThat(channel).isPresent();
+        assertThat(channel.get().mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("FkErr", "DbErr");
     }
@@ -465,13 +429,12 @@ class ErrorChannelClassificationTest {
             }
             union SakError = ColA | ColB
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var field = schema.field("Query", "sak");
+        var field = schema.field("Mutation", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         assertThat(((UnclassifiedField) field).reason())
             .contains("identical match-criteria")
@@ -496,15 +459,14 @@ class ErrorChannelClassificationTest {
             }
             union SakError = Generic | Database
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
+        var channel = channelOf(schema);
+        assertThat(channel).isPresent();
+        assertThat(channel.get().mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("Generic", "Database");
     }
@@ -530,15 +492,14 @@ class ErrorChannelClassificationTest {
             }
             union SakError = WithMatches | WithoutMatches
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
+        var channel = channelOf(schema);
+        assertThat(channel).isPresent();
+        assertThat(channel.get().mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("WithMatches", "WithoutMatches");
     }
@@ -670,8 +631,8 @@ class ErrorChannelClassificationTest {
     void extraField_fieldDirectiveRemapsAccessor_classifiesWithOverride() {
         // @field(name:) on an extra field names the source-class accessor when it diverges
         // from the SDL field name. `detail` has no getDetail() on RuntimeException, but
-        // @field(name: "localizedMessage") remaps to Throwable.getLocalizedMessage(), so the
-        // carrier classifies cleanly and the classified ErrorType carries the override.
+        // @field(name: "localizedMessage") remaps to Throwable.getLocalizedMessage(), and the
+        // classified ErrorType the channel carries holds the override.
         var schema = build("""
             type RemapErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
                 path: [String!]!
@@ -680,15 +641,14 @@ class ErrorChannelClassificationTest {
             }
             union SakError = RemapErr
             type SakPayload {
-                data: String
+                film: Film
                 errors: [SakError]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        var errorType = f.errorChannel().get().mappedErrorTypes().stream()
+        var channel = channelOf(schema);
+        assertThat(channel).isPresent();
+        var errorType = channel.get().mappedErrorTypes().stream()
             .filter(et -> et.name().equals("RemapErr")).findFirst().orElseThrow();
         assertThat(errorType.accessorOverrides())
             .extracting(o -> o.sdlFieldName(), o -> o.accessorBase())
@@ -866,15 +826,14 @@ class ErrorChannelClassificationTest {
         // channel exactly as a union of it would be.
         var schema = build(DB_ERR_SDL + """
             type SakPayload {
-                data: String
+                film: Film
                 errors: [DbErr]
             }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
+            """ + DML_SAK);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).get().isInstanceOf(ErrorChannel.Mapped.class);
-        assertThat(f.errorChannel().get().mappedErrorTypes())
+        var channel = channelOf(schema);
+        assertThat(channel).get().isInstanceOf(ErrorChannel.Mapped.class);
+        assertThat(channel.get().mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("DbErr");
         var errors = schema.field("SakPayload", "errors");
@@ -957,27 +916,6 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void singleErrorTypeElement_onDmlPayload_isAnErrorsCarrier() {
-        // The widening is not @service's alone: a payload-returning DML @mutation whose payload
-        // lists one @error type catches into it too.
-        var schema = build(DB_ERR_SDL + """
-            type Film @table(name: "film") { title: String }
-            input FilmInput { filmId: Int! @field(name: "film_id") title: String @field(name: "title") }
-            type FilmPayload {
-                film: Film
-                errors: [DbErr]
-            }
-            type Query { x: String }
-            type Mutation { updateFilm(in: FilmInput!): FilmPayload @mutation(typeName: UPDATE, table: "film") }
-            """);
-
-        var f = schema.field("Mutation", "updateFilm");
-        assertThat(f).isInstanceOf(WithErrorChannel.class);
-        assertThat(((WithErrorChannel) f).errorChannel()).get().isInstanceOf(ErrorChannel.Mapped.class);
-        assertThat(schema.field("FilmPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
-    }
-
-    @Test
     void payloadBackingClassWithErrorsAccessor_stillPopulatesErrorChannel() {
         // The channel is decided from the schema, never from the class: a backing class that
         // carries its own errors (a record component on SakPayload, a bean getErrors() on
@@ -1003,6 +941,10 @@ class ErrorChannelClassificationTest {
                 .isInstanceOf(ChildField.ErrorsField.class)
                 .isNotInstanceOf(ChildField.RecordReadField.class);
         }
+    }
+
+    private static Optional<? extends ErrorChannel> channelOf(GraphitronSchema schema) {
+        return ((WithErrorChannel) schema.field("Mutation", "sak")).errorChannel();
     }
 
     private GraphitronSchema build(String schemaText) {

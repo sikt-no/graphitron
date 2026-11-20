@@ -17,17 +17,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class R96RecordBindingPipelineTest {
 
+    private static final String INVENTORY_EXTENSIONS =
+        "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions";
+
     @Test
-    void singleServiceReturn_bindsToJooqTableRecord() {
+    void singleProducerReturn_bindsToJooqTableRecord() {
+        // InventoryExtensions.filmRef returns Field<FilmRecord>: the element it carries grounds
+        // FilmDetails, exactly as a producer's reflected return does.
         var schema = TestSchemaHelper.buildSchema("""
             type FilmDetails {
                 title: String
             }
-            type Query {
+            type Inventory @table(name: "inventory") {
                 film: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                    @externalField(reference: {className: "%s", method: "filmRef"})
             }
-            """);
+            type Query { inventories: [Inventory!]! }
+            """.formatted(INVENTORY_EXTENSIONS));
 
         var t = schema.type("FilmDetails");
         assertThat(t).isInstanceOf(GraphitronType.JooqTableRecordType.class);
@@ -57,20 +63,21 @@ class R96RecordBindingPipelineTest {
 
     @Test
     void multiProducer_disagreement_surfacesAsTypedRejection() {
-        // Two @service producers reach FilmDetails; one returns FilmRecord, the other returns
-        // LanguageRecord. The producer-agreement check surfaces RecordBindingMultiProducer and
-        // FilmDetails demotes to UnclassifiedType.
+        // Two producers reach FilmDetails; one carries FilmRecord, the other FilmCardData. The
+        // producer-agreement check surfaces RecordBindingMultiProducer and FilmDetails demotes to
+        // UnclassifiedType.
         var schema = TestSchemaHelper.buildSchema("""
             type FilmDetails {
                 title: String
             }
-            type Query {
+            type Inventory @table(name: "inventory") {
                 viaFilm: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-                viaLanguage: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                    @externalField(reference: {className: "%1$s", method: "filmRef"})
+                viaCard: FilmDetails
+                    @externalField(reference: {className: "%1$s", method: "filmCardData"})
             }
-            """);
+            type Query { inventories: [Inventory!]! }
+            """.formatted(INVENTORY_EXTENSIONS));
 
         var t = schema.type("FilmDetails");
         assertThat(t).isInstanceOf(GraphitronType.UnclassifiedType.class);
@@ -83,7 +90,7 @@ class R96RecordBindingPipelineTest {
         assertThat(mp.message())
             .contains("FilmDetails")
             .contains("FilmRecord")
-            .contains("LanguageRecord");
+            .contains("FilmCardData");
     }
 
     @Test

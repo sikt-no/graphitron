@@ -259,11 +259,12 @@ class EntityResolutionBuilderTest {
         // table. The record-backed type must survive classification (not demote to UnclassifiedType)
         // and produce no EntityResolution (the dispatcher never sees it).
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query {
-                x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            type Inventory @table(name: "inventory") {
+                film: FooRec @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmRef"})
             }
-            type FooRec @key(fields: "fooId", resolvable: false) {
-                fooId: Int
+            type Query { inventories: [Inventory!]! }
+            type FooRec @key(fields: "filmId", resolvable: false) {
+                filmId: Int @field(name: "film_id")
             }
             """);
         assertThat(schema.type("FooRec"))

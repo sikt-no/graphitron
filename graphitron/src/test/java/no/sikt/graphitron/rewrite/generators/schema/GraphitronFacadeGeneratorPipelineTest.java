@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * L4 pipeline tests for {@link GraphitronFacadeGenerator}: drive the generator against a real
- * classified schema with multiple {@code @service(contextArguments: [...])} sites and pin the
+ * classified schema with multiple {@code @condition(contextArguments: [...])} sites and pin the
  * alphabetical-sorted factory parameter list (names + types + modifiers).
  *
  * <p>Sibling to the unit-tier {@code GraphitronFacadeGeneratorTest}, which uses an empty schema
@@ -28,22 +28,22 @@ class GraphitronFacadeGeneratorPipelineTest {
 
     @Test
     void factory_reflectsContextArgumentsAlphabeticallyWithReflectedJavaTypes() {
-        // Two root @service sites with disjoint contextArguments (userId: String, fnr: Long). The
-        // classifier walks both MethodRefs, collects them by name, and produces a sorted
+        // Two root @condition sites with disjoint contextArguments (userId: String, brukerId: Long).
+        // The classifier walks both MethodRefs, collects them by name, and produces a sorted
         // (alphabetical) ResolvedContextArg map. The factory emitter pastes one parameter slot
         // per entry, in TreeMap iteration order.
         String sdl = """
             type Film @table(name: "film") { title: String }
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query {
-                film: Film
-                ratingByUser: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByUser"
+                customersSeenByUser: [Customer!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "customerSeenByUser"
                 }, contextArguments: ["userId"])
-                ratingByFnr: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByFnr"
-                }, contextArguments: ["fnr"])
+                filmsSeenByBruker: [Film!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub",
+                    method: "sessionBoxed"
+                }, contextArguments: ["brukerId"])
             }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
@@ -54,9 +54,9 @@ class GraphitronFacadeGeneratorPipelineTest {
             .findFirst()
             .orElseThrow();
 
-        // First parameter is always defaultDsl. Contextargs follow alphabetically (fnr before userId).
+        // First parameter is always defaultDsl. Contextargs follow alphabetically (brukerId before userId).
         assertThat(newExecutionInput.parameters()).extracting(p -> p.name())
-            .containsExactly("defaultDsl", "fnr", "userId");
+            .containsExactly("defaultDsl", "brukerId", "userId");
         assertThat(newExecutionInput.parameters()).extracting(p -> p.type().toString())
             .containsExactly("org.jooq.DSLContext", "java.lang.Long", "java.lang.String");
         assertThat(newExecutionInput.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
@@ -70,16 +70,16 @@ class GraphitronFacadeGeneratorPipelineTest {
         // silently reach the owned path.
         String sdl = """
             type Film @table(name: "film") { title: String }
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query {
-                film: Film
-                ratingByUser: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByUser"
+                customersSeenByUser: [Customer!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "customerSeenByUser"
                 }, contextArguments: ["userId"])
-                ratingByFnr: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByFnr"
-                }, contextArguments: ["fnr"])
+                filmsSeenByBruker: [Film!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub",
+                    method: "sessionBoxed"
+                }, contextArguments: ["brukerId"])
             }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
@@ -91,7 +91,7 @@ class GraphitronFacadeGeneratorPipelineTest {
             .orElseThrow();
 
         assertThat(owned.parameters()).extracting(p -> p.name())
-            .containsExactly("source", "fnr", "userId");
+            .containsExactly("source", "brukerId", "userId");
         assertThat(owned.parameters()).extracting(p -> p.type().toString())
             .containsExactly("com.example.schema.ConnectionSource", "java.lang.Long", "java.lang.String");
         assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
@@ -104,10 +104,11 @@ class GraphitronFacadeGeneratorPipelineTest {
         // follow it, alphabetical as before: identity contributes none, since its inputs are
         // captured by the source.
         String sdl = """
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query {
-                rating: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByUser"
+                customersSeenByUser: [Customer!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "customerSeenByUser"
                 }, contextArguments: ["userId"])
             }
             """;
@@ -136,15 +137,16 @@ class GraphitronFacadeGeneratorPipelineTest {
     void sessionBoundParameter_growsNoFactorySlot() {
         // The $session binding is per-connection state read at the call site, never
         // caller-supplied: the owned factory's parameter list carries the connection source only,
-        // no slot for the bound `identity` parameter. (That the emitted read goes through the
+        // no slot for the bound `brukerId` parameter. (That the emitted read goes through the
         // resolved connection's configuration rather than graphQLContext is behavioral and
         // execution-pinned, per the no-code-string-assertion rule.)
         String sdl = """
+            type Film @table(name: "film") { title: String }
             type Query {
-                sessionPrincipal: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "principalOf",
-                    argMapping: "identity: $session"
+                films: [Film!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub",
+                    method: "sessionBoxed",
+                    argMapping: "brukerId: $session.brukerId"
                 })
             }
             """;

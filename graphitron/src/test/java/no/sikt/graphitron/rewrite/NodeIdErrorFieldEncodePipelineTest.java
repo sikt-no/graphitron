@@ -47,7 +47,30 @@ class NodeIdErrorFieldEncodePipelineTest {
     private static final String HANDLER =
         "{handler: GENERIC, className: \"no.sikt.graphitron.codereferences.dummyreferences.FilmNotFoundException\"}";
 
+    /** The error type under a payload-returning DML {@code @mutation}, whose data field is a {@code Film}. */
     private static String schemaFor(String errorFields) {
+        return FILM_NODE + """
+            type FilmNotFound @error(handlers: [%s]) {
+                path: [String!]!
+                message: String!
+            %s
+            }
+            union SakError = FilmNotFound
+            type SakPayload {
+                film: Film
+                errors: [SakError]
+            }
+            input FilmInput { filmId: Int! @field(name: "film_id") title: String @field(name: "title") }
+            type Query { x: String }
+            type Mutation { sak(in: FilmInput!): SakPayload @mutation(typeName: UPDATE, table: "film") }
+            """.formatted(HANDLER, errorFields);
+    }
+
+    /**
+     * The error type under a root {@code @service} payload. Only that producer's outcome channel
+     * runs the handler accessor-coverage check, so the refusal below is reached through it.
+     */
+    private static String serviceSchemaFor(String errorFields) {
         return FILM_NODE + """
             type FilmNotFound @error(handlers: [%s]) {
                 path: [String!]!
@@ -120,7 +143,7 @@ class NodeIdErrorFieldEncodePipelineTest {
      */
     @Test
     void anAccessorYieldingTheEncodedForm_refusesTheCarrier() {
-        var schema = TestSchemaHelper.buildSchema(schemaFor("""
+        var schema = TestSchemaHelper.buildSchema(serviceSchemaFor("""
                 filmRef: ID @nodeId(typeName: "Film") @field(name: "label")
             """));
 

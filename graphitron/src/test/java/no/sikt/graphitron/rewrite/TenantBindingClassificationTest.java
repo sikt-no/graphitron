@@ -903,6 +903,12 @@ class TenantBindingClassificationTest {
     }
 
     private static final String EMPTY_LIST_TYPES = """
+        interface Node { id: ID! }
+        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID! @nodeId
+            title: String
+        }
+        type Query { x: String }
         type FilmActor implements Node @table(name: "film_actor")
                 @node(keyColumns: ["actor_id", "film_id"]) {
             id: ID! @nodeId
@@ -913,7 +919,6 @@ class TenantBindingClassificationTest {
             title: String @field(name: "title")
         }
         type FilmsRetitledPayload { films: [Film] }
-        type RatedFilmsPayload { films: [Film!] }
         """;
 
     private static TenantBinding.WhenNoTenant whenNoTenant(GraphitronSchema schema, String type, String field) {
@@ -922,7 +927,7 @@ class TenantBindingClassificationTest {
 
     @Test
     void aFieldThatCanBuildItsEmptyAnswerAnswersEmpty() {
-        var schema = build(SERVICE_TYPES + EMPTY_LIST_TYPES + """
+        var schema = build(EMPTY_LIST_TYPES + """
             extend type Query {
                 filmsByKey(filmId: [Int!]! @field(name: "film_id") @lookupKey): [Film]!
             }
@@ -931,15 +936,11 @@ class TenantBindingClassificationTest {
                     @mutation(typeName: DELETE, table: "film_actor")
                 retitleFilms(in: [UpdateFilmInput!]!): FilmsRetitledPayload
                     @mutation(typeName: UPDATE, table: "film")
-                rateFilmsAsFilms(ratings: [RateFilmInput!]!): [Film!]! %s
-                rateFilmsAsRecords(ratings: [RateFilmInput!]!): RatedFilmsPayload %s
             }
-            """.formatted(service("rateFilmsAsRecords"), service("rateFilmsAsRecords")));
+            """);
 
         var emptyList = new TenantBinding.WhenNoTenant.AnswerEmpty(TenantBinding.EmptyValue.EmptyList.INSTANCE);
         assertThat(whenNoTenant(schema, "Mutation", "deleteFilmActors")).isEqualTo(emptyList);
-        assertThat(whenNoTenant(schema, "Mutation", "rateFilmsAsFilms")).isEqualTo(emptyList);
-        assertThat(whenNoTenant(schema, "Mutation", "rateFilmsAsRecords")).isEqualTo(emptyList);
         assertThat(whenNoTenant(schema, "Query", "filmsByKey")).isEqualTo(emptyList);
         assertThat(whenNoTenant(schema, "Mutation", "retitleFilms"))
             .isInstanceOfSatisfying(TenantBinding.WhenNoTenant.AnswerEmpty.class,
@@ -951,39 +952,24 @@ class TenantBindingClassificationTest {
 
     @Test
     void aFieldThatCannotBuildItsEmptyAnswerRefusesNamingTheEmptyArgument() {
-        var schema = build(SERVICE_TYPES + """
+        var schema = build("""
+            interface Node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor")
                     @node(keyColumns: ["actor_id", "film_id"]) {
                 id: ID! @nodeId
             }
             input FilmActorsFilter { ids: [ID!]! @nodeId(typeName: "FilmActor") }
-            extend type Query {
+            type Query {
                 filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
                 filmActorsByFilter(filter: FilmActorsFilter!): [FilmActor!]!
             }
-            type Mutation { rateFilms(ratings: [RateFilmInput!]!): RateFilmsPayload %s }
-            """.formatted(service("rateFilms")));
+            """);
 
-        assertThat(whenNoTenant(schema, "Mutation", "rateFilms"))
-            .isEqualTo(new TenantBinding.WhenNoTenant.Refuse(List.of("ratings")));
         assertThat(whenNoTenant(schema, "Query", "filmActorsByNodeId"))
             .isEqualTo(new TenantBinding.WhenNoTenant.Refuse(List.of("ids")));
         // The list sits inside the argument, so the argument itself still has a row to act on.
         assertThat(whenNoTenant(schema, "Query", "filmActorsByFilter"))
             .isEqualTo(new TenantBinding.WhenNoTenant.Refuse(List.of("filter")));
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aSlotOutsideEveryListMakesTheEmptyRequestUnreachable() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation {
-                rateFilmsInTenant(ratings: [RateFilmInput!]!, filmId: Int! @tenant): RateFilmsPayload %s
-            }
-            """.formatted(service("rateFilmsInTenant")));
-
-        assertThat(whenNoTenant(schema, "Mutation", "rateFilmsInTenant"))
-            .isInstanceOf(TenantBinding.WhenNoTenant.Unreachable.class);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 

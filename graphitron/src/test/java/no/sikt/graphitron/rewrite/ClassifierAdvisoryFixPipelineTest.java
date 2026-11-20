@@ -38,10 +38,11 @@ class ClassifierAdvisoryFixPipelineTest {
             type FilmDetails @record {
                 title: String
             }
-            type Query {
+            type Inventory @table(name: "inventory") {
                 film: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmRef"})
             }
+            type Query { inventories: [Inventory!]! }
             """);
 
         // The bare @record matches the inferred backing class, so it is redundant; a bare directive
@@ -62,10 +63,11 @@ class ClassifierAdvisoryFixPipelineTest {
             type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord"}) {
                 title: String
             }
-            type Query {
+            type Inventory @table(name: "inventory") {
                 film: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions", method: "filmRef"})
             }
+            type Query { inventories: [Inventory!]! }
             """);
 
         boolean findingPresent = schema.warnings().stream()

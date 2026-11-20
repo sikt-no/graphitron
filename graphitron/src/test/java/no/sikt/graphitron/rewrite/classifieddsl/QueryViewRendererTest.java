@@ -173,13 +173,14 @@ class QueryViewRendererTest {
               message: String!
               severity: Severity!
             }
+            type Film @table(name: "film") { title: String }
+            input FilmInput { filmId: Int! @field(name: "film_id") title: String @field(name: "title") }
             type SakPayload {
-              data: String
+              film: Film
               errors: [ExtraFieldError]
             }
-            extend type Query {
-              sak: SakPayload
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
+            type Mutation {
+              sak(in: FilmInput!): SakPayload @mutation(typeName: UPDATE, table: "film")
             }
             """, "fragment e on ExtraFieldError { path message severity }");
 

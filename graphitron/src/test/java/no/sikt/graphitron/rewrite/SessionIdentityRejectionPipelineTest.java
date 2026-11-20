@@ -27,7 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The handle class is read from the test classes' own root by the classpath census like any consumer
  * class, so what {@code $session.<member>} may name is the store's member relation, not a
  * reflection result. The negatives sit beside the positives, so the gate cannot pass because
- * everything fails.
+ * everything fails. A primitive parameter against a primitive member, and a boxed member against a
+ * primitive parameter, are stated by the fact document {@code defects/session-binding-type}.
  */
 @PipelineTier
 class SessionIdentityRejectionPipelineTest {
@@ -35,15 +36,6 @@ class SessionIdentityRejectionPipelineTest {
     private static final String STUB = "no.sikt.graphitron.rewrite.SessionHandleStub";
     private static final String RECORD_HANDLE = STUB + "$RecordHandle";
     private static final String CONDITIONS = "no.sikt.graphitron.rewrite.SessionBindingStub";
-    private static final String SERVICES = CONDITIONS;
-
-    private static String serviceSdl(String method, String binding) {
-        return """
-            type Query {
-                bruker: Int @service(service: {className: "%s", method: "%s", argMapping: "%s"})
-            }
-            """.formatted(SERVICES, method, binding);
-    }
 
     private static String conditionSdl(String method, String binding) {
         return """
@@ -62,14 +54,8 @@ class SessionIdentityRejectionPipelineTest {
 
     @Test
     void aBoxedParameterOfAPrimitiveMember_isAccepted(@TempDir Path tmp) throws IOException {
-        assertThat(errors(tmp, serviceSdl("brukerOf", "brukerId: $session.brukerId"), handle(RECORD_HANDLE)))
+        assertThat(errors(tmp, conditionSdl("sessionBoxed", "brukerId: $session.brukerId"), handle(RECORD_HANDLE)))
             .isEmpty();
-    }
-
-    @Test
-    void aPrimitiveParameterOfAPrimitiveMember_isAccepted(@TempDir Path tmp) throws IOException {
-        assertThat(errors(tmp, serviceSdl("brukerOfPrimitive", "brukerId: $session.brukerId"),
-            handle(RECORD_HANDLE))).isEmpty();
     }
 
     @Test
@@ -79,14 +65,6 @@ class SessionIdentityRejectionPipelineTest {
     }
 
     // ===== rejected =====
-
-    @Test
-    void aBoxedMemberIntoAPrimitiveParameter_rejectsNamingBothDeclarations(@TempDir Path tmp) throws IOException {
-        assertThat(errors(tmp, serviceSdl("sokerOfPrimitive", "sokerId: $session.sokerId"), handle(RECORD_HANDLE)))
-            .singleElement().asString()
-            .contains("Query.bruker").contains("$session.sokerId").contains("long").contains("java.lang.Long")
-            .contains("[SESSION_BINDING_TYPE_MISMATCH]");
-    }
 
     @Test
     void aParameterOfAnotherType_rejects(@TempDir Path tmp) throws IOException {
@@ -99,7 +77,7 @@ class SessionIdentityRejectionPipelineTest {
 
     @Test
     void anUnknownMember_rejectsListingTheMembersTheHandleOffers(@TempDir Path tmp) throws IOException {
-        assertThat(errors(tmp, serviceSdl("brukerOf", "brukerId: $session.nope"), handle(RECORD_HANDLE)))
+        assertThat(errors(tmp, conditionSdl("sessionBoxed", "brukerId: $session.nope"), handle(RECORD_HANDLE)))
             .singleElement().asString()
             .contains("nope").contains("brukerId, sokerId").contains("[SESSION_MEMBER_UNKNOWN]");
     }
@@ -122,7 +100,7 @@ class SessionIdentityRejectionPipelineTest {
 
     @Test
     void aHandleNoClasspathEntryHolds_rejectsOnceAsAConfigurationError(@TempDir Path tmp) throws IOException {
-        assertThat(errors(tmp, serviceSdl("brukerOf", "brukerId: $session.brukerId"),
+        assertThat(errors(tmp, conditionSdl("sessionBoxed", "brukerId: $session.brukerId"),
             handle("com.example.NoSuchIdentity")))
             .singleElement().asString()
             .contains("<sessionState><handle>").contains("com.example.NoSuchIdentity")
@@ -149,7 +127,7 @@ class SessionIdentityRejectionPipelineTest {
         }
     }
 
-    /** The classpath root carrying the handle and the {@code @service}/{@code @condition} stubs. */
+    /** The classpath root carrying the handle and the {@code @condition} stubs. */
     private static List<Path> testClassesRoot() {
         try {
             return List.of(Path.of(SessionIdentityRejectionPipelineTest.class.getProtectionDomain()

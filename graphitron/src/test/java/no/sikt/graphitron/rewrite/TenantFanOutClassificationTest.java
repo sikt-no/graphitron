@@ -195,30 +195,10 @@ class TenantFanOutClassificationTest {
     }
 
     @Test
-    void markerOnServiceFieldRejects_aheadOfReachDerivedArms() {
-        // The service coordinate needs its own rejection arm rather than a reach-derived one:
-        // the reach a fan-out would scatter over is the developer's method, not a statement the
-        // classifier composed, so a reach-derived verdict has nothing right to say about it.
-        var schema = build("""
-            type Film @table(name: "film") { title: String }
-            type Query {
-                films(filmId: Int! @field(name: "film_id")): [Film!]!
-                serviceFilms: [Film]
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
-                    @tenantFanOut
-            }
-            """);
-
-        assertFanOutRejection(schema, "Query.serviceFilms",
-            "the service fan-out combination is deferred", "tenantFanOut", "service");
-    }
-
-    @Test
     void markerOnRoutineFieldRejects() {
         // Without this rung a marked routine field (table-returning, tenant-scoped, unbound)
         // escapes every other rejection, classifies FanOut, and dies only at the
-        // generation-time DSL-site throw — the same located-rejection gap the @service
-        // rung closes.
+        // generation-time DSL-site throw, a located-rejection gap.
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
