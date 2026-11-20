@@ -41,4 +41,12 @@ public final class FillShapeService {
     public static String moodsThroughList(List<String> moods) {
         return null;
     }
+
+    /**
+     * An enum read through a list of input objects into a list of sets: each element arrives as the
+     * enum's name, never as a set of them.
+     */
+    public static String moodSetsThroughList(List<Set<String>> moods) {
+        return null;
+    }
 }

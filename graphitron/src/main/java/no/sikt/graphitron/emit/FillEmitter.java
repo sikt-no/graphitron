@@ -171,7 +171,7 @@ public final class FillEmitter {
                     if (unreadThroughList(landing, type)) {
                         throw unfilled(row, fill,
                             String.join(".", landing.path()) + " is read through a list, which only a scalar or an enum"
-                                + " taken by name is here");
+                                + " taken by name is here, and the store refuses it as SERVICE_ARGUMENT_PATH_UNSUPPORTED");
                     }
                     if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Decoded decoded) {
                         var helper = "decode" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
@@ -263,9 +263,10 @@ public final class FillEmitter {
      * last step. An enum taken by its name, a {@code String} once every list is peeled, arrives as that
      * name and is read as a scalar is. So is any value whose parameter does not collect it in a
      * {@code List} for each list read through, each of which arrives as one, or that is read through
-     * more than two lists, past the containers the store states of a parameter.
+     * more than two lists, past the containers the store states of a parameter. The store refuses each
+     * such landing, peeling as this does, so meeting one here is a generator bug.
      */
-    public static boolean unreadThroughList(FillQuery.Landing landing, TypeName type) {
+    private static boolean unreadThroughList(FillQuery.Landing landing, TypeName type) {
         return liftsThroughList(landing) && (landing.nodeId()
             || !("SCALAR".equals(landing.typeKind())
                  || "ENUM".equals(landing.typeKind()) && STRING.equals(innermost(type)))

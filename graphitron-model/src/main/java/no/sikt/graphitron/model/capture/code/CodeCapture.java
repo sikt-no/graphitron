@@ -1419,13 +1419,14 @@ public final class CodeCapture {
             row -> val(elementOf(deliveryOf(row.at().typeRefs(), containers)), p.ELEMENT_CLASS),
             row -> val(deliveryNameOf(deliveryOf(row.at().typeRefs(), containers)), p.DELIVERY),
             row -> val(firstArgumentOf(row.at().typeRefs()), p.FIRST_ARGUMENT_CLASS),
+            row -> val(elementOf(deliveryOf(row.at().typeRefs(), LIST_ONLY)), p.LIST_ELEMENT_CLASS),
             row -> val(row.role(), p.ROLE),
             row -> val(row.extraction(), p.EXTRACTION),
             row -> val(touchedAt, p.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.METHOD_NAME, p.DESCRIPTOR, p.POSITION,
                     p.PARAMETER_NAME, p.PARAMETER_TYPE, p.ERASED_CLASS, p.ELEMENT_CLASS, p.DELIVERY,
-                    p.FIRST_ARGUMENT_CLASS, p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
+                    p.FIRST_ARGUMENT_CLASS, p.LIST_ELEMENT_CLASS, p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
@@ -1434,6 +1435,7 @@ public final class CodeCapture {
                 .set(p.ELEMENT_CLASS, excluded(p.ELEMENT_CLASS))
                 .set(p.DELIVERY, excluded(p.DELIVERY))
                 .set(p.FIRST_ARGUMENT_CLASS, excluded(p.FIRST_ARGUMENT_CLASS))
+                .set(p.LIST_ELEMENT_CLASS, excluded(p.LIST_ELEMENT_CLASS))
                 .set(p.ROLE, excluded(p.ROLE))
                 .set(p.EXTRACTION, excluded(p.EXTRACTION))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
@@ -1522,6 +1524,12 @@ public final class CodeCapture {
     /** One container the delivery walk peels: which position carries the payload, and whether
      *  arriving through it means many rather than one. */
     private record Container(String elementIndex, boolean multiplies) {}
+
+    /**
+     * The one container a value read through lists arrives in, each list as a {@code java.util.List}:
+     * peeling this alone says what a parameter takes once those lists are read through.
+     */
+    private static final Map<String, Container> LIST_ONLY = Map.of("java.util.List", new Container("0", true));
 
     /**
      * The container vocabulary, read from the code family's stated relation rather than spelled

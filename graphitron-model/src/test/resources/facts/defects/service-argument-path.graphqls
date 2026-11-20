@@ -2,7 +2,8 @@
 # in, and an element's value is read for a scalar, or an enum taken by its name, only, so a node id
 # there is not read yet. Each list read through arrives as a java.util.List, so a parameter collecting
 # the elements as a Set or a Collection is refused as well, whatever the element; the same read into
-# a List<Integer> is not.
+# a List<Integer> is not. An enum read through the list arrives as its name, so a List<String> takes it
+# and a List<Set<String>>, whose elements are sets, does not.
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -13,6 +14,8 @@ input FilmPickInput { film: ID @nodeId(typeName: "Film") }
 input FilmIdSetInput { id: Int }
 input FilmIdListInput { id: Int }
 input FilmRatingPickInput { rating: FilmRatingName }
+input FilmRatingNameInput { rating: FilmRatingName }
+input FilmRatingSetInput { rating: FilmRatingName }
 
 type Query {
   filmsPicked(in: [FilmPickInput!]!): [Film!]! @service(service: {
@@ -24,6 +27,10 @@ type Query {
   filmsByRatings(in: [FilmRatingPickInput!]!): [Film!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByRatingNames",
     argMapping: "ratings: in.rating"})
+  ratingNames(in: [FilmRatingNameInput!]!): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FillShapeService", method: "moodsThroughList", argMapping: "moods: in.rating"})
+  ratingSets(in: [FilmRatingSetInput!]!): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FillShapeService", method: "moodSetsThroughList", argMapping: "moods: in.rating"})
   filmsByList(in: [FilmIdListInput!]!): [Film!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds",
     argMapping: "ids: in.id"})
@@ -35,4 +42,14 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmIdSetInput.id
   SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmPickInput.film
   SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmRatingPickInput.rating
+  SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmRatingSetInput.rating
+  """)
+
+# What each fixture takes once its containers are peeled: every container for the element, java.util.List
+# alone for what a value read through lists arrives as, which is what the rule compares.
+extend schema @assertContains(relation: "code_method_parameter",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.services.FillShapeService'", rows: """
+  method_name,         position, element_class,    list_element_class
+  moodsThroughList,    0,        java.lang.String, java.lang.String
+  moodSetsThroughList, 0,        java.lang.String, java.util.Set
   """)

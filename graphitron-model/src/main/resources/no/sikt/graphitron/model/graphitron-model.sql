@@ -6932,6 +6932,7 @@ CREATE TABLE code_method_parameter (
   element_class  VARCHAR,
   delivery       VARCHAR,
   first_argument_class VARCHAR,
+  list_element_class VARCHAR,
   role           VARCHAR NOT NULL,
   extraction     VARCHAR NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
@@ -6948,6 +6949,7 @@ CREATE TABLE code_method_parameter (
 COMMENT ON TABLE code_method_parameter IS 'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for. For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.';
 COMMENT ON COLUMN code_method_parameter.erased_class IS 'the class the parameter type erases to, on code_method.result_erased_class'' terms; what a binding compares against when it asks whether an argument can be passed here';
 COMMENT ON COLUMN code_method_parameter.element_class IS 'the class the parameter delivers once its containers are peeled off, on code_method.result_element_class'' terms';
+COMMENT ON COLUMN code_method_parameter.list_element_class IS 'the class the parameter takes once only its java.util.List containers are peeled, as a value read through lists arrives, each list as a List; NULL where it names no class. A List<Set<String>> takes java.util.Set here where element_class says java.lang.String';
 COMMENT ON COLUMN code_method_parameter.delivery IS 'how the parameter delivers that class, on code_method.result_delivery'' terms; NULL with the element beside it';
 COMMENT ON COLUMN code_method_parameter.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
 COMMENT ON COLUMN code_method_parameter.class_name IS 'the declaring class, as on code_method';
@@ -24476,7 +24478,8 @@ UNION ALL
 -- A @service parameter filled from an argument read through a list above its last step, landing on a
 -- node id, an input object, or an enum the parameter takes as its Java constant, at the value it lands
 -- on: each element's value is read for a scalar, or an enum taken by its name, a String once every
--- list is peeled, only, so the rest is refused until such a read is generated. So is a parameter
+-- java.util.List is peeled and nothing else, only, so the rest is refused until such a read is
+-- generated. So is a parameter
 -- whose containers are not a java.util.List for each list read through, since each arrives as one:
 -- the store states a parameter's outer container and its first type argument, so a read through more
 -- than two lists is refused too.
@@ -24502,7 +24505,7 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                    AND EXISTS (SELECT 1 FROM code_method_parameter mp
                                 WHERE mp.source_name = m.method_source_name AND mp.class_name = m.method_class_name
                                   AND mp.method_name = m.method_name AND mp.descriptor = m.method_descriptor
-                                  AND mp.position = c.position AND mp.element_class = 'java.lang.String'))
+                                  AND mp.position = c.position AND mp.list_element_class = 'java.lang.String'))
         OR EXISTS (SELECT 1 FROM code_method_parameter mp
                     WHERE mp.source_name = m.method_source_name AND mp.class_name = m.method_class_name
                       AND mp.method_name = m.method_name AND mp.descriptor = m.method_descriptor
