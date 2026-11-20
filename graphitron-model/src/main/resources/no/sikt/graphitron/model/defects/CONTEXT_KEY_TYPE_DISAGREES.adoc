@@ -1,0 +1,5 @@
+Reported at each writing whose key fills a parameter of one Java type here and of another at some other call in the schema, a `contextArguments` element or an `argMapping` `$context` pair, the detail naming the key, this parameter's type and the other.
+
+The request context carries one value under a key, and graphitron reads it as one class wherever the key is used: in the parameter the generated execution-input factory takes for it, and in the cast at each call. Two calls declaring the parameter as different types, `Long` at one and `long` or `String` at another, cannot both be served by that one read, so one of them would fail at request time.
+
+*Next step.* Declare every parameter the key fills as the same type, or give the calls that need another type a key of their own. See xref:directives/service.adoc#parameter-filling[`@service` parameter filling] and xref:directives/condition.adoc[`@condition`].

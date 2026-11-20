@@ -1200,12 +1200,6 @@ static method needs no holder.
     the flip lands.
   * **A field on a type handed over both as a row and as an object is judged on the object arm** `open`, blocks "The walk's service path is gone": the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then.
   * **A child service under an outcome payload reads its keys off the outcome's value** `open`, blocks "The walk's service path is gone": the walk refuses a child `@service` beside an outcome's errors field (a request-time ClassCastException otherwise), and the store neither refuses nor serves it, so the subtract would let it through. The support is written on `claude/r876--e-outcome-child` (`FrameQuery.Row.parentOutcome`, `FrameEmitter.child` unwrapping `Outcome.Success`), and its execution case answers null on the Success arm where the record's title is expected: the key read off the unwrapped value or the batch answer's lookup by it misses. Diagnose from the generated fetcher, then land it with `WrapperArmSiblingPostureValidationTest` flipped to acceptance and one sentence in `how-to/error-channel.adoc`.
-* **A context key bound to two Java types is refused in the store, claimed by C** `open`, off the
-  critical path. One `contextArguments` key read by parameters of two Java types fails at run time
-  with a class cast; the walk's `ContextArgumentTypeAgreement` refused it and is silenced at a
-  service field, and `CONTEXT_KEY_DUPLICATE` judges one parameter only. A rule over
-  `graphitron_call_context_key` comparing the types its parameters take refuses it, and the walk's
-  harvest in `ContextArgumentClassifier` goes.
 * **A @service returning an enum is judged on its return's container in the store, claimed by C**
   `open`, off the critical path. A child `@service` whose method returns a map of enum values in
   the wrong container is accepted and fails at run time; the walk refused it and is silenced. No

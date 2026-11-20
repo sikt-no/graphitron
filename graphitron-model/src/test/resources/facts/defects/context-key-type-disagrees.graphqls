@@ -1,0 +1,31 @@
+# The request context carries one value under a key, which the generated code reads as one class, so
+# a key fills parameters of one Java type across the graph. brukerId fills SessionMemberService's
+# brukerOf, which takes a Long, and its brukerOfPrimitive, which takes a long: refused at each
+# contextArguments element, the detail naming the key, the parameter's type there and the other.
+# userId fills a String at a @service and at a @condition, one type at two calls of two directives,
+# and draws nothing.
+
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+
+type Query {
+  brukerBoxed: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SessionMemberService",
+      method: "brukerOf"}, contextArguments: ["brukerId"])
+  brukerPrimitive: Int @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SessionMemberService",
+      method: "brukerOfPrimitive"}, contextArguments: ["brukerId"])
+  greetingByUser: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet"}, contextArguments: ["userId"])
+  customersSeenByUser: [Customer!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerSeenByUser"}, contextArguments: ["userId"])
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code = 'CONTEXT_KEY_TYPE_DISAGREES'
+  """, rows: """
+  coordinate,            detail
+  Query.brukerBoxed,     "brukerId: java.lang.Long, elsewhere long"
+  Query.brukerPrimitive, "brukerId: long, elsewhere java.lang.Long"
+  """)

@@ -90,9 +90,10 @@ public class DetailRuleAgreementTest {
                 GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE.SOURCE_LINE,
                 GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE.SOURCE_COLUMN,
                 GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE.CODE),
-            // The stage raises the code at a contextArguments element too, naming the parameter; the
-            // mapping string's row carries no detail.
-            GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE.CODE.eq("CONTEXT_KEY_DUPLICATE")
+            // The stage raises the codes at a contextArguments element too, with a detail; the
+            // mapping string's row carries none.
+            GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE.CODE.in("CONTEXT_KEY_DUPLICATE",
+                    "CONTEXT_KEY_TYPE_DISAGREES")
                 .and(GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE.DETAIL.isNull())),
         new Copy(GRAPHITRON_ARGMAPPING_LANDING_ENTRY_DEFECT_PAIR_RULE,
             List.of(GRAPHITRON_ARGMAPPING_LANDING_ENTRY_DEFECT_PAIR_RULE.GRAPH_NAME,

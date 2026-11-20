@@ -9327,6 +9327,40 @@ COMMENT ON COLUMN graphitron_call_context_key.touched_at IS 'the reading that la
 CREATE VIEW graphitron_call_context_key_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 WITH
+typed_key (graph_name, context_key, parameter_type, origin, source_name, origin_line, origin_column,
+           origin_position) AS (
+  -- Each key filling a parameter, with the type the parameter is declared as on the method its
+  -- call's reference resolved to. Silent where the reference resolved to no single method or the
+  -- method was compiled without parameter names, which the reference's own defects and
+  -- PARAMETER_NAMES_MISSING report, and on a parameter written twice, which fills nothing.
+  SELECT k.graph_name, k.context_key, cp.parameter_type, k.origin, k.source_name, k.origin_line,
+         k.origin_column, k.origin_position
+    FROM graphitron_call_context_key k
+    JOIN graphitron_code_reference r
+      ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate
+     AND r.directive_name = k.directive_name AND r.ordinal = k.ordinal AND r.owner = k.owner
+     AND r.method_descriptor IS NOT NULL
+    JOIN code_method_parameter cp
+      ON cp.source_name = r.method_source_name AND cp.class_name = r.method_class_name
+     AND cp.method_name = r.method_name AND cp.descriptor = r.method_descriptor
+     AND cp.parameter_name = k.parameter_name
+   WHERE k.written_once
+),
+type_disagreement (graph_name, origin, source_name, origin_line, origin_column, origin_position,
+                   detail) AS (
+  -- A key filling a parameter of one type here and of another elsewhere in the graph: the request
+  -- context carries one value under a key, which the generated code reads as one class. The detail
+  -- is the key, this parameter's type, and the least of the other types it fills, so a key filling
+  -- three types still names one per site, the same one each reading.
+  SELECT t.graph_name, t.origin, t.source_name, t.origin_line, t.origin_column, t.origin_position,
+         t.context_key || ': ' || t.parameter_type || ', elsewhere ' || MIN(o.parameter_type)
+    FROM typed_key t
+    JOIN typed_key o
+      ON o.graph_name = t.graph_name AND o.context_key = t.context_key
+     AND o.parameter_type <> t.parameter_type
+   GROUP BY t.graph_name, t.origin, t.source_name, t.origin_line, t.origin_column,
+            t.origin_position, t.context_key, t.parameter_type
+),
 pair_defect (graph_name, source_name, source_line, source_column, position, code, detail) AS (
   -- A $context pair naming a parameter its call is also given a context key for elsewhere. The
   -- detail is the parameter. The string sits in the file its call's reference does.
@@ -9334,6 +9368,12 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
          'CONTEXT_KEY_DUPLICATE', k.parameter_name
     FROM graphitron_call_context_key k
    WHERE k.origin = 'PAIR' AND NOT k.written_once
+  UNION ALL
+  -- A $context pair whose key fills a parameter of another type elsewhere.
+  SELECT d.graph_name, d.source_name, d.origin_line, d.origin_column, d.origin_position,
+         'CONTEXT_KEY_TYPE_DISAGREES', d.detail
+    FROM type_disagreement d
+   WHERE d.origin = 'PAIR'
 )
 -- A contextArguments element naming a parameter its call is also given a context key for
 -- elsewhere, at the element. The detail is the parameter.
@@ -9342,24 +9382,61 @@ SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY
   FROM graphitron_call_context_key w
  WHERE w.origin = 'CONTEXT_ARGUMENTS' AND NOT w.written_once
 UNION ALL
+-- A contextArguments element whose key fills a parameter of another type elsewhere, at the element.
+SELECT d.graph_name, d.source_name, d.origin_line, d.origin_column, 'CONTEXT_KEY_TYPE_DISAGREES',
+       d.detail, 'call-context-keys'
+  FROM type_disagreement d
+ WHERE d.origin = 'CONTEXT_ARGUMENTS'
+UNION ALL
 -- Each string one of whose entries a rule above refuses, once per code; the entries are
 -- graphitron_call_context_key_entry_defect_pair_rule's rows, written under it.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, d.code,
        CAST(NULL AS VARCHAR), 'call-context-keys'
   FROM pair_defect d;
-COMMENT ON VIEW graphitron_call_context_key_entry_defect_rule IS 'One row the call-context-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example contextArguments: ["userId", "userId"] on one @service gives one CONTEXT_KEY_DUPLICATE row at each element, naming userId.';
+COMMENT ON VIEW graphitron_call_context_key_entry_defect_rule IS 'One row the call-context-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example contextArguments: ["userId", "userId"] on one @service gives one CONTEXT_KEY_DUPLICATE row at each element; brukerId read as a Long by one @service and as a long by another gives one CONTEXT_KEY_TYPE_DISAGREES row at each element.';
 
 -- The entries under the call-context-keys stage's pair defects, which ArgMappingPairDefects writes
 -- under the strings that stage's rule view raises from the same statement.
 CREATE VIEW graphitron_call_context_key_entry_defect_pair_rule
   (graph_name, source_name, source_line, source_column, position, code, detail) AS
+WITH
+typed_key (graph_name, context_key, parameter_type, origin, source_name, origin_line, origin_column,
+           origin_position) AS (
+  -- Each key filling a parameter, with the type the parameter is declared as on the method its
+  -- call's reference resolved to, as graphitron_call_context_key_entry_defect_rule reads it.
+  SELECT k.graph_name, k.context_key, cp.parameter_type, k.origin, k.source_name, k.origin_line,
+         k.origin_column, k.origin_position
+    FROM graphitron_call_context_key k
+    JOIN graphitron_code_reference r
+      ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate
+     AND r.directive_name = k.directive_name AND r.ordinal = k.ordinal AND r.owner = k.owner
+     AND r.method_descriptor IS NOT NULL
+    JOIN code_method_parameter cp
+      ON cp.source_name = r.method_source_name AND cp.class_name = r.method_class_name
+     AND cp.method_name = r.method_name AND cp.descriptor = r.method_descriptor
+     AND cp.parameter_name = k.parameter_name
+   WHERE k.written_once
+)
 -- A $context pair naming a parameter its call is also given a context key for elsewhere. The
 -- detail is the parameter. The string sits in the file its call's reference does.
 SELECT k.graph_name, k.source_name, k.origin_line, k.origin_column, k.origin_position,
        'CONTEXT_KEY_DUPLICATE', k.parameter_name
   FROM graphitron_call_context_key k
- WHERE k.origin = 'PAIR' AND NOT k.written_once;
-COMMENT ON VIEW graphitron_call_context_key_entry_defect_pair_rule IS 'One row the call-context-keys stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example userId: $context.userId on a @service whose contextArguments also lists userId gives one CONTEXT_KEY_DUPLICATE row at that entry, naming userId.';
+ WHERE k.origin = 'PAIR' AND NOT k.written_once
+UNION ALL
+-- A $context pair whose key fills a parameter of another type elsewhere in the graph. The detail is
+-- the key, this parameter's type and the least of the others.
+SELECT t.graph_name, t.source_name, t.origin_line, t.origin_column, t.origin_position,
+       'CONTEXT_KEY_TYPE_DISAGREES',
+       t.context_key || ': ' || t.parameter_type || ', elsewhere ' || MIN(o.parameter_type)
+  FROM typed_key t
+  JOIN typed_key o
+    ON o.graph_name = t.graph_name AND o.context_key = t.context_key
+   AND o.parameter_type <> t.parameter_type
+ WHERE t.origin = 'PAIR'
+ GROUP BY t.graph_name, t.source_name, t.origin_line, t.origin_column, t.origin_position,
+          t.context_key, t.parameter_type;
+COMMENT ON VIEW graphitron_call_context_key_entry_defect_pair_rule IS 'One row the call-context-keys stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example userId: $context.userId on a @service whose contextArguments also lists userId gives one CONTEXT_KEY_DUPLICATE row at that entry; brukerId: $context.brukerId read as a long where another call reads a Long gives one CONTEXT_KEY_TYPE_DISAGREES row there.';
 
 -- The defects judging the written code references, written by the code-references stage beside
 -- graphitron_code_reference: a reference resolving to no one method, a @condition whose overloads
@@ -31439,6 +31516,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A @condition names a method whose overloads differ in more than their jOOQ table parameters, on the static modifier, the return type, the parameter count, the throws clause or a parameter that is a table in some and not others or differs in name or type, so the name stands for more than one call.'),
   ('CONTEXT_KEY_DUPLICATE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONTEXT_KEY_DUPLICATE',
    'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.'),
+  ('CONTEXT_KEY_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_CONTEXT_KEY_TYPE_DISAGREES',
+   'One context key fills parameters of two Java types across the graph''s calls, and the request context carries one value under a key, which the generated code reads as one class: declare every parameter the key fills as one type.'),
   ('UNROUTED_SERVICE_CALL', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_SERVICE_CALL',
    'A root @service in a database-per-tenant build is handed a connection, or re-reads rows a tenant''s database holds, and nothing in its arguments names the tenant, so it would run on the default source whatever its own SQL touches: name the tenant with $tenant in its argMapping, or take the node table''s record or a jOOQ record carrying the tenant column; a service touching only global data takes no connection.'),
   ('ROUTINE_WRITE_TENANT_SCOPED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_TENANT_SCOPED',
@@ -32331,8 +32410,8 @@ INSERT INTO meta_relation VALUES
    'The landings stage''s own defects, decided from the steps and landings it has just written over the occurrences, so a path that lands nowhere is refused by the stage that walked it. Each string''s row is rolled up from its entries in a CTE, the entries being graphitron_argmapping_landing_entry_defect_pair_rule''s rows.'),
   ('graphitron_call_context_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the call-context-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example contextArguments: ["userId", "userId"] on one @service gives one CONTEXT_KEY_DUPLICATE row at each element, naming userId.',
-   'The stage''s own defects, decided from the context keys it has just written, so each reads only what is upstream of it and none waits for a later stage''s facts. A pair''s duplicate is rolled up from its entries in a CTE, the entries being graphitron_call_context_key_entry_defect_pair_rule''s rows.'),
+   'For example contextArguments: ["userId", "userId"] on one @service gives one CONTEXT_KEY_DUPLICATE row at each element; brukerId read as a Long by one @service and as a long by another gives one CONTEXT_KEY_TYPE_DISAGREES row at each element.',
+   'The stage''s own defects, decided from the context keys it has just written, so each reads only what is upstream of it and none waits for a later stage''s facts; a key''s type is its parameter''s on the method the code-references stage resolved, read off the classpath. A pair''s defect is rolled up from its entries in a CTE, the entries being graphitron_call_context_key_entry_defect_pair_rule''s rows.'),
   ('graphitron_occurrence_condition', 'graph-occurrence-binding', 'graphitron',
    'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method.',
    'For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.',
@@ -32543,8 +32622,8 @@ INSERT INTO meta_relation VALUES
    'The session, context and scope sigil rules at the entry, which read the entries, the sites, the code references and the classpath, so the argmapping-pairs stage judges them. The stage''s rule view raises the string''s defect from the same statement in a CTE of its own, a view reading no view, and ArgMappingPairDefects writes these rows under it.'),
   ('graphitron_call_context_key_entry_defect_pair_rule', 'argmapping-pair-defect', 'graphitron',
    'One row the call-context-keys stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example userId: $context.userId on a @service whose contextArguments also lists userId gives one CONTEXT_KEY_DUPLICATE row at that entry, naming userId.',
-   'A $context pair writing a key its call is also given elsewhere, read off the context keys the call-context-keys stage has just written. The stage''s rule view raises the string''s defect from the same statement in a CTE of its own, and ArgMappingPairDefects writes these rows under it.'),
+   'For example userId: $context.userId on a @service whose contextArguments also lists userId gives one CONTEXT_KEY_DUPLICATE row at that entry; brukerId: $context.brukerId read as a long where another call reads a Long gives one CONTEXT_KEY_TYPE_DISAGREES row there.',
+   'A $context pair writing a key its call is also given elsewhere, or one filling a parameter of another type than the key fills elsewhere, read off the context keys the call-context-keys stage has just written. The stage''s rule view raises the string''s defect from the same statement in a CTE of its own, and ArgMappingPairDefects writes these rows under it.'),
   ('graphitron_argmapping_landing_entry_defect_pair_rule', 'argmapping-pair-defect', 'graphitron',
    'One row the argMapping landings stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example filter.nope on @routine at Actor.filmsNested gives one ARGMAPPING_PATH_UNRESOLVED row at that entry, its detail the path.',
