@@ -39,7 +39,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1184` | Graphitron reads the database over a live connection: row-level security as facts, definitions on request | Ready | 2026-11-17 <sub>created 2026-11-13</sub> | [plan](database-policy-gatherer.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
-| `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | Spec | 2026-11-20 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
 | `R1169` | Connection pagination on a routine-backed child field | Spec | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](routine-child-connection.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -48,6 +47,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
+| `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | Ready | 2026-11-20 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-20 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
@@ -697,7 +697,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
 - `R1095` [**A computed Node.id is not checked against the node decoder**](computed-node-id-is-unchecked.md) — Backlog, bug
-- `R534` [**An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record**](record-key-decode-null-write-erasure.md) — Spec, architecture
+- `R534` [**An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record**](record-key-decode-null-write-erasure.md) — Ready, architecture
 - `R1164` [**No comment claims federation raises its own error for an unresolved _entities slot**](federation-resolution-failure-claim-leaves-the-comments.md) — Backlog, cleanup
 - `R1145` [**A Coercing that binds its type parameters through a generic base class is rejected as erased**](coercing-through-generic-base-class.md) — Backlog, bug
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug
