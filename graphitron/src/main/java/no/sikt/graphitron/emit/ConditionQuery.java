@@ -14,6 +14,7 @@ import java.util.Set;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
@@ -91,11 +92,12 @@ public final class ConditionQuery {
      * to the column's, none on an empty path, the record class of the table the path lands on,
      * which a node id decodes into, the list occurrences above it it is read once per element of,
      * and for a node id binding the row's own table, the type id of the node it binds there, which an
-     * id must carry to be decoded on that table.
+     * id must carry to be decoded on that table; and the facet whose filter value it is, {@code null}
+     * where it is no facet's.
      */
     public record Term(String coordinate, ArgumentPath path, Column column, String typeKind,
                        int nodeIdBindings, boolean lookupKey, String origin, List<Step> steps,
-                       String landingRecordClass, List<ListAbove> lists, String ownTypeId) {
+                       String landingRecordClass, List<ListAbove> lists, String ownTypeId, String facet) {
         public Term {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(path, "path");
@@ -232,6 +234,26 @@ public final class ConditionQuery {
             terms = List.copyOf(terms);
             calls = List.copyOf(calls);
         }
+
+        /** The facets the row's terms are the filter values of, in term order. */
+        public List<String> facets() {
+            return terms.stream().map(Term::facet).filter(Objects::nonNull).distinct().toList();
+        }
+
+        /**
+         * The row without its facets' terms: the condition every facet's counts are narrowed by, each
+         * facet counting over the other filters and not its own.
+         */
+        public Row facetBase() {
+            return new Row(coordinate, bound, producerKind, table,
+                terms.stream().filter(term -> term.facet() == null).toList(), calls, takesEnv, takesDsl);
+        }
+
+        /** The row reduced to one facet's term: the filter that facet's own value writes, and nothing else. */
+        public Row facetOwn(String facet) {
+            return new Row(coordinate, bound, producerKind, table,
+                terms.stream().filter(term -> facet.equals(term.facet())).toList(), List.of(), takesEnv, takesDsl);
+        }
     }
 
     private record Raw(String coordinate, Column column, String typeKind, int nodeIdBindings, boolean lookupKey,
@@ -271,6 +293,7 @@ public final class ConditionQuery {
         var paths = argumentPaths(store);
         var steps = steps(store);
         var parents = parents(store);
+        var facets = facets(store);
         // The rows: a field and each table it is bound to, where its query starts and its filter
         // applies.
         var rb = GRAPHITRON_OCCURRENCE_BINDING_TABLE.as("rb");
@@ -502,7 +525,7 @@ public final class ConditionQuery {
                     .map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()), raw.column(), raw.typeKind(),
                         raw.nodeIdBindings(), raw.lookupKey(), raw.origin(),
                         steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
-                        raw.landingRecordClass(), raw.lists(), raw.ownTypeId()))
+                        raw.landingRecordClass(), raw.lists(), raw.ownTypeId(), facets.get(raw.coordinate())))
                     .toList();
                 var made = applied.stream().map(Applied::call).toList();
                 if (r.value8().isEmpty() && made.isEmpty()) {
@@ -523,6 +546,16 @@ public final class ConditionQuery {
             if (at.equals(ancestor)) return true;
         }
         return false;
+    }
+
+    /** The facet each faceted occurrence's filter value arrives through belongs to, by that input field. */
+    private static Map<String, String> facets(StoreHandle store) {
+        var f = GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
+        var out = new java.util.HashMap<String, String>();
+        store.dsl().select(f.FILTER_COORDINATE, f.FACET_NAME).from(f)
+            .where(f.GRAPH_NAME.eq(store.graphName()))
+            .forEach(r -> out.put(r.value1(), r.value2()));
+        return out;
     }
 
     /** Each argument and input-field occurrence's parent. */
