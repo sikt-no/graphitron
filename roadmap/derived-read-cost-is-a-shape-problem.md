@@ -1231,6 +1231,13 @@ static method needs no holder.
   The jOOQ record helpers' naming, the shape-contention ordinals and their composition with a
   cross-schema prefix, lost its one test with the walk's service tests, and `JooqRecordHelperNames`
   has no test of its own; that is one emitter test, not a fact.
+* **An object type handed back as two classes by two services is judged in the store** `open`, off
+  the critical path. `FilmShelf` returned by one service as a bean and by another as a
+  `FilmLookupPayload` record, both offering `title`, is one OBJECT result with two result-class rows
+  and no defect; only the deprecated `intent_type_backing_conflict` counts it. The walk refused it as a
+  domain-type disagreement. Whether it is refused, or served with each class judged by
+  `MEMBER_UNRESOLVED` on its own, is Alf's to say; the store states that verdict at the type, with a
+  fact document and a near miss.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
 * **A list field over an accessor returning one record is refused in the store** `open`, off the
