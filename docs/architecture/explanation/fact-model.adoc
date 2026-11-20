@@ -425,10 +425,14 @@ Federation knows keys, not `Node.id` (ruled 2026-11-11). A `@key` is resolved by
 A node has an `id` field, whether this subgraph resolves it or not (ruled 2026-11-11): every `@node` implements `Node`, whose interface holds it to the field, and resolvability is a separate fact. A `@key`'s `fields:` name fields its type declares, whatever the type is bound to, so a key naming `id` on a type without one is the same defect as a key naming any other field it lacks (ruled 2026-11-12).
 
 A minted key field states what the subgraph can deliver (ruled 2026-11-18). The voucher field
-`_voucher`, which `@issue` and `@accept` mint and key their type by, is `String!` on an issuing type,
+`internalGraphitronVoucher`, which `@issue` and `@accept` mint and key their type by, is `String!` on an issuing type,
 which signs one for every row, and `String` on an accepting one, which receives a voucher in a
 representation but never computes one, so a row it reads by any other route has none to give.
 Federation lets a shared field differ in nullability, so the two still meet in one key.
+Its name is `internalGraphitronVoucher` (ruled 2026-11-20): camelCase, because the subgraph SDL it is
+published in is held to Apollo GraphOS schema linting, which exempts the federation spec's own `_entities`
+and `_service` but not a field graphitron mints; and prefixed, so an author's own `voucher` field is not
+refused for colliding with it.
 
 A case fold is a stored column, and it is minted only where an authored spelling meets a catalog name. That crossing is the whole reason one exists: an author types a GraphQL or SDL identifier, the catalog holds a SQL one, and the two namespaces disagree about case, so each side of the comparison carries an `_upper` companion the database computes and nobody writes. Two consequences follow and both are load-bearing. A comparison between two values of one family mints nothing, because there is no boundary to bridge; where such a comparison does want folded operands it joins the relation that owns the spelling on its key and reads the fold there, which `sql_name_matched_key_column` does. And a derived view never forwards a fold to its readers, for the same reason it does not forward anything else it merely carried: the fold is a property of the relation that owns the spelling, and a reader wanting it re-joins rather than having a column threaded through every view between. What that buys is one rule with no list attached, and views that hold no per-row case fold on any comparison the rule reaches. What survives it is the one comparison the rule declines to serve: the defect view over node-identity metadata matches a generated table class's stated key-column name against the catalog's own column names, and both of those are values the crawler produced, so the fold there is a hedge rather than a semantic. That is not a fold this rule owes a column to; it is a fold nothing owes anything to, and it goes away by becoming exact rather than by being stored.
 

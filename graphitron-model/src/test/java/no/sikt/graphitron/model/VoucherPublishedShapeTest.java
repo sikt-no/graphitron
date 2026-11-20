@@ -42,7 +42,7 @@ class VoucherPublishedShapeTest {
     void theVoucherAlone() {
         var emittedType = (GraphQLObjectType) emitted.getType("FilmRef");
         assertThat(emittedType.getFieldDefinitions()).extracting(GraphQLFieldDefinition::getName)
-            .containsExactly("_voucher");
+            .containsExactly("internalGraphitronVoucher");
         var writtenType = (GraphQLObjectType) written.getType("FilmRef");
         assertThat(writtenType.getFieldDefinitions()).extracting(GraphQLFieldDefinition::getName)
             .containsExactly("filmId", "title");
@@ -52,13 +52,13 @@ class VoucherPublishedShapeTest {
     @DisplayName("the voucher is kept from clients, and keys the type as a key this subgraph does not resolve")
     void theVoucherKey() {
         var type = (GraphQLObjectType) emitted.getType("FilmRef");
-        assertThat(type.getFieldDefinition("_voucher").getAppliedDirectives("inaccessible")).hasSize(1);
+        assertThat(type.getFieldDefinition("internalGraphitronVoucher").getAppliedDirectives("inaccessible")).hasSize(1);
         var keys = type.getAppliedDirectives("key");
         assertThat(keys).hasSize(1);
         // Federation's FieldSet is no scalar graphql-java coerces, so it arrives as its literal.
         StringValue fields = keys.getFirst().getArgument("fields").getValue();
         Boolean resolvable = keys.getFirst().getArgument("resolvable").getValue();
-        assertThat(fields.getValue()).isEqualTo("_voucher");
+        assertThat(fields.getValue()).isEqualTo("internalGraphitronVoucher");
         assertThat(resolvable).isFalse();
     }
 }

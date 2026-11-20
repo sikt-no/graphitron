@@ -1,5 +1,5 @@
 Reported at the `@issue` or `@accept`, the detail naming the type.
 
-A voucher is handed from one subgraph to another by a router, through a federation key on `_voucher` that graphitron mints. Without a federation link the schema is no subgraph, and there is neither a router nor a key.
+A voucher is handed from one subgraph to another by a router, through a federation key on `internalGraphitronVoucher` that graphitron mints. Without a federation link the schema is no subgraph, and there is neither a router nor a key.
 
 *Next step.* Add an `extend schema @link(url: "...", import: [...])` to the schema, or drop the voucher marker. See xref:../how-to/federation-keys.adoc[How-to: Federation keys].

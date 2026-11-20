@@ -276,10 +276,10 @@ naming the declared type and what it lacks, since that is where the author acts 
 
 A declared field at the name of a field graphitron mints is refused, not taken in its place (Alf,
 2026-11-18). The case that rule was written for is a type, where the author's declaration can stand
-in for the mint because the spec says what it must hold. The voucher field `_voucher`, which a
+in for the mint because the spec says what it must hold. The voucher field `internalGraphitronVoucher`, which a
 `@issue` or `@accept` mints on its type, has no shape an author could usefully restate: it is
 graphitron's own value under graphitron's own name, the same in every subgraph. So a type marked
-either way that declares `_voucher` is `VOUCHER_FIELD_NAME_TAKEN` at the marker; the declared field
+either way that declares `internalGraphitronVoucher` is `VOUCHER_FIELD_NAME_TAKEN` at the marker; the declared field
 keeps the coordinate and nothing is minted beside it.
 
 A type is marked `@issue` or `@accept`, never both (Alf, 2026-11-18): a type either vouches for its

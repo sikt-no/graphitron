@@ -2,7 +2,7 @@
 :description: Mark a table-bound entity, so this subgraph grants access to its rows on another subgraph's voucher.
 :!toc:
 
-Marks a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. Graphitron gives the type a *voucher* field, `_voucher: String`, which the router fills with the voucher it fetched from the issuing subgraph's xref:issue.adoc[`@issue`] type; Graphitron verifies it and reads the vouched row on the connection your connection source leases for a key carrying the voucher's *vouched-for values*, so your database's row-level security decides what the vouched-for values unlock. The voucher is not a column and is never selected.
+Marks a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. Graphitron gives the type a *voucher* field, `internalGraphitronVoucher: String`, which the router fills with the voucher it fetched from the issuing subgraph's xref:issue.adoc[`@issue`] type; Graphitron verifies it and reads the vouched row on the connection your connection source leases for a key carrying the voucher's *vouched-for values*, so your database's row-level security decides what the vouched-for values unlock. The voucher is not a column and is never selected.
 
 The entity and every field below it are read on that connection. A field its SELECT reads, reference children nested in it included, is read in the entity's own statement; a field that runs a query of its own, a split query, a routine, a polymorphic field or a `@service`, runs on the connection key the entity row hands down, and so does everything below it. A type with a connection below it, at any depth, whether the connection is an `@asConnection` field, a field returning a connection type or a `@service` returning one, is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`, since a connection's count and facets do not yet read on the vouched connection. The same field reached from outside a vouched entity's subtree runs on the request's own connection.
 
@@ -63,8 +63,8 @@ Every redemption and rejection is logged at `INFO` on the logger `no.sikt.graphi
 
 == What the subgraph publishes
 
-* `@key(fields: "_voucher")` on the accepting type, resolvable, after every key you wrote, so a router hands this subgraph the voucher it fetched from the issuing one. Your own keys are untouched, so the type still resolves by them under the caller's own access.
-* The voucher field, `_voucher: String`, marked `@inaccessible` so clients never see it. You do not write it; its name is the same in every subgraph, so the issuing and accepting sides cannot disagree on it. It is nullable here, where the issuing side's is not: this subgraph receives a voucher in a representation but never computes one, so a row it reads by any other route has none to give. Federation lets a shared field differ in nullability, and the supergraph takes the nullable one. The link imports `@inaccessible` for you.
+* `@key(fields: "internalGraphitronVoucher")` on the accepting type, resolvable, after every key you wrote, so a router hands this subgraph the voucher it fetched from the issuing one. Your own keys are untouched, so the type still resolves by them under the caller's own access.
+* The voucher field, `internalGraphitronVoucher: String`, marked `@inaccessible` so clients never see it. You do not write it; its name is the same in every subgraph, so the issuing and accepting sides cannot disagree on it. It is nullable here, where the issuing side's is not: this subgraph receives a voucher in a representation but never computes one, so a row it reads by any other route has none to give. Federation lets a shared field differ in nullability, and the supergraph takes the nullable one. The link imports `@inaccessible` for you.
 
 == Constraints
 
@@ -78,7 +78,7 @@ Each refusal below is reported at the `@accept`.
 | The schema has a federation `@link`: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.
 
 | `VOUCHER_FIELD_NAME_TAKEN`
-| The type declares no field named `_voucher`, the name Graphitron mints the voucher field under. Such a field is refused, not taken for the voucher, and no voucher field is minted beside it.
+| The type declares no field named `internalGraphitronVoucher`, the name Graphitron mints the voucher field under. Such a field is refused, not taken for the voucher, and no voucher field is minted beside it.
 
 | `VOUCHER_MARKERS_BOTH`
 | The type is not also marked `@issue`: a type issues or accepts one voucher. Refused at each marker.
@@ -90,7 +90,7 @@ Each refusal below is reported at the `@accept`.
 | `vouchesFor` selects at least one field.
 
 | `VOUCHER_VOUCHED_FOR_NOT_A_FIELD`
-| Each vouched-for field names a field of the type: not a name the type does not declare, not `_voucher`, not a nested selection.
+| Each vouched-for field names a field of the type: not a name the type does not declare, not `internalGraphitronVoucher`, not a nested selection.
 
 | `VOUCHER_VOUCHED_FOR_REPEATED`
 | No vouched-for field is named twice.

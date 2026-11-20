@@ -2,7 +2,7 @@
 :description: Mark a table-bound type, so this subgraph vouches for its rows to another subgraph.
 :!toc:
 
-Marks a table-bound type in a federated subgraph that vouches for the rows its own rules let the user see, so another subgraph can grant access to them through its database's row-level security. Graphitron gives the type a *voucher* field, `_voucher: String!`, and every field you write on the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching type `@accept`.
+Marks a table-bound type in a federated subgraph that vouches for the rows its own rules let the user see, so another subgraph can grant access to them through its database's row-level security. Graphitron gives the type a *voucher* field, `internalGraphitronVoucher: String!`, and every field you write on the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching type `@accept`.
 
 == SDL signature
 
@@ -39,12 +39,12 @@ type VgsResultat @table(name: "soknad_vgs_resultat")
 }
 ----
 
-`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `_voucher` alone. You do not write the voucher field; its name is the same in every subgraph, so the issuing and accepting sides cannot disagree on it. It is non-null here, every row being signed one, and nullable on the accepting side, which never computes one. Name and type the absorbed fields exactly as the other subgraph's key fields and vouched-for fields; a mismatch shows up as every voucher being rejected there.
+`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `internalGraphitronVoucher` alone. You do not write the voucher field; its name is the same in every subgraph, so the issuing and accepting sides cannot disagree on it. It is non-null here, every row being signed one, and nullable on the accepting side, which never computes one. Name and type the absorbed fields exactly as the other subgraph's key fields and vouched-for fields; a mismatch shows up as every voucher being rejected there.
 
 == What the subgraph publishes
 
-* Only the voucher field, `_voucher: String!`, marked `@inaccessible` so clients never see it. The absorbed fields, and any arguments they declare, are not part of the published schema, though they stay in the schema as written, where the editor shows and checks them.
-* `@key(fields: "_voucher", resolvable: false)` on the issuing type, after any key you wrote. The type is keyed by its voucher and not resolved here, so a router reaches the other subgraph's entity from this one only through the voucher. The link imports `@inaccessible` for you.
+* Only the voucher field, `internalGraphitronVoucher: String!`, marked `@inaccessible` so clients never see it. The absorbed fields, and any arguments they declare, are not part of the published schema, though they stay in the schema as written, where the editor shows and checks them.
+* `@key(fields: "internalGraphitronVoucher", resolvable: false)` on the issuing type, after any key you wrote. The type is keyed by its voucher and not resolved here, so a router reaches the other subgraph's entity from this one only through the voucher. The link imports `@inaccessible` for you.
 * Every absorbed field is withheld whatever else is refused, so a schema whose `@issue` is refused for another reason still never publishes them.
 
 == What is generated
@@ -65,7 +65,7 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 | The schema has a federation `@link`: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.
 
 | `VOUCHER_FIELD_NAME_TAKEN`
-| The issuing type declares no field named `_voucher`, the name Graphitron mints the voucher field under. Such a field is refused, not taken for the voucher, and is neither absorbed nor joined by a minted field.
+| The issuing type declares no field named `internalGraphitronVoucher`, the name Graphitron mints the voucher field under. Such a field is refused, not taken for the voucher, and is neither absorbed nor joined by a minted field.
 
 | `VOUCHER_MARKERS_BOTH`
 | The type is not also marked `@accept`: a type issues or accepts one voucher. Refused at each marker.
@@ -86,7 +86,7 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 | `vouchesFor` selects at least one field.
 
 | `VOUCHER_VOUCHED_FOR_NOT_ABSORBED`
-| Each vouched-for field names an absorbed field: not a name the type does not declare, not `_voucher`, not a nested selection.
+| Each vouched-for field names an absorbed field: not a name the type does not declare, not `internalGraphitronVoucher`, not a nested selection.
 
 | `VOUCHER_VOUCHED_FOR_REPEATED`
 | No vouched-for field is named twice.

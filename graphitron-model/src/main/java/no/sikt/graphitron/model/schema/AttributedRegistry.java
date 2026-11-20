@@ -121,7 +121,7 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
         return new AttributedRegistry(registry, composed.injectedNames(), reading.read(), voucherFields(store));
     }
 
-    /** Every minted voucher field's coordinate, {@code Type._voucher}, on either side. */
+    /** Every minted voucher field's coordinate, {@code Type.internalGraphitronVoucher}, on either side. */
     static Set<String> voucherFields(StoreHandle store) {
         var v = GRAPHITRON_VOUCHER_FIELD;
         return new TreeSet<>(store.dsl().select(v.COORDINATE).from(v)

@@ -24,7 +24,7 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site")
 # decode to, and the one vouched-for field.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name,   role,   fields,  resolvable
-  VgsResultat, ACCEPT, _voucher, TRUE
+  VgsResultat, ACCEPT, internalGraphitronVoucher, TRUE
   """)
 
 extend schema @expectEquals(relation: "graphitron_accept_vouched_for", rows: """
@@ -41,7 +41,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: 
 
 # The minted voucher field is nullable here: this subgraph receives a voucher in a representation but
 # never computes one, so a row it reads by any other route has none to give.
-extend schema @expectEquals(relation: "graphitron_field", where: "coordinate = 'VgsResultat._voucher'", rows: """
+extend schema @expectEquals(relation: "graphitron_field", where: "coordinate = 'VgsResultat.internalGraphitronVoucher'", rows: """
   type_sdl, non_null
   String,   FALSE
   """)

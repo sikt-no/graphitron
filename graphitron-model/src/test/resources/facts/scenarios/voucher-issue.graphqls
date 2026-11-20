@@ -1,6 +1,6 @@
 extend schema @withConfiguration(sessionState: true)
 
-"A type marked @issue is given the voucher field `_voucher`, and every field written on it is a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each vouched-for field names the member it is. A schema whose voucher stage refuses nothing generates."
+"A type marked @issue is given the voucher field `internalGraphitronVoucher`, and every field written on it is a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each vouched-for field names the member it is. A schema whose voucher stage refuses nothing generates."
 type FilmRef @table(name: "film") @issue(scope: "films", ttl: "PT5M", vouchesFor: "title") {
   filmId: ID! @field(name: "film_id")
   title(lang: String): String
@@ -39,7 +39,7 @@ extend schema @assertAbsent(relation: "graphitron_element", rows: """
 
 extend schema @assertContains(relation: "graphitron_element", rows: """
   coordinate
-  FilmRef._voucher
+  FilmRef.internalGraphitronVoucher
   """)
 
 # Each member read off the issuing table, by its @field or its name, with the scalar that serializes it.
@@ -60,7 +60,7 @@ extend schema @expectEquals(relation: "graphitron_binding_claim", where: """
   kind = 'VOUCHER'
   """, rows: """
   coordinate,      kind
-  FilmRef._voucher, VOUCHER
+  FilmRef.internalGraphitronVoucher, VOUCHER
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: """
@@ -72,14 +72,14 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: ""
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,              detail
-  COLUMN_UNRESOLVED, FilmRef._voucher
+  COLUMN_UNRESOLVED, FilmRef.internalGraphitronVoucher
   """)
 
 # The voucher keys its type, as a key this subgraph does not resolve, and is kept from clients; the
 # link is given @inaccessible to import.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name, role,  fields,  resolvable, ordinal
-  FilmRef,   ISSUE, _voucher, FALSE,      0
+  FilmRef,   ISSUE, internalGraphitronVoucher, FALSE,      0
   """)
 
 extend schema @expectEquals(relation: "graphitron_directive_application", where: """
@@ -87,5 +87,5 @@ extend schema @expectEquals(relation: "graphitron_directive_application", where:
   """, rows: """
   coordinate,      directive_name, ordinal
   FilmRef,         key,            0
-  FilmRef._voucher, inaccessible,   0
+  FilmRef.internalGraphitronVoucher, inaccessible,   0
   """)

@@ -23,7 +23,7 @@
 
 | `VgsResultat`
 | `ISSUE`
-| `_voucher`
+| `internalGraphitronVoucher`
 | `FALSE`
 |===
 // end::IssuingHandover-graphitron_minted_key[]
@@ -49,7 +49,7 @@
 
 | `VgsResultat`
 | `ACCEPT`
-| `_voucher`
+| `internalGraphitronVoucher`
 | `TRUE`
 |===
 // end::AcceptingEntity-graphitron_minted_key[]

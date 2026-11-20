@@ -1,5 +1,5 @@
 Reported at the `@accept`, the detail naming the first such name.
 
-The voucher's vouched-for values parse into fields of the accepting type. A name the type does not declare, `_voucher`, or a nested selection is no field for a value to parse into.
+The voucher's vouched-for values parse into fields of the accepting type. A name the type does not declare, `internalGraphitronVoucher`, or a nested selection is no field for a value to parse into.
 
 *Next step.* Name in `vouchesFor` top-level fields of the type, the same fields the issuing subgraph's `@issue(vouchesFor:)` names. See xref:directives/accept.adoc[`@accept`].

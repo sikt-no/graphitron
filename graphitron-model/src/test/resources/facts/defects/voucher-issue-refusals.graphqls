@@ -1,11 +1,11 @@
 extend schema @withConfiguration(sessionState: true)
 
 "The issuing side's refusals, each at the @issue or at the absorbed field it is about. A type issues one voucher under the name Graphitron mints, is reached only through it, and carries each absorbed field as one scalar, never an enum, read off its own table; the vouchesFor names absorbed fields, once each; the lifetime is a duration; and a voucher vouches for rows reached below a parent, never at the root."
-# A field the author names _voucher is refused, never taken for the voucher field Graphitron mints: it
+# A field the author names internalGraphitronVoucher is refused, never taken for the voucher field Graphitron mints: it
 # stays the author's, unabsorbed, and no voucher field is minted beside it.
 type Taken @table(name: "film") @issue(scope: "s", ttl: "PT5M", vouchesFor: "filmId") {
   filmId: ID @field(name: "film_id")
-  _voucher: String @field(name: "title")
+  internalGraphitronVoucher: String @field(name: "title")
 }
 
 # An authored @key would let a router around the voucher.
@@ -27,7 +27,7 @@ type NoClaims @table(name: "country") @issue(scope: "s", ttl: "PT5M", vouchesFor
 
 # The minted voucher field is no member, and a vouched-for field cannot nest: one row at the @issue, naming the
 # first by name.
-type Unabsorbed @table(name: "film") @issue(scope: "s", ttl: "PT5M", vouchesFor: "_voucher filmId { x }") {
+type Unabsorbed @table(name: "film") @issue(scope: "s", ttl: "PT5M", vouchesFor: "internalGraphitronVoucher filmId { x }") {
   filmId: ID @field(name: "film_id")
 }
 
@@ -62,9 +62,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code,                             type_name,  detail
   VOUCHER_VOUCHES_FOR_EMPTY,        NoClaims,   NoClaims
   VOUCHER_VOUCHED_FOR_NOT_ABSORBED, Stray,      x
-  VOUCHER_VOUCHED_FOR_NOT_ABSORBED, Unabsorbed, _voucher
+  VOUCHER_VOUCHED_FOR_NOT_ABSORBED, Unabsorbed, filmId
   VOUCHER_VOUCHED_FOR_REPEATED,     Repeated,   categoryId
-  VOUCHER_FIELD_NAME_TAKEN,         Taken,      Taken._voucher
+  VOUCHER_FIELD_NAME_TAKEN,         Taken,      Taken.internalGraphitronVoucher
   VOUCHER_ISSUE_ON_KEYED_TYPE,      Keyed,      Keyed
   VOUCHER_ISSUE_ON_ROOT_TYPE,       BadTtl,     BadTtl
   VOUCHER_MEMBER_COLUMN_UNRESOLVED, Members,    Members.nosuch
@@ -77,7 +77,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
 
 extend schema @assertAbsent(relation: "graphitron_voucher_member", rows: """
   type_name, field_name
-  Taken,     _voucher
+  Taken,     internalGraphitronVoucher
   """)
 
 extend schema @assertAbsent(relation: "graphitron_voucher_field", rows: """

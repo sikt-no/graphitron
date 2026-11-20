@@ -153,13 +153,13 @@ class VoucherAcceptExecutionTest {
     private static List<String> vouchers(int applicationId) {
         var result = issuing.execute(no.sikt.graphitron.generated.issuing.Graphitron
             .newOwnedExecutionInput(Sources.issuing(CLAIMS, issuingPool))
-            .query("{ applications { applicationId results { _voucher } } }").build());
+            .query("{ applications { applicationId results { internalGraphitronVoucher } } }").build());
         assertThat(result.getErrors()).isEmpty();
         var applications = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("applications");
         return applications.stream()
             .filter(a -> ((Integer) a.get("applicationId")) == applicationId)
             .flatMap(a -> ((List<Map<String, Object>>) a.get("results")).stream())
-            .map(r -> (String) r.get("_voucher"))
+            .map(r -> (String) r.get("internalGraphitronVoucher"))
             .toList();
     }
 
@@ -171,7 +171,7 @@ class VoucherAcceptExecutionTest {
     }
 
     private static Map<String, Object> voucherRep(String voucher) {
-        return Map.of("__typename", "VgsResultat", "_voucher", voucher);
+        return Map.of("__typename", "VgsResultat", "internalGraphitronVoucher", voucher);
     }
 
     private static List<Map<String, Object>> representations(List<String> vouchers) {

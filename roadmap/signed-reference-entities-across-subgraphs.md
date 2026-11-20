@@ -57,7 +57,7 @@ key carrying vouched-for values, a connection whose session sets them for the po
 | *Voucher* | A signed token Graphitron computes for one row in A and verifies in B. It is Graphitron's own format, decoded the way a node id is. |
 | *Issuing type* | The type in A marked `@issue`. |
 | *Accepting type* | The type in B marked `@accept`. |
-| *Voucher field* | `_voucher`, the field Graphitron mints on an issuing or accepting type (slice 8f): `String!` on A, which signs one for every row, and `String` on B, which never computes one. Its name is fixed, so A and B cannot disagree on it; it is `@inaccessible` and the minted key's one field. |
+| *Voucher field* | `internalGraphitronVoucher`, the field Graphitron mints on an issuing or accepting type (slice 8f): `String!` on A, which signs one for every row, and `String` on B, which never computes one. Its name is fixed, so A and B cannot disagree on it; it is `@inaccessible` and the minted key's one field. |
 | *Absorbed fields* | Every field the author wrote on the issuing type. Their values are sealed inside the voucher, and A does not publish them. |
 | *Vouched-for fields* | The absorbed fields named by `vouchesFor:` on both markers. They say whose rows are vouched for, and they are the access decision. In the first client's case this is the owner's id number, a different person from the user the request is for. |
 | *Lookup part* | The other absorbed fields: the key of the vouched row in B. Navigation only. |
@@ -76,7 +76,7 @@ secondary school result, and `eierId` the id of the person who owns the result (
 ```graphql
 # Subgraph A: the issuer. VgsResultat is A's own table of references to results, written the way B's key
 # looks: `id` is B's key field, read here from A's `vgs_resultat_id`, and `eierId` is the vouched-for field. `@issue`
-# absorbs every field written on the type into the voucher, mints `_voucher`, and A publishes `_voucher` alone.
+# absorbs every field written on the type into the voucher, mints `internalGraphitronVoucher`, and A publishes `internalGraphitronVoucher` alone.
 # No service, no token code, no voucher field and no `@key` written.
 type Soknad @table(name: "soknad") @key(fields: "id") {
   id: ID! @nodeId
@@ -88,7 +88,7 @@ type VgsResultat @table(name: "soknad_vgs_resultat")
   eierId: String! @field(name: "eier_id")
 }
 
-# Subgraph B: the owner. The real, table-bound entity. `@accept` mints `_voucher`, the proof field: not a
+# Subgraph B: the owner. The real, table-bound entity. `@accept` mints `internalGraphitronVoucher`, the proof field: not a
 # column, not selected. `eierId` is the vouched-for field the voucher's value parses into, kept from clients.
 type VgsResultat @table(name: "vgs_resultat") @key(fields: "id")
     @accept(scope: "vgs-resultater", vouchesFor: "eierId") {
@@ -259,7 +259,7 @@ per value.
 ### What each side publishes, and why A withholds the absorbed fields
 
 Both subgraphs' published shape is derived, not written. On a type marked `@issue` or `@accept`
-Graphitron mints the field `_voucher @inaccessible`, `String!` in A and `String` in B, and `@key(fields: "_voucher")` (slice 8f;
+Graphitron mints the field `internalGraphitronVoucher @inaccessible`, `String!` in A and `String` in B, and `@key(fields: "internalGraphitronVoucher")` (slice 8f;
 until then the author writes the field, marks it, and the key names it). In A the key is
 `resolvable: false` and is the type's only key; in B it is `resolvable: true` and sits beside the authored
 key. Both are minted applications, the mechanism that gives a node type its `@key(fields: "id")`, so the
@@ -363,6 +363,9 @@ Decisions the user made on this item; each is stated where it applies below.
   `docs/architecture/explanation/pipeline-overview.adoc`).
 * The column-name match and the `VOUCHER` binding kind (2026-11-10, in
   `docs/architecture/explanation/fact-model.adoc`).
+* The minted field is named `internalGraphitronVoucher` (2026-11-20): camelCase, so Apollo GraphOS
+  schema linting (`FIELD_NAMES_SHOULD_BE_CAMEL_CASE`) passes the subgraph SDL it is published in, and
+  prefixed so an author's own `voucher` field is not refused for colliding with it.
 * The markers go on the type and Graphitron mints the voucher field (2026-11-18): `@issue` and `@accept`
   are applied to an object type, not to a field the author writes, and Graphitron mints the voucher
   field on both sides, with a fixed name and type, so A and B cannot disagree on them. Slice 8f.
@@ -711,7 +714,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8e.1. The grain and a `@service` below | A field below a vouched entity is handed the entity's key; a child `@service` reads on it | `8bb6d38`, `3f44811` |
 | 8e.2. The walk reads the handed-down key | A split query and a polymorphic field below a vouched entity read on the key it hands down | `c0f511d`, `420ba54` |
 | 8e.3. Connection-typed fields | Pending on R876; below | |
-| 8f. Markers on the type | `@issue` and `@accept` on the type, `_voucher` minted on both sides | see *Slice 8f* |
+| 8f. Markers on the type | `@issue` and `@accept` on the type, `internalGraphitronVoucher` minted on both sides | see *Slice 8f* |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -910,7 +913,7 @@ the voucher field onto its type and delete the field. Nothing outside the repo a
 Independent of 8e.3. As built:
 
 * *Directives.* Both definitions' location is `OBJECT`, and their descriptions say Graphitron adds
-  `_voucher`, `String!` on an issuing type and `String` on an accepting one, since B never computes a
+  `internalGraphitronVoucher`, `String!` on an issuing type and `String` on an accepting one, since B never computes a
   voucher for a row it reads by another route (Alf, 2026-11-18). Capture admits an application only at
   its declared location, so the decode moved
   from the field site to the type site, in a class of its own (`GraphitronVoucherEntries`). The entries
@@ -923,7 +926,7 @@ Independent of 8e.3. As built:
   own. It is not an arm of `graphitron_field_minted_candidate`, whose `position` and
   `carrier_coordinate` are the connection's and whose rows stand down to an authored field. Minted
   fields already get occurrences, so the voucher field needed nothing new to have one.
-* *Collision* (Alf, 2026-11-18, in `defects-as-facts.adoc`). An authored `_voucher` on a marked type is
+* *Collision* (Alf, 2026-11-18, in `defects-as-facts.adoc`). An authored `internalGraphitronVoucher` on a marked type is
   `VOUCHER_FIELD_NAME_TAKEN` at the marker; it keeps the coordinate, is never absorbed, and nothing is
   minted beside it.
 * *The double marker* (Alf, 2026-11-18, in `defects-as-facts.adoc`: never both). A type marked both is
@@ -931,7 +934,7 @@ Independent of 8e.3. As built:
   so the refused schema still assembles for capture to report it (see *Open questions*). Both shapes leave the type a
   field, so the refused schema still assembles and its defects are reported. They replace
   `VOUCHER_FIELD_REPEATED`.
-* *Membership.* Every field written on the issuing type but an authored `_voucher`.
+* *Membership.* Every field written on the issuing type but an authored `internalGraphitronVoucher`.
   `graphitron_voucher_member` lost `issuing_field` and its `CHECK`, and gained a foreign key into
   `graphql_element` on its coordinate, which it is.
 * *The voucher binding.* The `VOUCHER` kind stays; its claim arm reads the mint, its source position the
@@ -953,7 +956,7 @@ Independent of 8e.3. As built:
   `pipeline-overview.adoc`'s account of the stand-down.
 * *Tests.* The fact documents changed by the rows above; the refusal documents claim the collision on
   both sides and the double marker, and that neither collision mints. The execution tests pass unchanged
-  in substance, the representation now `{_voucher}`.
+  in substance, the representation now `{internalGraphitronVoucher}`.
 
 ## Tests
 
@@ -1041,19 +1044,15 @@ want to see the plan.
 
 * Names: `@issue` and `@accept` name the two acts; both are generic words for directives in an SDL that
   may carry other meanings, so check them against the directive vocabulary before they ship.
-* The minted voucher field's name (slice 8f): `_voucher`, which reads as federation machinery beside
-  `_entities` and `_service` and is unlikely to collide with an authored field, or `voucher`. The field is
-  `@inaccessible`, so no client sees either. The plan says `_voucher`; Alf to confirm before the mint
-  lands.
 * Whether the 2026-11-15 ruling that a name Graphitron would mint is never silently withheld, written for
   types, covers fields too. Slice 8f's collision refusal rests on it if so, and needs a ruling of its own
   if not; for Alf and Filip, and the answer belongs in `defects-as-facts.adoc`.
 * The refused voucher shapes still mint (slice 8f). A type marked both `@issue` and `@accept` is refused
-  (Alf, 2026-11-18) but given the issuing voucher field, and an authored `_voucher` is kept out of the
+  (Alf, 2026-11-18) but given the issuing voucher field, and an authored `internalGraphitronVoucher` is kept out of the
   membership, both so the refused schema still assembles for capture to report it.
   `defects-as-facts.adoc` § The supertype says a refused macro shape is refused before the mint. For Alf
   and Filip: whether capture should instead judge a field-less type itself, which would let both refused
-  shapes mint nothing and drop the member rule's `_voucher` exception.
+  shapes mint nothing and drop the member rule's `internalGraphitronVoucher` exception.
 * The voucher refusals restate the mint rule's predicates (slice 8f): `VOUCHER_FIELD_NAME_TAKEN` and
   `VOUCHER_MARKERS_BOTH` are worked out again from the transcription rather than read as the absence of
   a `graphitron_voucher_field` row, against the ruling that a stage decides once in its relation's rule
@@ -1245,6 +1244,11 @@ want to see the plan.
 * An authored field at the minted name standing the mint down, as a declared connection type does: on A
   it would be absorbed, bringing back the membership exception, and the mint would be silently withheld.
 * A `field:` argument naming the minted field: an override A and B must again agree on, unchecked.
+* `_voucher` as the minted name, which first shipped: it reads as federation machinery beside `_entities`
+  and `_service`, but those come from the federation spec and Apollo GraphOS linting exempts them, while
+  `_voucher` is ours and fails `FIELD_NAMES_SHOULD_BE_CAMEL_CASE` in a consumer's subgraph checks.
+* `voucher` as the minted name: camelCase, but a domain with vouchers of its own would have its field
+  refused as `VOUCHER_FIELD_NAME_TAKEN` on an accepting type.
 
 ## Reviewer findings
 

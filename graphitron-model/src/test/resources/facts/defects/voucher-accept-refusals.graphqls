@@ -7,11 +7,11 @@ type Both @table(name: "film") @issue(scope: "s", ttl: "PT5M", vouchesFor: "film
   filmId: ID @field(name: "film_id")
 }
 
-# A field the author names _voucher is refused at the @accept, never taken for the voucher field.
+# A field the author names internalGraphitronVoucher is refused at the @accept, never taken for the voucher field.
 type Taken @table(name: "language") @key(fields: "languageId") @accept(scope: "s", vouchesFor: "name") {
   languageId: Int @field(name: "language_id")
   name: String
-  _voucher: String
+  internalGraphitronVoucher: String
 }
 
 type NoClaims @table(name: "country") @key(fields: "countryId") @accept(scope: "s", vouchesFor: "") {
@@ -25,7 +25,7 @@ type Repeated @table(name: "category") @key(fields: "categoryId") @accept(scope:
 
 # A name the type does not declare, the minted voucher field, and a nested selection: one row, naming the
 # first by name.
-type NotAField @table(name: "city") @key(fields: "cityId") @accept(scope: "s", vouchesFor: "_voucher nosuch city { x }") {
+type NotAField @table(name: "city") @key(fields: "cityId") @accept(scope: "s", vouchesFor: "internalGraphitronVoucher nosuch city { x }") {
   cityId: Int @field(name: "city_id")
   city: String
 }
@@ -43,11 +43,11 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code,                            type_name, detail
   VOUCHER_VOUCHES_FOR_EMPTY,       NoClaims,  NoClaims
   VOUCHER_VOUCHED_FOR_NOT_A_FIELD, Both,      filmId
-  VOUCHER_VOUCHED_FOR_NOT_A_FIELD, NotAField, _voucher
+  VOUCHER_VOUCHED_FOR_NOT_A_FIELD, NotAField, city
   VOUCHER_VOUCHED_FOR_REPEATED,    Repeated,  name
   VOUCHER_MARKERS_BOTH,            Both,      Both
   VOUCHER_MARKERS_BOTH,            Both,      Both
-  VOUCHER_FIELD_NAME_TAKEN,        Taken,     Taken._voucher
+  VOUCHER_FIELD_NAME_TAKEN,        Taken,     Taken.internalGraphitronVoucher
   """)
 
 # A type marked both is given the issuing voucher field, which absorbs what it declares; a type whose
@@ -61,5 +61,5 @@ extend schema @expectEquals(relation: "graphitron_voucher_field", where: "type_n
 extend schema @assertAbsent(relation: "graphitron_accept_vouched_for", rows: """
   type_name, field_name
   NotAField, city
-  NotAField, _voucher
+  NotAField, internalGraphitronVoucher
   """)

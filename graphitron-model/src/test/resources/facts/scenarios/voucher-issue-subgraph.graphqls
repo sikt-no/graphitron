@@ -46,17 +46,17 @@ extend schema @assertAbsent(relation: "graphitron_element", rows: """
 
 extend schema @assertContains(relation: "graphitron_element", rows: """
   coordinate
-  VgsResultat._voucher
+  VgsResultat.internalGraphitronVoucher
   """)
 
 # The voucher keys the type, as a key this subgraph does not resolve, and is kept from clients.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name,   role,  fields,  resolvable
-  VgsResultat, ISSUE, _voucher, FALSE
+  VgsResultat, ISSUE, internalGraphitronVoucher, FALSE
   """)
 
 # The minted voucher field is non-null here: every row the issuing field reads is signed one.
-extend schema @expectEquals(relation: "graphitron_field", where: "coordinate = 'VgsResultat._voucher'", rows: """
+extend schema @expectEquals(relation: "graphitron_field", where: "coordinate = 'VgsResultat.internalGraphitronVoucher'", rows: """
   type_sdl, non_null
   String!,  TRUE
   """)

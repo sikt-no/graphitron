@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class VoucherIssueExecutionTest {
 
     private static final String CLAIMS = "{\"sub\":\"test-user\"}";
-    private static final String QUERY = "{ languages { films { _voucher } } }";
+    private static final String QUERY = "{ languages { films { internalGraphitronVoucher } } }";
 
     static DSLContext dsl;
     static KeyPair pair;
@@ -80,7 +80,7 @@ class VoucherIssueExecutionTest {
         var languages = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("languages");
         return languages.stream()
             .flatMap(language -> ((List<Map<String, Object>>) language.get("films")).stream())
-            .map(film -> (String) film.get("_voucher"))
+            .map(film -> (String) film.get("internalGraphitronVoucher"))
             .toList();
     }
 
@@ -129,7 +129,7 @@ class VoucherIssueExecutionTest {
     @SuppressWarnings("unchecked")
     void aSingleFieldIntoAnIssuingTypeAnswersItsRowWithAVoucher() {
         var result = graphql.execute(Graphitron.newOwnedExecutionInput(session())
-            .query("{ inventories { inventoryId film { _voucher } } }").build());
+            .query("{ inventories { inventoryId film { internalGraphitronVoucher } } }").build());
         assertThat(result.getErrors()).isEmpty();
         var inventories = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("inventories");
         assertThat(inventories).isNotEmpty();
@@ -137,7 +137,7 @@ class VoucherIssueExecutionTest {
         for (var inventory : inventories) {
             var film = (Map<String, Object>) inventory.get("film");
             assertThat(film).as("inventory %s's film", inventory.get("inventoryId")).isNotNull();
-            assertThat(verify(verifier, (String) film.get("_voucher")).keyId()).isEqualTo("k1");
+            assertThat(verify(verifier, (String) film.get("internalGraphitronVoucher")).keyId()).isEqualTo("k1");
         }
     }
 

@@ -61,7 +61,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: ""
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,              detail
-  COLUMN_UNRESOLVED, Film._voucher
+  COLUMN_UNRESOLVED, Film.internalGraphitronVoucher
   """)
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
@@ -71,8 +71,8 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
 # kept from clients.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name, role,   fields,  resolvable, ordinal
-  Film,      ACCEPT, _voucher, TRUE,       2
-  Store,     ACCEPT, _voucher, TRUE,       2
+  Film,      ACCEPT, internalGraphitronVoucher, TRUE,       2
+  Store,     ACCEPT, internalGraphitronVoucher, TRUE,       2
   Store,     NODE,   id,      TRUE,       1
   """)
 
@@ -81,10 +81,10 @@ extend schema @expectEquals(relation: "graphitron_directive_application", where:
   """, rows: """
   coordinate,    directive_name, ordinal
   Film,          key,            2
-  Film._voucher,  inaccessible,   0
+  Film.internalGraphitronVoucher,  inaccessible,   0
   Store,         key,            1
   Store,         key,            2
-  Store._voucher, inaccessible,   0
+  Store.internalGraphitronVoucher, inaccessible,   0
   """)
 
 extend schema @expectEquals(relation: "graphitron_directive_application_arg", where: """
@@ -98,8 +98,8 @@ extend schema @expectEquals(relation: "graphitron_directive_application_arg", wh
 # to its type's one authored resolvable key, the one it names being left out.
 extend schema @expectEquals(relation: "graphitron_key_field_binding", where: "kind = 'VOUCHER'", rows: """
   type_name, ordinal, position, field_name, kind,    bound
-  Film,      2,       0,        _voucher,    VOUCHER, public.film
-  Store,     2,       0,        _voucher,    VOUCHER, public.store
+  Film,      2,       0,        internalGraphitronVoucher,    VOUCHER, public.film
+  Store,     2,       0,        internalGraphitronVoucher,    VOUCHER, public.store
   """)
 
 extend schema @expectEquals(relation: "graphitron_accept_key", rows: """
