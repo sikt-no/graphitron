@@ -94,7 +94,9 @@ The walk's read path is gone
 │   ├── A leaf a filter compares is stated once
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
-    └── The walk's test service shapes are fact documents or walk-only refusals
+    ├── The walk's test service shapes are fact documents or walk-only refusals
+    ├── A field on a type handed over both as a row and as an object is judged on the object arm
+    └── A child service under an outcome payload reads its keys off the outcome's value
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1160,7 +1162,7 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **The walk's service path is gone** `blocked`, E's, on "The walk's test service shapes are fact documents or walk-only refusals". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service path is gone** `blocked`, E's, on "The walk's test service shapes are fact documents or walk-only refusals", "A field on a type handed over both as a row and as an object is judged on the object arm" and "A child service under an outcome payload reads its keys off the outcome's value". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`. What of `ServiceCatalog` stays has its
   owners: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
@@ -1179,6 +1181,8 @@ static method needs no holder.
     sakila-example's census and every FS-plattform module generating, and these stubs are test-only
     by construction; a shape FS generation turns up that no fact document holds goes into one before
     the flip lands.
+  * **A field on a type handed over both as a row and as an object is judged on the object arm** `open`, blocks "The walk's service path is gone": the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then.
+  * **A child service under an outcome payload reads its keys off the outcome's value** `open`, blocks "The walk's service path is gone": the walk refuses a child `@service` beside an outcome's errors field (a request-time ClassCastException otherwise), and the store neither refuses nor serves it, so the subtract would let it through. The support is written on `claude/r876--e-outcome-child` (`FrameQuery.Row.parentOutcome`, `FrameEmitter.child` unwrapping `Outcome.Success`), and its execution case answers null on the Success arm where the record's title is expected: the key read off the unwrapped value or the batch answer's lookup by it misses. Diagnose from the generated fetcher, then land it with `WrapperArmSiblingPostureValidationTest` flipped to acceptance and one sentence in `how-to/error-channel.adoc`.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
 * **A list field over an accessor returning one record is refused in the store** `open`, off the
