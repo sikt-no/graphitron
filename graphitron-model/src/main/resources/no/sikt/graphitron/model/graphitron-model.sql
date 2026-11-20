@@ -26831,8 +26831,11 @@ UNION ALL
 -- parent holds an object, and nothing it holds, no column of a record and no member returning one,
 -- keys the rows the field reads. Judged only where the store has read the parent's class and its
 -- members, what it holds being unknown otherwise, and a field that class offers a member for reads
--- that member's value instead, even where its type is a table's, so it fetches nothing. Where two
--- members of the class could hand over the key's records, KEY_ROW_AMBIGUOUS, the detail the class.
+-- that member's value instead, even where its type is a table's, so it fetches nothing. Not where
+-- that member hands over records of another table than the field's own, multischema_b's event
+-- under a field typed as multischema_a's: those are no value of the field and key nothing for it.
+-- Where two members of the class could hand over the key's records, KEY_ROW_AMBIGUOUS, the detail
+-- the class.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
        -- Ambiguous as the fill judges it: an occurrence with more than one candidate, a candidate
        -- being one member by its whole slot key.
@@ -26864,7 +26867,17 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
                      JOIN code_read_slot cs
                        ON cs.class_name = rc.class_name AND cs.slot_name = f.bound_name
-                    WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name)
+                    WHERE rc.graph_name = p.graph_name AND rc.type_name = p.type_name
+                      AND NOT EXISTS (SELECT 1 FROM store_graph_source gs
+                                        JOIN sql_table et
+                                          ON et.source_name = gs.source_name
+                                         AND et.record_class_fqn = cs.element_class
+                                        JOIN graphitron_tabletype b
+                                          ON b.graph_name = f.graph_name AND b.type_name = f.named_type
+                                       WHERE gs.graph_name = f.graph_name
+                                         AND NOT (et.source_name = b.table_source_name
+                                                  AND et.table_schema = b.table_schema
+                                                  AND et.table_name = b.table_name)))
 UNION ALL
 -- An outcome in a list, at the field: a producer catching into an outcome hands back one, its
 -- value or its errors, and a list of them would need one catch per element.

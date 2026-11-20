@@ -2,7 +2,10 @@
 # key them: FilmLookupPayload's class has no member returning a film record, so its film field
 # draws the defect. FilmKeySummary's film() returns one, so the same field there takes its keys
 # through it and draws nothing. Holder is handed back as an Object, a class nothing is read off, so
-# its langs, keyed by film records, has none either.
+# its langs, keyed by film records, has none either. SchemaBEventsPayload's class has a member
+# named events, but it returns multischema_b's event records under a field typed as multischema_a's
+# event: another table's records are no value of the field and key nothing, so events draws the
+# defect too.
 #
 # A field read off the parent's object names a member its class offers: a record's component, any
 # other class's get or is getter. FilmKeySummary is a record with no component named missing, and
@@ -14,6 +17,8 @@ type FilmLookupPayload { title: String, film: Film }
 type FilmKeySummary { label: String, film: Film, missing: String }
 type FilmTitleView { filmId: Int, title: String, note: String }
 type Language @table(name: "language") { name: String }
+type Event @table(name: "multischema_a.event") { name: String }
+type SchemaBEventsPayload { events: [Event!] }
 type Holder {
   langs: [Language!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesByFilm"})
@@ -29,12 +34,15 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "titleView"})
   holder(input: String): Holder
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ComputingService", method: "compute"})
+  schemaBEvents: SchemaBEventsPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MultiSchemaEventsPayloadService", method: "schemaBEvents"})
 }
 
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,               coordinate
   NO_KEY_FROM_PARENT, FilmLookupPayload.film
   NO_KEY_FROM_PARENT, Holder.langs
+  NO_KEY_FROM_PARENT, SchemaBEventsPayload.events
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
