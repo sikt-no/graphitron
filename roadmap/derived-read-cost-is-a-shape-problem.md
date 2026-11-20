@@ -94,8 +94,7 @@ The walk's read path is gone
 │   ├── A leaf a filter compares is stated once
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
-    ├── The walk's test service shapes are fact documents or walk-only refusals
-    └── The unchecked-column advisory reads the store, claimed by C
+    └── The walk's test service shapes are fact documents or walk-only refusals
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1110,11 +1109,6 @@ static method needs no holder.
   `BuildQuery`, again in `BuildEmitter`'s conflict label and a third time in `ValidationEmitter`'s
   violation paths; stated per column, two live writers become a defect at the input type and every
   emitter reads the writer it is told.
-* **The unchecked-column advisory reads the store, claimed by C** `open`, blocks "The walk's service path is gone": the advisory reads only the walk's service leaves, which the subtract removes.
-  `validation-column-unchecked` partitions the classified model's column bindings while a service
-  the store emits takes its checks from `BuildQuery`'s column writes; read off the validating
-  producer's occurrence columns anti-joined to `sql_column_record_accessor`, the advisory and the
-  checks state one fact.
 * **A table-bound field read off a member's value is judged** `open`. `FilmBlurbHolder.blurb`,
   whose member hands back a `FilmBlurb` object while the field's type is bound to `film`, is
   refused by the walk ("requires a typed accessor") and passes the store, `NO_KEY_FROM_PARENT`
@@ -1166,7 +1160,7 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **The walk's service path is gone** `blocked`, E's, on "The walk's test service shapes are fact documents or walk-only refusals" and "The unchecked-column advisory reads the store, claimed by C". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service path is gone** `blocked`, E's, on "The walk's test service shapes are fact documents or walk-only refusals". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`. What of `ServiceCatalog` stays has its
   owners: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,

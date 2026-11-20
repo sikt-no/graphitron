@@ -351,9 +351,8 @@ public class GraphQLRewriteGenerator {
                                   boolean federationLink, String outputPackage,
                                   StoreDetections storeFacts,
                                   List<EmittedRegistry.TagNarrowing> narrowings,
-                                  no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
                                   no.sikt.graphitron.emit.ServiceEmission services) {
-        var warnings = withLintFindings(schema, attributed, store, narrowings, recordAccessors);
+        var warnings = withLintFindings(schema, attributed, store, narrowings);
         // The store owns validation, the walk's verdict being retired: on the voucher field Graphitron
         // mints, which the store owns whole, the walk's verdict is not asked, the store's defects being
         // the only refusals that field has. Which fields those are was read where the walk was handed
@@ -546,11 +545,10 @@ public class GraphQLRewriteGenerator {
         // The store's detections feed the verdict, and the plan is produced only for a schema the
         // verdict accepts, before the per-type generators that read its launcher rows.
         var storeFacts = StoreDetections.over(store.dsl(), store.graphName(), ClassifiedRun.present());
-        // The record getters, read once and handed to both of their readers: the lint naming the
-        // record columns a VALIDATION pre-step cannot check, and the pre-step itself.
+        // The record getters the VALIDATION pre-step checks a jOOQ record's columns through.
         var recordAccessors = no.sikt.graphitron.emit.RecordAccessorQuery.read(store);
         var captured = capturedFrom(projection, schema, attributed, bundle, federationLink,
-            outputPackage, storeFacts, schemas.narrowings(), recordAccessors, services);
+            outputPackage, storeFacts, schemas.narrowings(), services);
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {
@@ -856,15 +854,9 @@ public class GraphQLRewriteGenerator {
     private List<BuildWarning> withLintFindings(GraphitronSchema schema,
                                                 AttributedRegistry attributed,
                                                 no.sikt.graphitron.model.read.StoreHandle store,
-                                                List<EmittedRegistry.TagNarrowing> narrowings,
-                                                no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
+                                                List<EmittedRegistry.TagNarrowing> narrowings) {
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
         all.addAll(storeWarnings(store, narrowings));
-        // The jOOQ record columns a VALIDATION pre-step cannot check, from the same partition the
-        // pre-step emits its checks from, so the two agree on every column. It applies excludedTypes
-        // at the field it locates a finding on, as the fan-out producer does.
-        all.addAll(no.sikt.graphitron.rewrite.validation.ValidationColumnWarnings.findings(
-            schema, recordAccessors, no.sikt.graphitron.model.lint.ExcludedTypes.of(ctx.lintConfig())));
         return suppressed(all);
     }
 

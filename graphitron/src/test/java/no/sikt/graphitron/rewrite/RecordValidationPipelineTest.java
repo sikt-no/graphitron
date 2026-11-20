@@ -2,9 +2,9 @@ package no.sikt.graphitron.rewrite;
 
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.derive.EntryDefectVerdict;
 import no.sikt.graphitron.model.lint.LintConfig;
-import no.sikt.graphitron.model.lint.LintRule;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
@@ -22,7 +22,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -31,11 +30,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * A VALIDATION channel over a {@code @service} parameter bound to a jOOQ record: the record is a
  * validation target, the pre-step's {@code ConstraintViolations.Paths} constant is declared for it,
- * and a column the store found no getter for reaches the report as {@code validation-column-unchecked}.
- * That column is renamed_getter_draft.description, whose getter the fixture catalog's codegen renames;
- * the runs that report it read {@code scenarios/validation-renamed-getter}, whose service is a real
- * class on the captured classpath. Structural assertions only; the generated method body is pinned at
- * the execution tier.
+ * and a column the store found no getter for is the stored warning {@code VALIDATION_COLUMN_UNCHECKED},
+ * whose message names it. That column is renamed_getter_draft.description, whose getter the fixture
+ * catalog's codegen renames; {@code defects/validation-column-unchecked} pins the defect and its column
+ * rows, and the run here reads its message. Structural assertions only; the generated method body is
+ * pinned at the execution tier.
  */
 @PipelineTier
 class RecordValidationPipelineTest {
@@ -44,7 +43,7 @@ class RecordValidationPipelineTest {
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     /** saveDrafts over renamed_getter_draft's records, under a VALIDATION channel. */
-    private static final String RENAMED_GETTER_DOCUMENT = "scenarios/validation-renamed-getter";
+    private static final String RENAMED_GETTER_DOCUMENT = "defects/validation-column-unchecked";
 
     private static final String CHANNEL = """
         type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
@@ -97,25 +96,6 @@ class RecordValidationPipelineTest {
         }
         """;
 
-    /**
-     * The document's saveDrafts without its VALIDATION channel: a record whose description column has
-     * no getter of jOOQ's default name, and whose title has one.
-     */
-    private static final String RENAMED_GETTER_WITHOUT_CHANNEL = FILM + """
-        type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
-        union DraftError = DbErr
-        type DraftsCountedPayload { count: Int errors: [DraftError] }
-        input DraftInput {
-            title: String @field(name: "title")
-            description: String @field(name: "description")
-        }
-        type Mutation {
-            saveDrafts(in: [DraftInput!]!): DraftsCountedPayload @service(service: {
-                className: "no.sikt.graphitron.rewrite.test.services.RenamedGetterDraftService",
-                method: "count", argMapping: "drafts: in"})
-        }
-        """;
-
     @Test
     void aRecordParameterUnderAValidationChannelIsAWrittenColumnsTarget() {
         var schema = TestSchemaHelper.buildSchema(CHANNEL + FIELDS);
@@ -147,33 +127,36 @@ class RecordValidationPipelineTest {
 
     @Test
     void everyColumnWithAGetterIsCheckedSoNothingIsReported(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(validateOnly(tmp, CHANNEL + FIELDS, LintConfig.empty()))).isEmpty();
+        assertThat(unchecked(tmp, CHANNEL + FIELDS)).isEmpty();
     }
 
     @Test
-    void aColumnWithNoGetterIsReportedFromAValidateOnlyRun(@TempDir Path tmp) {
-        assertThat(unchecked(renamedGetter(tmp, LintConfig.empty(), GraphQLRewriteGenerator::buildOutput)))
-            .singleElement()
-            .satisfies(w -> assertThat(w.message())
-                .contains("Mutation.saveDrafts", "RenamedGetterDraftRecord", "'description'", "getDescription()"));
+    void aColumnWithNoGetterIsAStoredWarningNamingIt() {
+        FACTS.read(RENAMED_GETTER_DOCUMENT, graph -> {
+            assertThat(unchecked(graph.handle()))
+                .singleElement()
+                .satisfies(row -> assertThat(EntryDefectVerdict.error(row).message())
+                    .contains("Mutation.saveDrafts", "columns with no getter: description"));
+            return null;
+        });
     }
 
+    /**
+     * A generating run over a record with a column it cannot check emits the validating call, the
+     * pre-step checking the columns it has getters for, and keeps the warning: an unchecked column is
+     * no reason to refuse the service.
+     */
     @Test
-    void aColumnWithNoGetterIsReportedFromAGeneratingRun(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(generating(tmp, RENAMED_GETTER_WITH_CHANNEL, LintConfig.empty())))
-            .singleElement()
-            .satisfies(w -> assertThat(w.message()).contains("Mutation.saveDrafts", "'description'"));
-    }
-
-    @Test
-    void withoutTheChannelNoColumnIsReported(@TempDir Path tmp) throws IOException {
-        assertThat(unchecked(validateOnly(tmp, RENAMED_GETTER_WITHOUT_CHANNEL, LintConfig.empty()))).isEmpty();
-    }
-
-    @Test
-    void theRuleIdSuppressesTheFinding(@TempDir Path tmp) {
-        assertThat(unchecked(renamedGetter(tmp, new LintConfig(Set.of("validation-column-unchecked"), List.of()),
-            GraphQLRewriteGenerator::buildOutput))).isEmpty();
+    void aGeneratingRunEmitsTheValidatingCallAndKeepsTheWarning(@TempDir Path tmp) throws IOException {
+        var run = generatingContext(tmp, RENAMED_GETTER_WITH_CHANNEL);
+        CapturedGraphs.read(run, opened -> {
+            var pass = new GraphQLRewriteGenerator(run, opened.handle(), opened.schema()).runPass();
+            assertThat(pass.output().report().errors()).as("nothing refuses the service").isEmpty();
+            assertThat(pass.generation()).as("the round generates").isPresent();
+            assertThat(unchecked(opened.handle())).singleElement()
+                .satisfies(row -> assertThat(row.detail()).isEqualTo("description"));
+            return null;
+        });
     }
 
     // ===== Helpers =====
@@ -187,24 +170,24 @@ class RecordValidationPipelineTest {
             .toList();
     }
 
-    private static List<BuildWarning.LintFinding> unchecked(List<BuildWarning> warnings) {
-        return warnings.stream()
-            .filter(BuildWarning.LintFinding.class::isInstance)
-            .map(BuildWarning.LintFinding.class::cast)
-            .filter(f -> f.rule() == LintRule.VALIDATION_COLUMN_UNCHECKED)
+    /** The stored VALIDATION_COLUMN_UNCHECKED warnings of the graph {@code sdl} captures. */
+    private static List<EntryDefectVerdict.Row> unchecked(Path tmp, String sdl) throws IOException {
+        var run = context(tmp, sdl, LintConfig.empty());
+        return CapturedGraphs.read(run, opened -> unchecked(opened.handle()));
+    }
+
+    private static List<EntryDefectVerdict.Row> unchecked(StoreHandle store) {
+        return EntryDefectVerdict.rows(store.dsl(), store.graphName(), "warning").stream()
+            .filter(row -> row.code().equals("VALIDATION_COLUMN_UNCHECKED"))
             .toList();
     }
 
-    private static List<BuildWarning> validateOnly(Path tmp, String sdl, LintConfig lint) throws IOException {
-        return warnings(tmp, sdl, lint, generator -> generator.buildOutput().warnings());
-    }
-
     /**
-     * The warnings a generating run over {@code sdl} reports, its classpath the service module's root,
-     * which holds the class the graph's {@code @service} names: a capture that read no classpath
-     * resolves no service, so its call could not be emitted.
+     * A run over {@code sdl} whose classpath is the service module's root, which holds the class the
+     * graph's {@code @service} names: a capture that read no classpath resolves no service, so its
+     * call could not be emitted.
      */
-    private static List<BuildWarning> generating(Path tmp, String sdl, LintConfig lint) throws IOException {
+    private static RunContext generatingContext(Path tmp, String sdl) throws IOException {
         Path schema = Files.createTempFile(tmp, "schema", ".graphqls");
         Files.writeString(schema, "interface Node { id: ID! }\n" + sdl);
         Path services;
@@ -214,29 +197,10 @@ class RecordValidationPipelineTest {
         } catch (java.net.URISyntaxException e) {
             throw new IllegalStateException("the service module's classpath entry", e);
         }
-        var run = new RunContext(
+        return new RunContext(
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "RecordValidationPipelineTest", tmp,
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, List.of(services)
-        ).withLintConfig(lint);
-        return CapturedGraphs.read(run, opened ->
-            new GraphQLRewriteGenerator(run, opened.handle(), opened.schema()).runPass().output().warnings());
-    }
-
-    /** The warnings one pass over {@code scenarios/validation-renamed-getter}'s graph reports. */
-    private static List<BuildWarning> renamedGetter(Path tmp, LintConfig lint,
-            java.util.function.Function<GraphQLRewriteGenerator, GraphQLRewriteGenerator.BuildOutput> pass) {
-        var run = new RunContext(List.of(), tmp, "RecordValidationPipelineTest", tmp,
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).withLintConfig(lint);
-        return FACTS.read(RENAMED_GETTER_DOCUMENT, graph ->
-            pass.apply(new GraphQLRewriteGenerator(run, graph.handle(), graph.schema())).warnings());
-    }
-
-    private static List<BuildWarning> warnings(Path tmp, String sdl, LintConfig lint,
-            java.util.function.Function<GraphQLRewriteGenerator, List<BuildWarning>> pass) throws IOException {
-        var run = context(tmp, sdl, lint);
-        return CapturedGraphs.read(run, opened ->
-            pass.apply(new GraphQLRewriteGenerator(run, opened.handle(), opened.schema())));
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, List.of(services));
     }
 
     private static RunContext context(Path tmp, String sdl, LintConfig lint) throws IOException {

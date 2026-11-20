@@ -3,8 +3,10 @@
 # record declares no getDescription, while title keeps getTitle. The call takes the drafts as a list
 # of the table's records, and each input field under the argument binds a column of that table. The
 # catalog's side, the getter each column has and the one description lacks, is
-# scenarios/catalog-record-accessors'. The generator reports the column it cannot check from this
-# graph, a validate-only run and a generating one alike.
+# scenarios/catalog-record-accessors'. The VALIDATION pre-step checks a record's columns through their
+# getters, so description goes unchecked: VALIDATION_COLUMN_UNCHECKED, a warning at saveDrafts naming
+# it. stashDrafts takes the same records under a channel with no VALIDATION handler, validates
+# nothing, and draws nothing.
 
 type Film @table(name: "film") { title: String }
 
@@ -18,6 +20,16 @@ type DraftsCountedPayload {
   errors: [DraftError]
 }
 
+type DraftStored @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+  path: [String!]!
+  message: String!
+}
+union StashError = DraftStored
+type DraftsStashedPayload {
+  count: Int
+  errors: [StashError]
+}
+
 input DraftInput {
   title: String @field(name: "title")
   description: String @field(name: "description")
@@ -27,6 +39,9 @@ type Query { films: [Film!]! }
 
 type Mutation {
   saveDrafts(in: [DraftInput!]!): DraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.RenamedGetterDraftService",
+      method: "count", argMapping: "drafts: in"})
+  stashDrafts(in: [DraftInput!]!): DraftsStashedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.RenamedGetterDraftService",
       method: "count", argMapping: "drafts: in"})
 }
@@ -41,17 +56,20 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
 # Both input fields bind a column of the record's table, the one with no getter included: which
 # columns a record writes is the binding's, and whether each can be checked is the getter's.
 extend schema @expectEquals(relation: "graphitron_occurrence_column",
-    where: "coordinate LIKE 'Mutation.%(%'", rows: """
+    where: "coordinate LIKE 'Mutation.saveDrafts(%'", rows: """
   coordinate,                           table_name,           column_name
   Mutation.saveDrafts(in.description:), renamed_getter_draft, description
   Mutation.saveDrafts(in.title:),       renamed_getter_draft, title
   """)
 
-extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
-    where: "coordinate LIKE 'Mutation.%'")
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "coordinate LIKE 'Mutation.%'", rows: """
+  code,                        coordinate,          detail,      suppressed
+  VALIDATION_COLUMN_UNCHECKED, Mutation.saveDrafts, description, FALSE
+  """)
 
-# The service validates: its outcome's errors field holds an @error with a VALIDATION handler.
-extend schema @expectEquals(relation: "graphitron_occurrence_producer_service", rows: """
-  coordinate,          validates
-  Mutation.saveDrafts, TRUE
+# The column the warning names, and only that one: title reads through getTitle.
+extend schema @expectEquals(relation: "graphitron_entry_defect_column", rows: """
+  code,                        table_name,           column_name
+  VALIDATION_COLUMN_UNCHECKED, renamed_getter_draft, description
   """)

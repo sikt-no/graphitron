@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.RenamedGetter
 import java.util.List;
 
 /**
- * Fixture behind {@code Mutation.saveDrafts} in the {@code scenarios/validation-renamed-getter} fact
+ * Fixture behind {@code Mutation.saveDrafts} in the {@code defects/validation-column-unchecked} fact
  * document: a {@code @service} taking jOOQ {@link RenamedGetterDraftRecord}s under a
  * {@code {handler: VALIDATION}} channel. The fixture codegen renames that record's getter for
  * description to {@code readDescription}, so the validator pre-step finds no getter to check that

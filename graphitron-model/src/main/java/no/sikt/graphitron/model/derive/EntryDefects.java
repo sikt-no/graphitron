@@ -10,6 +10,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_ENTRY_DEFECT_RULE;
@@ -283,6 +284,12 @@ public final class EntryDefects {
             .where(table.GRAPH_NAME.eq(graphName))
             .and(table.TOUCHED_AT.ne(readAt))
             .and(table.STAGE.in(owned))
+            .execute();
+        var column = GRAPHITRON_ENTRY_DEFECT_COLUMN;
+        dsl.deleteFrom(column)
+            .where(column.GRAPH_NAME.eq(graphName))
+            .and(column.TOUCHED_AT.ne(readAt))
+            .and(column.STAGE.in(owned))
             .execute();
         var step = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
         dsl.deleteFrom(step)

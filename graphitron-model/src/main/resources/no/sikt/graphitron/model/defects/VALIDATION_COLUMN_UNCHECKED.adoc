@@ -1,0 +1,5 @@
+Reported at the `@service` field, the message naming each column. A warning: the build continues.
+
+Under a `VALIDATION` handler, a service's jOOQ record arguments are validated before the call, one written column at a time, through the Bean Validation constraints on the property the record's getter for that column exposes. The record declares no public getter of the name jOOQ's default generator strategy gives these columns, so there is no property to check and their constraints are not run.
+
+*Next step.* A generator strategy that renames getters causes this; keep the default getter names for the record, or check those columns yourself in the service. To accept it, list VALIDATION_COLUMN_UNCHECKED under `<lint><disabledRules>`. xref:../how-to/error-channel.adoc[The error channel] describes the `VALIDATION` handler.

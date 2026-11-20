@@ -10265,6 +10265,42 @@ COMMENT ON COLUMN graphitron_entry_defect_table.table_schema IS 'that table''s s
 COMMENT ON COLUMN graphitron_entry_defect_table.table_name IS 'that table''s name';
 COMMENT ON COLUMN graphitron_entry_defect_table.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
+CREATE TABLE graphitron_entry_defect_column (
+  graph_name        VARCHAR   NOT NULL,
+  source_name       VARCHAR   NOT NULL,
+  source_line       INT       NOT NULL,
+  source_column     INT       NOT NULL,
+  code              VARCHAR   NOT NULL,
+  stage             VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  column_name       VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, stage,
+               table_source_name, table_schema, table_name, column_name),
+  -- The defect it details, so a swept defect takes its columns with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code, stage)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code, stage)
+    ON DELETE CASCADE,
+  -- The column, so a column the catalog no longer has is named by nothing.
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_entry_defect_column IS 'One column a defect names: one row per defect and column. For example Mutation.saveDrafts validating renamed_getter_draft records, whose description the record reads through readDescription, draws a VALIDATION_COLUMN_UNCHECKED defect with a row for description.';
+COMMENT ON COLUMN graphitron_entry_defect_column.graph_name IS 'the owning graph''s partition, carried from the defect';
+COMMENT ON COLUMN graphitron_entry_defect_column.source_name IS 'the defect''s file';
+COMMENT ON COLUMN graphitron_entry_defect_column.source_line IS 'the defect''s line, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_column.source_column IS 'the defect''s column, 1-based';
+COMMENT ON COLUMN graphitron_entry_defect_column.code IS 'the defect''s code: VALIDATION_COLUMN_UNCHECKED, a column its validation cannot check';
+COMMENT ON COLUMN graphitron_entry_defect_column.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
+COMMENT ON COLUMN graphitron_entry_defect_column.table_source_name IS 'the catalog source of the column''s table';
+COMMENT ON COLUMN graphitron_entry_defect_column.table_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_entry_defect_column.table_name IS 'that table''s name';
+COMMENT ON COLUMN graphitron_entry_defect_column.column_name IS 'the column the defect names';
+COMMENT ON COLUMN graphitron_entry_defect_column.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
+
 -- The edit distance a "did you mean" ranks candidates by: one Java function, StoreFunctions.levenshtein
 -- in graphitron-store-functions, which Rejection's candidates rank by too, so a stored defect's hint
 -- and a walk refusal's read alike (Alf, 2026-11-19).
@@ -10311,7 +10347,37 @@ SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column, c.c
            WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
              AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
            ORDER BY x.distance, x.column_name OFFSET 4 ROWS FETCH NEXT 1 ROWS ONLY), '')
-  FROM candidate c;
+  FROM candidate c
+UNION ALL
+-- For a VALIDATION_COLUMN_UNCHECKED, the columns its validation cannot check
+-- (graphitron_entry_defect_column), by name, the first five and how many more.
+SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column, c.code,
+       '; columns with no getter: ' || (SELECT x.column_name FROM graphitron_entry_defect_column x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.column_name FETCH NEXT 1 ROWS ONLY)
+       || COALESCE(', ' || (SELECT x.column_name FROM graphitron_entry_defect_column x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.column_name OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY), '')
+       || COALESCE(', ' || (SELECT x.column_name FROM graphitron_entry_defect_column x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.column_name OFFSET 2 ROWS FETCH NEXT 1 ROWS ONLY), '')
+       || COALESCE(', ' || (SELECT x.column_name FROM graphitron_entry_defect_column x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.column_name OFFSET 3 ROWS FETCH NEXT 1 ROWS ONLY), '')
+       || COALESCE(', ' || (SELECT x.column_name FROM graphitron_entry_defect_column x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.column_name OFFSET 4 ROWS FETCH NEXT 1 ROWS ONLY), '')
+       || CASE WHEN EXISTS (SELECT 1 FROM graphitron_entry_defect_column x
+           WHERE x.graph_name = c.graph_name AND x.source_name = c.source_name
+             AND x.source_line = c.source_line AND x.source_column = c.source_column AND x.code = c.code
+           ORDER BY x.column_name OFFSET 5 ROWS FETCH NEXT 1 ROWS ONLY) THEN ' and more' ELSE '' END
+  FROM graphitron_entry_defect_column c
+ WHERE c.code = 'VALIDATION_COLUMN_UNCHECKED';
 COMMENT ON VIEW graphitron_entry_defect_hint IS 'What a defect''s message suggests beside its statement: one row per position and code that has a suggestion. For example Query.filmsBy(bogus:)''s COLUMN_UNRESOLVED suggests the film columns nearest bogus.';
 -- COMMENT ON COLUMN graphitron_entry_defect_hint.graph_name IS 'the owning graph''s partition, carried from the defect';
 -- COMMENT ON COLUMN graphitron_entry_defect_hint.source_name IS 'the defect''s file';
@@ -20930,8 +20996,71 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
   JOIN graphitron_occurrence_built_class bc
     ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.stated_by = 'CONDITION'
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE it.type_kind = 'INPUT_OBJECT';
+ WHERE it.type_kind = 'INPUT_OBJECT'
+UNION ALL
+-- A validating root @service whose call takes a jOOQ record one of whose written columns the record
+-- reads through no public getter, at the field: the VALIDATION pre-step checks a record one written
+-- column at a time through the getter's Bean Validation property, so a column with none goes
+-- unchecked. A warning, once per field, each field being a place the check does not run; the
+-- columns are graphitron_entry_defect_column's, the detail the first.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'VALIDATION_COLUMN_UNCHECKED', MIN(oc.column_name), 'occurrence-builds'
+  FROM graphitron_occurrence_producer_service v
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = v.graph_name AND p.coordinate = v.coordinate AND p.start = 'ROOT'
+  JOIN graphitron_occurrence fo ON fo.graph_name = v.graph_name AND fo.coordinate = v.coordinate
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = fo.graph_name AND el.coordinate = fo.element_coordinate
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = v.graph_name AND cp.coordinate = v.coordinate AND cp.record_table IS NOT NULL
+  JOIN graphitron_occurrence w
+    ON w.graph_name = cp.graph_name AND w.parent_coordinate = cp.landing_coordinate
+  JOIN graphitron_occurrence_column oc
+    ON oc.graph_name = w.graph_name AND oc.coordinate = w.coordinate
+   AND oc.table_source_name = cp.record_source_name AND oc.table_schema = cp.record_schema
+   AND oc.table_name = cp.record_table
+ WHERE v.validates
+   AND NOT EXISTS (SELECT 1 FROM sql_column_record_accessor a
+                    WHERE a.source_name = oc.table_source_name AND a.table_schema = oc.table_schema
+                      AND a.table_name = oc.table_name AND a.column_name = oc.column_name)
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, a class an input object is built into that has no constructor graphitron can call giving one BUILT_CLASS_UNBUILDABLE row at the input object.';
+
+-- The columns a VALIDATION_COLUMN_UNCHECKED names, in the shape graphitron_entry_defect_column
+-- stores: each written column of the validated record that the record reads through no getter.
+CREATE VIEW graphitron_occurrence_build_entry_defect_column_rule
+  (graph_name, source_name, source_line, source_column, code, table_source_name, table_schema,
+   table_name, column_name) AS
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'VALIDATION_COLUMN_UNCHECKED', oc.table_source_name, oc.table_schema, oc.table_name, oc.column_name
+  FROM graphitron_occurrence_producer_service v
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = v.graph_name AND p.coordinate = v.coordinate AND p.start = 'ROOT'
+  JOIN graphitron_occurrence fo ON fo.graph_name = v.graph_name AND fo.coordinate = v.coordinate
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = fo.graph_name AND el.coordinate = fo.element_coordinate
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = v.graph_name AND cp.coordinate = v.coordinate AND cp.record_table IS NOT NULL
+  JOIN graphitron_occurrence w
+    ON w.graph_name = cp.graph_name AND w.parent_coordinate = cp.landing_coordinate
+  JOIN graphitron_occurrence_column oc
+    ON oc.graph_name = w.graph_name AND oc.coordinate = w.coordinate
+   AND oc.table_source_name = cp.record_source_name AND oc.table_schema = cp.record_schema
+   AND oc.table_name = cp.record_table
+ WHERE v.validates
+   AND NOT EXISTS (SELECT 1 FROM sql_column_record_accessor a
+                    WHERE a.source_name = oc.table_source_name AND a.table_schema = oc.table_schema
+                      AND a.table_name = oc.table_name AND a.column_name = oc.column_name);
+COMMENT ON VIEW graphitron_occurrence_build_entry_defect_column_rule IS 'One row the build defect column rule computes, in the shape graphitron_entry_defect_column stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect_column, renamed_getter_draft.description under the VALIDATION_COLUMN_UNCHECKED at Mutation.saveDrafts.';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect_column.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect_column.source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect_column.source_line';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect_column.source_column';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect_column.code';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_entry_defect_column.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_entry_defect_column.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_entry_defect_column.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_column_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_entry_defect_column.column_name';
 
 -- The defects judging the facts occurrence-bindings and occurrence-builds write, by the stage after them:
 -- a child producer's lift and the key it takes, and the column a field reads or writes.
@@ -28683,7 +28812,6 @@ INSERT INTO lint_rule VALUES
   ('graphql-java-version-lag', 'CODEGEN', 'WARNING'),
   ('jooq-version-lag', 'CODEGEN', 'WARNING'),
   ('shared-type-tags-narrowed', 'CODEGEN', 'WARNING'),
-  ('validation-column-unchecked', 'CODEGEN', 'WARNING'),
   ('reference-path-fans-out', 'DERIVED', 'WARNING');
 
 CREATE VIEW lint_violation
@@ -29576,6 +29704,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_node_id_key'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_record_column'),
   ('occurrence-builds', 'graphitron_entry_defect'),
+  ('occurrence-builds', 'graphitron_entry_defect_column'),
   ('occurrence-builds', 'graphitron_entry_defect_member'),
   ('occurrence-producers', 'graphitron_occurrence_binding_member'),
   ('occurrence-producers', 'graphitron_occurrence_built_class'),
@@ -29845,6 +29974,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift', 'graphitron_occurrence_producer_lift_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift_accessor', 'graphitron_occurrence_producer_lift_accessor_rule'),
   ('occurrence-builds', 'graphitron_entry_defect', 'graphitron_occurrence_build_entry_defect_rule'),
+  ('occurrence-builds', 'graphitron_entry_defect_column', 'graphitron_occurrence_build_entry_defect_column_rule'),
   ('occurrence-builds', 'graphitron_entry_defect_member', 'graphitron_occurrence_build_entry_defect_member_rule'),
   ('occurrence-producers', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_member_rule'),
   ('occurrence-producers', 'graphitron_occurrence_built_class', 'graphitron_occurrence_built_class_rule'),
@@ -30465,6 +30595,9 @@ INSERT INTO meta_grain VALUES
   ('entry-defect-table',
    'one table one defect names, in one graph',
    'graph_name, source_name, source_line, source_column, code, stage, table_source_name, table_schema, table_name', 'sdl'),
+  ('entry-defect-column',
+   'one column one defect names, in one graph',
+   'graph_name, source_name, source_line, source_column, code, stage, table_source_name, table_schema, table_name, column_name', 'sdl'),
   ('entry-defect-path-step',
    'one path step one defect is about, in one graph',
    'graph_name, source_name, source_line, source_column, code, stage, step_source_name, step_source_line, step_source_column', 'sdl'),
@@ -30994,6 +31127,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'Two input fields fill one member of one object, and nothing says which value it takes: rename one, or remove one. Node ids decoding into one record member are one record and allowed.'),
   ('NODE_FETCHER_WITHOUT_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_FETCHER_WITHOUT_ID',
    'A query-root field returning Node is a node fetcher, which decodes its argument named id, or ids where it returns a list, and this field has none; name the argument id (ids for a list), or write a @service to run something else.'),
+  ('VALIDATION_COLUMN_UNCHECKED', 'warning', 'GRAPHITRON', 'GRAPHITRON_VALIDATION_COLUMN_UNCHECKED',
+   'A @service under a VALIDATION handler validates a jOOQ record, but the record reads some of the columns it writes through no public getter of the default name, so the constraints on those columns'' properties are not run; a generator strategy that renames getters causes this.'),
   ('REREAD_OF_DELETED_ROWS', 'error', 'GRAPHITRON', 'GRAPHITRON_REREAD_OF_DELETED_ROWS',
    'A field re-reads the rows a delete removed, and they are gone once it runs: a delete hands back the keys of its rows, so return their ids.'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
@@ -32431,6 +32566,14 @@ INSERT INTO meta_relation VALUES
    'One table a defect names: one row per defect and candidate table.',
    'For example @table(name: "note") where multischema_a and multischema_b both declare note draws a TABLE_AMBIGUOUS defect with a row for each.',
    'One defect per ambiguous @table, its candidates a relation beneath it: the author edits one @table, and the tables its spelling could mean are a set. Keyed by the defect and the table, with a foreign key to the defect, so a swept defect takes the rows with it, and one to sql_table, so a table the catalog loses is named by nothing.'),
+  ('graphitron_entry_defect_column', 'entry-defect-column', 'graphitron',
+   'One column a defect names: one row per defect and column.',
+   'For example Mutation.saveDrafts validating renamed_getter_draft records, whose description the record reads through readDescription, draws a VALIDATION_COLUMN_UNCHECKED defect with a row for description.',
+   'One defect per field, its columns a relation beneath it: a field validates a record whose unchecked columns are a set, and the message names each, as the advisory it replaces did. Keyed by the defect and the column, with a foreign key to the defect, so a swept defect takes the rows with it, and one to sql_column, so a column the catalog loses is named by nothing.'),
+  ('graphitron_occurrence_build_entry_defect_column_rule', 'entry-defect-column', 'graphitron',
+   'One row the build defect column rule computes, in the shape graphitron_entry_defect_column stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect_column, renamed_getter_draft.description under the VALIDATION_COLUMN_UNCHECKED at Mutation.saveDrafts.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: it reads what the defect''s own arm reads, so the columns are the defect''s and no others.'),
   ('graphitron_entry_defect_table_rule', 'entry-defect-table', 'graphitron',
    'One table a defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a TABLE_AMBIGUOUS defect whose spelling two schemas answer draws a row for each schema''s table.',
@@ -32442,7 +32585,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_entry_defect_hint', 'graphitron-entry-defect-finding', 'graphitron',
    'What a defect''s message suggests beside its statement: one row per position and code that has a suggestion.',
    'For example Query.filmsBy(bogus:)''s COLUMN_UNRESOLVED suggests the film columns nearest bogus.',
-   'A view the build and the diagnostic view both read, so the two show one text (Alf, 2026-11-19): the candidates are the rows of graphitron_entry_defect_table under the defect, and only their ranking, by GRAPHITRON_LEVENSHTEIN, is computed here, display material nothing joins, groups or filters on.'),
+   'A view the build and the diagnostic view both read, so the two show one text (Alf, 2026-11-19): the candidates are the rows of graphitron_entry_defect_table under the defect, and only their ranking, by GRAPHITRON_LEVENSHTEIN, is computed here, display material nothing joins, groups or filters on; a VALIDATION_COLUMN_UNCHECKED names the rows of graphitron_entry_defect_column under it.'),
   ('graphitron_entry_defect_site', 'graphitron-entry-defect-finding', 'graphitron',
    'One finding an author reads, with the element its position is about: one row per position and code over the stages that raised it, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
