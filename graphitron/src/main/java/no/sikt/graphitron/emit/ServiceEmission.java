@@ -20,23 +20,18 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 
 /**
  * A {@code @service} fetcher emitted from the store, composed of the parts' emitters: the frame
@@ -313,35 +308,18 @@ public final class ServiceEmission {
     }
 
     /**
-     * The services whose outcome claims validation: a member of the errors field's union is an
-     * {@code @error} with a {@code VALIDATION} handler. Such a service validates the arguments its
+     * The services whose outcome claims validation, as {@code graphitron_occurrence_producer_service.validates}
+     * states them: a member of the errors field's union is an {@code @error} with a {@code VALIDATION}
+     * handler. Such a service validates the arguments its
      * call builds before the call, a class whole and a jOOQ record one written column at a time; one
      * that builds none has no pass to run, and its outcome is the frame's like any other.
      */
     private static Set<String> validating(StoreHandle store) {
-        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
-        var o = GRAPHITRON_OCCURRENCE;
-        var po = GRAPHITRON_PRODUCER_OUTCOME;
-        var ef = GRAPHITRON_ERRORS_FIELD;
-        var m = GRAPHQL_POLY_MEMBER;
-        var da = GRAPHQL_DIRECTIVE_APPLICATION;
-        var h = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
-        return store.dsl().selectDistinct(p.COORDINATE)
-            .from(p)
-            .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
-            .join(po).on(po.GRAPH_NAME.eq(o.GRAPH_NAME),
-                po.TYPE_NAME.concat(".").concat(po.FIELD_NAME).eq(o.ELEMENT_COORDINATE))
-            .join(ef).on(ef.GRAPH_NAME.eq(po.GRAPH_NAME), ef.TYPE_NAME.eq(po.OUTCOME_TYPE_NAME),
-                ef.FIELD_NAME.eq(po.ERRORS_FIELD_NAME))
-            .join(m).on(m.GRAPH_NAME.eq(ef.GRAPH_NAME), m.CONTAINER_NAME.eq(ef.CONTAINER_NAME))
-            .join(da).on(da.GRAPH_NAME.eq(m.GRAPH_NAME), da.COORDINATE.eq(m.MEMBER_TYPE_NAME),
-                da.DIRECTIVE_NAME.eq("error"))
-            .join(h).on(h.GRAPH_NAME.eq(da.GRAPH_NAME), h.SOURCE_NAME.eq(da.SOURCE_NAME),
-                h.APPLICATION_LINE.eq(da.SOURCE_LINE), h.APPLICATION_COLUMN.eq(da.SOURCE_COLUMN),
-                h.HANDLER.eq("VALIDATION"))
-            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
-            .fetch(p.COORDINATE)
-            .stream().collect(Collectors.toSet());
+        var v = GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
+        return Set.copyOf(store.dsl().select(v.COORDINATE)
+            .from(v)
+            .where(v.GRAPH_NAME.eq(store.graphName()), v.VALIDATES.isTrue())
+            .fetch(v.COORDINATE));
     }
 
     /**

@@ -49,3 +49,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column",
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
     where: "coordinate LIKE 'Mutation.%'")
+
+# The service validates: its outcome's errors field holds an @error with a VALIDATION handler.
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_service", rows: """
+  coordinate,          validates
+  Mutation.saveDrafts, TRUE
+  """)

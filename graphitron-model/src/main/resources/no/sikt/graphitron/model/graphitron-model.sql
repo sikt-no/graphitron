@@ -15045,11 +15045,26 @@ COMMENT ON COLUMN graphitron_occurrence_call_method.touched_at IS 'the reading t
 
 CREATE VIEW graphitron_occurrence_producer_service_rule
   (graph_name, coordinate, kind, call, call_kind, constructor_source_name, constructor_class_name,
-   constructor_descriptor) AS
--- A SERVICE producer's call, its method in graphitron_occurrence_call_method, and, where it is an
--- instance method, the constructor its object is made with.
+   constructor_descriptor, validates) AS
+-- A SERVICE producer's call, its method in graphitron_occurrence_call_method, where it is an
+-- instance method the constructor its object is made with, and whether its outcome claims
+-- validation: a member of its outcome's errors field is an @error with a VALIDATION handler.
 SELECT p.graph_name, p.coordinate, p.kind, c.call, c.call_kind, h.constructor_source_name,
-       h.constructor_class_name, h.constructor_descriptor
+       h.constructor_class_name, h.constructor_descriptor,
+       EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                 JOIN graphitron_errors_field ef
+                   ON ef.graph_name = po.graph_name AND ef.type_name = po.outcome_type_name
+                  AND ef.field_name = po.errors_field_name
+                 JOIN graphitron_type_member m ON m.graph_name = ef.graph_name AND m.container_name = ef.container_name
+                 JOIN graphql_directive_application da
+                   ON da.graph_name = m.graph_name AND da.coordinate = m.member_type_name
+                  AND da.directive_name = 'error'
+                 JOIN graphitron_ast_error_handler_entry eh
+                   ON eh.graph_name = da.graph_name AND eh.source_name = da.source_name
+                  AND eh.application_line = da.source_line AND eh.application_column = da.source_column
+                  AND eh.handler = 'VALIDATION'
+                WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
+                  AND po.field_name = f.field_name)
   FROM graphitron_occurrence_producer p
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -15067,6 +15082,7 @@ COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the serv
 -- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_source_name IS 'the constructor_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_source_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_class_name IS 'the constructor_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_class_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.constructor_descriptor IS 'the constructor_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.constructor_descriptor';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.validates IS 'the validates of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.validates';
 
 CREATE TABLE graphitron_occurrence_producer_service (
   graph_name              VARCHAR   NOT NULL,
@@ -15077,6 +15093,7 @@ CREATE TABLE graphitron_occurrence_producer_service (
   constructor_source_name VARCHAR,
   constructor_class_name  VARCHAR,
   constructor_descriptor  VARCHAR,
+  validates               BOOLEAN   NOT NULL,
   touched_at              TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name, coordinate, kind)
@@ -15100,6 +15117,7 @@ COMMENT ON COLUMN graphitron_occurrence_producer_service.call_kind IS 'always SE
 COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_source_name IS 'the classpath entry of the constructor making the object an instance method runs on, with the class and the descriptor a code_constructor key; NULL for a static method, and where the class has no buildable constructor';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_class_name IS 'the class that constructor makes';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_descriptor IS 'the constructor''s descriptor';
+COMMENT ON COLUMN graphitron_occurrence_producer_service.validates IS 'whether the service''s outcome claims validation: a member of its outcome''s errors field is an @error with a VALIDATION handler, so the arguments its call builds are validated before the call. Decided once here, so the emitter''s validation pass, the refusal of a validating service where validation is not generated and the advisory on a column it cannot check read one fact';
 COMMENT ON COLUMN graphitron_occurrence_producer_service.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- A service call's parameters and what fills each one: the fills an author wrote, the rule over
@@ -22400,21 +22418,8 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
         OR EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
                     WHERE pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
                       AND pt.recognized_by = 'TABLE'))
-   -- The outcome's errors field has a member that is an @error with a VALIDATION handler.
-   AND EXISTS (SELECT 1 FROM graphitron_producer_outcome po
-                 JOIN graphitron_errors_field ef
-                   ON ef.graph_name = po.graph_name AND ef.type_name = po.outcome_type_name
-                  AND ef.field_name = po.errors_field_name
-                 JOIN graphitron_type_member m ON m.graph_name = ef.graph_name AND m.container_name = ef.container_name
-                 JOIN graphql_directive_application da
-                   ON da.graph_name = m.graph_name AND da.coordinate = m.member_type_name
-                  AND da.directive_name = 'error'
-                 JOIN graphitron_ast_error_handler_entry h
-                   ON h.graph_name = da.graph_name AND h.source_name = da.source_name
-                  AND h.application_line = da.source_line AND h.application_column = da.source_column
-                  AND h.handler = 'VALIDATION'
-                WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
-                  AND po.field_name = f.field_name)
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer_service v
+                WHERE v.graph_name = p.graph_name AND v.coordinate = p.coordinate AND v.validates)
 UNION ALL
 -- A @service of a nesting type reached from more than one place, at the field: the field has one
 -- fetcher, and each place it is reached from is a producer of its own, so it is refused until a
