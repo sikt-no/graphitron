@@ -6,9 +6,13 @@
 # @nodeId, beside the node id alone, whose decoded film_id routes the call; @tenant read by a
 # child @service and by a query field, beside it read by a root @service, which binds it; and a node
 # id of a union over film and film_actor, each holding film_id at its own key position, which names
-# no one tenant.
+# no one tenant, as an argument and inside a bean a call handed a connection takes. A root handed a
+# connection and naming no tenant is refused alone, the payload's films under it running on the key
+# it hands down; and the session handle alone is a connection too, so a call taking only $session
+# and naming no tenant is refused as one handed the jOOQ context is.
 
-extend schema @withConfiguration(tenantColumn: "film_id")
+extend schema @withConfiguration(tenantColumn: "film_id", sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary")
 
 type Film @table(name: "film") @node {
   title: String
@@ -25,6 +29,10 @@ union FilmThing = Film | FilmActor
 type FilmTitles { title: String }
 
 input FilmWhere { filmId: Int! }
+
+input ThingAssignmentInput { occupant: ID! @nodeId(typeName: "FilmThing") }
+input FilmIdRatingInput { filmId: Int!, rating: Int }
+type RateFilmsPayload { ranOn: String, films: [Film!]! }
 
 type Query {
   filmTwice(id: Int! @tenant, org: Int!): Film
@@ -64,6 +72,13 @@ type Query {
   thingAssigned(occupant: ID! @nodeId(typeName: "FilmThing")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
       method: "assignOccupantByArgument"})
+  # The union's id inside a bean, the call handed a connection: either member's id may arrive.
+  thingInBean(in: ThingAssignmentInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantRecordOnConnection"})
+  # The session handle and nothing else, naming no tenant.
+  sessionOnly: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummarySessionService",
+      method: "labelOfHandle", argMapping: "summary: $session"})
   filmsMarked(filmId: Int @tenant @field(name: "film_id")): [Film!]!
   titlesOnConnection(ids: [Int!]!): [FilmTitles!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
@@ -75,6 +90,12 @@ type Query {
       method: "filmIdKeyEquals", argMapping: "$tenant: filmId"}, override: true)
 }
 
+type Mutation {
+  # Handed a connection, naming no tenant: refused at the root alone.
+  rateByFilmId(ratings: [FilmIdRatingInput!]!): RateFilmsPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "rateFilmsByFilmId"})
+}
+
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code LIKE 'TENANT%' OR code = 'UNROUTED_SERVICE_CALL'", rows: """
   code,                         coordinate,                   detail
@@ -82,6 +103,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   UNROUTED_SERVICE_CALL,        Query.filmTwice,
   UNROUTED_SERVICE_CALL,        Query.titlesOnConnection,
   UNROUTED_SERVICE_CALL,        Query.filmMarkedBesideThing,
+  UNROUTED_SERVICE_CALL,        Query.thingInBean,
+  UNROUTED_SERVICE_CALL,        Query.sessionOnly,
+  UNROUTED_SERVICE_CALL,        Mutation.rateByFilmId,
   TENANT_SLOTS_OPTIONAL_ONLY,   Query.filmOptional,
   TENANT_NAMED_TWICE,           Query.filmTwice,              Query.filmTwice(id:)
   TENANT_VALUE_TYPE_DISAGREES,  Query.filmMistyped,           java.lang.String where the tenant column is java.lang.Integer
@@ -116,10 +140,15 @@ extend schema @assertContains(relation: "graphitron_occurrence_binding_tenant", 
 # the call beside it is refused where filmMarked alone is routed; the call needing no tenant draws no
 # defect.
 extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot",
-    where: "coordinate LIKE '%(thing:)' OR coordinate LIKE '%(occupant:)'", rows: """
+    where: "coordinate LIKE '%(thing:)' OR coordinate LIKE '%occupant:)'", rows: """
   call_coordinate,             kind,        coordinate,                          key_position
+  Query.thingInBean,           NODE_ID_KEY, Query.thingInBean(in.occupant:),     0
+  Query.thingInBean,           NODE_ID_KEY, Query.thingInBean(in.occupant:),     1
   Query.filmMarkedBesideThing, NODE_ID_KEY, Query.filmMarkedBesideThing(thing:), 0
   Query.filmMarkedBesideThing, NODE_ID_KEY, Query.filmMarkedBesideThing(thing:), 1
   Query.thingAssigned,         NODE_ID_KEY, Query.thingAssigned(occupant:),      0
   Query.thingAssigned,         NODE_ID_KEY, Query.thingAssigned(occupant:),      1
   """)
+
+# The refused root's payload hands its films the key it was handed, so they are not refused again.
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: "code = 'UNROUTED_CHILD' AND coordinate LIKE 'RateFilmsPayload.%'")

@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * both fed as plain {@link ClassName}s; the jOOQ-layout-versus-bean distinction is read off the
  * package shape ({@code …<schema>.tables.records}), not off which collection a class arrived in, so
  * these cases exercise it by passing classes with the two package shapes. The jOOQ shape-contention
- * arm (base stem drawn from the {@code create*} map, ordinals composed on top) is pinned at the
- * pipeline tier against real carriers.
+ * arm (base stem drawn from the {@code create*} map, ordinals composed on top) is
+ * {@link JooqRecordHelperNamesTest}'s.
  */
 @UnitTier
 class FetchersHelperNamesTest {

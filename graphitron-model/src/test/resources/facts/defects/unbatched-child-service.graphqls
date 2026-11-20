@@ -8,10 +8,13 @@
 # holds as well, a context argument the only thing the method takes: UserGreetingService.greet under
 # Film, which the walk refuses too, as declaring no Sources parameter. Under film_list, a table with no
 # primary key, the missing parameter is the refusal and not the missing key: FilmListing.count takes
-# no keys, so nothing asks to key on the table.
+# no keys, so nothing asks to key on the table. An argument named like the method's key parameter
+# takes it by name, so the keys have nowhere to go there either: Film.shouted's films is an argument.
 
 type Film @table(name: "film") {
   title: String
+  shouted(films: [Int!]): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercaseOfRecords"})
   greeting: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"},
       contextArguments: ["userId"])
@@ -53,6 +56,7 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   SOURCE_PARAMETER_MISSING, CityNames.noKeys
   SOURCE_PARAMETER_MISSING, Film.greeting
   SOURCE_PARAMETER_MISSING, FilmListing.count
+  SOURCE_PARAMETER_MISSING, Film.shouted
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """

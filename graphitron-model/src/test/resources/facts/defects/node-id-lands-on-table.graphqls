@@ -13,7 +13,9 @@
 # references its alternate unique column, not the node's key, so a node id has nothing to land in;
 # reordered_fk_child's composite key lists the parent's key columns in another order, and the id's
 # positions land on the child's columns in the node key's order; studierett's two keys to
-# studieprogram are told apart by the one the path names.
+# studieprogram are told apart by the one the path names. A film_actor id built into a film record
+# reaches film_actor by the one key film_actor declares to film, which carries film_id back and not
+# actor_id, so the id has no whole key to land in.
 
 interface Node { id: ID! }
 
@@ -42,6 +44,11 @@ type Inventory implements Node @table(name: "inventory") @node {
 type Category implements Node @table(name: "category") @node { id: ID! }
 
 type Store implements Node @table(name: "store") @node { id: ID! }
+
+type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+
+"A film_actor id built into a film record, reached only by the key film_actor declares to film."
+input FilmRecordPairInput { title: String @field(name: "title"), pairing: ID @nodeId(typeName: "FilmActor") }
 
 input FilmFilter {
   "Two keys to language."
@@ -118,6 +125,9 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
   countRecordTwins(in: [FilmRecordTwinIdsInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  countRecordPairs(in: [FilmRecordPairInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  filmActors: [FilmActor!]!
   languages: [Language!]!
   actors: [Actor!]!
   describeXlatChild(in: XlatChildRecordInput!): String @service(service: {
@@ -140,6 +150,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Film.wrongLanding,         NODE_ID_LANDS_ON_TABLE, public.language
   FilmFilter.languageId,     NODE_ID_LANDS_ON_TABLE, public.film
   FilmRecordLanguageInput.languageId, NODE_ID_LANDS_ON_TABLE, public.film
+  FilmRecordPairInput.pairing,    NODE_ID_LANDS_ON_TABLE, public.film
   FilmRecordRefsInput.storeId,    NODE_ID_LANDS_ON_TABLE, public.film
   Query.films(languageId:),  NODE_ID_LANDS_ON_TABLE, public.film
   Query.filmsByActor(actorId:), NODE_ID_LANDS_ON_TABLE, public.language

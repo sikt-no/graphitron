@@ -41,6 +41,10 @@ type Film @table(name: "film") {
   sessionLabel: String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummarySessionService",
       method: "labelledFilms", argMapping: "label: $session.label"})
+  "The same batched child taking its label from the request's context rather than the session."
+  contextLabel: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummarySessionService",
+      method: "labelledFilms"}, contextArguments: ["label"])
 }
 
 type FilmBlurbHolder { blurb: FilmBlurbText }
@@ -165,6 +169,9 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Film.sessionLabel,            0,        films,          SOURCE,         ,                              ,
   Film.sessionLabel,            1,        dsl,            DSL_CONTEXT,    ,                              ,
   Film.sessionLabel,            2,        label,          SESSION_MEMBER, ,                              ,            label
+  Film.contextLabel,            0,        films,          SOURCE,         ,                              ,
+  Film.contextLabel,            1,        dsl,            DSL_CONTEXT,    ,                              ,
+  Film.contextLabel,            2,        label,          CONTEXT_KEY,    ,                              label,
   Film.titlesSince,             0,        films,          SOURCE,         ,                              ,
   Film.titlesSince,             1,        since,          ARGUMENT,       Film.titlesSince(on:),         ,
   Film.titlesLabelledSince,     1,        since,          ARGUMENT,       Film.titlesLabelledSince(on:), ,

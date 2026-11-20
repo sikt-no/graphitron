@@ -37,7 +37,7 @@ class GraphitronFacadeGeneratorPipelineTest {
 
     /**
      * The context keys the store states the {@code @service} calls of two shared scenarios read:
-     * occurrence-call-parameter's, where only services read userId, and call-context-key's, where a
+     * occurrence-call-parameter's, where only services read userId and label, and call-context-key's, where a
      * service and a {@code @condition} both read it.
      */
     private static final class ServiceKeys {
@@ -59,7 +59,8 @@ class GraphitronFacadeGeneratorPipelineTest {
     @Test
     void factory_takesAContextKeyOnlyAServiceReads() {
         // The store owns the @service field whole, so no classified field carries its key: the
-        // factory takes userId because the store states the call reads it into a String parameter.
+        // factory takes userId, and label, which a batched child reads, because the store states the
+        // calls read them into String parameters.
         var factory = newExecutionInput("""
             type Query {
                 callGreeting: String @service(service: {
@@ -69,9 +70,9 @@ class GraphitronFacadeGeneratorPipelineTest {
             """, ServiceKeys.SERVICE_ONLY);
 
         assertThat(factory.parameters()).extracting(p -> p.name())
-            .containsExactly("defaultDsl", "userId");
+            .containsExactly("defaultDsl", "label", "userId");
         assertThat(factory.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("org.jooq.DSLContext", "java.lang.String");
+            .containsExactly("org.jooq.DSLContext", "java.lang.String", "java.lang.String");
     }
 
     @Test

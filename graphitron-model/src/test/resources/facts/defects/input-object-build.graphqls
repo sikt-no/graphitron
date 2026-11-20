@@ -71,6 +71,8 @@ input FilmBundleCapacityTwiceInput { name: String, capacity: Int, limits: FilmBu
 input FilmBundleQuotaInput { capacity: Int }
 input FilmBundleTwoGroupsInput { name: String, limits: FilmBundleLimitsInput, quota: FilmBundleQuotaInput }
 input FilmBundleRenamedGroupInput { name: String, limits: FilmBundleLimitsInput @field(name: "noSuchMember") }
+input FilmBundleLimitsStrayInput { capacity: Int, stray: String }
+input FilmBundleStrayGroupInput { name: String, films: [FilmDraftInput!], limits: FilmBundleLimitsStrayInput }
 input FilmRecordTwiceInput { title: String @field(name: "title"), name: String @field(name: "title") }
 input FilmRecordAkaInput { aka: String @field(name: "title") }
 input FilmRecordNestedTwiceInput { title: String @field(name: "title"), details: FilmRecordAkaInput }
@@ -141,6 +143,10 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService", method: "count", argMapping: "bundle: in"})
   # limits and quota both group their capacity onto FilmBundleDraft's.
   countBundleTwoGroups(in: FilmBundleTwoGroupsInput!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService", method: "count", argMapping: "bundle: in"})
+  # limits groups its capacity onto FilmBundleDraft's, and its stray fills nothing: refused at the
+  # leaf, the group itself being partly bound.
+  countBundleStrayGroup(in: FilmBundleStrayGroupInput!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService", method: "count", argMapping: "bundle: in"})
   # limits, renamed onto noSuchMember, fills nothing of FilmBundleDraft.
   countBundleRenamedGroup(in: FilmBundleRenamedGroupInput!): FilmDraftsCountedPayload @service(service: {
@@ -213,6 +219,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   FilmBundleLimitsInput.capacity,      MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
   FilmBundleQuotaInput.capacity,       MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmBundleDraft#capacity
   FilmBundleRenamedGroupInput.limits,  MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmBundleDraft
+  FilmBundleLimitsStrayInput.stray,    MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmBundleDraft
   FilmRecordTwiceInput.title,          MEMBER_FILLED_TWICE,        title
   FilmRecordNestedTwiceInput.title,    MEMBER_FILLED_TWICE,        title
   FilmRecordAliasTwiceInput.title,     MEMBER_FILLED_TWICE,        title

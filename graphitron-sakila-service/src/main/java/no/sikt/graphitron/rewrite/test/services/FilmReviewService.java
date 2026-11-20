@@ -211,6 +211,41 @@ public final class FilmReviewService {
     }
 
     /**
+     * {@link #assignOccupantRecord} handed the jOOQ context too, so it runs on a connection and needs
+     * a tenant to choose one.
+     */
+    public static String assignOccupantRecordOnConnection(OccupantRecordAssignment in, org.jooq.DSLContext dsl) {
+        return assignOccupantRecord(in);
+    }
+
+    /** {@link #assignOccupantRecord} with the member typed {@code TableRecord<?>}. */
+    public static String assignOccupantTableRecord(OccupantTableRecordAssignment in) {
+        if (in == null || in.occupant() == null) {
+            return "none";
+        }
+        return "occupant:" + describeOccupant(in.occupant());
+    }
+
+    /** {@link #assignOccupantRecord} with the member typed bare {@code Record}. */
+    public static String assignOccupantPlainRecord(OccupantPlainRecordAssignment in) {
+        if (in == null || in.occupant() == null) {
+            return "none";
+        }
+        return "occupant:" + describeOccupant(in.occupant());
+    }
+
+    /**
+     * {@link #assignOccupantByArgument} with the parameter typed {@code TableRecord<?>}, which a
+     * record of a table without a primary key is too.
+     */
+    public static String assignOccupantByTableRecord(org.jooq.TableRecord<?> occupant) {
+        if (occupant == null) {
+            return "none";
+        }
+        return "occupant:" + describeOccupant(occupant);
+    }
+
+    /**
      * The mapped list twin of {@link #assignOccupantByArgument}: an argMapping entry hands the
      * argument's decoded records to a parameter named for neither, each element decoded on its own
      * prefix.

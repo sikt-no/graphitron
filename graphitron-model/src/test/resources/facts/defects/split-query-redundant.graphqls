@@ -2,8 +2,8 @@
 # admitted with a warning (Alf, 2026-11-19). FilmDetails is the class FilmCarrierService.filmById
 # returns, and its language, a table-bound type reached by a path, draws SPLIT_QUERY_REDUNDANT at its
 # @splitQuery. So does a payload's data field, which re-reads its producer's records by their keys
-# whatever wrote them: AddFilmPayload.film under an INSERT, and RentFilmsPayload.rentals under a
-# routine. The same directive on Film, whose rows graphitron reads, splits a query and draws nothing,
+# whatever wrote them: AddFilmPayload.film under an INSERT, RentFilmsPayload.rentals under a
+# routine, and FilmLookupOutcome.film under a @service whose payload carries errors beside it. The same directive on Film, whose rows graphitron reads, splits a query and draws nothing,
 # and neither does FilmDetails's languageInline, written without it.
 
 type Language @table(name: "language") { name: String }
@@ -24,12 +24,18 @@ type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
 type RentFilmsPayload { rentals: [Rental!] @splitQuery }
 
+type FilmLookupOutcome { film: Film @splitQuery, errors: [FilmLookupFailure] }
+type FilmLookupMissing @error(handlers: [{handler: DATABASE}]) { path: [String!]!, message: String! }
+union FilmLookupFailure = FilmLookupMissing
+
 input FilmInput @table(name: "film") { title: String }
 
 type Query {
   film: Film
   details(id: Int!): FilmDetails
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  filmLookupOutcome(id: Int!): FilmLookupOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService", method: "filmById"})
 }
 
 type Mutation {
@@ -44,6 +50,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   coordinate,               suppressed
   AddFilmPayload.film,      FALSE
   FilmDetails.language,     FALSE
+  FilmLookupOutcome.film,   FALSE
   RentFilmsPayload.rentals, FALSE
   """)
 

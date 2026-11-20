@@ -55,6 +55,10 @@ type PlainNode implements Node @table(name: "plain_id") @node {
 
 input PlainFilter { id: ID }
 
+"An input object marked @nodeId: what arrives is a map of its fields, no id to decode."
+input NodeClaimInput { title: String, duration: DurationInput @nodeId(typeName: "Film") }
+input DurationInput { minutes: Int }
+
 type Query {
   "Lands on inventory, which no node declares itself over."
   inventories(filmId: ID @nodeId): [Inventory!]!
@@ -83,6 +87,8 @@ type Query {
   "A bean's InventoryRecord member, over inventory, which no node declares itself over."
   assignInventory(in: InventoryAssignmentInput!): String @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignInventoryRecord"})
+  claim(in: NodeClaimInput): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrRuntime"})
   "An Integer parameter and a field returning no table: nothing to take the node from."
   titleOf(id: ID! @nodeId): String @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrRuntime"})
@@ -105,6 +111,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   CardFilter.id,              NODE_ID_TARGET_AMBIGUOUS,         Query.cardsBy(where.id:)
   InventoryAssignmentInput.inventory, NODE_ID_TARGET_UNRESOLVED, Query.assignInventory(in.inventory:)
   Film.titleId,               NODE_ID_NOT_ID_TYPE,              String
+  NodeClaimInput.duration,    NODE_ID_NOT_ID_TYPE,              DurationInput
   Inventory.filmNode,         NODE_ID_CONTAINING_TYPE_NOT_NODE, Inventory
   Inventory.nowhere,          NODE_ID_TYPE_NAME_NOT_NODE,       Nope
   Inventory.storeId,          NODE_ID_TYPE_NAME_NOT_NODE,       Store

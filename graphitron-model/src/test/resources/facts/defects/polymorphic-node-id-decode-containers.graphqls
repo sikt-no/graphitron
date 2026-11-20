@@ -3,12 +3,14 @@
 # verdicts that refuse the decode. The incumbent per-node-type defect view stays quiet on every
 # such slot, since the container resolves no key shape for it to read.
 
-type Customer @table(name: "customer") @node {
+type Customer implements Occupant @table(name: "customer") @node {
   firstName: String @field(name: "first_name")
   # An output field encodes, and a container has nothing to encode from.
   occupantId: ID @nodeId(typeName: "AddressOccupant")
 }
-type Staff @table(name: "staff") @node { firstName: String @field(name: "first_name") }
+type Staff implements Occupant @table(name: "staff") @node { firstName: String @field(name: "first_name") }
+# An interface over two tables, carrying no @table of its own: a container as a union is.
+interface Occupant { firstName: String }
 # Table-bound and not a node type.
 type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
 # Binds no table.
@@ -49,6 +51,13 @@ input OccupantRecordAssignmentInput {
 input OccupantRecordListAssignmentInput {
   occupants: [ID!] @nodeId(typeName: "AddressOccupant")
 }
+# The same id at a member typed TableRecord<?> or bare Record, record supertypes every member's has too.
+input OccupantTableRecordAssignmentInput {
+  occupant: ID! @nodeId(typeName: "AddressOccupant")
+}
+input OccupantPlainRecordAssignmentInput {
+  occupant: ID! @nodeId(typeName: "AddressOccupant")
+}
 # The same id at a member typed as one member's own record, which the other member's is not.
 input OccupantCustomerAssignmentInput {
   occupant: ID! @nodeId(typeName: "AddressOccupant")
@@ -60,6 +69,10 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantRecord"})
   assignOccupantRecordList(in: OccupantRecordListAssignmentInput!): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantRecordList"})
+  assignOccupantTableRecord(in: OccupantTableRecordAssignmentInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantTableRecord"})
+  assignOccupantPlainRecord(in: OccupantPlainRecordAssignmentInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantPlainRecord"})
   # A bean's member is judged as a parameter is: Staff's record is no CustomerRecord.
   assignOccupantCustomer(in: OccupantCustomerAssignmentInput!): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantCustomer"})
@@ -71,6 +84,12 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
   # One member's record failing the ancestry test refuses the whole slot.
   keyless(occupant: ID @nodeId(typeName: "KeylessOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
+  # The same members at a TableRecord<?> slot, which film_list's record is: no refusal.
+  keylessTable(occupant: ID @nodeId(typeName: "KeylessOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByTableRecord"})
+  # An interface over two tables names its implementations as a union names its members.
+  byInterface(occupant: ID @nodeId(typeName: "Occupant")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
   # A List of the supertype lands each id on an element.
   keys(keys: [ID!] @nodeId(typeName: "AddressOccupant")): String
@@ -154,6 +173,14 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", r
   Query.assignOccupantRecordList(in.occupants:), public.staff,    SUPERTYPE
   Query.assignOccupantCustomer(in.occupant:),    public.customer, OWN_RECORD
   Query.occupant(occupant:),                     public.customer, SUPERTYPE
+  Query.assignOccupantTableRecord(in.occupant:), public.customer, SUPERTYPE
+  Query.assignOccupantTableRecord(in.occupant:), public.staff,    SUPERTYPE
+  Query.assignOccupantPlainRecord(in.occupant:), public.customer, SUPERTYPE
+  Query.assignOccupantPlainRecord(in.occupant:), public.staff,    SUPERTYPE
+  Query.keylessTable(occupant:),                 public.customer, SUPERTYPE
+  Query.keylessTable(occupant:),                 public.film_list, SUPERTYPE
+  Query.byInterface(occupant:),                  public.customer, SUPERTYPE
+  Query.byInterface(occupant:),                  public.staff,    SUPERTYPE
   """)
 
 # Which claims name a container, an interface or union that is no node itself: at an argument and at
@@ -162,6 +189,7 @@ extend schema @assertContains(relation: "graphitron_binding_claim_container", ro
   coordinate
   Query.occupant(occupant:)
   OccupantRecordAssignmentInput.occupant
+  Query.byInterface(occupant:)
   """)
 extend schema @assertAbsent(relation: "graphitron_binding_claim_container", rows: """
   coordinate
@@ -172,11 +200,14 @@ extend schema @assertAbsent(relation: "graphitron_binding_claim_container", rows
 # A container's slot is one, the parameter the argument is named for, and inside a @service's input
 # the member of the bean its input object is built into.
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", where: """
-  coordinate IN ('Query.occupant(occupant:)', 'Query.greet(userId:)')
+  coordinate IN ('Query.occupant(occupant:)', 'Query.greet(userId:)', 'Query.keylessTable(occupant:)')
      OR coordinate LIKE 'Query.assignOccupant%'
   """, rows: """
   coordinate,                                    kind,      slot_shape, landing_class
   Query.assignOccupantCustomer(in.occupant:),    MEMBER,    SINGLE,     no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord
+  Query.assignOccupantPlainRecord(in.occupant:), MEMBER,    SINGLE,     org.jooq.Record
+  Query.assignOccupantTableRecord(in.occupant:), MEMBER,    SINGLE,     org.jooq.TableRecord
+  Query.keylessTable(occupant:),                 PARAMETER, SINGLE,     org.jooq.TableRecord
   Query.assignOccupantRecord(in.occupant:),      MEMBER,    SINGLE,     org.jooq.UpdatableRecord
   Query.assignOccupantRecordList(in.occupants:), MEMBER,    LIST,       org.jooq.UpdatableRecord
   Query.greet(userId:),                          PARAMETER, SINGLE,     java.lang.String

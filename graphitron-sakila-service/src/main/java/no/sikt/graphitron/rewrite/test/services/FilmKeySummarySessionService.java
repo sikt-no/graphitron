@@ -21,6 +21,14 @@ public final class FilmKeySummarySessionService {
         return summary.label();
     }
 
+    /**
+     * {@link #labelOf} taking no jOOQ context: the session handle is all it is handed, so the handle
+     * alone is what binds it to a connection.
+     */
+    public static String labelOfHandle(FilmKeySummary summary) {
+        return summary.label();
+    }
+
     /** Each film paired with the handle's label, read as a member. */
     public static Map<FilmRecord, String> labelledFilms(Set<FilmRecord> films, DSLContext dsl, String label) {
         return films.stream().collect(Collectors.toMap(Function.identity(), film -> label));

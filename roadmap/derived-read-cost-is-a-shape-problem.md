@@ -1198,30 +1198,32 @@ static method needs no holder.
     sakila-example's census and every FS-plattform module generating, and these stubs are test-only
     by construction; a shape FS generation turns up that no fact document holds goes into one before
     the flip lands.
-  * **A field on a type handed over both as a row and as an object is judged on the object arm** `open`, blocks "The walk's service path is gone": the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then.
+  * **A field on a type handed over both as a row and as an object is judged on the object arm** `open`, blocks "The walk's service path is gone": the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then. Its document holds a nesting type also returned by a `String` service too, which the walk refused as disagreeing domain types and the store passes, the `String` result exempting the type from `RESULT_SHAPES_CONFLICT`.
   * **A child service under an outcome payload reads its keys off the outcome's value** `open`, blocks "The walk's service path is gone": the walk refuses a child `@service` beside an outcome's errors field (a request-time ClassCastException otherwise), and the store neither refuses nor serves it, so the subtract would let it through. The support is written on `claude/r876--e-outcome-child` (`FrameQuery.Row.parentOutcome`, `FrameEmitter.child` unwrapping `Outcome.Success`), and its execution case answers null on the Success arm where the record's title is expected: the key read off the unwrapped value or the batch answer's lookup by it misses. Diagnose from the generated fetcher, then land it with `WrapperArmSiblingPostureValidationTest` flipped to acceptance and one sentence in `how-to/error-channel.adoc`.
-* **The store's answer is pinned for the shapes the walk's service tests held** `open`, off the
-  critical path. The walk's service tests, deleted with the walk's service judgments, held shapes
-  whose store verdict no fact document claims; each becomes a document row, or a gap with its own
-  node where the store says nothing:
-  - node id slots: a member typed `TableRecord<?>` or bare `Record`, an interface container with no
-    `@table`, a keyless union admitting a table record slot (the slot rows);
-  - a nested input `@nodeId` onto a table reached only by the reverse foreign key
-    (`NODE_ID_LANDS_ON_TABLE` or `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`), and `@nodeId` on an
-    input-object-typed field (`NODE_ID_NOT_ID_TYPE`, pinned only at an output field);
-  - tenant: a multi-table `@nodeId` union in a bean, payload children under a root service naming no
-    tenant (`INHERIT`), stub nodes at a service, `$session` at a root naming no tenant
-    (`UNROUTED_SERVICE_CALL` from a session fill), the batched child's session guard, and
-    `contextArguments` on a batched child;
-  - service shape: two `DSLContext` parameters, a payload with both a DML and a service producer, a
-    nesting type also returned by a `String` service, and `@splitQuery` on a service payload's data
-    field (`SPLIT_QUERY_REDUNDANT`);
-  - paths and keys: a `@service` beside `@reference(path: [{key:}])`, a child argument named like the
-    key parameter (`SOURCE_PARAMETER_MISSING`), and the key projection selecting no other column;
-  - input: a partly bound group with a stray leaf (`MEMBER_UNKNOWN`).
-  The jOOQ record helpers' naming, the shape-contention ordinals and their composition with a
-  cross-schema prefix, lost its one test with the walk's service tests, and `JooqRecordHelperNames`
-  has no test of its own; that is one emitter test, not a fact.
+* **A stub node at a root @service is routed by its key, or refused, as Alf rules** `open`, off the
+  critical path. A stub node type whose key holds the tenant column mints a tenant slot at a root
+  `@service` taking its record, so the call is routed; the walk refused the same shape as the stub
+  being no node type. A stub whose key does not hold it routes nothing, the root running on the empty
+  tenant part and its children inheriting that, where the walk refused the child as having no tenant
+  established. Which verdict stands is Alf's; the chosen one is pinned in `tenant-slots` with its
+  near miss.
+* **A @reference written beside a child @service is judged as Alf rules** `open`, off the critical
+  path. `Film.language: Language @service(...) @reference(path: [{key: "film_language_id_fkey"}])`,
+  the service handing back language records, was accepted by the walk, which walked the key from
+  film. The store refuses it as `NO_ROUTE_TO_TARGET`: a child whose own service hands back its
+  target's records starts where they land, on language, and the written key has no route from there.
+  Whether the path is meaningless beside a service, and so refused under a code saying that, or
+  walked from the parent's table as the walk did, is Alf's. FS main writes neither on one field.
+* **A batched child @service reads the session handle through its guard, pinned by a test** `open`,
+  off the critical path. The store states the batched child's `SESSION_MEMBER` fill
+  (`occurrence-call-parameter`, `Film.sessionLabel`), but the guarded accessor `ArgCallEmitter` emits
+  for it lost its only test with the walk's service tests; the root's guard keeps its tests. One
+  emitter or execution test pins that the child's rows method reads the handle through the guard.
+* **A batched child @service on a table's row projects the key and nothing else, pinned by a test**
+  `open`, off the critical path. The lift key is stated in the store (`field-key-row`), and the
+  projection `ProjectionCommands` derives from it lost its test with the walk's service tests;
+  `ServiceKeyProjectionTest` covers the nesting case only. A plan-tier case for a direct table-parent
+  child, `Film.titleUppercase`, asserts the projection is exactly `film_id`.
 * **An object type handed back as two classes by two services is judged in the store** `open`, off
   the critical path. `FilmShelf` returned by one service as a bean and by another as a
   `FilmLookupPayload` record, both offering `title`, is one OBJECT result with two result-class rows
