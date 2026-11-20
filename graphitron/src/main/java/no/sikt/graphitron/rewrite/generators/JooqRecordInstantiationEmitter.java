@@ -108,11 +108,12 @@ final class JooqRecordInstantiationEmitter {
     /**
      * Emits one plain {@code @field} {@link CallSiteExtraction.ColumnBinding}, guarded on the wire key
      * being present. An explicit {@code null} is loaded via {@code set(field, null)} so the column is
-     * marked touched and written as {@code NULL} (jOOQ's {@code fromArray} has null-skip
-     * semantics that would leave it unchanged); a present value goes through {@code fromArray} so it
+     * marked touched and written as {@code NULL} (loaded through {@code fromArray}, a null for a
+     * {@code NOT NULL} column would come out untouched); a present value goes through {@code fromArray} so it
      * coerces via the column's {@code DataType}/{@code Converter} (no deprecated {@code DataType.convert}).
-     * The touched flag on a null-set column survives only until a later {@link CallSiteExtraction.RecordKeyDecode}
-     * runs; see the flag-reset note on {@link #emitKeyDecode}.
+     * The touched flag on a null set for a {@code NOT NULL} column survives only until a later
+     * {@code fromArray} load into the same record, a later binding's value or a
+     * {@link CallSiteExtraction.RecordKeyDecode}; see the flag-reset note on {@link #emitKeyDecode}.
      *
      * <p>For a nested binding (path depth &gt; 1) the guard is wrapped in a parent-{@code Map}
      * descent ({@link #openDescent}): an absent / null / non-{@code Map} enclosing group skips the column
@@ -217,10 +218,11 @@ final class JooqRecordInstantiationEmitter {
      * decode throw in its body never runs. A malformed id in a <em>present</em> group still throws (the body
      * runs). At depth 1 no wrapping block is emitted and the output is byte-identical to the non-nested form.
      *
-     * <p>Flag-reset side effect: the decode loads key columns via {@code Record.fromArray}, and jOOQ's
-     * {@code from()} null-skip semantics reset the touched flag of every null-valued column
-     * record-wide. Key decodes are emitted after the column bindings, so a running decode erases any
-     * explicit-null column write made earlier in the helper (a non-null value survives). This is a
+     * <p>Flag-reset side effect: every {@code Record.fromArray} load, this decode's key columns and a
+     * column binding's value alike, ends with jOOQ clearing, record-wide, the touched flag of each
+     * column that is null-valued and whose {@code DataType} is {@code NOT NULL}. Any load that runs
+     * after an explicit null was set for a {@code NOT NULL} column therefore erases that write (a
+     * null on a nullable column survives, and so does a non-null value). This is a
      * defect: {@link no.sikt.graphitron.emit.BuildEmitter#recordHelper} loads every value before any
      * explicit null and does not reproduce it.
      */
@@ -547,8 +549,8 @@ final class JooqRecordInstantiationEmitter {
      * every nesting depth, on the variables and inline-literal paths alike, so a descended
      * {@code Map} distinguishes present-null from omitted exactly as the top-level argument
      * {@code Map} does and the emitted guard is the same three-way at every depth. The narrowing
-     * observed in practice is not here: a key decode emitted after the column bindings can erase
-     * an explicit-null column write via jOOQ's {@code from()} flag reset; see the flag-reset note
+     * observed in practice is not here: a {@code fromArray} load emitted after an explicit null
+     * was set for a {@code NOT NULL} column erases that write; see the flag-reset note
      * on {@link #emitKeyDecode}.
      */
     private static String openDescent(MethodSpec.Builder b, List<String> path) {

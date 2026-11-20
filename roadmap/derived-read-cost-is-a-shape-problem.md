@@ -1181,6 +1181,12 @@ static method needs no holder.
   `ServiceEmission.statedVerdict`'s verdict ladder and `walkSilenced`'s partition decide in Java
   what the store should state; each goes with the subtract or moves into a stored relation as it
   lands.
+  `JooqRecordInstantiationEmitter`, the classified model's helper that builds a service's jOOQ
+  record, goes beside the service leaves, and the subtract removes the defect it still carries (R534):
+  a `fromArray` load emitted after an explicit null was set for a `NOT NULL` column clears that
+  null's touched flag, so the null is neither validated nor written. `BuildEmitter.recordHelper`
+  does not have it and is pinned on it; no consumer's schema reaches the classified helper since
+  the service flip, only the classified model's own tests do.
   * **The walk's test service shapes are fact documents or walk-only refusals** `open`, E's, blocks
     the subtract. About 520 inline `@service` occurrences in about 100 `graphitron` test files run
     only through the walk (`ServiceEmission.none()`: `TestSchemaHelper.buildSchema`, `buildBundle`,

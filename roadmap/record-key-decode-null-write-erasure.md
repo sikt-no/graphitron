@@ -73,7 +73,7 @@ Two execution-tier cases in `GraphQLQueryTest`, beside the cases they complete. 
 
 A pin that cannot fail pins nothing, so before the item moves to In Review the implementer swaps the value loop and the null loop of `BuildEmitter.recordHelper` in a working copy, runs both new cases, and states in the In Review commit message that both went red. The swap is not committed.
 
-No test asserts the order of statements in the generated helper. Behaviour is pinned at the pipeline tier and above (`docs/architecture/principles/development-principles.adoc`), and these two cases are the enforcer of the ordering the helper's javadoc explains.
+No test asserts the order of statements in the generated helper. Behaviour is pinned at the pipeline tier and above (`docs/architecture/principles/development-principles.adoc`). The enforcer of the ordering the helper's javadoc explains is `RecordBuildEmitterTest.anExplicitNullOnANotNullColumnSurvivesAValueLoadedAfterIt`, which runs the emitted helper on a flat input and already sends a plain value after the null; these two cases are the execution-tier demonstration above it, through a grouping and through the validation that follows the write. The swap is run against that test too.
 
 ## Consumer confirmation
 

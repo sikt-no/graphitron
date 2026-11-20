@@ -8755,6 +8755,18 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void customerUpsert_explicitNullNestedLeaf_besideALaterPlainValue_writesNull() {
+        // The null first and a plain value after it in declaration order, with no identity group and
+        // so no decode. customer.first_name is NOT NULL, and the value loaded for last_name does not
+        // clear its touched flag. RecordBuildEmitterTest holds the helper to that on a flat input;
+        // this is the same rule read through a grouping, from the request to the service's record.
+        Map<String, Object> data = execute(
+            "mutation { customerUpsert(in: {details: {firstName: null, lastName: \"X\"}}) }");
+        assertThat(data).extractingByKey("customerUpsert")
+            .isEqualTo("customerId[changed=false,val=null] first[changed=true,val=null] last[changed=true,val=X]");
+    }
+
+    @Test
     void customerUpsert_nullNestedGroup_leavesEveryColumnUnderItUntouched() {
         // A null nullable `details` group is treated identically to absent: every column under it
         // stays changed=false. The present identity group still decodes customer_id.
@@ -9738,6 +9750,28 @@ class GraphQLQueryTest {
         String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
         var rawResult = executeRaw("mutation { countFilmRecordDrafts(in: [{ id: \"" + id
             + "\", title: null }]) { count errors { ... on FilmWriteInvalid { path } } } }");
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
+        payload.containsEntry("count", null);
+        payload.extractingByKey("errors", as(list(Map.class))).singleElement(as(MAP))
+            .containsEntry("path", List.of("countFilmRecordDrafts", "in", "0", "title"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmRecordDrafts_nullForANotNullColumnBesideALaterPlainValue_isWrittenAndChecked() {
+        // The same null beside a plain value sent after it, with no node id: the description loaded
+        // for the nullable column does not clear the touched flag on title, so the @NotBlank mapped
+        // onto title still runs and the draft is refused. The description alone would be admitted.
+        var rawResult = executeRaw("""
+            mutation {
+                countFilmRecordDrafts(in: [{ title: null, description: "ONE" }]) {
+                    count
+                    errors { ... on FilmWriteInvalid { path } }
+                }
+            }
+            """);
         assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
         Map<String, Object> data = rawResult.getData();
         var payload = assertThat(data).extractingByKey("countFilmRecordDrafts", as(MAP));
