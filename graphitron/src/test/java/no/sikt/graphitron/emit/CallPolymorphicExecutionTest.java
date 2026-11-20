@@ -70,14 +70,14 @@ class CallPolymorphicExecutionTest {
         var calls = read.calls();
         var fills = read.fills();
         assertThat(rows).extracting(PolymorphicLiftQuery.Row::coordinate)
-            .containsExactly("Query.search", "Query.searchOne");
+            .containsExactly("Mutation.searchAll", "Mutation.searchAllNullable", "Query.search", "Query.searchOne");
         var liftHost = ClassName.get(PACKAGE, "Lifts");
         var selection = ClassName.get(PACKAGE + ".util", "SelectionOccurrences");
         var liftType = TypeSpec.classBuilder(liftHost).addModifiers(Modifier.PUBLIC);
         var bodyType = TypeSpec.classBuilder("Bodies").addModifiers(Modifier.PUBLIC);
         var units = new HashMap<String, TypeSpec>();
         for (var row : rows) {
-            var name = row.coordinate().replace("Query.", "");
+            var name = row.coordinate().substring(row.coordinate().indexOf('.') + 1);
             var members = new ArrayList<CallEmitter.Polymorphic.Member>();
             for (var participant : row.participants()) {
                 var source = ClassName.get(PACKAGE, participant.typeName() + "Source");

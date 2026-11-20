@@ -29,14 +29,65 @@ type FanTarget @table(name: "fan_target") { targetLabel: String! @field(name: "t
 
 type FanDetail @table(name: "fan_detail") { note: String! @field(name: "note") }
 
+# A second single-table interface, content, told apart by CONTENT_TYPE, whose service hands back
+# content records at a root: one at the query's, and a list at a mutation's.
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+
 type Query {
   fanItemsByService(ids: [Int!]!): [FanItem!]! @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FanItemService", method: "byIds"})
+  "One content record at the query's root, lifted as whichever participant its row's column names."
+  contentSearchOne: Content @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.ContentSearchService", method: "searchOne"})
+}
+
+type Mutation {
+  "A list of content records at a mutation's root, whose elements may be null."
+  contentSearchManyNullable: [Content] @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.ContentSearchService", method: "searchContents"})
+  "A list of content records at a mutation's root, whose elements may not be null."
+  contentSearchMany: [Content!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.ContentSearchService", method: "searchContents"})
 }
 
 # The rows the service hands back may be either participant, told apart by fan_kind.
-extend schema @expectEquals(relation: "graphitron_occurrence_participant", rows: """
+extend schema @expectEquals(relation: "graphitron_occurrence_participant",
+    where: "coordinate = 'Query.fanItemsByService'", rows: """
   coordinate,              participant_type, recognized_by, table_name, base_name, discriminator_column, discriminator_value
   Query.fanItemsByService, FanAlpha,         DISCRIMINATOR, fan_base,   fan_base,  fan_kind,             ALPHA
   Query.fanItemsByService, FanBeta,          DISCRIMINATOR, fan_base,   fan_base,  fan_kind,             BETA
+  """)
+
+# The content services' rows may be either participant of content, told apart by its column; each
+# is a producer at its root whose records are lifted onto content, nothing refused at the fields.
+extend schema @assertContains(relation: "graphitron_occurrence_participant", rows: """
+  coordinate,                         participant_type, recognized_by, table_name
+  Query.contentSearchOne,             FilmContent,      DISCRIMINATOR, content
+  Query.contentSearchOne,             ShortContent,     DISCRIMINATOR, content
+  Mutation.contentSearchManyNullable, FilmContent,      DISCRIMINATOR, content
+  Mutation.contentSearchManyNullable, ShortContent,     DISCRIMINATOR, content
+  Mutation.contentSearchMany,         FilmContent,      DISCRIMINATOR, content
+  Mutation.contentSearchMany,         ShortContent,     DISCRIMINATOR, content
+  """)
+extend schema @assertContains(relation: "graphitron_occurrence_call_method", rows: """
+  coordinate,                         call,     call_kind, method_name
+  Query.contentSearchOne,             producer, SERVICE,   searchOne
+  Mutation.contentSearchManyNullable, producer, SERVICE,   searchContents
+  Mutation.contentSearchMany,         producer, SERVICE,   searchContents
+  """)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate IN ('Query.contentSearchOne', 'Mutation.contentSearchManyNullable', 'Mutation.contentSearchMany')
   """)

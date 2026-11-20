@@ -44,6 +44,27 @@ type Film @table(name: "film") {
 }
 
 type FilmBlurbHolder { blurb: FilmBlurbText }
+
+# A child service's source under a parent no table binds: a payload carrying the FilmRecord a service
+# handed back, a Java record whose film() returns one, and a plain type nested in a city row.
+type FilmCensusPayload {
+  film: Film
+  "The payload's own film record fills the keys."
+  census: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
+}
+type FilmKeySummary {
+  label: String
+  "The film record the record's film() returns fills the keys."
+  keyCensus: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
+}
+type NamedCity @table(name: "city") { names: CityNames }
+type CityNames {
+  "The outer city row's record fills the keys."
+  uppercase: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityUppercase"})
+}
 type FilmBlurbText { description: String }
 
 input FilmIdsInput { ids: [Int!] }
@@ -111,6 +132,11 @@ type Query {
       method: "count"})
   holderOne(filmId: Int!): FilmBlurbHolder @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  censusPayload(id: Int!): FilmCensusPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  summaries: [FilmKeySummary!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
+  namedCities: [NamedCity!]!
 }
 
 extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", rows: """
@@ -143,6 +169,12 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Film.titlesSince,             1,        since,          ARGUMENT,       Film.titlesSince(on:),         ,
   Film.titlesLabelledSince,     1,        since,          ARGUMENT,       Film.titlesLabelledSince(on:), ,
   Film.titlesLabelledSince,     2,        label,          ARGUMENT,       Film.titlesLabelledSince(tag:), ,
+  Query.censusPayload.census,   0,        keys,           SOURCE,         ,                              ,
+  Query.censusPayload.census,   1,        dsl,            DSL_CONTEXT,    ,                              ,
+  Query.summaries.keyCensus,    0,        keys,           SOURCE,         ,                              ,
+  Query.summaries.keyCensus,    1,        dsl,            DSL_CONTEXT,    ,                              ,
+  NamedCity.names.uppercase,    0,        cities,         SOURCE,         ,                              ,
+  NamedCity.names.uppercase,    1,        dsl,            DSL_CONTEXT,    ,                              ,
   """)
 
 # Nothing in this document is unfilled or filled twice.
@@ -151,4 +183,9 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defe
   PARAMETER_UNFILLED
   PARAMETER_AMBIGUOUS
   PARAMETER_FILLED_TWICE
+  """)
+
+# Each of the three child services under a parent no table binds is made, nothing refused at it.
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate IN ('FilmCensusPayload.census', 'FilmKeySummary.keyCensus', 'CityNames.uppercase')
   """)

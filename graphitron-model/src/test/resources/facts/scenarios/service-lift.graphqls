@@ -17,6 +17,7 @@ type Film @table(name: "film") {
 type Language @table(name: "language") { name: String }
 type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
 type FilmsPayload { films: [Film] }
+type FilmPayload { film: Film }
 type FilmListCarrier { title: String }
 
 type FilmBlurbHolder { blurb: FilmBlurb }
@@ -59,6 +60,21 @@ type Query {
       method: "filmsAsIterable"})
 }
 
+type Mutation {
+  "One film record at a mutation's root, lifted onto its row as at the query's."
+  filmById(id: Int!): Film @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById"})
+  "A list of film records at a mutation's root, lifted onto their rows."
+  filmsByIds(ids: [Int!]!): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
+  "The same list handed to a list of payloads, one film record to each payload's film."
+  filmsAsPayloads(ids: [Int!]!): [FilmPayload] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
+}
+
 # What a service hands back names its class by its code_class key where the graph's classpath entries
 # read declare it, so a reader joins the class's members on their key: FilmBlurbHolder, a class the
 # schema names, carries it; so does a jOOQ record class, its catalog an entry the graph declares and
@@ -75,6 +91,8 @@ extend schema @assertContains(relation: "graphitron_occurrence_producer_result",
   Query.filmCount,        SCALAR,                  ,                                                          ,
   Query.filmsAsSet,       RECORD_LIST,   film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   Query.filmsAsIterable,  RECORD_LIST,   film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  Mutation.filmById,      SINGLE_RECORD, film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  Mutation.filmsByIds,    RECORD_LIST,   film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   """)
 
 # A Set or an Iterable of records is served as a List is: the call is made, and nothing is refused at
@@ -92,3 +110,13 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
 # A graph whose connection key has no part states no connection: its child services read on the
 # request's own, as every producer here does.
 extend schema @assertEmpty(relation: "graphitron_occurrence_connection")
+
+extend schema @assertContains(relation: "graphitron_occurrence_call_method", rows: """
+  coordinate,               call,     call_kind, method_name
+  Mutation.filmById,        producer, SERVICE,   filmById
+  Mutation.filmsByIds,      producer, SERVICE,   filmsByIds
+  Mutation.filmsAsPayloads, producer, SERVICE,   filmsByIds
+  """)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate IN ('Mutation.filmById', 'Mutation.filmsByIds', 'Mutation.filmsAsPayloads', 'FilmPayload.film')
+  """)

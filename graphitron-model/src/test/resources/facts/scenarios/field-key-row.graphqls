@@ -76,6 +76,26 @@ type FilmKeySummary {
   languages: [Language!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesByFilm"})
 }
 
+# A node type over film: a service under it takes its keys off the film row as under Film.
+interface Node { id: ID! }
+type FilmNode implements Node @table(name: "film") @node {
+  id: ID!
+  "One language record per film node, lifted onto its row."
+  languageByService: Language @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "languageByService"})
+  "A list of film_actor records per film node, lifted onto their rows."
+  castMembers: [FilmActor!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "castMembersByFilm"})
+}
+
+# A plain type nested in a city row: the service under it takes its keys off that row, as a Row1.
+type NamedCity @table(name: "city") {
+  cityName: String @field(name: "city")
+  names: CityNames
+}
+type CityNames {
+  "A scalar per city, keyed on the outer city row's key."
+  lowercase: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CityService", method: "cityLowercase"})
+}
+
 # A routine's result object, under which rental is re-read by its key matched out of the routine's
 # result by name.
 type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -88,6 +108,8 @@ type OccupantsBatchPayload {
 
 type Query {
   films: [Film!]!
+  filmNodes: [FilmNode!]!
+  namedCities: [NamedCity!]!
   languages: [Language!]!
   customers: [Customer!]!
   filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
@@ -130,6 +152,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", row
   Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
   Film.languageByService,                       COLUMNS,  ONE,   film,      film_pkey
   Film.castMembers,                             COLUMNS,  ONE,   film,      film_pkey
+  FilmNode.languageByService,                   COLUMNS,  ONE,   film,      film_pkey
+  FilmNode.castMembers,                         COLUMNS,  ONE,   film,      film_pkey
+  NamedCity.names.lowercase,                    COLUMNS,  ONE,   city,      city_pkey
   Mutation.rentFilmPayload.rental,              COLUMNS,  ONE,   rental,    rental_pkey
   Film.languageSplit,                           COLUMNS,  ONE,   language,  language_pkey
   Film.actors,                                  COLUMNS,  ONE,   film,      film_pkey
@@ -153,4 +178,14 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift_acces
 # result, and its keys still come off the member of the parent's class: no refusal at the field.
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
   coordinate = 'FilmKeySummary.languages'
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_call_method", rows: """
+  coordinate,                       call,     call_kind, method_name
+  FilmNode.languageByService,       producer, SERVICE,   languageByService
+  FilmNode.castMembers,             producer, SERVICE,   castMembersByFilm
+  NamedCity.names.lowercase,        producer, SERVICE,   cityLowercase
+  """)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate IN ('FilmNode.languageByService', 'FilmNode.castMembers', 'CityNames.lowercase')
   """)
