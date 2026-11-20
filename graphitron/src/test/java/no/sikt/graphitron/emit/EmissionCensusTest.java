@@ -315,10 +315,6 @@ class EmissionCensusTest {
                 "Film.titleTranslations", "Film.titleTranslationsSplit", "FilmActor.noteTranslations"))
             .containsEntry("SCALAR_PATH", List.of("Customer.addressNodeId", "Customer.districtByCondition",
                 "Film.soleActorFirstName"))
-            // Leaves of a nesting type no read is stated for at the occurrence; the node "A nesting
-            // field's leaves state how they're read" owns the line.
-            .containsEntry("UNSTATED", List.of("Film.blurb.description", "PivotNestingHost.texts.en",
-                "PivotNestingHost.texts.nb", "PivotNestingHost.texts.nn", "PivotNestingHost.texts.se"))
-            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "PIVOT", "SCALAR_PATH", "UNSTATED");
+            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "PIVOT", "SCALAR_PATH");
     }
 }

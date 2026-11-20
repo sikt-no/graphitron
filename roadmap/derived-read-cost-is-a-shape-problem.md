@@ -90,7 +90,6 @@ The walk's read path is gone
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
-    ├── A nesting field's leaves state how they're read
     ├── A leaf a filter compares is stated once, claimed by C
     ├── What an occurrence takes is a binding, claimed by C
     └── Every list states its order or is refused
@@ -919,14 +918,6 @@ static method needs no holder.
     own node's decoded through `NodeIdDecodeEmitter` from the projection query's own read, one
     carried back from another table's node read from `graphitron_occurrence_node_id_carried`;
     closes before the flip.
-  * **A nesting field's leaves state how they're read** `open`. The census's `UNSTATED` line: a field
-    of a nesting type the store states no read for at its occurrence, so the unit cannot project it.
-    `Film.blurb.description` reads `film.description` off the film row here and a `FilmBlurb`
-    accessor where `FilmBlurbHolder.blurb` reaches the same type, and the field-keyed reader states
-    neither; `PivotNestingHost.texts`' leaves are the pivot's columns by language. Each occurrence's
-    read is stated where its reach is known, beside "The producer's readers read the occurrence
-    producer, and the field-keyed family goes" for the first and the pivot nodes for the second, and
-    the line closes.
   * **A narrowed inline list is emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by C".
     An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
@@ -1519,6 +1510,8 @@ classified records have no reader left and can go with the walk.
   field, read today off them through the occurrence's field; the readers move, the rule reads the
   occurrence's source rather than the field, and the field-keyed relations go with
   `graphitron_reader` and `graphitron_fetcher`.
+  First slice landed under E: `graphitron_occurrence_reader` states a member's read per occurrence;
+  MEMBER_UNRESOLVED and `ProjectionQuery`'s reads moved onto it.
 * **The forced producers become join-path continuations** `open`. A union or interface child with a
   table-bound participant, a child `@routine` and a connection child produce today because the
   generator builds no inline form for them, and the occurrence producer keeps them so (Alf,

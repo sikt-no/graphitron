@@ -36,9 +36,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -65,7 +65,7 @@ import static org.jooq.impl.DSL.selectOne;
  * declares and, beneath each, the occurrences of the chain it starts. Each occurrence carries the
  * facts the store holds about it and decides nothing: the columns it binds and the tables they are
  * on, the key columns its node id packs, the origin of each path meeting one of its needs, how its
- * field is fetched and read, and the target its field returns.
+ * field is fetched, how it is read where it is reached, and the target its field returns.
  */
 public final class ProjectionQuery {
 
@@ -240,7 +240,7 @@ public final class ProjectionQuery {
         var ft = GRAPHITRON_FIELD_TARGET;
         var fe = GRAPHITRON_FETCHER;
         var pr = GRAPHITRON_PRODUCER;
-        var rd = GRAPHITRON_READER;
+        var rd = GRAPHITRON_OCCURRENCE_READER;
         var target = GRAPHITRON_TABLETYPE.as("target");
         var pv = GRAPHITRON_RESULT_PIVOT;
         var oc = GRAPHITRON_OCCURRENCE_COLUMN;
@@ -284,8 +284,7 @@ public final class ProjectionQuery {
                 fe.FIELD_NAME.eq(f.FIELD_NAME))
             .leftJoin(pr).on(pr.GRAPH_NAME.eq(f.GRAPH_NAME), pr.TYPE_NAME.eq(f.TYPE_NAME),
                 pr.FIELD_NAME.eq(f.FIELD_NAME))
-            .leftJoin(rd).on(rd.GRAPH_NAME.eq(f.GRAPH_NAME), rd.TYPE_NAME.eq(f.TYPE_NAME),
-                rd.FIELD_NAME.eq(f.FIELD_NAME))
+            .leftJoin(rd).on(rd.GRAPH_NAME.eq(o.GRAPH_NAME), rd.COORDINATE.eq(o.COORDINATE))
             .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.eq("FIELD"))
             .forEach(r -> facts.put(r.value1(), new Fact(r.value1(), r.value2(), r.value3(), r.value4(),
                 Boolean.TRUE.equals(r.value5()), r.value6() == null ? 0 : r.value6(),
