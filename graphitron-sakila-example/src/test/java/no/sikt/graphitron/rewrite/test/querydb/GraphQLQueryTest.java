@@ -808,6 +808,21 @@ class GraphQLQueryTest {
             .containsExactly("Academy Dinosaur", "Ace Goldfinger");
     }
 
+    @Test
+    void films_ratingByService_answersEachFilmTheEnumItsColumnHolds() {
+        // A batched child @service whose field is an enum: the method answers a map from each film
+        // record to the jOOQ enum its rating column holds, and the field hands that out as the
+        // GraphQL enum value the column read gives. The seeded films carry both PG and the G
+        // default, so a value answered for the wrong key shows.
+        Map<String, Object> data = execute("{ films { title rating ratingByService } }");
+        var films = assertThat(seededByTitle(data, "films")).hasSize(5);
+        films.allSatisfy(f -> assertThat(f.get("ratingByService"))
+            .as("ratingByService of '%s'", f.get("title"))
+            .isNotNull()
+            .isEqualTo(f.get("rating")));
+        films.extracting(f -> f.get("ratingByService")).contains("G", "PG");
+    }
+
     private static String expectedTitleCase(String s) {
         StringBuilder out = new StringBuilder(s.length());
         boolean nextUpper = true;

@@ -2940,6 +2940,12 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.services.SharedValueTypeService",
         method: "translationsByFilm"
     })
+    # A batched child @service whose field is an enum: the method answers each film record with the
+    # jOOQ enum its rating column holds, which the field hands out as the GraphQL enum's value.
+    ratingByService: MpaaRating @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService",
+        method: "ratingByFilm"
+    })
     # R49 ServiceRecordField Phase A fixture: child @service with a scalar return.
     # FilmService.titleUppercase has the mapped-batch shape
     # Map<Row1<Integer>, String>(Set<Row1<Integer>>, DSLContext); the generator

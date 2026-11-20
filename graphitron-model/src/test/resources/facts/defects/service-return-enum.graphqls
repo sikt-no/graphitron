@@ -1,0 +1,45 @@
+# A @service under a table's row whose field is an enum, answered per key. Accepted: a Map from the
+# parent's film record to the jOOQ enum, one rating per key in the keys' order, and a Map to a list of
+# them where the field is a list; at the root, the enum itself. Refused: many where the field is one
+# enum, one where it is a list, a Map naming no value class, raw or a type variable, which states
+# nothing the batch can hand the field, and a Map keyed by another class than the records handed in,
+# whose answers no key finds.
+
+enum Rating { G PG PG_13 R NC_17 }
+
+type Film @table(name: "film") {
+  title: String
+  rating: Rating @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingByFilm"})
+  ratingInOrder: Rating @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingInOrder"})
+  ratings: [Rating!] @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingsByFilm"})
+  ratingsOnOne: Rating @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingsByFilm"})
+  ratingOverList: [Rating!] @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingByFilm"})
+  ratingRaw: Rating @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingRaw"})
+  ratingGeneric: Rating @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingGeneric"})
+  ratingByFilmId: Rating @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingByFilmId"})
+}
+
+type Query {
+  films: [Film!]!
+  topRating: Rating @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "topRating"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('SERVICE_RETURN_MISMATCH', 'LIST_OVER_ONE_VALUE', 'SERVICE_BATCH_SHAPE_UNSUPPORTED')",
+    rows: """
+  code,                    coordinate
+  SERVICE_RETURN_MISMATCH, Film.ratingsOnOne
+  LIST_OVER_ONE_VALUE,     Film.ratingOverList
+  SERVICE_RETURN_MISMATCH, Film.ratingRaw
+  SERVICE_RETURN_MISMATCH, Film.ratingGeneric
+  SERVICE_RETURN_MISMATCH, Film.ratingByFilmId
+  """)

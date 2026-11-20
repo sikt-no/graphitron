@@ -22910,23 +22910,31 @@ UNION ALL
 -- A @service whose result names no class once its containers are peeled, a type variable, a raw
 -- container, an array, a primitive or void, at a field whose type is bound to a table: the records it
 -- hands back are lifted by their table's key off the class they arrive as, and such a result states
--- none, so nothing says which records a lift would read. An outcome and a connection are not checked
--- here, as below. The detail is the declared result type.
+-- none, so nothing says which records a lift would read. Under an object, too, a Map or a List in the
+-- keys' order naming no value class at a scalar or enum field: the batch hands each key's answer to
+-- the field as the class it states, and it states none. An answer the batch cannot read at all is
+-- SERVICE_BATCH_SHAPE_UNSUPPORTED's. An outcome and a connection are not checked here, as below. The
+-- detail is the declared result type.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'SERVICE_RETURN_MISMATCH', m.result_type, 'occurrence-producers'
   FROM graphitron_occurrence_producer p
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
-  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  LEFT JOIN graphitron_occurrence_producer_result r
+    ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
   JOIN graphitron_occurrence_call_method cm ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate
   JOIN code_method m
     ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
    AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
- WHERE p.kind = 'SERVICE' AND r.shape <> 'CONNECTION' AND m.result_element_class IS NULL
-   AND EXISTS (SELECT 1 FROM graphitron_type_backing b
-                WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
-                  AND b.declared_via = 'BOUND_TABLE')
+ WHERE p.kind = 'SERVICE' AND COALESCE(r.shape, '') <> 'CONNECTION' AND m.result_element_class IS NULL
+   AND (EXISTS (SELECT 1 FROM graphitron_type_backing b
+                 WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
+                   AND b.declared_via = 'BOUND_TABLE')
+        OR p.start = 'CHILD' AND m.result_erased_class IN ('java.util.Map', 'java.util.List', 'org.jooq.Result')
+           AND EXISTS (SELECT 1 FROM graphitron_type t
+                        WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type
+                          AND t.kind IN ('SCALAR', 'ENUM')))
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
                     WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
                       AND po.field_name = f.field_name)
@@ -22985,6 +22993,27 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
         OR f.is_list AND p.start = 'CHILD' AND m.result_erased_class IN ('java.util.List', 'org.jooq.Result')
            AND NOT EXISTS (SELECT 1 FROM code_delivery_container c
                             WHERE c.container_class = m.result_first_argument_class AND c.multiplies))
+UNION ALL
+-- A @service under an object answering a Map keyed by another class than the records or rows its
+-- source parameter collects, at the field: the batch looks each parent's answer up by the key it
+-- handed in, and a key of another class finds none. The detail is the declared result type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_RETURN_MISMATCH', m.result_type, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN code_method m
+    ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
+   AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD' AND m.result_erased_class = 'java.util.Map'
+   AND m.result_first_argument_class <> mp.element_class
 UNION ALL
 -- A @service answering many into one payload whose data field holds one object, at the field: the
 -- payload's object passes through to that field, as its OBJECT data field states, and the field's
@@ -31600,7 +31629,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',
-   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum or its payload''s data field holds one object, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one. Where the field''s payload encodes the records into ids of a node, @nodeId(typeName:) written, answer that node table''s records, one for an id and a list for a list of ids. A result naming no class, a type variable, a raw container or an array, states no records at a field bound to a table: declare the table''s record.'),
+   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum or its payload''s data field holds one object, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one. Where the field''s payload encodes the records into ids of a node, @nodeId(typeName:) written, answer that node table''s records, one for an id and a list for a list of ids. A result naming no class, a type variable, a raw container or an array, states no records at a field bound to a table, nor, under an object, a value for a scalar or enum field: declare the table''s record or the value''s class. Under an object a Map is keyed by the records or rows the source parameter collects, so the answer for each parent is found by the key it was handed.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('UNROUTED_CHILD', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_CHILD',
