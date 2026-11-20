@@ -39,7 +39,12 @@ for this argument: not a valid Customer id`), and the last two stay `null`.
 
 In kreg, `kregNode(id: "ikke-en-id") { __typename id }` returns `{"data": {"kregNode": null}}` and no
 error, on RC46, RC47 and trunk alike. The kreg session reports that Graphitron 9 answered with a
-`DataFetchingException` saying the id is not valid (not re-verified here).
+`DataFetchingException` saying the id is not valid. Graphitron 9's source bears that out, and shows it
+failed the field in both cases this item tells apart: at tag `v9.3.0`, `NodeIdStrategy.getTypeId`
+throws for an id that is not base64 ("contains illegal characters") or decodes to text with no `:`
+("is not a valid id"), and the generated node fetcher throws for a type id naming none of the
+schema's node types (`FetchNodeMethodGenerator`, the `default:` arm of its switch, "Could not resolve
+input ... within type ...").
 
 The cause is not that `kregNode` lacks a `@nodeId` directive. Every root field whose element type is
 the `Node` interface classifies as `QueryField.QueryNodeField` (single) or `QueryField.QueryNodesField`
@@ -90,10 +95,16 @@ formed therefore has two checkable tiers, and a third outcome that is not a judg
 
 The federation caution is met by the third row: an id carrying a type id this subgraph does not
 serve is never an error, however it was minted, so a gateway fanning `node(id:)` out to every
-subgraph gets `null` from the ones that do not own the type. The unverified fact is whether the
-gateway calls non-owning subgraphs at all; that affects how often the third row is hit, not where the
-line falls (see the open questions). The residual ambiguity is unavoidable and accepted: a string that
-is not an id but happens to base64-decode to `x:y` reads as a foreign type `x` and answers `null`.
+subgraph gets `null` from the ones that do not own the type. Whether a gateway calls non-owning
+subgraphs at all is not verified, and nothing here waits on it. For an id graphitron minted it only
+decides how often the third row is hit. For an id of another scheme, one this subgraph cannot peel,
+the first row applies and the answer is the client error: a subgraph cannot tell such an id from
+garbage, so no carve-out could spare it without sparing every undecodable id, which is the 2026-11-04
+ruling undone. Graphitron 9 already answered that row with an error, and the third row too (see "The
+defect"), so on those two rows a gateway that worked in front of a Graphitron 9 subgraph meets no
+error it did not meet before, and stops meeting the one for an unknown type id. The residual ambiguity
+is unavoidable and accepted: a string that is not an id but happens to base64-decode to `x:y` reads as
+a foreign type `x` and answers `null`.
 
 In `nodes(ids:)` the judgement is made per id. A malformed id leaves its own position `null` and puts
 the client error at that position's path (`["nodes", 1]`), and the other ids resolve. Where a schema
@@ -266,7 +277,8 @@ with no node query to add and nothing to remove from the entity dispatch.
 ## Tests
 
 Execution tier, `graphitron-sakila-example`, with `executeRaw` and `assertFieldNullified` for the error
-cases. The behaviour is a runtime answer over a real database, which is what that tier is for; no
+cases; `assertFieldNullified` is private to `GraphQLQueryTest`, so the other test classes named below
+assert the nullified field and the error's path in their own terms. The behaviour is a runtime answer over a real database, which is what that tier is for; no
 generated-body string assertions. The example covers both shapes: `GraphQLQueryTest` runs the schema
 without a tenant column (`nodes(ids: [ID!]!): [Node]`), `TenantDivinedRoutingExecutionTest` the
 multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
@@ -350,11 +362,6 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
 
 ## Open questions for the user
 
-* Does the federation gateway call `node(id:)` on subgraphs that do not own the id's type, and with what
-  id? Not verified. The spec is safe either way (a foreign type id is `null`), but if the gateway sends
-  an id scheme graphitron cannot peel (not `<typeId>:` base64) to every subgraph, those would now be
-  errors; the answer decides whether the undecodable row needs a carve-out. Recommendation: ship as
-  specified and confirm against kreg's gateway before Ready.
 * A node served by id whose only id key is `@key(fields: "id", resolvable: false)`: its type id is in
   the map, so a wrong-shaped key errors, while a valid id still answers `null`, because the entity
   dispatch skips a key alternative that is not resolvable. That `null` is today's behaviour and is
@@ -363,7 +370,9 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
 * Message for the undecodable case: `not a valid node id` with no candidate list, recommended for
   brevity and to avoid enumerating the schema. Say if you want the type list.
 * Release note: consumers that rely on `null` for garbage ids (graphitron 10 so far) change behaviour;
-  recommend noting it in the release notes as a bug fix, not a breaking change.
+  recommend noting it in the release notes as a bug fix, not a breaking change. The note also says
+  what a consumer coming from Graphitron 9 sees: the error it had for an undecodable id, and `null`
+  where 9 failed the field for an unknown type id.
 
 Provenance: found by the kreg Graphitron 10 port session (kreg branch `worktree-kreg-g10` at `0d9997fd39`), replaying recorded Graphitron 9 requests against 10.0.0-RC46, RC47 and a trunk snapshot (`claude/graphitron-rewrite` at `06d71b62b`), 2026-11-03; identical on all three.
 
@@ -403,6 +412,15 @@ over as written.
    lands in the first row and becomes an error, which is the line. Satisfied by the confirmation, or
    by a ruling that the item goes ahead without it, the body and the question then saying one thing,
    including where the check happens if not before Ready.
+
+   *Author's note (session_01FY5UvvNdo22LAot3QmZgG7, 2026-11-20).* Neither the confirmation nor a
+   ruling was obtained; the precondition is withdrawn on a fact instead, for the next reviewer to
+   judge. Graphitron 9's source at tag `v9.3.0` fails the field for an undecodable id and for an
+   unknown type id alike, so the row the question was about is one a gateway in front of a
+   Graphitron 9 subgraph already met as an error, and no carve-out could tell an id of another
+   scheme from garbage. "The defect" now states what 9 did, verified rather than reported; "Where
+   the line falls" states the other-scheme case and why nothing waits on the gateway; the open
+   question is gone, and the release-note question says what a consumer coming from 9 sees.
 
 Not blocking. The other three open questions each carry a recommendation the body already follows,
 so they do not hold the gate. `assertFieldNullified` is private to `GraphQLQueryTest`, so the error
