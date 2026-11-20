@@ -1,5 +1,8 @@
 package no.sikt.graphitron.model.config;
 
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -13,7 +16,9 @@ import java.util.Optional;
  * <p>Both targets may be present, and neither: a configuration that names no target, or both, is
  * recorded as written and reported as a defect at every {@code @outbox} it affects, because a
  * defect has to sit at an SDL position and the configuration has none. The only faults raised
- * while the pom is read are the ones with no meaning even as data: a blank element.
+ * while the pom is read are the ones with no meaning even as data: a blank element, and a
+ * {@code <payload>} that does not parse, which would otherwise write no entries and drop the
+ * payload's keys without a word.
  *
  * @param table      the {@code <table>} element, the outbox table graphitron inserts into
  * @param function   the {@code <function>} element, the database function or procedure it calls
@@ -52,7 +57,8 @@ public record OutboxConfig(Optional<String> table, Optional<String> function,
 
     /**
      * Reconciles the raw {@code <outbox>} strings, or throws {@link IllegalArgumentException}
-     * naming a present-but-blank element. {@code null} means the element was absent.
+     * naming a present-but-blank element or a {@code <payload>} that does not parse. {@code null}
+     * means the element was absent.
      */
     public static OutboxConfig from(String table, String function, Map<String, String> columns,
                                     Map<String, String> parameters, String payload) {
@@ -63,7 +69,21 @@ public record OutboxConfig(Optional<String> table, Optional<String> function,
         }
         return new OutboxConfig(
             present(table, "<table>"), present(function, "<function>"),
-            roles(cols, "<columns>"), roles(params, "<parameters>"), present(payload, "<payload>"));
+            roles(cols, "<columns>"), roles(params, "<parameters>"), mapping(payload));
+    }
+
+    private static Optional<String> mapping(String payload) {
+        var present = present(payload, "<payload>");
+        present.ifPresent(written -> {
+            try {
+                ArgMappingSigil.entries(written);
+            } catch (GraphQLSelectionParseException e) {
+                throw new IllegalArgumentException(
+                    "<outbox>'s <payload> does not parse: " + e.getMessage()
+                        + "; write each entry as key: path, separated by commas", e);
+            }
+        });
+        return present;
     }
 
     private static Optional<String> present(String value, String element) {

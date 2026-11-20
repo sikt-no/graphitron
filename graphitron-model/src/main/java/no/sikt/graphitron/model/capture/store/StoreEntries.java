@@ -446,8 +446,8 @@ public final class StoreEntries {
      * its payload mapping. Row presence is the fact, so a build with no block writes nothing, and
      * nothing is resolved here: the table, the function and the roles are names the derivation
      * resolves against the catalog. The payload's entries are decoded the way the generic argMapping
-     * writer decodes a mapping the SDL carries; a string that does not parse writes no entries and
-     * stays verbatim on the block row.
+     * writer decodes a mapping the SDL carries; a string that does not parse never gets here,
+     * {@link OutboxConfig#from} refusing it while the pom is read.
      */
     private static void outbox(DSLContext dsl, String graph, OutboxConfig outbox,
                                LocalDateTime touchedAt) {
