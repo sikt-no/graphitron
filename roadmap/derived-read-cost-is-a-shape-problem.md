@@ -1348,6 +1348,10 @@ pass and no stratum that clears and recomputes.
       field no hop reaches and `REFERENCE_WITHOUT_TARGET_TABLE` at a path on a payload return, so
       only what a write alone refuses is a code of its own, and `RoutineWriteQuery`'s verdict and
       the walk's routine refusals go as each lands.
+      A records result whose path takes a step joining by no column pair, a `@routine` step or a
+      condition method alone, is admitted neither as a lift nor as a stated deferral: the walk
+      serves it today, and the store states it, as a deferral or emitted, before the routine path
+      reads only the store.
       * **A table-bound return with no written path is a lift** `open`. The store states the
         write's result as records of the return's table re-read by its key in a statement of their
         own, a write's statement joining nothing onward since it holds its locks, and the emitter
@@ -1650,7 +1654,7 @@ generated Java or SQL as text.
   from the store, and `PlanCompileGraph` and `FetcherEdgeRelation` go.
 * **`emit` imports no `render` class** `open`. The shared one-spelling helpers move into `emit`, the
   old renderers import them from there, and the import rule's exception list is empty.
-* **Routine writes read only the store** `blocked`, E's, on "The tenant column and the session hook signature are captured". The write's tenancy is read from the tenant table that node captures, not decided a second
+* **Routine writes read only the store** `blocked`, E's, on "The tenant column and the session hook signature are captured" and "A routine write's refusals are codes a stage writes". The write's tenancy is read from the tenant table that node captures, not decided a second
   way, so `RoutineWriteEmitter` takes nothing from `GraphitronSchema`, and its inherited and
   argument-bound routings, which a rejected tenant-scoped write never reaches, go. The connection rule judges
   a routine write by the table its records land on alone, so a tenant's table crossed on the way, an
