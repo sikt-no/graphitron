@@ -7,14 +7,14 @@ priority: 5
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-25
-last-updated: 2026-11-19
+last-updated: 2026-11-20
 ---
 
 # An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record
 
 ## Goal
 
-A client that sends an explicit `null` for a field bound to a `NOT NULL` column, in an input a `@service` method receives as a jOOQ record, gets that null written and validated whatever else the same input sends. When this item lands, the shape a consumer hit is pinned by execution tests, that consumer's own reproducer is green on a release cut from trunk, and the one path that can still lose the null is named in the roadmap node whose closing removes it.
+A client that sends an explicit `null` for a field bound to a `NOT NULL` column, in an input a `@service` method receives as a jOOQ record, gets that null written and validated whatever else the same input sends. When this item lands, the shape a consumer hit is pinned by execution tests, that consumer's own reproducer is green on a release cut from trunk, and the one helper that still carries the defect, which no consumer's schema reaches any more, is named in the roadmap node that deletes it.
 
 ```graphql
 input FilmRecordDraftInput {
@@ -80,8 +80,8 @@ No test asserts the order of statements in the generated helper. Behaviour is pi
 Once the two cases are on trunk, sis runs `EndreKullMutationIT.endreKull_eksplisittNullINavn_girUgyldigInputUtenAaLagre` against a release cut from trunk at or after that commit, and the outcome is recorded here before In Review. Three outcomes, each with one owner:
 
 * Green. The consumer half of the goal is delivered.
-* The build refuses `endreKull` or its input with a stored defect. The field was not emitted from the store and the build said so; the defect names what to change, and the reproducer is rerun once the field builds.
-* Red, with the build green. Read which helper built `KullRecord` in sis's generated fetcher. The store's helper means the first helper loses the null on a shape the two cases here do not cover, and this item returns to Spec with that shape. The classified helper means a service fell back without a defect, which is a gap in the R876 node above and is reported there; this item does not patch the classified helper in response.
+* The build refuses `endreKull` or its input with a stored defect. The field is not emitted from the store and the build said so; the defect names what to change, and the reproducer is rerun once the field builds. A build that stops on a generator bug naming the service is R876's, and is reported there.
+* Red, with the build green. No service falls back any more, so the store's helper built `KullRecord` and loses the null on a shape the two cases here do not cover. This item returns to Spec with that shape.
 
 ## Roadmap entries
 
@@ -90,7 +90,7 @@ Once the two cases are on trunk, sis runs `EndreKullMutationIT.endreKull_eksplis
 
 ## Other solutions we've considered
 
-* **Port the store helper's order to the classified helper** (every `fromArray` load first, explicit nulls last). It would fix a consumer service that falls back without a defect, at the cost of changing every helper that emitter generates, its overlap-agreement path included, in code about to be deleted. Chosen against by Filip, 2026-11-19, in favour of letting the path close with its owner.
+* **Port the store helper's order to the classified helper** (every `fromArray` load first, explicit nulls last). Chosen against by Filip, 2026-11-19, while a consumer's service could still fall back to that helper, in favour of letting the path close with its owner. R876's service flip has since closed it: the port would now change only what the classified model's own tests exercise, in code about to be deleted.
 * **Load values without `fromArray`**, by per-column `set` with an explicit conversion, so the order stops mattering. `fromArray` is there for the column's own `DataType` and `Converter` coercion; replacing it is a separate design question with a wider surface than this defect.
 * **Validate by what the client sent**, as Graphitron 9 did. It restores the validation error and leaves the write dropped wherever no constraint covers the column, which reproduces the erasure Alf ruled a bug (2026-11-10).
-* **Tell the consumer which services still use the classified helper**, by a build warning or a third generate-time refusal beside `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes`. A warning is new machinery in code about to be deleted. A refusal raised in Java at generate time is what `docs/architecture/explanation/defects-as-facts.adoc` rules out: what the generator cannot emit yet is a stored deferral, and the R876 node already turns each remaining verdict into one.
+* **Tell the consumer which services still use the classified helper**, by a build warning or a generate-time refusal. Considered while a service could still fall back. A refusal raised in Java at generate time is what `docs/architecture/explanation/defects-as-facts.adoc` rules out, what the generator cannot emit yet being a stored deferral, and the service flip has since left no such service to name.

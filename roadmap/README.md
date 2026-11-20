@@ -39,7 +39,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1184` | Graphitron reads the database over a live connection: row-level security as facts, definitions on request | Ready | 2026-11-17 <sub>created 2026-11-13</sub> | [plan](database-policy-gatherer.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
-| `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | Spec | 2026-11-19 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
+| `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | Spec | 2026-11-20 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
 | `R1169` | Connection pagination on a routine-backed child field | Spec | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](routine-child-connection.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
