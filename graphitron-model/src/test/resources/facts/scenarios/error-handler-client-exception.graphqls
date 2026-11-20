@@ -2,7 +2,8 @@
 # generates it: the output it states puts the class under its package, and no classpath holds the
 # class before its first compile, so graphql-java's GraphqlErrorException, its superclass, stands in
 # as a contract. The package is the one the graphitron module generates this graph under.
-# error-handler-source states the side of a run that states no output.
+# error-handler-source states the side of a run that states no output. The contract offers what
+# the superclass inherits from Throwable as well as what it declares, so localizedMessage is read.
 
 extend schema @withConfiguration(
   outputPackage: "no.sikt.graphitron.generated.facts.error_handler_client_exception",
@@ -15,6 +16,7 @@ type ClientMistake @error(handlers: [{handler: GENERIC,
     className: "no.sikt.graphitron.generated.facts.error_handler_client_exception.schema.GraphitronClientException"}]) {
   path: [String!]!
   message: String!
+  localizedMessage: String
 }
 
 type Query { films: [Film!]! }
@@ -23,3 +25,5 @@ extend schema @expectEquals(relation: "graphitron_error_handler_source", rows: "
   kind,     class_name,                     class_source_name
   CONTRACT, graphql.GraphqlErrorException,
   """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: "code = 'ERROR_FIELD_UNREADABLE'")

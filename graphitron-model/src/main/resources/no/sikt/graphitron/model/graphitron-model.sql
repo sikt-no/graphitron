@@ -9378,7 +9378,7 @@ COMMENT ON TABLE code_contract_slot IS 'One accessor graphql-java''s error inter
 COMMENT ON COLUMN code_contract_slot.class_name IS 'graphql.GraphQLError, what a VALIDATION handler hands over, or graphql.GraphqlErrorException, the superclass of the client exception a run emits: graphql-java''s interface as graphitron uses it, stated rather than read because graphql-java sits on no entry a consumer''s build makes nameable';
 COMMENT ON COLUMN code_contract_slot.slot_name IS 'the member an @error type''s field reads, the accessor''s bean property; with the class, the key';
 COMMENT ON COLUMN code_contract_slot.method_name IS 'the accessor graphql-java declares for it';
-COMMENT ON COLUMN code_contract_slot.erased_class IS 'what the accessor returns, erased, as code_read_slot.erased_class spells it; a test reflecting on graphql-java holds every row to the library';
+COMMENT ON COLUMN code_contract_slot.erased_class IS 'what the accessor returns, erased, as code_read_slot.erased_class spells it, or for an array, to which no class erases, as code_read_slot.slot_type does, the component with brackets: java.lang.StackTraceElement[] for getStackTrace. A test reflecting on graphql-java holds every row to the library, and holds the library''s every getter to a row';
 INSERT INTO code_contract_slot VALUES
   ('graphql.GraphQLError', 'message', 'getMessage', 'java.lang.String'),
   ('graphql.GraphQLError', 'locations', 'getLocations', 'java.util.List'),
@@ -9390,7 +9390,10 @@ INSERT INTO code_contract_slot VALUES
   ('graphql.GraphqlErrorException', 'errorType', 'getErrorType', 'graphql.ErrorClassification'),
   ('graphql.GraphqlErrorException', 'path', 'getPath', 'java.util.List'),
   ('graphql.GraphqlErrorException', 'extensions', 'getExtensions', 'java.util.Map'),
-  ('graphql.GraphqlErrorException', 'cause', 'getCause', 'java.lang.Throwable');
+  ('graphql.GraphqlErrorException', 'cause', 'getCause', 'java.lang.Throwable'),
+  ('graphql.GraphqlErrorException', 'localizedMessage', 'getLocalizedMessage', 'java.lang.String'),
+  ('graphql.GraphqlErrorException', 'stackTrace', 'getStackTrace', 'java.lang.StackTraceElement[]'),
+  ('graphql.GraphqlErrorException', 'suppressed', 'getSuppressed', 'java.lang.Throwable[]');
 
 CREATE TABLE graphitron_error_handler_source (
   graph_name        VARCHAR   NOT NULL,
