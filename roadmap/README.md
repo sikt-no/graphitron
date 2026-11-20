@@ -47,10 +47,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
-| `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | Ready | 2026-11-20 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-20 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
+| `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | In Progress | 2026-11-20 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-14 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Review | 2026-11-19 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R1202` | A list of node ids bound by argMapping at a field-level @condition is refused, though the same binding by parameter name builds | Spec | 2026-11-20 | [plan](bare-argmapping-list-nodeid-refused-at-field-condition.md) |
@@ -699,7 +699,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
 - `R1095` [**A computed Node.id is not checked against the node decoder**](computed-node-id-is-unchecked.md) — Backlog, bug
-- `R534` [**An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record**](record-key-decode-null-write-erasure.md) — Ready, architecture
+- `R534` [**An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record**](record-key-decode-null-write-erasure.md) — In Progress, architecture
 - `R1164` [**No comment claims federation raises its own error for an unresolved _entities slot**](federation-resolution-failure-claim-leaves-the-comments.md) — Backlog, cleanup
 - `R1145` [**A Coercing that binds its type parameters through a generic base class is rejected as erased**](coercing-through-generic-base-class.md) — Backlog, bug
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug

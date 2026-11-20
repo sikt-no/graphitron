@@ -1,7 +1,7 @@
 ---
 id: R534
 title: "An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: codegen-correctness
