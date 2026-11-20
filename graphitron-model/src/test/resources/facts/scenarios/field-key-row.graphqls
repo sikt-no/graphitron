@@ -72,6 +72,8 @@ type FilmServicePayload {
 type FilmKeySummary {
   label: String
   keyCensus: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "keyCensus"})
+  "A list of language records per summary: its source is its own result's table, and its keys still come off the member."
+  languages: [Language!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesByFilm"})
 }
 
 # A routine's result object, under which rental is re-read by its key matched out of the routine's
@@ -123,6 +125,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", row
   Query.serviceFilmById.film,                   COLUMNS,  ONE,   film,      film_pkey
   Query.serviceFilmById.census,                 COLUMNS,  ONE,   film,      film_pkey
   Query.filmKeySummaries.keyCensus,             ACCESSOR, ONE,   film,      film_pkey
+  Query.filmKeySummaries.languages,             ACCESSOR, ONE,   film,      film_pkey
   Query.occupantsBatch.occupants,               ACCESSOR, MANY,  address,   address_pkey
   Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
   Film.languageByService,                       COLUMNS,  ONE,   film,      film_pkey
@@ -142,5 +145,12 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift_acces
   Query.recentlyCreatedFilmsBatched.films, no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,                films
   Query.nestedRecentlyCreatedFilms.films,  no.sikt.graphitron.rewrite.test.services.NestedFilmsPayloadHolder$Payload,  films
   Query.filmKeySummaries.keyCensus,        no.sikt.graphitron.rewrite.test.services.FilmKeySummary,                    film
+  Query.filmKeySummaries.languages,        no.sikt.graphitron.rewrite.test.services.FilmKeySummary,                    film
   Query.occupantsBatch.occupants,          no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload,             addresses
+  """)
+
+# A service handing back a table's records under a parent holding an object reads off its own
+# result, and its keys still come off the member of the parent's class: no refusal at the field.
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate = 'FilmKeySummary.languages'
   """)

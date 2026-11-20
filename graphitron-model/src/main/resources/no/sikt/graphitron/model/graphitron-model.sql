@@ -17306,64 +17306,6 @@ COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor.touched_at IS 'th
 
 -- The members a child producer under an object could take its keys through, written per depth
 -- after its sources, since a member is one of the class the producer's source object names.
-CREATE VIEW graphitron_occurrence_producer_lift_candidate_rule
-  (graph_name, coordinate, slot_source_name, slot_class_name, slot_method_name, slot_descriptor,
-   found_by) AS
--- By name: the member the field's bound name names, returning records of the field's table, or of
--- any table where the field returns a union or an interface.
-SELECT p.graph_name, p.coordinate, s.source_name, s.class_name, s.method_name, s.descriptor, 'NAME'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_occurrence_source_object so
-    ON so.graph_name = p.graph_name AND so.coordinate = p.coordinate
-  JOIN code_read_slot s
-    ON s.source_name = so.class_source_ref AND s.class_name = so.class_name_ref
-   AND s.slot_name = f.bound_name
-  JOIN store_graph_source gs ON gs.graph_name = p.graph_name
-  JOIN sql_table et ON et.source_name = gs.source_name AND et.record_class_fqn = s.element_class
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_type tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
-  LEFT JOIN graphitron_tabletype b ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
- WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
-   AND (tt.kind IN ('INTERFACE', 'UNION')
-        OR (et.source_name = b.table_source_name AND et.table_schema = b.table_schema
-            AND et.table_name = b.table_name))
-UNION ALL
--- By record: for a service, the member returning one record of the table whose records the
--- parameter its source fills takes, found by what it returns rather than by its name.
-SELECT p.graph_name, p.coordinate, s.source_name, s.class_name, s.method_name, s.descriptor, 'RECORD'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence_source_object so
-    ON so.graph_name = p.graph_name AND so.coordinate = p.coordinate
-  JOIN graphitron_occurrence_call_method cm
-    ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate AND cm.call = 'producer'
-  JOIN graphitron_occurrence_call_parameter cp
-    ON cp.graph_name = cm.graph_name AND cp.coordinate = cm.coordinate AND cp.call = cm.call
-   AND cp.fill = 'SOURCE'
-  JOIN code_method_parameter mp
-    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
-   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
-   AND mp.position = cp.position
-  JOIN graphitron_call_parameter_table kt
-    ON kt.graph_name = p.graph_name AND kt.fit = 'RECORD' AND kt.delivery IS NOT NULL
-   AND kt.source_name = mp.source_name AND kt.class_name = mp.class_name
-   AND kt.method_name = mp.method_name AND kt.descriptor = mp.descriptor
-   AND kt.position = mp.position
-  JOIN code_read_slot s
-    ON s.source_name = so.class_source_ref AND s.class_name = so.class_name_ref
-   AND s.element_class = mp.element_class AND s.delivery = 'DIRECT'
- WHERE p.start = 'CHILD' AND p.kind = 'SERVICE';
-COMMENT ON VIEW graphitron_occurrence_producer_lift_candidate_rule IS 'One row the lift candidate rule computes, in the shape graphitron_occurrence_producer_lift_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_candidate, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_source_name IS 'the slot_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_class_name IS 'the slot_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_class_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_method_name IS 'the slot_method_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_method_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_descriptor IS 'the slot_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_descriptor';
--- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.found_by IS 'the found_by of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.found_by';
-
 -- How a child producer's keys are filled from its source, written after the depths, per
 -- occurrence and with services in: a member handing over the key's records, a re-fetch of the
 -- source's own rows, a re-read of the target's rows matched out of a routine's result, a selection
@@ -28145,6 +28087,75 @@ COMMENT ON VIEW graphitron_occurrence_source_object_rule IS 'One row the source 
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_object.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_object.kind';
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_object.class_name';
+
+-- A child service's key member is found off the claims above, so its rule is stated after them.
+CREATE VIEW graphitron_occurrence_producer_lift_candidate_rule
+  (graph_name, coordinate, slot_source_name, slot_class_name, slot_method_name, slot_descriptor,
+   found_by) AS
+-- By name: the member the field's bound name names, returning records of the field's table, or of
+-- any table where the field returns a union or an interface.
+SELECT p.graph_name, p.coordinate, s.source_name, s.class_name, s.method_name, s.descriptor, 'NAME'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_source_object so
+    ON so.graph_name = p.graph_name AND so.coordinate = p.coordinate
+  JOIN code_read_slot s
+    ON s.source_name = so.class_source_ref AND s.class_name = so.class_name_ref
+   AND s.slot_name = f.bound_name
+  JOIN store_graph_source gs ON gs.graph_name = p.graph_name
+  JOIN sql_table et ON et.source_name = gs.source_name AND et.record_class_fqn = s.element_class
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+  LEFT JOIN graphitron_tabletype b ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+ WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
+   AND (tt.kind IN ('INTERFACE', 'UNION')
+        OR (et.source_name = b.table_source_name AND et.table_schema = b.table_schema
+            AND et.table_name = b.table_name))
+UNION ALL
+-- By record: for a service, the member returning one record of the table whose records the
+-- parameter its source fills takes, found by what it returns rather than by its name. The class is
+-- the one its parent hands over, the object claim of least priority, and not the occurrence's
+-- resolved source: a service handing back a table's records reads off its own result, and its
+-- parent's object still holds its keys.
+SELECT p.graph_name, p.coordinate, s.source_name, s.class_name, s.method_name, s.descriptor, 'RECORD'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_source_claim oc
+    ON oc.graph_name = p.graph_name AND oc.coordinate = p.coordinate AND oc.kind = 'OBJECT'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim ob
+                    WHERE ob.graph_name = oc.graph_name AND ob.coordinate = oc.coordinate
+                      AND ob.kind = 'OBJECT' AND ob.priority < oc.priority)
+  JOIN graphitron_occurrence_source_claim_object so
+    ON so.graph_name = oc.graph_name AND so.coordinate = oc.coordinate AND so.rule = oc.rule
+  -- The class as the graph resolves its name: the copy on the first entry of its classpath.
+  JOIN code_graph_class gc ON gc.graph_name = so.graph_name AND gc.class_name = so.class_name
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate AND cm.call = 'producer'
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = cm.graph_name AND cp.coordinate = cm.coordinate AND cp.call = cm.call
+   AND cp.fill = 'SOURCE'
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
+   AND mp.position = cp.position
+  JOIN graphitron_call_parameter_table kt
+    ON kt.graph_name = p.graph_name AND kt.fit = 'RECORD' AND kt.delivery IS NOT NULL
+   AND kt.source_name = mp.source_name AND kt.class_name = mp.class_name
+   AND kt.method_name = mp.method_name AND kt.descriptor = mp.descriptor
+   AND kt.position = mp.position
+  JOIN code_read_slot s
+    ON s.source_name = gc.source_name AND s.class_name = gc.class_name
+   AND s.element_class = mp.element_class AND s.delivery = 'DIRECT'
+ WHERE p.start = 'CHILD' AND p.kind = 'SERVICE';
+COMMENT ON VIEW graphitron_occurrence_producer_lift_candidate_rule IS 'One row the lift candidate rule computes, in the shape graphitron_occurrence_producer_lift_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_candidate, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_source_name IS 'the slot_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_class_name IS 'the slot_class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_method_name IS 'the slot_method_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_descriptor IS 'the slot_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_descriptor';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.found_by IS 'the found_by of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.found_by';
 
 -- ==== Path needs, claimed by rule =================================================
 
