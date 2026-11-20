@@ -1,0 +1,5 @@
+Reported at the `argMapping` entry, the detail its right-hand side as written.
+
+A `$context` entry is `parameter: $context.<key>`: one parameter on the left, and exactly one key after the dot. `$context.` names no key, `$context.a.b` names two, and `$tenant` on the left names no parameter, so the entry fills nothing.
+
+*Next step.* Write one parameter and one key, as `userId: $context.userId`. See xref:directives/service.adoc#constraints[`@service` constraints].

@@ -1,6 +1,8 @@
 # A context argument fills a parameter of a call with the value the request context carries under a
 # key. contextArguments: ["k"] is the pair k: $context.k, so each element fills the parameter of its
 # own name, on the call its directive's code reference makes: a @service's method, a @condition's.
+# On a @service the pair itself may name a key spelt apart from the parameter: greetingByViewer
+# fills greet's userId from the key viewerId.
 
 type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
 
@@ -9,6 +11,9 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
       method: "greet"
   }, contextArguments: ["userId"])
+  greetingByViewer: String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+      method: "greet", argMapping: "userId: $context.viewerId"})
   customersSeenByUser: [Customer!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "customerSeenByUser"}, contextArguments: ["userId"])
@@ -18,4 +23,11 @@ extend schema @expectEquals(relation: "graphitron_call_context_key", rows: """
   coordinate,                directive_name, ordinal, owner,     parameter_name, context_key, origin,            origin_position
   Query.greetingByUser,      service,        0,       service,   userId,         userId,      CONTEXT_ARGUMENTS, 0
   Query.customersSeenByUser, condition,      0,       condition, userId,         userId,      CONTEXT_ARGUMENTS, 0
+  Query.greetingByViewer,    service,        0,       service,   userId,         viewerId,    PAIR,              0
+  """)
+
+# The call reads the parameter from the key the pair names, not from one spelt as the parameter.
+extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", rows: """
+  coordinate,             position, fill,        context_key
+  Query.greetingByViewer, 0,        CONTEXT_KEY, viewerId
   """)

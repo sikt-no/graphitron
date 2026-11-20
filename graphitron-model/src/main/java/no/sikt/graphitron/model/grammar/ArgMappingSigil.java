@@ -80,8 +80,9 @@ public final class ArgMappingSigil {
     /**
      * Sigil prefix. {@code $context.<key>} binds the parameter to the value the request context
      * carries under that key, exactly one name after the dot; {@code contextArguments: ["k"]} is
-     * the pair {@code k: $context.k}. The store states what such a pair fills, and a site refuses it
-     * until the code it generates reads that, see {@link Site#admitsContextSigil}.
+     * the pair {@code k: $context.k}. The store states what such a pair fills and judges which sites
+     * read it, {@code @service} alone so far; {@link #scan}, the parse of the sites still read off
+     * the schema, refuses it at each.
      */
     public static final String CONTEXT_PREFIX = "$context.";
 
@@ -207,16 +208,6 @@ public final class ArgMappingSigil {
         /** True only at the outbox site, the one whose payload describes the field it was written on. */
         public boolean admitsScopeSigil() {
             return this == OUTBOX;
-        }
-
-        /**
-         * False at every site for now. A context value means something wherever a method or routine
-         * is called, so a site refusing it is a deferral rather than an author error: it is admitted
-         * where the code that site generates reads the pair from the store, which none does yet.
-         * {@code contextArguments} keeps working, being read where it is written.
-         */
-        public boolean admitsContextSigil() {
-            return false;
         }
     }
 

@@ -27,7 +27,9 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
  *   <li><b>Service round-trip</b>: the {@code @service(contextArguments: ["userId"])} site
  *       ({@code Query.greetingByUser}) is queried, threading {@code userId} through the typed
  *       factory parameter. The {@code UserGreetingService.greet(String)} method receives the
- *       value and renders it into the response.</li>
+ *       value and renders it into the response. {@code Query.contextKeyEcho} reads the same key
+ *       through the pair {@code marker: $context.userId}, filling a parameter named apart from
+ *       it.</li>
  *   <li><b>Condition round-trips</b>: the {@code @condition(contextArguments: ["userId"])}
  *       coordinates (root and batched child) read the same value through the env-appending
  *       condition glue signature and narrow their rows by it; the sibling same-named filter
@@ -61,6 +63,17 @@ class FilmContextArgumentRoundTripTest {
         assertThat(result.getErrors()).isEmpty();
         assertThat(result.<Map<String, Object>>getData())
             .extractingByKey("greetingByUser").isEqualTo("hello alice");
+    }
+
+    @Test
+    void contextPair_fillsAParameterNamedApartFromItsKey() {
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "{}", "alice")
+            .query("{ contextKeyEcho }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(result.<Map<String, Object>>getData())
+            .extractingByKey("contextKeyEcho").isEqualTo("alice");
     }
 
     @Test

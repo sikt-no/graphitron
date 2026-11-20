@@ -9008,14 +9008,31 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
                             b (prim, boxed)
                       WHERE b.prim = t.expected AND b.boxed = t.parameter_type)
   UNION ALL
-  -- A $context pair, at whatever site. A context value means something wherever a method or routine
-  -- is called, so this is a deferral rather than an author error: a site admits the pair when the
-  -- code it generates reads graphitron_call_context_key, which none does yet. The detail is the
+  -- A $context pair written well, at a site whose generated code does not read it yet. A context
+  -- value means something wherever a method or routine is called, so this is a deferral rather than
+  -- an author error. A @service's call, root or child, reads the parameter's fill, which
+  -- graphitron_call_context_key states for the pair, so every @service site admits it; @condition,
+  -- @routine, @outbox, a reference step's condition and @record still refuse it. The detail is the
   -- pair's right side as written.
   SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
          'CONTEXT_SITE_UNSUPPORTED', p.bound_to
     FROM graphitron_ast_argmapping_pair_entry p
+   WHERE p.target_kind = 'NAME' AND p.bound_to LIKE '$context.%'
+     AND CHAR_LENGTH(p.bound_to) > 9 AND POSITION('.', SUBSTRING(p.bound_to, 10)) = 0
+     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_site s
+                      WHERE s.graph_name = p.graph_name AND s.source_name = p.source_name
+                        AND s.source_line = p.source_line AND s.source_column = p.source_column
+                        AND s.directive_name = 'service' AND s.owner = 'service')
+  UNION ALL
+  -- A $context pair not written as one parameter and exactly one key: nothing after the dot, a
+  -- second dot, or $tenant on its left, which names no parameter to fill. It fills nothing at any
+  -- site, so this is the author's to fix. The detail is the pair's right side as written.
+  SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
+         'CONTEXT_KEY_MALFORMED', p.bound_to
+    FROM graphitron_ast_argmapping_pair_entry p
    WHERE p.bound_to LIKE '$context.%'
+     AND (p.target_kind <> 'NAME' OR CHAR_LENGTH(p.bound_to) = 9
+          OR POSITION('.', SUBSTRING(p.bound_to, 10)) > 0)
   UNION ALL
   -- $scope.<member> naming no member of the field's scope. The detail is the member written.
   SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
@@ -9193,14 +9210,31 @@ SELECT t.graph_name, t.source_name, t.source_line, t.source_column, t.position,
                           b (prim, boxed)
                     WHERE b.prim = t.expected AND b.boxed = t.parameter_type)
 UNION ALL
--- A $context pair, at whatever site. A context value means something wherever a method or routine
--- is called, so this is a deferral rather than an author error: a site admits the pair when the
--- code it generates reads graphitron_call_context_key, which none does yet. The detail is the
+-- A $context pair written well, at a site whose generated code does not read it yet. A context
+-- value means something wherever a method or routine is called, so this is a deferral rather than
+-- an author error. A @service's call, root or child, reads the parameter's fill, which
+-- graphitron_call_context_key states for the pair, so every @service site admits it; @condition,
+-- @routine, @outbox, a reference step's condition and @record still refuse it. The detail is the
 -- pair's right side as written.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
        'CONTEXT_SITE_UNSUPPORTED', p.bound_to
   FROM graphitron_ast_argmapping_pair_entry p
+ WHERE p.target_kind = 'NAME' AND p.bound_to LIKE '$context.%'
+   AND CHAR_LENGTH(p.bound_to) > 9 AND POSITION('.', SUBSTRING(p.bound_to, 10)) = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_site s
+                    WHERE s.graph_name = p.graph_name AND s.source_name = p.source_name
+                      AND s.source_line = p.source_line AND s.source_column = p.source_column
+                      AND s.directive_name = 'service' AND s.owner = 'service')
+UNION ALL
+-- A $context pair not written as one parameter and exactly one key: nothing after the dot, a
+-- second dot, or $tenant on its left, which names no parameter to fill. It fills nothing at any
+-- site, so this is the author's to fix. The detail is the pair's right side as written.
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
+       'CONTEXT_KEY_MALFORMED', p.bound_to
+  FROM graphitron_ast_argmapping_pair_entry p
  WHERE p.bound_to LIKE '$context.%'
+   AND (p.target_kind <> 'NAME' OR CHAR_LENGTH(p.bound_to) = 9
+        OR POSITION('.', SUBSTRING(p.bound_to, 10)) > 0)
 UNION ALL
 -- $scope.<member> naming no member of the field's scope. The detail is the member written.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
@@ -31681,7 +31715,9 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
    'An argMapping names $tenant, or @tenant marks an argument or input field, where nothing routes by it yet: the tenant is named for a root @service''s call, so write $tenant in that @service''s argMapping, or mark a value it reads. A child service runs on its parent''s tenant, and a query binds it through @field(name:) on the tenant column.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
-   'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.'),
+   'An argMapping binds a parameter to $context.<key> under @condition, @routine, @outbox, a @reference path step''s condition or @record, whose generated code does not read it yet: on @service write the pair; elsewhere name the key in contextArguments where the directive takes them, which fills the parameter of the same name.'),
+  ('CONTEXT_KEY_MALFORMED', 'error', 'GRAPHITRON', 'GRAPHITRON_CONTEXT_KEY_MALFORMED',
+   'An argMapping entry''s right side is not a context binding: the form is parameter: $context.<key>, exactly one key after the dot, and nothing following the dot, a second dot, or $tenant on the left fills no parameter. Write one parameter and one key.'),
   ('DISCRIMINATE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_WITHOUT_TABLE',
    'A @discriminate is on an interface or union with no @table, so there is no shared table whose column tells its members apart: give the interface @table, or drop @discriminate for a multitable interface.'),
   ('DISCRIMINATE_UNKNOWN_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_UNKNOWN_COLUMN',

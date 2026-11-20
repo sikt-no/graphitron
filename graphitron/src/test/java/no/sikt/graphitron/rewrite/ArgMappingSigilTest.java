@@ -155,7 +155,6 @@ class ArgMappingSigilTest {
     @ParameterizedTest
     @EnumSource(ArgMappingSigil.Site.class)
     void contextKey_isRefusedAtEverySiteAsNotSupportedYet(ArgMappingSigil.Site site) {
-        assertThat(site.admitsContextSigil()).isFalse();
         var result = ArgMappingSigil.scan("tenant: $context.tenantId, pMinLength: minLength", site);
         assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
             assertThat(rejected.message())
