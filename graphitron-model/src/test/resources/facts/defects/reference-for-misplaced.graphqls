@@ -1,0 +1,64 @@
+# A @referenceFor states one participant's join path from the parent's row, so it means something
+# only on a field below the root returning a union or an interface with no table of its own, each
+# participant on a table of its own. Anywhere else there is no participant to route and it is refused
+# at its at sign, the detail naming the field: on a root field, on a field returning one type, a
+# @service's as well as a plain object field's, and on a field returning a single-table interface,
+# whose participants share its table and a column tells apart. Below the root, a union and an
+# interface with no table of its own are its place, as scenarios/path-need's credits, and draw nothing.
+
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
+type ShortItem implements MediaItem @table(name: "film") @discriminator(value: "G") { title: String }
+
+interface Named { name: String }
+type Language implements Named @table(name: "language") { name: String }
+type Category implements Named @table(name: "category") { name: String }
+
+type Film @table(name: "film") {
+  title: String
+  # One type, which a @service delivers.
+  language: Language
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "languageByService"})
+    @referenceFor(type: "Language", path: [{key: "film_language_id_fkey"}])
+}
+
+union Searchable = Film | Language
+
+type FilmActor @table(name: "film_actor") {
+  actorId: Int @field(name: "actor_id")
+  # One type, a plain object.
+  film: Film @referenceFor(type: "Film", path: [{key: "film_actor_film_id_fkey"}])
+  # A single-table interface: its participants share film.
+  media: MediaItem @referenceFor(type: "ShortItem", path: [{key: "film_actor_film_id_fkey"}])
+  # A union, each member on a table of its own.
+  credits: [Searchable]
+    @referenceFor(type: "Film", path: [{key: "film_actor_film_id_fkey"}])
+    @referenceFor(type: "Language", path: [{key: "film_actor_film_id_fkey"}, {key: "film_language_id_fkey"}])
+  # An interface with no table of its own, its implementations on language and category.
+  names: [Named]
+    @referenceFor(type: "Language", path: [{key: "film_actor_film_id_fkey"}, {key: "film_language_id_fkey"}])
+}
+
+type Query {
+  # A root field, a union returned and no parent row to depart from.
+  search: [Searchable] @referenceFor(type: "Film", path: [{table: "film"}])
+  filmActors: [FilmActor]
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: """
+  code = 'REFERENCE_FOR_MISPLACED'
+  """, rows: """
+  source_line, source_column, detail
+  21,          5,             Film.language
+  29,          14,            FilmActor.film
+  31,          20,            FilmActor.media
+  43,          24,            Query.search
+  """)
+
+# The union and the interface with no table of its own below the root are where it belongs.
+extend schema @assertAbsent(relation: "graphitron_entry_defect", where: """
+  code = 'REFERENCE_FOR_MISPLACED'
+  """, rows: """
+  detail
+  FilmActor.credits
+  FilmActor.names
+  """)

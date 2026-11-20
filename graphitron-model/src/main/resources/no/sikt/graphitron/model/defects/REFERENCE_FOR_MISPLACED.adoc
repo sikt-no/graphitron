@@ -1,0 +1,5 @@
+Reported at each `@referenceFor` on a field with no participants to route, which the detail names.
+
+A `@referenceFor` is one participant's join path from the parent's row, so it has a meaning only on a field below the root returning a union or an interface with no table of its own, whose participants each sit on a table of their own. A root field has no parent row for a path to depart from, a field returning one type has no participants, and a single-table interface's participants share its table, told apart by its discriminator column. On those the application does nothing.
+
+*Next step.* Remove the `@referenceFor`. Where the field's rows need a path of their own, write it with xref:directives/reference.adoc[`@reference`]. See xref:directives/referenceFor.adoc[`@referenceFor`].

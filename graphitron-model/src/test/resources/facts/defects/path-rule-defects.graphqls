@@ -55,8 +55,9 @@ type Staff implements Person @table(name: "staff") {
 
 type Language @table(name: "language") {
   """
-  A member of a single-table interface reached by another key. The store walks it; the generator
-  refuses @referenceFor on a field with no participant set, so it is not in scenarios/path-rules.
+  A member of a single-table interface reached by another key. The store walks it, and refuses the
+  @referenceFor as REFERENCE_FOR_MISPLACED, a field with no participant set having nothing for it to
+  route, so it is not in scenarios/path-rules.
   """
   mediaByMember: [MediaItem!]!
     @reference(path: [{key: "film_language_id_fkey"}])

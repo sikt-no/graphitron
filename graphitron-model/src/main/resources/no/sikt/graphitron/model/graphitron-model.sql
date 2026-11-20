@@ -24414,9 +24414,10 @@ COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_bound IS 'the table the k
 COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_kind IS 'what the key occurrence binds, COLUMN or NODE_ID, carried so the foreign key holds the row to a binding of that kind';
 COMMENT ON COLUMN graphitron_occurrence_lookup_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- What a written @lookupKey says wrong before any occurrence reads it, raised by field-targets, the
--- first stage holding the field targets it is judged by: a @lookupKey on a field returning a
--- connection, which pages where the keys answer one row each.
+-- What a written directive says wrong of the field it sits on, judged by that field's target before
+-- any occurrence reads it, raised by field-targets, the first stage holding the field targets: a
+-- @lookupKey on a field returning a connection, which pages where the keys answer one row each, and
+-- a @referenceFor on a field with no participants to route.
 CREATE VIEW graphitron_field_target_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
@@ -24425,7 +24426,32 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
   JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
   JOIN graphitron_field_target ft
     ON ft.graph_name = a.graph_name AND ft.type_name = a.type_name AND ft.field_name = a.field_name
- WHERE da.directive_name = 'lookupKey' AND ft.wrapper_type_name IS NOT NULL;
+ WHERE da.directive_name = 'lookupKey' AND ft.wrapper_type_name IS NOT NULL
+UNION ALL
+-- A @referenceFor on an output field, at each application, the detail naming the field. It states one
+-- participant's join path from the parent's row, so it means something only on a field below the
+-- root whose target, unwrapped from a connection, is a union or an interface with no table of its
+-- own, its participants each on a table of its own. A root field has no parent row to depart from,
+-- a field returning one type has one table and no participant, and a single-table interface's
+-- participants share its table, a column telling them apart. Placement alone: whether the type it
+-- names is a participant, and whether its path arrives, are the path rules' to say.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'REFERENCE_FOR_MISPLACED', da.coordinate, 'field-targets'
+  FROM graphql_directive_application da
+  JOIN graphitron_field f ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  -- an output field: the type declaring it is an object or an interface
+  JOIN graphitron_type dt
+    ON dt.graph_name = f.graph_name AND dt.type_name = f.type_name
+   AND dt.kind IN ('OBJECT', 'INTERFACE')
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type t ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
+ WHERE da.directive_name = 'referenceFor'
+   AND (EXISTS (SELECT 1 FROM graphql_root_operation ro
+                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name)
+        OR t.kind NOT IN ('UNION', 'INTERFACE')
+        OR EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = t.graph_name AND tt.type_name = t.type_name));
 COMMENT ON VIEW graphitron_field_target_entry_defect_rule IS 'One row the field target defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the field-targets stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.';
 
 -- What a @lookupKey the keys above cannot state, at the application: a node id of a node on another
@@ -31395,6 +31421,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A step reaches its destination by more than one route, a chain link naming a table two keys reach or a field with no path written between two tables more than one foreign key joins, so the generator has a join to emit and nothing to pick it by; naming the foreign key settles it.'),
   ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',
    'Two @referenceFor applications on one field name the same type, and only the first one written is used.'),
+  ('REFERENCE_FOR_MISPLACED', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_MISPLACED',
+   'A @referenceFor states one participant''s join path from the parent''s row, and the field it sits on has no participants to route: a root field, a field returning one type, or one returning a single-table interface, whose participants share its table. It means something only on a field below the root returning a union or an interface with no table of its own; remove it, or write the field''s path with @reference.'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
    'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all; a root field''s leading @routine naming no routine is the same name claimed in vain, and the field calls nothing; and an ordering''s index the table the field reads does not have, named in the detail, leaves nothing to sort by.'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
@@ -33049,7 +33077,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_target_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the field target defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the field-targets stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.',
-   'Raised at field-targets because what it judges is the field targets, which that stage is the first to hold: a defect is raised by the first stage holding its facts (Alf, 2026-11-13).'),
+   'Raised at field-targets because what it judges is the field targets, which that stage is the first to hold: a defect is raised by the first stage holding its facts (Alf, 2026-11-13). A @referenceFor''s placement is judged here and not at anchor for the same reason: whether its field returns a union or an interface with no table of its own is the field''s target, unwrapped from a connection, and the target''s table binding, which the anchor stage does not yet hold.'),
   ('graphitron_occurrence_lookup_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the lookup key defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-lookup-keys stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.',
