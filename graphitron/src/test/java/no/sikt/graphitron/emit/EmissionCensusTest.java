@@ -29,8 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Which of the sakila example's connections, conditions and projection units the store emits, and
  * why each of the rest stays with the classified model's emitters: censuses the flips move through,
  * one exclusion at a time, over one capture of the example's schema. Every condition emitted
- * compiles. The services have no census: the store emits every one it accepts, which
- * {@link ServiceVerdictCoverageGateTest} proves.
+ * compiles. The services have no census: the store emits every one it accepts, and
+ * {@link ServiceEmission#emit} throws as a generator bug on one it cannot.
  */
 @PipelineTier
 class EmissionCensusTest {

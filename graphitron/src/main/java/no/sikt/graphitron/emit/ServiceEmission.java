@@ -49,7 +49,7 @@ import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
  */
 public final class ServiceEmission {
 
-    /** The {@link #verdict} of a service whose parts all hold. */
+    /** The verdict of a service whose parts all hold, which {@link #emit} emits. */
     public static final String EMITTED = "EMITTED";
 
     /**
@@ -99,16 +99,6 @@ public final class ServiceEmission {
         }
     }
 
-    /**
-     * The names {@link #verdict} renders a body with: it asks the call emitter whether it emits a
-     * body, so the verdict and {@link #emit} decide by the one emitter, and the body itself is dropped.
-     */
-    private static final ClassName CENSUS_HOST = ClassName.get("census", "Census");
-    private static final FillEmitter.Runtime CENSUS_FILL = new FillEmitter.Runtime(
-        key -> CodeBlock.of("null"), coordinate -> CodeBlock.of("null"), (member, coordinate) -> CodeBlock.of("null"),
-        new NodeIdDecodeEmitter.Runtime(CENSUS_HOST, "census"));
-    private static final ValidationEmitter.Runtime CENSUS_VALIDATION = new ValidationEmitter.Runtime(
-        CENSUS_HOST, CENSUS_HOST, env -> CodeBlock.of("null"), CENSUS_HOST);
 
     /** Whether a store was read: {@link #none()} has none, and leaves every field to the classified model. */
     private final boolean stored;
@@ -322,28 +312,6 @@ public final class ServiceEmission {
             .fetch(v.COORDINATE));
     }
 
-    /**
-     * {@link #EMITTED} where the service producer occurrence at {@code coordinate} is emitted here,
-     * otherwise which of its parts does not hold; a body the call emitter refuses throws its reason.
-     * Read by the coverage gate alone, which proves every service the store accepts is emitted;
-     * {@link #emit} throws on the same verdicts.
-     */
-    public String verdict(String coordinate) {
-        var stated = statedVerdict(coordinate);
-        if (!EMITTED.equals(stated)) {
-            return stated;
-        }
-        var frame = frames.get(coordinate);
-        var lift = Optional.ofNullable(lifts.get(coordinate))
-            .map(row -> new CallEmitter.Lift(CENSUS_HOST, "lift", row.list()));
-        CallEmitter.body(calls.get(coordinate), fills.get(coordinate), builds.getOrDefault(coordinate, Map.of()),
-            CENSUS_FILL, "census", frame.parent().map(ServiceEmission::frameKey), lift,
-            Optional.ofNullable(polymorphic.get(coordinate)).map(row -> new CallEmitter.Polymorphic(row.list(),
-                row.participants().stream().map(p -> new CallEmitter.Polymorphic.Member(p.typeName(),
-                    CENSUS_HOST, CENSUS_HOST, "lift")).toList())),
-            validating.contains(coordinate) ? Optional.of(CENSUS_VALIDATION) : Optional.empty());
-        return EMITTED;
-    }
 
     /**
      * {@link #EMITTED} where every part the store states of the occurrence at {@code coordinate} holds,
