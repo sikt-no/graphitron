@@ -17,9 +17,9 @@ import no.sikt.graphitron.model.diagnostics.ConflictSite;
  * at the {@code getContextArgument} call).
  *
  * <p>{@link #sites} carries every directive site that referenced this name in declaration order,
- * useful for downstream tooling (LSP fix-its) that wants to navigate to a declaring method or
- * carrier. Each entry is a {@link Site}, which wraps the model value the reference came from and
- * so stays with the classifier's output rather than riding a rejection: {@link ConflictSite}
+ * useful for downstream tooling (LSP fix-its) that wants to navigate to a declaring method. Each
+ * entry is a {@link Site}, which wraps the model value or the store's names the reference came from
+ * and so stays with the classifier's output rather than riding a rejection: {@link ConflictSite}
  * carries the same coordinate as names, because a rejection is a fact the store holds.
  */
 public record ResolvedContextArg(String name, TypeName javaType, List<Site> sites) {
@@ -31,7 +31,7 @@ public record ResolvedContextArg(String name, TypeName javaType, List<Site> site
      * The directive coordinate a context-argument reference came from. Every arm projects the
      * class + method names a message or a fix-it reads, so a consumer need not switch on the arm.
      */
-    public sealed interface Site permits Site.Method, Site.Carrier {
+    public sealed interface Site permits Site.Method, Site.Service {
         String className();
         String methodName();
 
@@ -41,10 +41,7 @@ public record ResolvedContextArg(String name, TypeName javaType, List<Site> site
             @Override public String methodName() { return ref.methodName(); }
         }
 
-        /** A {@link ServiceMethodCall}-carrier coordinate (a root sync {@code @service} permit). */
-        record Carrier(ServiceMethodCall call) implements Site {
-            @Override public String className() { return call.fqClassName(); }
-            @Override public String methodName() { return call.methodName(); }
-        }
+        /** A {@code @service} call's method, as the store states it. */
+        record Service(String className, String methodName) implements Site {}
     }
 }

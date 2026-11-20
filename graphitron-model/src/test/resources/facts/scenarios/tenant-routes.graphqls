@@ -4,7 +4,9 @@
 # A child service under film rows runs
 # on the key its parent handed down; one under language rows, which no tenant column scopes, on the key
 # with an empty tenant part. A routine write re-reading rental rows, which no tenant column scopes,
-# runs on the key with an empty tenant part too: it names no tenant and needs none.
+# runs on the key with an empty tenant part too: it names no tenant and needs none. So does a root
+# service that names no tenant, takes no connection and hands back a Java object rather than a table's
+# rows, though a film lies below it; its film runs on the key that service hands down.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
@@ -22,6 +24,12 @@ type Language @table(name: "language") {
 
 type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
+# Backed by the HandedFilm record the service returns, whose film() hands over a FilmRecord.
+type HandedFilm {
+  name: String
+  film: Film
+}
+
 type Query {
   films: [Film!]!
   languages: [Language!]!
@@ -31,6 +39,8 @@ type Query {
   filmsByIds(ids: [Int!]!): [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmsByIds", argMapping: "ids: ids, $tenant: ids"})
+  handedFilm: HandedFilm
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.HandedFilmService", method: "make"})
 }
 
 type Mutation {
@@ -43,6 +53,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: 
   coordinate,                outcome
   Query.filmByPair,          ROUTED
   Query.filmsByIds,          ROUTED
+  Query.handedFilm,          UNSCOPED
+  Query.handedFilm.film,     INHERIT
   Mutation.rentFilm,         UNSCOPED
   Film.servedBy,             INHERIT
   Language.servedBy,         UNSCOPED

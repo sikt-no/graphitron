@@ -28,5 +28,4 @@ type Mutation {
   "A @service producer returning a list of a consumer-authored composite (one film record plus its actor records), which the payload exposes as a two-level carrier."
   createFilms: CreateFilmsPayload
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
-    @classified(source: Mutation, operations: [ServiceCall], target: Single, targetShape: Record)
 }

@@ -73,6 +73,25 @@ public record NestingReach(Map<String, ChildField.NestingField> representatives,
         return nestedFields.stream().anyMatch(ownership::hasFetcher);
     }
 
+    /**
+     * Whether the type {@code wiring} reaches owns any fetcher, over {@link #wiredFields its fields
+     * a fetcher may be wired for}.
+     */
+    public static boolean ownsFetchers(ChildField.NestingField wiring, FetcherOwnership ownership) {
+        return ownsFetchers(wiredFields(wiring), ownership);
+    }
+
+    /**
+     * The fields of the type {@code wiring} reaches that a fetcher may be wired for, in declaration
+     * order within each part: the children projected off the parent row, then the store-owned
+     * ones, whose fetchers the store emits into the same {@code <Type>Fetchers} class.
+     */
+    public static List<GraphitronField> wiredFields(ChildField.NestingField wiring) {
+        var fields = new java.util.ArrayList<GraphitronField>(wiring.nestedFields());
+        fields.addAll(wiring.storeOwned());
+        return List.copyOf(fields);
+    }
+
     static NestingReach compute(GraphitronSchema schema) {
         var representatives = new LinkedHashMap<String, ChildField.NestingField>();
         var coordinates = new TreeSet<String>();

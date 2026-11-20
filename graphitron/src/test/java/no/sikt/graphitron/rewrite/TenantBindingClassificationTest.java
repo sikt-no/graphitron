@@ -225,27 +225,6 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aConnectionBoundServiceWithAnOptionalTenantMarkerRejectsAsAnUnroutedCall() {
-        // The payload is no @table, so the field reaches no tenant-scoped table: the
-        // noTenantBinding opening would be false, and the service rejection carries the detail.
-        var schema = build(SERVICE_TYPES + """
-            input RateByFilmIdInput { filmId: Int @tenant  rating: Int }
-            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmId")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateByFilmId")).isNull();
-        assertThat(schema.tenantBindings().rejections())
-            .filteredOn(e -> e.coordinate().equals("Mutation.rateByFilmId"))
-            .singleElement()
-            .satisfies(e -> {
-                var unrouted = (Rejection.AuthorError.UnroutedServiceCall) e.rejection();
-                assertThat(unrouted.declines()).singleElement().asString()
-                    .contains("'Mutation.rateByFilmId' " + OPTIONAL_ONLY + " (in.filmId)")
-                    .doesNotContain(FAN_OUT_HINT);
-            });
-    }
-
-    @Test
     void childBelowBoundAncestorYieldsInherited() {
         var schema = build("""
             type Film @table(name: "film") {
@@ -547,50 +526,6 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
-    @Test
-    void sessionBoundServiceChildUnderTenantContext_yieldsInherited() {
-        // A $session-bound service call reads per-connection state (the mounted handle), so
-        // although its own SQL reach is empty, it classifies Inherited under a tenant context:
-        // the call must run on the inherited tenant's connection to observe that tenant's
-        // handle, not the default source's.
-        var schema = build("""
-            type Film @table(name: "film") {
-                title: String
-                mountedPrincipal: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "principalOfBatch",
-                    argMapping: "identity: $session"
-                })
-            }
-            type Query {
-                films(filmId: Int! @field(name: "film_id")): [Film!]!
-            }
-            """);
-
-        var binding = schema.tenantBindingOf("Film", "mountedPrincipal");
-        assertThat(binding).isInstanceOf(TenantBinding.Inherited.class);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void sessionBoundServiceAtARootNamingNoTenant_rejects() {
-        // The complement: a root has no tenant context to inherit, and the service's own SQL is
-        // opaque, so a $session binding with nothing in the arguments naming a tenant would run
-        // on the default source whatever the service touches. The build refuses it.
-        var schema = build("""
-            type Query {
-                sessionPrincipal: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "principalOf",
-                    argMapping: "identity: $session"
-                })
-            }
-            """);
-
-        assertThat(schema.tenantBindingOf("Query", "sessionPrincipal")).isNull();
-        assertUnroutedWithoutDeclines(schema, "Query.sessionPrincipal");
-    }
-
     /**
      * The no-declines form of the unrouted-service refusal: one rejection at the coordinate,
      * naming the tenant column and both fixes.
@@ -742,22 +677,6 @@ class TenantBindingClassificationTest {
             .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
         assertThat(schema.tenantBindingOf("Query", "languages"))
             .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
-    }
-
-    @Test
-    void aChildServiceOnAGlobalParentKeepsTheDefaultSource() {
-        var schema = build("""
-            type Language @table(name: "language") {
-                name: String
-                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TenantServiceStub",
-                    method: "ratingWithDsl"})
-            }
-            type Query { languages: [Language!]! }
-            """);
-
-        assertThat(schema.tenantBindingOf("Language", "rating"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
     @Test
@@ -971,37 +890,6 @@ class TenantBindingClassificationTest {
         assertThat(whenNoTenant(schema, "Query", "filmActorsByFilter"))
             .isEqualTo(new TenantBinding.WhenNoTenant.Refuse(List.of("filter")));
         assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aServiceCallRecordsItsReturnContainer() {
-        var film = TestFixtures.tableRef("film", "FILM", "Film", List.of());
-        java.util.function.Function<com.palantir.javapoet.ClassName,
-                java.util.Optional<no.sikt.graphitron.model.jooq.TableRef>> filmTable =
-            record -> java.util.Optional.of(film);
-        var filmRecord = com.palantir.javapoet.ClassName.get("com.example", "FilmRecord");
-        java.util.function.Function<String, com.palantir.javapoet.TypeName> of = raw ->
-            com.palantir.javapoet.ParameterizedTypeName.get(
-                com.palantir.javapoet.ClassName.bestGuess(raw), filmRecord);
-
-        assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("java.util.List"), filmTable))
-            .isInstanceOf(ServiceMethodCall.ReturnContainer.ListLike.class);
-        assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("java.util.Set"), filmTable))
-            .isInstanceOf(ServiceMethodCall.ReturnContainer.SetLike.class);
-        assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("org.jooq.Result"), filmTable))
-            .isEqualTo(new ServiceMethodCall.ReturnContainer.JooqResult(film));
-        assertThat(ServiceMethodCall.ReturnContainer.of(
-                com.palantir.javapoet.ClassName.get("com.example", "RateFilmsPayload"), filmTable))
-            .isInstanceOf(ServiceMethodCall.ReturnContainer.Other.class);
-
-        // The walker resolves the Result's record class against the catalog.
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateFilmsAsResult(ratings: [RateFilmInput!]!): [Film!]! %s }
-            """.formatted(service("rateFilmsAsResult")));
-        var field = (no.sikt.graphitron.rewrite.model.ServiceField) schema.field("Mutation", "rateFilmsAsResult");
-        assertThat(field.serviceMethodCall().returnContainer())
-            .isInstanceOfSatisfying(ServiceMethodCall.ReturnContainer.JooqResult.class,
-                result -> assertThat(result.table().tableName()).isEqualToIgnoringCase("film"));
     }
 
     // ===== The decoded-key projection: the tenant sits inside a node id =====
@@ -1895,67 +1783,62 @@ class TenantBindingClassificationTest {
                 && r.detail().contains(detail));
     }
 
-    @Test
-    void wrapperServiceWithANodeIdRecordMemberDivinesAndItsChildrenInherit() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateFilm(in: RateFilmInput!): RateFilmsPayload %s }
-            """.formatted(service("rateFilm")));
+    /**
+     * The connections the store states for the {@code @service} fields of the shared scenario
+     * tenant-routes under film_id: the store owns those fields whole, and the walk reads what each
+     * hands its subtree off this.
+     */
+    private static final class ServiceConnections {
+        static final java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> STATED = FACTS
+            .read("scenarios/tenant-routes",
+                graph -> no.sikt.graphitron.emit.ConnectionQuery.serviceOutcomes(graph.handle()));
+    }
 
-        var bound = argumentBound(schema, "Mutation", "rateFilm");
-        assertThat(bound.bindings()).hasSize(1);
-        assertDecodedSlot(bound.primary(), "in.film",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("film")), 0);
-        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
-            .isEqualTo(new TenantBinding.Inherited("RateFilmsPayload"));
+    /** {@link #build} handing down below each {@code @service} field what its stated connection does. */
+    private static GraphitronSchema buildWithServiceConnections(String sdl) {
+        return TestSchemaHelper.buildSchema(sdl, TestConfiguration.testContext().withTenantColumn("film_id"),
+            java.util.Map.of(), ServiceConnections.STATED);
+    }
+
+    @Test
+    void aRootServiceTheStoreRoutesHandsItsTenantDown() {
+        // tenant-routes states Query.filmsByIds ROUTED, the tenant read off each element of ids, so
+        // the film's own children are judged as below any bound root.
+        var schema = buildWithServiceConnections("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]!
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query {
+                filmsByIds(ids: [Int!]!): [Film!]!
+                    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+                        method: "filmsByIds", argMapping: "ids: ids, $tenant: ids"})
+            }
+            """);
+
         assertThat(schema.tenantBindingOf("Film", "inventories"))
             .isEqualTo(new TenantBinding.Inherited("Film"));
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
     @Test
-    void aBatchOfBeansReadsTheSamePathOffEveryElement() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateFilms(ratings: [RateFilmInput!]!): RateFilmsPayload %s }
-            """.formatted(service("rateFilms")));
-
-        assertDecodedSlot(argumentBound(schema, "Mutation", "rateFilms").primary(), "ratings.film",
-            new TenantBinding.SlotRead.NestedInput("ratings", List.of("film")), 0);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aJooqRecordParameterBindingTheTenantColumnDivinesRaw() {
-        var schema = build(SERVICE_TYPES + """
-            input ModifyFilmInput {
-                filmId: Int! @field(name: "film_id")
-                title: String @field(name: "title")
+    void aRootServiceTheStoreDoesNotRouteHandsNoTenantDown() {
+        // tenant-routes states Query.handedFilm UNSCOPED: it names no tenant and takes no
+        // connection, so nothing is handed down and the film below it still rejects.
+        var schema = buildWithServiceConnections("""
+            type Film @table(name: "film") { title: String }
+            type HandedFilm {
+                name: String
+                film: Film
             }
-            type Mutation { modifyFilms(in: [ModifyFilmInput!]!): RateFilmsPayload %s }
-            """.formatted(service("modifyFilms")));
-
-        var slot = argumentBound(schema, "Mutation", "modifyFilms").primary();
-        assertThat(slot.slotName()).isEqualTo("in.filmId");
-        assertThat(slot.read()).isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
-        assertThat(slot.projection()).isEqualTo(TenantBinding.SlotProjection.Raw.INSTANCE);
-        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
-            .isInstanceOf(TenantBinding.Inherited.class);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aJooqRecordParameterDecodingACompositeKeyReadsTheTenantPosition() {
-        var schema = build(SERVICE_TYPES + """
-            type FilmActor implements Node @table(name: "film_actor")
-                    @node(keyColumns: ["actor_id", "film_id"]) {
-                id: ID! @nodeId
+            type Query {
+                handedFilm: HandedFilm
+                    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.HandedFilmService", method: "make"})
             }
-            input ModifyFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
-            type Mutation { modifyFilmActor(in: ModifyFilmActorInput!): RateFilmsPayload %s }
-            """.formatted(service("modifyFilmActor")));
+            """);
 
-        assertDecodedSlot(argumentBound(schema, "Mutation", "modifyFilmActor").primary(), "in.id",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("id")), 1);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertRejects(schema, "HandedFilm.film", "no ancestor established a tenant context");
     }
 
     /**
@@ -1981,64 +1864,6 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindings().rejections())
             .noneMatch(e -> e.coordinate().equals("Mutation." + field));
         assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
-    }
-
-    @Test
-    void aJooqRecordParameterDecodingAStubWithoutTheTenantInItsKeySkipsTheDecode() {
-        var schema = build(SERVICE_TYPES + STUB_BAZ + """
-            input ModifyBazInput { id: ID! @nodeId(typeName: "Baz") }
-            type Mutation { modifyBaz(in: ModifyBazInput!): RateFilmsPayload %s }
-            """.formatted(service("modifyBaz")));
-
-        assertBuildsUnbound(schema, "modifyBaz");
-    }
-
-    @Test
-    void aJooqRecordParameterReferencingAStubWithoutTheTenantInItsKeySkipsTheDecode() {
-        // The reported shape: a foreign key loaded from the id of a code table that is no longer
-        // a node type in this schema, beside plain column bindings for the rest of the record.
-        var schema = build(SERVICE_TYPES + STUB_BAZ + """
-            input ModifyBarInput {
-                bazId: ID @nodeId(typeName: "Baz")
-                id2: String! @field(name: "id_2")
-                name: String @field(name: "name")
-            }
-            type Mutation { modifyBar(in: ModifyBarInput!): RateFilmsPayload %s }
-            """.formatted(service("modifyBar")));
-
-        assertBuildsUnbound(schema, "modifyBar");
-    }
-
-    @Test
-    void aRecordSlotDecodingAStubWithoutTheTenantInItsKeySkipsTheDecode() {
-        var schema = build(SERVICE_TYPES + STUB_BAZ + """
-            type Mutation { pickBaz(baz: ID! @nodeId(typeName: "Baz")): RateFilmsPayload %s }
-            """.formatted(service("pickBaz")));
-
-        assertBuildsUnbound(schema, "pickBaz");
-    }
-
-    @Test
-    void aJooqRecordParameterDecodingAStubWithTheTenantInItsKeyDeclines() {
-        // The node-type twin is aJooqRecordParameterDecodingACompositeKeyReadsTheTenantPosition:
-        // same table, same key, but there the decode helper exists to route on.
-        var schema = build(SERVICE_TYPES + """
-            type FilmActorCode @table(name: "film_actor") @node(resolvable: false) { actorId: Int @field(name: "actor_id") }
-            input PickByFilmActorInput { id: ID! @nodeId(typeName: "FilmActorCode") }
-            type Mutation { pickFilmForFilmActor(in: PickByFilmActorInput!): Film %s }
-            """.formatted(service("pickFilmForFilmActor")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "pickFilmForFilmActor")).isNull();
-        assertRejects(schema, "Mutation.pickFilmForFilmActor",
-            "the tenant is reached through @nodeId(typeName: 'FilmActorCode') at in.id, whose key"
-                + " carries tenant column 'film_id', but 'FilmActorCode' is not a node type");
-        assertRejects(schema, "Mutation.pickFilmForFilmActor",
-            "Make 'FilmActorCode' a node type, or bind the tenant through a field mapping to tenant"
-                + " column 'film_id'.");
-        // The reason is a scope decision, not a missing helper: a leaf naming the same type gets a
-        // catalog decode helper and routes on it.
-        assertRejects(schema, "Mutation.pickFilmForFilmActor",
-            "a record decode of a @table-only type does not route the statement on its tenant");
     }
 
     @Test
@@ -2085,183 +1910,6 @@ class TenantBindingClassificationTest {
             });
     }
 
-    @Test
-    void aKeySlotOfANodeTypeWhoseKeyMissesTheTenantIsEvidenceOffTheDecodesTable() {
-        // A root @service scalar slot taking the decoded key value: inventory carries the tenant
-        // column, its key inventory_id does not, so the slot reads no tenant and the fold names it
-        // as evidence, reading the table off the decode itself.
-        var schema = build("""
-            interface Node { id: ID! }
-            type Inventory implements Node @table(name: "inventory") @node {
-                id: ID! @nodeId
-            }
-            type Query { x: String }
-            type Mutation {
-                pickInventoryOnConnection(inventoryId: ID! @nodeId(typeName: "Inventory")): String %s
-            }
-            """.formatted(service("pickInventoryOnConnection")));
-
-        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.pickInventoryOnConnection");
-        assertThat(rejection.evidence()).containsExactly("Inventory id at inventoryId");
-    }
-
-    @Test
-    void aTopLevelNodeIdArgumentReadsTheArgument() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateById(film: ID! @nodeId(typeName: "Film")): RateFilmsPayload %s }
-            """.formatted(service("rateById")));
-
-        assertDecodedSlot(argumentBound(schema, "Mutation", "rateById").primary(), "film",
-            TenantBinding.SlotRead.TopLevelArg.INSTANCE, 0);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void twoTenantBearingIdsOfDifferentNodeTypesMintTwoSlots() {
-        // Each decodes through its own node type's helper; the agreement fold then refuses a row
-        // whose two ids name different tenants and skips the optional one when it is absent.
-        var schema = build(SERVICE_TYPES + """
-            type FilmFed implements Node @table(name: "film") @node(typeId: "FF", keyColumns: ["film_id"]) {
-                id: ID! @nodeId
-            }
-            input RatePairInput {
-                film: ID! @nodeId(typeName: "Film")
-                alsoFilm: ID @nodeId(typeName: "FilmFed")
-            }
-            type Mutation { ratePair(in: RatePairInput!): RateFilmsPayload %s }
-            """.formatted(service("ratePair")));
-
-        var bound = argumentBound(schema, "Mutation", "ratePair");
-        assertThat(bound.bindings()).extracting(TenantBinding.BoundSlot::slotName)
-            .containsExactly("in.film", "in.alsoFilm");
-        assertThat(bound.bindings()).extracting(slot ->
-                ((TenantBinding.SlotProjection.DecodedKeySlot) slot.projection()).decode().methodName())
-            .containsExactly("decodeFilm", "decodeFilmFed");
-    }
-
-    @Test
-    void twoIdsWithOneNameAtDifferentPathsMintTwoSlots() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateTwo(first: RateFilmInput!, second: RateFilmInput!): RateFilmsPayload %s }
-            """.formatted(service("rateTwo")));
-
-        assertThat(argumentBound(schema, "Mutation", "rateTwo").bindings())
-            .extracting(TenantBinding.BoundSlot::slotName)
-            .containsExactly("first.film", "second.film");
-    }
-
-    @Test
-    void anUndecodedIdNamesNoTenantSoTheWrappersChildStillRejects() {
-        // The accepted gap: a String parameter holding the encoded id carries no node type the
-        // build can read, so the root stays on the default source and nothing below inherits.
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateByRawId(film: ID!): RateFilmsPayload %s }
-            """.formatted(service("rateByRawId")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateByRawId"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
-    }
-
-    @Test
-    void anUndecodedIdHandedAConnectionRejectsAtTheRootAndTheChildStillRejects() {
-        // The same undecoded id, but the service is handed a DSLContext: it would write on the
-        // default database, so the root itself is refused, beside the payload child's own text.
-        // The child's error is not consequential: the root is offered to take no connection, and
-        // after that fix the payload really has no tenant.
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateByRawIdOnConnection(film: ID!): RateFilmsPayload %s }
-            """.formatted(service("rateByRawIdOnConnection")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateByRawIdOnConnection")).isNull();
-        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.rateByRawIdOnConnection");
-        assertThat(rejection.evidence()).isEmpty();
-        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
-    }
-
-    @Test
-    void aTenantReachRootServiceHandedAConnectionGetsTheServiceText() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { pickFilmOnConnection(film: ID!): Film %s }
-            """.formatted(service("pickFilmOnConnection")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "pickFilmOnConnection")).isNull();
-        assertUnroutedWithoutDeclines(schema, "Mutation.pickFilmOnConnection");
-        assertThat(schema.tenantBindings().rejections())
-            .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding
-                && e.coordinate().equals("Mutation.pickFilmOnConnection"));
-    }
-
-    @Test
-    void aTenantTablesRecordBindingNoTenantIsNamedAsEvidence() {
-        var schema = build(SERVICE_TYPES + """
-            input RetitleFilmInput { title: String @field(name: "title") }
-            type Mutation { retitleFilm(in: RetitleFilmInput!): String %s }
-            """.formatted(service("retitleFilm")));
-
-        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.retitleFilm");
-        assertThat(rejection.evidence()).containsExactly("FilmRecord at in");
-        assertThat(rejection.message())
-            .contains("Its arguments carry tenant-scoped values that bind no tenant: FilmRecord at in.")
-            .doesNotContain("take no connection");
-    }
-
-    @Test
-    void anUnroutedConnectionServiceWithTenantEvidenceRejectsAloneAndItsPayloadInherits() {
-        // Over the evidence the root is not offered to take no connection, so every fix left binds a
-        // tenant in the arguments, and the payload's tenant-scoped child is judged as it leaves it.
-        var schema = build(SERVICE_TYPES + """
-            input RetitleFilmInput { title: String @field(name: "title") }
-            type Mutation { retitleFilmRated(in: RetitleFilmInput!): RateFilmsPayload %s }
-            """.formatted(service("retitleFilmRated")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "retitleFilmRated")).isNull();
-        assertThat(assertUnroutedWithoutDeclines(schema, "Mutation.retitleFilmRated").evidence())
-            .containsExactly("FilmRecord at in");
-        assertThat(schema.tenantBindings().rejections()).singleElement()
-            .satisfies(e -> assertThat(e.coordinate()).isEqualTo("Mutation.retitleFilmRated"));
-        assertInherited(schema, "RateFilmsPayload", "films");
-        assertInherited(schema, "Film", "inventories");
-    }
-
-    @Test
-    void aPolymorphicRecordIdAtAnEmptyReachConnectionServiceRejectsOnceWithTheDecline() {
-        // The widened decline gate: the service needs a tenant though its reach is empty, and the
-        // shape naming the tenant cannot route it. One rejection, carrying the decline's own text.
-        var schema = build(SERVICE_TYPES + FILM_THING + """
-            input ThingInput { occupant: ID! @nodeId(typeName: "FilmThing") }
-            type Mutation { pickForThing(in: ThingInput!): String %s }
-            """.formatted(service("pickForThing")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "pickForThing")).isNull();
-        var atField = schema.tenantBindings().rejections().stream()
-            .filter(e -> e.coordinate().equals("Mutation.pickForThing"))
-            .toList();
-        assertThat(atField).hasSize(1);
-        assertThat(atField.get(0).rejection())
-            .isInstanceOfSatisfying(Rejection.AuthorError.UnroutedServiceCall.class, r -> {
-                assertThat(r.declines()).hasSize(1);
-                assertThat(r.message())
-                    .contains("only through shapes that cannot route the call")
-                    .contains("no single decode to route the service call on")
-                    .doesNotContain("reaches tenant-scoped table")
-                    .doesNotContain("nothing in its arguments names a tenant")
-                    .doesNotContain("take no connection");
-            });
-    }
-
-    @Test
-    void aTableReturningServiceRootOverATenantTableDivines() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { pickFilm(in: RateFilmInput!): Film %s }
-            """.formatted(service("pickFilm")));
-
-        assertDecodedSlot(argumentBound(schema, "Mutation", "pickFilm").primary(), "in.film",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("film")), 0);
-        assertThat(schema.tenantBindings().rejections())
-            .noneMatch(e -> e.coordinate().equals("Mutation.pickFilm"));
-    }
-
     /** A union over two tenant-scoped node types whose keys hold the tenant at different positions. */
     private static final String FILM_THING = """
         type FilmActor implements Node @table(name: "film_actor")
@@ -2270,69 +1918,6 @@ class TenantBindingClassificationTest {
         }
         union FilmThing = Film | FilmActor
         """;
-
-    @Test
-    void aPolymorphicRecordIdAtATableReturningRootRejectsWithItsOwnText() {
-        var schema = build(SERVICE_TYPES + FILM_THING + """
-            input ThingInput { occupant: ID! @nodeId(typeName: "FilmThing") }
-            type Mutation { pickFilmForThing(in: ThingInput!): Film %s }
-            """.formatted(service("pickFilmForThing")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "pickFilmForThing")).isNull();
-        assertRejects(schema, "Mutation.pickFilmForThing",
-            "no single decode to route the service call on");
-        assertThat(schema.tenantBindings().rejections())
-            .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
-                && r.coordinate().equals("Mutation.pickFilmForThing")
-                && r.detail().contains("no argument or input field maps to tenant column"));
-        // The decline's fix lands in a slot, which hands Film a tenant: the decline is the one
-        // error, and the returned row's child inherits rather than repeating it.
-        assertThat(schema.tenantBindings().rejections()).singleElement()
-            .satisfies(e -> assertThat(e.coordinate()).isEqualTo("Mutation.pickFilmForThing"));
-        assertInherited(schema, "Film", "inventories");
-    }
-
-    @Test
-    void aPolymorphicRecordIdBesideADivingSiblingStopsTheFieldDivining() {
-        // Left unchecked, the union's id could name another tenant's record while the sibling
-        // routes the call, so the service would act on it in the wrong database.
-        var schema = build(SERVICE_TYPES + FILM_THING + """
-            input FilmAndThingInput {
-                film: ID! @nodeId(typeName: "Film")
-                thing: ID! @nodeId(typeName: "FilmThing")
-            }
-            type Mutation { rateFilmAndThing(in: FilmAndThingInput!): RateFilmsPayload %s }
-            """.formatted(service("rateFilmAndThing")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateFilmAndThing"))
-            .isNotInstanceOf(TenantBinding.ArgumentBound.class);
-        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
-    }
-
-    @Test
-    void aPolymorphicRecordIdOverGlobalMembersNamesNoTenantAndLeavesTheSiblingDivining() {
-        // Neither customer nor staff carries the tenant column, so the id names no tenant at all.
-        var schema = build(SERVICE_TYPES + """
-            type Customer implements Node @table(name: "customer") @node(keyColumns: ["customer_id"]) {
-                id: ID! @nodeId
-            }
-            type Staff implements Node @table(name: "staff") @node(keyColumns: ["staff_id"]) {
-                id: ID! @nodeId
-            }
-            union AddressOccupant = Customer | Staff
-            input FilmAndThingInput {
-                film: ID! @nodeId(typeName: "Film")
-                thing: ID! @nodeId(typeName: "AddressOccupant")
-            }
-            type Mutation { rateFilmAndThing(in: FilmAndThingInput!): RateFilmsPayload %s }
-            """.formatted(service("rateFilmAndThing")));
-
-        assertThat(argumentBound(schema, "Mutation", "rateFilmAndThing").bindings())
-            .extracting(TenantBinding.BoundSlot::slotName)
-            .containsExactly("in.film");
-        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
-            .isInstanceOf(TenantBinding.Inherited.class);
-    }
 
     /** A tenant-bound Film root the child services below hang off. */
     private static String boundFilmWith(String childFields) {
@@ -2344,65 +1929,6 @@ class TenantBindingClassificationTest {
             type Language @table(name: "language") { name: String }
             type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """.formatted(childFields);
-    }
-
-    @Test
-    void aChildServiceTakingADslContextInheritsTheParentsTenant() {
-        var schema = build(boundFilmWith("rating: String " + service("ratingWithDsl")));
-
-        assertThat(schema.tenantBindingOf("Film", "rating"))
-            .isEqualTo(new TenantBinding.Inherited("Film"));
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aChildServiceOnAHolderConstructedWithTheDslContextInheritsToo() {
-        var schema = build(boundFilmWith(
-            "rating: String @service(service: {className: \"" + TENANT_HOLDER + "\", method: \"rating\"})"));
-
-        assertThat(schema.tenantBindingOf("Film", "rating"))
-            .isEqualTo(new TenantBinding.Inherited("Film"));
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aChildServiceBindingNoConnectionKeepsTheDefaultSource() {
-        var schema = build(boundFilmWith("rating: String " + service("ratingPlain")));
-
-        assertThat(schema.tenantBindingOf("Film", "rating"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-    }
-
-    @Test
-    void aRootServiceReturningAGlobalTableKeepsTheDefaultSourceAndEstablishesNoContext() {
-        // Graphitron re-reads the returned language rows on the service's connection, and global
-        // tables live on the default source, so the tenant the FilmRecord names routes nothing.
-        var schema = build(SERVICE_TYPES + """
-            type Language @table(name: "language") {
-                name: String
-                films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Mutation { languageOfFilm(in: RateFilmInput!): Language %s }
-            """.formatted(service("languageOfFilm")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "languageOfFilm"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        assertRejects(schema, "Language.films", "no ancestor established a tenant context");
-    }
-
-    @Test
-    void aChildServiceReturningAGlobalTableStaysOnTheDefaultSource() {
-        var schema = build(boundFilmWith("""
-            language: Language %s
-            sessionLanguage: Language @service(service: {className: "%s",
-                method: "languageForSession", argMapping: "identity: $session"})
-            """.formatted(service("languageWithDsl"), TENANT_SERVICE)));
-
-        assertThat(schema.tenantBindingOf("Film", "language"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        assertThat(schema.tenantBindingOf("Film", "sessionLanguage"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
     // ===== @tenant: a root service's plain scalar the author marks as the tenant =====
@@ -2433,144 +1959,6 @@ class TenantBindingClassificationTest {
                         .contains("'" + definition + "' declares @tenant, but at '" + use + "'")
                         .contains(fragment);
                 }));
-    }
-
-    @Test
-    void anUnmarkedScalarMemberHandedAConnectionRejectsAtTheRoot() {
-        var schema = build(SERVICE_TYPES + """
-            input RateByFilmIdInput { filmId: Int!  rating: Int }
-            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmId")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateByFilmId")).isNull();
-        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.rateByFilmId");
-        assertThat(rejection.message())
-            .contains("mark the scalar argument or input field that holds the tenant with @tenant");
-        // A plain Int is no tenant evidence, so the root is offered to take no connection, and
-        // the payload child keeps its own error.
-        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
-    }
-
-    /**
-     * A root service handed a connection that reaches no table and names no tenant: its own SQL is
-     * opaque, so it is refused, and offered only to name the tenant or take no connection. Nothing
-     * lets it run on the default source as it is.
-     */
-    @Test
-    void aConnectionServiceReachingNoTableAndNamingNoTenantRejects() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { refreshLanguages: Boolean %s }
-            """.formatted(service("refreshLanguages")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "refreshLanguages")).isNull();
-        var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.refreshLanguages");
-        assertThat(rejection.message()).contains("take no connection");
-    }
-
-    @Test
-    void aTenantMarkedScalarMemberDivinesRawAndItsChildrenInherit() {
-        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
-            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmId")));
-
-        var bound = argumentBound(schema, "Mutation", "rateByFilmId");
-        assertThat(bound.bindings()).hasSize(1);
-        assertRawSlot(bound.primary(), "in.filmId",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
-        assertThat(schema.tenantBindingOf("RateFilmsPayload", "films"))
-            .isEqualTo(new TenantBinding.Inherited("RateFilmsPayload"));
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aTenantMarkedTopLevelArgumentReadsTheArgument() {
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateByFilmIdArgument(filmId: Int! @tenant): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmIdArgument")));
-
-        assertRawSlot(argumentBound(schema, "Mutation", "rateByFilmIdArgument").primary(), "filmId",
-            TenantBinding.SlotRead.TopLevelArg.INSTANCE);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aTenantMarkedJavaRecordMemberDivinesLikeTheBeans() {
-        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
-            type Mutation { rateByFilmIdRecord(in: RateByFilmIdInput!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmIdRecord")));
-
-        assertRawSlot(argumentBound(schema, "Mutation", "rateByFilmIdRecord").primary(), "in.filmId",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aTenantMarkedMemberOfAGroupingInputReadsEverySegment() {
-        var schema = build(SERVICE_TYPES + """
-            input FilmWhere { filmId: Int! @tenant }
-            input RateGroupedInput { where: FilmWhere!  rating: Int }
-            type Mutation { rateByFilmId(in: RateGroupedInput!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmId")));
-
-        assertRawSlot(argumentBound(schema, "Mutation", "rateByFilmId").primary(), "in.where.filmId",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("where", "filmId")));
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aBatchOfMarkedBeansMintsOneSlotReadOffEveryElement() {
-        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
-            type Mutation { rateByFilmIds(in: [RateByFilmIdInput!]!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmIds")));
-
-        var bound = argumentBound(schema, "Mutation", "rateByFilmIds");
-        assertThat(bound.bindings()).hasSize(1);
-        assertRawSlot(bound.primary(), "in.filmId",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aMarkedScalarBesideANodeIdMemberMintsBothSlotsInDeclarationOrder() {
-        var schema = build(SERVICE_TYPES + """
-            input RateByFilmIdAndFilmInput {
-                filmId: Int! @tenant
-                film: ID! @nodeId(typeName: "Film")
-            }
-            type Mutation { rateByFilmIdAndFilm(in: RateByFilmIdAndFilmInput!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmIdAndFilm")));
-
-        var bindings = argumentBound(schema, "Mutation", "rateByFilmIdAndFilm").bindings();
-        assertThat(bindings).hasSize(2);
-        assertRawSlot(bindings.get(0), "in.filmId",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("filmId")));
-        assertDecodedSlot(bindings.get(1), "in.film",
-            new TenantBinding.SlotRead.NestedInput("in", List.of("film")), 0);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    @Test
-    void aMarkedValueNotOfTheTenantKeyTypeDeclinesAtTheFieldAndTheDefinition() {
-        for (String scalar : List.of("String!", "ID!")) {
-            var schema = build(SERVICE_TYPES + """
-                input RateByFilmCodeInput { filmId: %s @tenant }
-                type Mutation { rateByFilmCode(in: RateByFilmCodeInput!): RateFilmsPayload %s }
-                """.formatted(scalar, service("rateByFilmCode")));
-
-            assertThat(schema.tenantBindingOf("Mutation", "rateByFilmCode")).as(scalar).isNull();
-            var unrouted = schema.tenantBindings().rejections().stream()
-                .filter(e -> e.coordinate().equals("Mutation.rateByFilmCode"))
-                .map(e -> e.rejection())
-                .toList();
-            assertThat(unrouted).as(scalar).singleElement()
-                .isInstanceOfSatisfying(Rejection.AuthorError.UnroutedServiceCall.class, r ->
-                    assertThat(r.declines()).singleElement().asString()
-                        .contains("'RateByFilmCodeInput.filmId' is marked @tenant")
-                        .contains("arrives as java.lang.String")
-                        .contains("not the tenant key type java.lang.Integer"));
-            assertTenantMarkerRejection(schema, "RateByFilmCodeInput.filmId",
-                "Mutation.rateByFilmCode", "arrives as java.lang.String");
-        }
     }
 
     @Test
@@ -2607,94 +1995,6 @@ class TenantBindingClassificationTest {
 
         assertTenantMarkerRejection(schema, "Film.rating(scale:)", "Film.rating",
             "a child service runs on its parent's tenant");
-    }
-
-    @Test
-    void aMarkerOnAnInputObjectTypedFieldRejects() {
-        var schema = build(SERVICE_TYPES + """
-            input FilmWhere { filmId: Int! }
-            input RateGroupedInput { where: FilmWhere! @tenant  rating: Int }
-            type Mutation { rateByFilmId(in: RateGroupedInput!): RateFilmsPayload %s }
-            """.formatted(service("rateByFilmId")));
-
-        assertTenantMarkerRejection(schema, "RateGroupedInput.where", "Mutation.rateByFilmId",
-            "it is not a scalar");
-    }
-
-    @Test
-    void aMarkerBesideNodeIdRejects() {
-        var schema = build(SERVICE_TYPES + """
-            input MarkedRateFilmInput { film: ID! @nodeId(typeName: "Film") @tenant }
-            type Mutation { rateFilmWithDsl(in: MarkedRateFilmInput!): RateFilmsPayload %s }
-            """.formatted(service("rateFilmWithDsl")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateFilmWithDsl"))
-            .isInstanceOf(TenantBinding.ArgumentBound.class);
-        assertTenantMarkerRejection(schema, "MarkedRateFilmInput.film", "Mutation.rateFilmWithDsl",
-            "it carries @nodeId");
-    }
-
-    @Test
-    void aMarkerOnAJooqRecordMemberRejects() {
-        var schema = build(SERVICE_TYPES + """
-            input ModifyFilmInput {
-                filmId: Int! @field(name: "film_id") @tenant
-                title: String @field(name: "title")
-            }
-            type Mutation { modifyFilms(in: [ModifyFilmInput!]!): RateFilmsPayload %s }
-            """.formatted(service("modifyFilms")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "modifyFilms"))
-            .isInstanceOf(TenantBinding.ArgumentBound.class);
-        assertTenantMarkerRejection(schema, "ModifyFilmInput.filmId", "Mutation.modifyFilms",
-            "it is bound into a jOOQ record parameter");
-    }
-
-    @Test
-    void aMarkerOnAServiceReturningAGlobalTableRejects() {
-        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
-            type Language @table(name: "language") { name: String }
-            type Mutation { languageByFilmId(in: RateByFilmIdInput!): Language %s }
-            """.formatted(service("languageByFilmId")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "languageByFilmId"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        assertTenantMarkerRejection(schema, "RateByFilmIdInput.filmId", "Mutation.languageByFilmId",
-            "the service returns global @table type 'Language'");
-    }
-
-    @Test
-    void oneInputTypeRoutesItsRootServiceAndRejectsAtAQueryUseSite() {
-        var schema = build(SERVICE_TYPES + RATE_BY_FILM_ID + """
-            type Mutation { rateByFilmId(in: RateByFilmIdInput!): RateFilmsPayload %s }
-            extend type Query { ratedFilms(in: RateByFilmIdInput): [Film!]! }
-            """.formatted(service("rateByFilmId")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateByFilmId"))
-            .isInstanceOf(TenantBinding.ArgumentBound.class);
-        assertTenantMarkerRejection(schema, "RateByFilmIdInput.filmId", "Query.ratedFilms",
-            "is not a root @service");
-        assertThat(schema.tenantBindings().rejections())
-            .noneMatch(e -> e.coordinate().equals("RateByFilmIdInput.filmId")
-                && e.rejection().message().contains("at 'Mutation.rateByFilmId'"));
-    }
-
-    /**
-     * A payload's re-projection of a global table is its own coordinate and a global read, whatever
-     * connection its producer ran on: here a tenant-routed service.
-     */
-    @Test
-    void aPayloadsGlobalReprojectionUnderATenantRoutedServiceIsAGlobalRead() {
-        var schema = build(SERVICE_TYPES + """
-            type Language @table(name: "language") { name: String }
-            type RatedFilmsLanguagePayload { films: [Film!]! language: Language }
-            type Mutation { rateFilmsWithLanguage(ratings: [RateFilmInput!]!): RatedFilmsLanguagePayload %s }
-            """.formatted(service("rateFilmsWithLanguage")));
-
-        argumentBound(schema, "Mutation", "rateFilmsWithLanguage");
-        assertThat(schema.tenantBindingOf("RatedFilmsLanguagePayload", "language"))
-            .isEqualTo(TenantBinding.Untenanted.GlobalRead.INSTANCE);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
     @Test
@@ -3120,45 +2420,6 @@ class TenantBindingClassificationTest {
         assertInherited(schema, "Film", "inventories");
         assertInherited(schema, "Film", "inventoriesBy");
         assertThat(schema.tenantBindings().rejections()).hasSize(1);
-    }
-
-    @Test
-    void anOptionalOnlyRootThatNeedsNoTenantStillHandsDownNothing() {
-        // The same service and input as wrapperServiceWithANodeIdRecordMemberDivinesAndItsChildrenInherit,
-        // with the input made nullable: the decoded slot is optional, so the root reads
-        // conditional. It is handed no connection and its own reach is empty, so it needs no
-        // tenant and runs on the default source; its subtree really has none, and the payload's
-        // tenant-scoped child rejects on its own.
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateFilm(in: RateFilmInput): RateFilmsPayload %s }
-            """.formatted(service("rateFilm")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateFilm"))
-            .isEqualTo(TenantBinding.Untenanted.DefaultSource.INSTANCE);
-        assertThat(schema.tenantBindings().rejections())
-            .noneMatch(e -> e.coordinate().equals("Mutation.rateFilm"));
-        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
-    }
-
-    @Test
-    void anOptionalOnlyConnectionServiceRejectsAloneAndItsSubtreeInherits() {
-        // The same nullable input, but the service is handed a DSLContext, so it needs a tenant:
-        // the root rejects with the optional-only detail, and its subtree is judged as either fix
-        // leaves it.
-        var schema = build(SERVICE_TYPES + """
-            type Mutation { rateFilmWithDsl(in: RateFilmInput): RateFilmsPayload %s }
-            """.formatted(service("rateFilmWithDsl")));
-
-        assertThat(schema.tenantBindingOf("Mutation", "rateFilmWithDsl")).isNull();
-        assertThat(schema.tenantBindings().rejections())
-            .singleElement()
-            .satisfies(e -> {
-                var unrouted = (Rejection.AuthorError.UnroutedServiceCall) e.rejection();
-                assertThat(unrouted.declines()).singleElement().asString()
-                    .contains("'Mutation.rateFilmWithDsl' " + OPTIONAL_ONLY + " (in.film)");
-            });
-        assertInherited(schema, "RateFilmsPayload", "films");
-        assertInherited(schema, "Film", "inventories");
     }
 
     // ===== Any rejected field or dispatch entry that needs a tenant rejects alone =====

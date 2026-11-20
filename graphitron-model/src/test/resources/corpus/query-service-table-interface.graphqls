@@ -5,5 +5,4 @@ extend type Query {
   "Unlike the multi-table form, the fetcher collects the returned rows' keys and re-fetches by key, routing each row off the live discriminator rather than off its record class."
   mediaService: MediaItem
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-    @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)
 }

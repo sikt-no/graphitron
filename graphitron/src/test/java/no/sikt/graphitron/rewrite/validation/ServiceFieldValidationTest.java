@@ -364,41 +364,4 @@ class ServiceFieldValidationTest {
 
     // ===== Instance-holder rejection arm — validator-tier reachability =====
 
-    /**
-     * Drives the instance-service-holder-shape rejection end-to-end: builds a real schema bound to
-     * {@link no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor} (an instance holder
-     * whose only constructor takes an unbindable parameter), runs it through
-     * {@code GraphitronSchemaBuilder} + {@code GraphitronSchemaValidator}, and asserts the typed
-     * {@code ServiceMethodCallError.InstanceHolderUnconstructible} arm surfaces (the holder rule
-     * was relaxed from {@code (DSLContext)}-only to any all-bindable constructor, and the prose
-     * rejection migrated onto the typed arm). Existing {@code ServiceCatalogTest} coverage is
-     * unit-tier; this test pins reachability through the validator's own dispatch surface, matching
-     * {@code development-principles.adoc} ("Rejections: validator mirrors classifier invariants").
-     */
-    @org.junit.jupiter.api.Test
-    void instanceServiceHolderShape_unbindableCtor_validatorReportsTypedAuthorError() {
-        var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
-            type Query {
-                film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor", method: "getFilm"})
-            }
-            type Film @table(name: "film") {
-                title: String
-            }
-            """);
-
-        var errors = validate(schema);
-        var typed = errors.stream()
-            .map(ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible)
-            .map(r -> (no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible) r)
-            .findFirst();
-        assertThat(typed)
-            .as("validator surfaces the instance-holder rejection as a typed arm")
-            .isPresent();
-        assertThat(typed.get().lspCode())
-            .isEqualTo("graphitron.service-method-call.instance-holder-unconstructible");
-        assertThat(typed.get().message())
-            .contains("make the method static")
-            .contains("DSLContext");
-    }
 }

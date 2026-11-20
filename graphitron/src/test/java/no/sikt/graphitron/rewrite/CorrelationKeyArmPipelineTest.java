@@ -17,9 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * projects nothing, which is the end of over-projection (pinned as SQL at the execution tier by
  * the projection SQL baseline).
  *
- * <p>One test per parent-row-reading leaf family without a natural home elsewhere: the
- * {@code @service} shapes live in {@link ServiceProjectionPipelineTest}, the nested split shape
- * in {@link NestingFieldPipelineTest}. The projection membership census's unexercised list
+ * <p>One test per parent-row-reading leaf family without a natural home elsewhere: the nested
+ * split shape lives in {@link NestingFieldPipelineTest}, and a {@code @service} child's key columns
+ * are projected from the store's frames. The projection membership census's unexercised list
  * points here for the polymorphic shapes.
  */
 @PipelineTier

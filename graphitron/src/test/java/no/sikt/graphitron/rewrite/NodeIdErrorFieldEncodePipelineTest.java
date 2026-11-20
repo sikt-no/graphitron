@@ -32,9 +32,6 @@ import static org.assertj.core.api.Assertions.tuple;
 @PipelineTier
 class NodeIdErrorFieldEncodePipelineTest {
 
-    private static final String SERVICE_DECL =
-        "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\", method: \"runSak\"})";
-
     private static final String FILM_NODE = """
         type Film implements Node @table(name: "film") @node { id: ID! }
         """;
@@ -64,26 +61,6 @@ class NodeIdErrorFieldEncodePipelineTest {
             type Query { x: String }
             type Mutation { sak(in: FilmInput!): SakPayload @mutation(typeName: UPDATE, table: "film") }
             """.formatted(HANDLER, errorFields);
-    }
-
-    /**
-     * The error type under a root {@code @service} payload. Only that producer's outcome channel
-     * runs the handler accessor-coverage check, so the refusal below is reached through it.
-     */
-    private static String serviceSchemaFor(String errorFields) {
-        return FILM_NODE + """
-            type FilmNotFound @error(handlers: [%s]) {
-                path: [String!]!
-                message: String!
-            %s
-            }
-            union SakError = FilmNotFound
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(HANDLER, errorFields, SERVICE_DECL);
     }
 
     @Test
@@ -133,25 +110,6 @@ class NodeIdErrorFieldEncodePipelineTest {
                 assertThat(a.accessorBase()).isEqualTo("label");
                 assertThat(a.wire()).isInstanceOf(CallSiteCompaction.Direct.class);
             });
-    }
-
-    /**
-     * The accessor-coverage check now expects the key column's type at a {@code @nodeId} field, and
-     * this is the case that proves it changed: {@code getLabel()} returns a {@code String}, which is
-     * exactly what a consumer encoding by hand would have exposed, and the carrier is refused so the
-     * hand-written encoder has to go rather than silently disagreeing with the generated one.
-     */
-    @Test
-    void anAccessorYieldingTheEncodedForm_refusesTheCarrier() {
-        var schema = TestSchemaHelper.buildSchema(serviceSchemaFor("""
-                filmRef: ID @nodeId(typeName: "Film") @field(name: "label")
-            """));
-
-        var f = (UnclassifiedField) schema.field("Query", "sak");
-        assertThat(f.reason())
-            .contains("filmRef")
-            .contains("FilmNotFoundException")
-            .contains("Integer");
     }
 
     /** The arity precondition reaches this coordinate too, and names the count. */

@@ -212,7 +212,7 @@ public record GraphitronSchema(
     /**
      * The {@link GraphitronSchemaBuilder} constructor with the materialized delivery fact
      * relation ({@link DeliveryFactRelation}), the post-walk delivery fold beside the member
-     * relation. Defaults the session-hook carrier to not-configured.
+     * relation. Classifies no service context keys.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -226,8 +226,30 @@ public record GraphitronSchema(
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers,
                             DeliveryFactRelation deliveryFacts) {
+        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
+            tenantScopes, tenantBindings, connectionSynthesis, operationMembers, deliveryFacts, List.of());
+    }
+
+    /**
+     * The {@link GraphitronSchemaBuilder} constructor with the context keys the store states the
+     * {@code @service} calls read ({@link no.sikt.graphitron.emit.FillQuery#contextKeys}), which
+     * {@link ContextArgumentClassifier} adds to the keys the walk harvests.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            List<ValidationError> diagnostics,
+                            Map<String, Arrival> arrivals,
+                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
+                            TenantScopes tenantScopes,
+                            TenantBindingIndex tenantBindings,
+                            ConnectionSynthesisRelation connectionSynthesis,
+                            OperationMemberRelation operationMembers,
+                            DeliveryFactRelation deliveryFacts,
+                            List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
-            ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics),
+            ContextArgumentClassifier.classify(fields.values(), serviceContextKeys), List.copyOf(diagnostics),
             Map.copyOf(arrivals), Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings,
             connectionSynthesis, operationMembers, deliveryFacts);
     }
@@ -408,9 +430,10 @@ public record GraphitronSchema(
      * leaves, which never recurses into the target's own references.
      */
     public Presence.SubtreePresence presenceOf(String typeName) {
+        // A store-owned field stays in, blocking the collapse as any service child does.
         var fields = fieldsOf(typeName).stream()
-            .filter(no.sikt.graphitron.rewrite.model.ChildField.class::isInstance)
-            .map(no.sikt.graphitron.rewrite.model.ChildField.class::cast)
+            .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.ChildField
+                || f instanceof GraphitronField.StoreOwnedField)
             .toList();
         return Presence.SubtreePresence.over(fields, presenceLookup());
     }

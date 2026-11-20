@@ -5,5 +5,4 @@ extend type Query {
   "A root @service returning a multi-table interface: the method hands back a key-populated table record per branch and the fetcher dispatches on its runtime class, which needs the participants to sit in distinct tables. A @service returning a union is rejected at classify."
   searchService: Searchable
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-    @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Interface)
 }

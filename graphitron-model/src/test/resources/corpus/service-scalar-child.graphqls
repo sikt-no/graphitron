@@ -1,9 +1,8 @@
-type Language @table(name: "language") {
+type Language @table(name: "language") @classifiedType(as: TableType) {
   name: String
   "A scalar a service produces; no SQL of its own."
   rank: Int @service(
     service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMapped"})
-    @classified(source: OnlyChild, operations: [ServiceCall], target: Single, targetShape: Record)
 
 }
 extend type Query { language: Language }

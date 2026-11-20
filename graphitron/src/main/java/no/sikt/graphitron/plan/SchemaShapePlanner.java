@@ -114,6 +114,6 @@ public final class SchemaShapePlanner {
             return schema.fieldsOf(name).stream().anyMatch(ownership::hasFetcher);
         }
         return reach.representatives().containsKey(name)
-            && NestingReach.ownsFetchers(reach.wiringFor(name).nestedFields(), ownership);
+            && NestingReach.ownsFetchers(reach.wiringFor(name), ownership);
     }
 }

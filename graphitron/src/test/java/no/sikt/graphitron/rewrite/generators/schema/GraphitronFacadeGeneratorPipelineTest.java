@@ -1,11 +1,17 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.emit.FillQuery;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.lang.model.element.Modifier;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,6 +31,71 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @PipelineTier
 class GraphitronFacadeGeneratorPipelineTest {
+
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
+    /**
+     * The context keys the store states the {@code @service} calls of two shared scenarios read:
+     * occurrence-call-parameter's, where only services read userId, and call-context-key's, where a
+     * service and a {@code @condition} both read it.
+     */
+    private static final class ServiceKeys {
+        static final List<FillQuery.ContextKey> SERVICE_ONLY = FACTS
+            .read("scenarios/occurrence-call-parameter", graph -> FillQuery.contextKeys(graph.handle()));
+        static final List<FillQuery.ContextKey> SHARED = FACTS
+            .read("scenarios/call-context-key", graph -> FillQuery.contextKeys(graph.handle()));
+    }
+
+    private static MethodSpec newExecutionInput(String sdl, List<FillQuery.ContextKey> serviceKeys) {
+        var schema = TestSchemaHelper.buildSchema(sdl, TestConfiguration.testContext(), Map.of(), Map.of(),
+            serviceKeys);
+        return GraphitronFacadeGenerator.generate(schema, "com.example").get(0).methodSpecs().stream()
+            .filter(m -> m.name().equals("newExecutionInput"))
+            .findFirst()
+            .orElseThrow();
+    }
+
+    @Test
+    void factory_takesAContextKeyOnlyAServiceReads() {
+        // The store owns the @service field whole, so no classified field carries its key: the
+        // factory takes userId because the store states the call reads it into a String parameter.
+        var factory = newExecutionInput("""
+            type Query {
+                callGreeting: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+                    method: "greet"}, contextArguments: ["userId"])
+            }
+            """, ServiceKeys.SERVICE_ONLY);
+
+        assertThat(factory.parameters()).extracting(p -> p.name())
+            .containsExactly("defaultDsl", "userId");
+        assertThat(factory.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("org.jooq.DSLContext", "java.lang.String");
+    }
+
+    @Test
+    void factory_takesAKeyAServiceAndAConditionBothReadOnce() {
+        // The walk harvests the @condition's userId and the store states the @service's; the two
+        // agree on String and the factory takes the key once.
+        var factory = newExecutionInput("""
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+            type Query {
+                greetingByUser: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+                    method: "greet"
+                }, contextArguments: ["userId"])
+                customersSeenByUser: [Customer!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "customerSeenByUser"}, contextArguments: ["userId"])
+            }
+            """, ServiceKeys.SHARED);
+
+        assertThat(factory.parameters()).extracting(p -> p.name())
+            .containsExactly("defaultDsl", "userId");
+        assertThat(factory.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("org.jooq.DSLContext", "java.lang.String");
+    }
 
     @Test
     void factory_reflectsContextArgumentsAlphabeticallyWithReflectedJavaTypes() {

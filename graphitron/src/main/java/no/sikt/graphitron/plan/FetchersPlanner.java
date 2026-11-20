@@ -58,7 +58,7 @@ public final class FetchersPlanner {
             if (hosting.contains(name)) {
                 continue;
             }
-            if (NestingReach.ownsFetchers(reach.wiringFor(name).nestedFields(), ownership)) {
+            if (NestingReach.ownsFetchers(reach.wiringFor(name), ownership)) {
                 rows.add(new TypeUnitCommand.FetchersUnit(name, units.fetchers(name)));
             }
         }

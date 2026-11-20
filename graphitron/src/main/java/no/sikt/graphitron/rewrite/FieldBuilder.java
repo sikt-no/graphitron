@@ -58,6 +58,7 @@ import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronField.StoreOwnedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -1841,7 +1842,14 @@ class FieldBuilder {
             var newExpanding = new LinkedHashSet<>(expandingTypes);
             newExpanding.add(elementTypeName);
             var nestedFields = new ArrayList<ChildField>();
+            var storeOwned = new ArrayList<StoreOwnedField>();
             for (var nestedDef : graphQLObjectType.getFieldDefinitions()) {
+                // A nested @service is the store's whole, as at any other depth; it rides beside the
+                // projected children rather than among them, being no projection off the parent row.
+                if (nestedDef.hasAppliedDirective(DIR_SERVICE)) {
+                    storeOwned.add(new StoreOwnedField(elementTypeName, nestedDef.getName(), locationOf(nestedDef)));
+                    continue;
+                }
                 var nested = classifyChildFieldOnTableType(nestedDef, elementTypeName, parentTableType, newExpanding);
                 if (nested instanceof UnclassifiedField unc) {
                     String prefix = "nested type '" + elementTypeName + "' field '" + nestedDef.getName() + "': ";
@@ -1876,7 +1884,7 @@ class FieldBuilder {
             }
             return new NestingField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), wrapper),
-                List.copyOf(nestedFields));
+                List.copyOf(nestedFields), List.copyOf(storeOwned));
         }
 
         return new UnclassifiedField(parentTypeName, name, location, Rejection.structural("return type '" + elementTypeName + "' is not a @table, record-backed, interface, or union Graphitron type"));
@@ -3927,6 +3935,11 @@ class FieldBuilder {
     GraphitronField classifyField(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType,
             Class<?> parentBackingClass) {
         var result = classifyFieldInner(fieldDef, parentTypeName, parentType, parentBackingClass);
+        // A field the store owns whole raises nothing here: the placement gates below are the
+        // store's to judge on it, as everything else about it is.
+        if (result instanceof StoreOwnedField) {
+            return result;
+        }
         // Placement gate: @referenceFor is only meaningful on a multi-table interface/union
         // child field (the only site resolveChildPolymorphicJoinPaths reads it). On any other field
         // the directive is silently ignored by classification, so a field that carries it yet
@@ -3948,48 +3961,33 @@ class FieldBuilder {
                     + "polymorphic fields, non-polymorphic fields, and root fields have no participant "
                     + "set to bind a path to). Remove the @referenceFor directive."));
         }
-        // Placement gate: @nodeId on an output field whose value a producer method returns. Every
-        // classifier that can see such a field answers the producer directive and returns before
-        // reaching its @nodeId arm, so the directive is dropped and the producer's own value
-        // reaches the consumer where an encoded id was asked for. The gate sits here rather than in
-        // one classifier because three arms drop it the same way (the @service and @externalField
-        // arms on a table parent, and the root @service arm), and no arm honours both directives:
-        // the one carrier that encodes a producer's value, ChildField.SingleRecordIdField, reads
-        // the producer off its parent payload, never off the field carrying @nodeId. A
-        // coordinate that already failed keeps its own rejection, which is the more specific one.
+        // Placement gate: @nodeId on an output field whose value an @externalField method returns.
+        // The @externalField classifier answers the producer directive and returns before reaching
+        // its @nodeId arm, so the directive would be dropped and the producer's own value would reach
+        // the consumer where an encoded id was asked for. A coordinate that already failed keeps its
+        // own rejection, which is the more specific one. (A @service carrying @nodeId is the store's:
+        // the two are conflicting claims there.)
         if (fieldDef.hasAppliedDirective(DIR_NODE_ID)
                 && !(result instanceof UnclassifiedField)
-                && (fieldDef.hasAppliedDirective(DIR_SERVICE)
-                    || fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD))) {
+                && fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
             return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef),
-                producerBackedNodeIdDeferral(fieldDef));
+                producerBackedNodeIdDeferral());
         }
         return result;
     }
 
     /**
-     * The deferral for {@code @nodeId} at a coordinate whose value a producer method returns.
-     * Deferred rather than structural because the shape is one graphitron means to carry out: the
-     * producer hands back one value and encoding it is the same helper call every other carrier
-     * makes, so what is missing is an emitter and not the author's understanding.
-     *
-     * <p>The lead is one fact for both producers, the value not being a projection of the parent's
-     * own columns to encode from. The tail differs because what an author can do instead differs:
-     * an {@code @service} producer returns a Java value and can call the generated encoder itself,
-     * while an {@code @externalField} producer returns a jOOQ expression and cannot.
+     * The deferral for {@code @nodeId} at a coordinate whose value an {@code @externalField} method
+     * returns. Deferred rather than structural because the shape is one graphitron means to carry
+     * out: the producer hands back one value and encoding it is the same helper call every other
+     * carrier makes, so what is missing is an emitter and not the author's understanding.
      */
-    private static Rejection producerBackedNodeIdDeferral(GraphQLFieldDefinition fieldDef) {
-        boolean viaService = fieldDef.hasAppliedDirective(DIR_SERVICE);
-        String lead = "@nodeId classifies but does not encode at a coordinate whose value @"
-            + (viaService ? DIR_SERVICE : DIR_EXTERNAL_FIELD)
-            + " produces, so the producer's own value would reach the consumer unencoded";
-        return Rejection.deferred(viaService
-            ? lead + ". Until that encode lands, drop @nodeId here and have the producer return the"
-                + " id already encoded: the generated NodeIdEncoder is public and declares an"
-                + " encode method per @node type."
-            : lead + ". Until that encode lands, drop @nodeId here and encode from a field the"
-                + " parent's own key columns back; an @externalField method returns a jOOQ"
-                + " expression rather than a value it could encode itself.");
+    private static Rejection producerBackedNodeIdDeferral() {
+        return Rejection.deferred("@nodeId classifies but does not encode at a coordinate whose value @"
+            + DIR_EXTERNAL_FIELD + " produces, so the producer's own value would reach the consumer unencoded"
+            + ". Until that encode lands, drop @nodeId here and encode from a field the parent's own key"
+            + " columns back; an @externalField method returns a jOOQ expression rather than a value it"
+            + " could encode itself.");
     }
 
     private GraphitronField classifyFieldInner(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType,
@@ -4019,6 +4017,13 @@ class FieldBuilder {
             return new UnclassifiedField(parentTypeName, name, location, Rejection.directiveConflict(
                 List.of(DIR_MULTITABLE_REFERENCE),
                 "@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path. For a per-participant join path that auto-discovery cannot derive, use @referenceFor(type:, path:) instead (one application per participant)."));
+        }
+
+        // A @service field is the store's whole, at the root and under any parent: the store emits
+        // its fetcher and its defects are the only refusals it has, so the walk resolves nothing of
+        // it and answers with a leaf that carries nothing.
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
+            return new StoreOwnedField(parentTypeName, name, location);
         }
 
         // Mutually exclusive claiming directives are no longer intercepted here: every claim is

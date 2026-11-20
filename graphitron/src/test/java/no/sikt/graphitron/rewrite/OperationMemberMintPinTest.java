@@ -151,7 +151,6 @@ class OperationMemberMintPinTest {
             .hasEntrySatisfying(Kind.ORDER_BY, c -> assertThat(c).isGreaterThanOrEqualTo(3))
             .hasEntrySatisfying(Kind.PAGINATE, c -> assertThat(c).isGreaterThanOrEqualTo(4))
             .hasEntrySatisfying(Kind.LOOKUP, c -> assertThat(c).isGreaterThanOrEqualTo(2))
-            .hasEntrySatisfying(Kind.SERVICE_CALL, c -> assertThat(c).isGreaterThanOrEqualTo(2))
             .hasEntrySatisfying(Kind.WRITE, c -> assertThat(c).isGreaterThanOrEqualTo(3))
             .hasEntrySatisfying(Kind.REENTRY, c -> assertThat(c).isGreaterThanOrEqualTo(3))
             .hasEntrySatisfying(Kind.SELECT, c -> assertThat(c).isGreaterThanOrEqualTo(50))
@@ -189,30 +188,19 @@ class OperationMemberMintPinTest {
         var nodes = TestSchemaHelper.nodeDeclaration();
         var facts = no.sikt.graphitron.facts.GatheredFacts.gather(
             bundle.assembled(), (s, v) -> SchemaReachability.walk(s, nodes, v));
-        Set<String> serviceSlots = facts.service().rows().stream()
-            .map(r -> r.parentTypeName() + "." + r.fieldName()).collect(Collectors.toSet());
         Set<String> writeSlots = facts.write().rows().stream()
             .map(r -> r.parentTypeName() + "." + r.fieldName()).collect(Collectors.toSet());
 
-        var serviceMembers = new TreeSet<String>();
         var writeMembers = new TreeSet<String>();
         for (var leaf : flatOutputLeaves(schema)) {
             var label = leaf.parentTypeName() + "." + leaf.name();
             var minted = schema.operationMembersOf(
                 FieldCoordinates.coordinates(leaf.parentTypeName(), leaf.name()));
-            if (minted.stream().anyMatch(m -> m instanceof OperationMember.ServiceCall)) {
-                serviceMembers.add(label);
-            }
             if (minted.stream().anyMatch(m -> m instanceof OperationMember.Write w
                     && !(w instanceof OperationMember.Write.RoutineWrite))) {
                 writeMembers.add(label);
             }
         }
-        assertThat(serviceMembers)
-            .as("the serviceCall member population and the @service slot population are one"
-                + " fact over classified coordinates")
-            .isNotEmpty()
-            .isEqualTo(new TreeSet<>(serviceSlots));
         assertThat(writeMembers)
             .as("the DML-verb write member population and the @mutation slot population are one"
                 + " fact over classified coordinates")

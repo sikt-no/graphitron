@@ -100,7 +100,8 @@ public final class FetcherEdgeCommands {
                 yield childRowOf(cf, units);
             }
             case InputField ignored -> null;
-            case GraphitronField.UnclassifiedField ignored -> null;
+            // The store emits a store-owned field's fetcher, its edge included.
+            case GraphitronField.UnclassifiedField _, GraphitronField.StoreOwnedField _ -> null;
         };
         if (row != null) {
             rows.add(row);

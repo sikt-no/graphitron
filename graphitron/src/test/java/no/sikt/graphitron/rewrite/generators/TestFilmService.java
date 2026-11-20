@@ -134,8 +134,8 @@ public class TestFilmService {
     // ===== Coordinate-precedence fixtures =====
     //
     // Each of these pairs a coordinate-level defect with a second defect that used to win the
-    // race, so the pipeline pins in ServiceCoordinatePrecedenceTest assert which diagnostic
-    // surfaces rather than merely that something was rejected.
+    // race, so a pin can assert which diagnostic surfaces rather than merely that something was
+    // rejected.
 
     /**
      * Fixture: a batch-shaped signature whose only defect is the coordinate. Paired with a

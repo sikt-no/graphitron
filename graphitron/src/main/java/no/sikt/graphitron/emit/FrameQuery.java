@@ -1,5 +1,6 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Field;
 import org.jooq.Records;
@@ -50,11 +51,19 @@ public final class FrameQuery {
 
     private FrameQuery() {}
 
-    /** One column of the key a child takes off its parent, in key order. */
-    public record KeyColumn(String sqlName, String javaName, String bindingType) {
+    /**
+     * One column of the key a child takes off its parent, in key order: its names, the Java type it
+     * binds to, and the type jOOQ exchanges with the database for it.
+     */
+    public record KeyColumn(String sqlName, String javaName, String bindingType, String databaseType) {
         public KeyColumn {
             Objects.requireNonNull(javaName, "javaName");
             Objects.requireNonNull(bindingType, "bindingType");
+        }
+
+        /** The column as the projection selects it. */
+        public ColumnRef columnRef() {
+            return new ColumnRef(sqlName, javaName, bindingType, databaseType);
         }
     }
 
@@ -171,7 +180,7 @@ public final class FrameQuery {
         var kc = SQL_CONSTRAINT_COLUMN;
         var c = SQL_COLUMN;
         return multiset(
-            select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE)
+            select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
                 .from(k)
                 .join(kc).on(kc.SOURCE_NAME.eq(k.SOURCE_NAME), kc.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
                     kc.TABLE_NAME.eq(k.TABLE_NAME), kc.CONSTRAINT_NAME.eq(k.CONSTRAINT_NAME))

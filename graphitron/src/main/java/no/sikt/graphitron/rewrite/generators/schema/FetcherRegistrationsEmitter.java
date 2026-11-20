@@ -4,6 +4,7 @@ import no.sikt.graphitron.command.TypeUnitCommand;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.FetcherOwnership;
+import no.sikt.graphitron.rewrite.NestingReach;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;
@@ -48,13 +49,14 @@ public final class FetcherRegistrationsEmitter {
 
     /**
      * @param nestedTypeName            the GraphQL type name (e.g. {@code "FilmMeta"})
-     * @param fields                    the classified nested fields in SDL order
+     * @param fields                    the nested fields a fetcher may be wired for
+     *                                  ({@link NestingReach#wiredFields})
      * @param representativeParentTable first-seen parent's table; column Field references resolve
      *                                  against this table at generation time (first-occurrence-wins)
      */
     private record NestedTypeWiring(
             String nestedTypeName,
-            List<ChildField> fields,
+            List<? extends GraphitronField> fields,
             TableRef representativeParentTable) {}
 
     private FetcherRegistrationsEmitter() {}
@@ -124,7 +126,7 @@ public final class FetcherRegistrationsEmitter {
                         + " nesting-reach fold has no wiring for it; the producer's flag rule and"
                         + " the reach fold disagree");
                 }
-                body = nestedBody(schema, new NestedTypeWiring(name, wiring.nestedFields(),
+                body = nestedBody(schema, new NestedTypeWiring(name, NestingReach.wiredFields(wiring),
                         wiring.returnType().table()), units, outputPackage, ownership)
                     .orElseThrow(() -> new IllegalStateException(
                         "schema-shape row for '" + name + "' is flagged registersFetchers but its"
@@ -298,7 +300,7 @@ public final class FetcherRegistrationsEmitter {
         for (var f : dualWiring.fields()) {
             if ((f instanceof ChildField.ColumnBackedField || f instanceof ChildField.PivotSlotField)
                     && f.name().equals(fieldName)) {
-                return f;
+                return (ChildField) f;
             }
         }
         return null;

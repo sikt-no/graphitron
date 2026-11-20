@@ -256,10 +256,13 @@ public sealed interface ParentSourceBinding {
     /**
      * Leaves whose fetcher reads no parent backing object: root fetchers (the source is the
      * root object), the errors field's own transports (they read the {@code Outcome} error
-     * channel itself, which is the outcome-aware read), and input-object
-     * leaves (attached to input types; no fetcher is emitted at all).
+     * channel itself, which is the outcome-aware read), input-object
+     * leaves (attached to input types; no fetcher is emitted at all), and the store-owned field,
+     * whose fetcher the store emits from its frame and which no classified emitter reads a parent
+     * through.
      */
     Set<Class<? extends GraphitronField>> NO_PARENT_SOURCE_LEAVES = Set.of(
+        GraphitronField.StoreOwnedField.class,
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
         QueryField.QueryTableField.class,

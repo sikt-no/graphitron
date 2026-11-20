@@ -10,7 +10,7 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
  * Every leaf type is a Java record carrying the properties needed for code generation.
  */
 public sealed interface GraphitronField
-    permits OutputField, InputField, GraphitronField.UnclassifiedField {
+    permits OutputField, InputField, GraphitronField.UnclassifiedField, GraphitronField.StoreOwnedField {
 
     /** The name of the parent GraphQL type that defines this field. */
     String parentTypeName();
@@ -53,4 +53,19 @@ public sealed interface GraphitronField
         /** Convenience for log formatters that need just the kebab-case kind. */
         public RejectionKind kind() { return RejectionKind.of(rejection); }
     }
+
+    /**
+     * A field the store owns whole: a {@code @service} field, generated from the store and judged by
+     * the store's defects alone. The classified model takes nothing from it, so it carries no service
+     * data and raises no error; whether it has a fetcher is the store's to say
+     * ({@link no.sikt.graphitron.rewrite.FetcherOwnership}).
+     *
+     * <p>The same idea as the voucher field Graphitron mints, which the store also owns whole and the
+     * walk's verdict stands down on ({@link no.sikt.graphitron.model.schema.AttributedRegistry#storeOwned()}).
+     */
+    record StoreOwnedField(
+        String parentTypeName,
+        String name,
+        SourceLocation location
+    ) implements GraphitronField {}
 }

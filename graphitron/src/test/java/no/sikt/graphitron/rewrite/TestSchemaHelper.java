@@ -68,10 +68,31 @@ public final class TestSchemaHelper {
      * answer a fact document in the shared population states, read once, never a store of the test's own.
      */
     public static GraphitronSchema buildSchema(String schemaText, RunContext ctx, java.util.Map<String, String> rowTenants) {
+        return buildSchema(schemaText, ctx, rowTenants, java.util.Map.of());
+    }
+
+    /**
+     * {@link #buildSchema(String, RunContext, java.util.Map)} where the tenant fold also reads, below
+     * each {@code @service} field, what the connection {@code serviceConnections} states for it hands
+     * down, read off a fact document as {@code rowTenants} is.
+     */
+    public static GraphitronSchema buildSchema(String schemaText, RunContext ctx, java.util.Map<String, String> rowTenants,
+            java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections) {
+        return buildSchema(schemaText, ctx, rowTenants, serviceConnections, java.util.List.of());
+    }
+
+    /**
+     * {@link #buildSchema(String, RunContext, java.util.Map, java.util.Map)} where the context-argument
+     * classification also takes the {@code serviceContextKeys} the store states the {@code @service}
+     * calls read, read off a fact document as {@code rowTenants} is.
+     */
+    public static GraphitronSchema buildSchema(String schemaText, RunContext ctx, java.util.Map<String, String> rowTenants,
+            java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections,
+            java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
         return GraphitronSchemaBuilder.buildBundle(AttributedRegistry.from(registry),
             GraphitronSchemaBuilder.assembleOrFail(no.sikt.graphitron.model.schema.SchemaAssembly.of(registry)),
-            ctx, java.util.Set.of(), rowTenants).model();
+            ctx, java.util.Set.of(), rowTenants, serviceConnections, serviceContextKeys).model();
     }
 
     /**

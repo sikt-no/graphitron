@@ -40,22 +40,6 @@ class WireCoercionCastGuardPipelineTest {
     // ===== Site B: @service scalar argument =====
 
     @Test
-    void serviceScalarArg_idBoundToLong_rejectedWithAssignability() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Query {
-              film(id: ID): String
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "wireIdAsLong"})
-            }
-            """);
-        var rejection = rejectionOf(schema.field("Query", "film"));
-        assertThat(rejection).isInstanceOf(WireCoercionError.Assignability.class);
-        var a = (WireCoercionError.Assignability) rejection;
-        assertThat(a.lspCode()).isEqualTo(ASSIGNABILITY_CODE);
-        assertThat(a.coercionOutputType()).isEqualTo("java.lang.String");
-        assertThat(a.declaredType()).isEqualTo("java.lang.Long");
-    }
-
-    @Test
     void serviceScalarArg_idBoundToString_classifiesCleanly() {
         // Non-regression: ID → String is a true wire pass-through; the predicate must keep the
         // Direct arm, not over-reject.
@@ -84,41 +68,7 @@ class WireCoercionCastGuardPipelineTest {
 
     // ===== Site A: @service input-bean scalar field =====
 
-    @Test
-    void inputBeanScalarField_intBoundToLong_rejectedWithAssignability() {
-        var schema = TestSchemaHelper.buildSchema("""
-            input WireLongInput { filmId: Int }
-            type Query {
-              useBean(input: WireLongInput): String
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "useLongBean"})
-            }
-            """);
-        var rejection = rejectionOf(schema.field("Query", "useBean"));
-        assertThat(rejection).isInstanceOf(WireCoercionError.Assignability.class);
-        var a = (WireCoercionError.Assignability) rejection;
-        assertThat(a.lspCode()).isEqualTo(ASSIGNABILITY_CODE);
-        assertThat(a.coercionOutputType()).isEqualTo("java.lang.Integer");
-        assertThat(a.declaredType()).isEqualTo("java.lang.Long");
-    }
-
     // ===== Site E: @service input-bean enum field with a divergent value name =====
-
-    @Test
-    void inputBeanEnumField_divergentValueName_rejectedWithEnumConstantDivergence() {
-        var schema = TestSchemaHelper.buildSchema("""
-            enum WireRating { G PG PGThirteen }
-            input WireEnumInput { rating: WireRating }
-            type Query {
-              useBean(input: WireEnumInput): String
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "useEnumBean"})
-            }
-            """);
-        var rejection = rejectionOf(schema.field("Query", "useBean"));
-        assertThat(rejection).isInstanceOf(WireCoercionError.EnumConstantDivergence.class);
-        var d = (WireCoercionError.EnumConstantDivergence) rejection;
-        assertThat(d.lspCode()).isEqualTo(ENUM_DIVERGENCE_CODE);
-        assertThat(d.divergentSdlValues()).contains("PGThirteen");
-    }
 
     @Test
     void inputBeanEnumField_allValuesMatch_classifiesCleanly() {

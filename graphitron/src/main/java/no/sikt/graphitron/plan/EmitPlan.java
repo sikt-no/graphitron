@@ -271,7 +271,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage,
             store == null ? no.sikt.graphitron.emit.VoucherBindingQuery.Rows.empty()
-                : no.sikt.graphitron.emit.VoucherBindingQuery.read(store));
+                : no.sikt.graphitron.emit.VoucherBindingQuery.read(store),
+            frames);
         requireEveryServiceKeyIsProjected(frames, projectionRelation, units);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
             projectionRelation.dslProjections(), store);
@@ -337,11 +338,13 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * not select.
      *
      * <p>A frame under a table-bound type reads its batch key off the parent row by the parent
-     * table's primary key columns. The projection is still planned from the classified model, which
-     * projects a child's key columns only for a child it classified as reading them, so a service it
-     * refused and the store emits would read columns the parent row does not carry: a failure at run
-     * time, which this turns into one at generation. The store accepting such a graph is the bug, so
-     * the throw names the field and the column rather than refusing the author.
+     * table's primary key columns. The projection takes those columns from the same frames
+     * ({@link ProjectionCommands#produce(GraphitronSchema, ConditionRelation, String,
+     * no.sikt.graphitron.emit.VoucherBindingQuery.Rows, List)}), but into the unit of the type the
+     * walk planned: a type the store binds a table and the walk plans no unit for would leave the
+     * columns unselected, a failure at run time, which this turns into one at generation. The store
+     * accepting such a graph is the bug, so the throw names the field and the column rather than
+     * refusing the author.
      *
      * <p>A frame at a root has no parent, and one reading its key through a member of the parent's
      * class, or off a parent that is the record itself, reads no projected row; neither is asked.

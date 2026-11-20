@@ -12,7 +12,6 @@ extend type Query {
   "The same reflection, one use over: the resolved Java type is the service parameter's."
   price(amount: Money): String
     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "wireMoney"})
-    @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
 }
 
 {

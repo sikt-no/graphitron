@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.emit.FillQuery;
 import no.sikt.graphitron.model.diagnostics.ConflictSite;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -16,6 +17,7 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +41,10 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       with disagreeing sites, drained into {@link ValidationError}s by
  *       {@code GraphitronSchemaValidator.validateContextArgumentTypeAgreement}.</li>
  * </ul>
+ *
+ * <p>A {@code @service} call's keys are not walked: the store states them, each with the type of
+ * the parameter it fills ({@link FillQuery#contextKeys}), and they join the walked names after the
+ * fold.
  *
  * <p>Invoked once by {@link GraphitronSchema}'s constructor; the cached {@link Classification}
  * hangs off {@link GraphitronSchema#contextArguments()} for both downstream consumers.
@@ -68,6 +74,17 @@ public final class ContextArgumentClassifier {
      * {@link GraphitronSchema}'s constructor can classify before the schema record is assembled.
      */
     public static Classification classify(Collection<GraphitronField> fields) {
+        return classify(fields, List.of());
+    }
+
+    /**
+     * {@link #classify(Collection)}, adding the context keys the store states the service calls read.
+     * A name the walk resolved takes the service sites of its own type; a name it found in conflict
+     * stays one; a name only services read resolves to the type of its first key in
+     * {@code serviceKeys}' order.
+     */
+    public static Classification classify(Collection<GraphitronField> fields,
+            List<FillQuery.ContextKey> serviceKeys) {
         var byName = new LinkedHashMap<String, List<Declared>>();
         for (var field : fields) {
             collectFromField(field, byName);
@@ -81,6 +98,7 @@ public final class ContextArgumentClassifier {
         // Stable alphabetical output for deterministic factory parameter ordering.
         var resolved = new TreeMap<String, ResolvedContextArg>();
         var conflicts = new ArrayList<Rejection>();
+        var conflicted = new HashSet<String>();
         for (var entry : byName.entrySet()) {
             String name = entry.getKey();
             List<Declared> sites = entry.getValue();
@@ -92,9 +110,28 @@ public final class ContextArgumentClassifier {
                 var methodSites = sites.stream().map(Declared::site).toList();
                 resolved.put(name, new ResolvedContextArg(name, distinct.get(0), methodSites));
             } else {
+                conflicted.add(name);
                 conflicts.add(Rejection.contextArgumentTypeConflict(name,
                     sites.stream().map(Declared::asConflictSite).toList()));
             }
+        }
+        var services = new LinkedHashMap<String, List<FillQuery.ContextKey>>();
+        for (var key : serviceKeys) {
+            services.computeIfAbsent(key.key(), k -> new ArrayList<>()).add(key);
+        }
+        for (var entry : services.entrySet()) {
+            String name = entry.getKey();
+            if (conflicted.contains(name)) {
+                continue;
+            }
+            var walked = resolved.get(name);
+            // The store refuses one key read as disagreeing types, so this pick only keeps the fold total.
+            TypeName javaType = walked != null ? walked.javaType() : entry.getValue().get(0).type();
+            var sites = new ArrayList<ResolvedContextArg.Site>(walked != null ? walked.sites() : List.of());
+            entry.getValue().stream()
+                .filter(key -> key.type().equals(javaType))
+                .forEach(key -> sites.add(new ResolvedContextArg.Site.Service(key.className(), key.methodName())));
+            resolved.put(name, new ResolvedContextArg(name, javaType, sites));
         }
         return new Classification(resolved, conflicts);
     }
@@ -104,37 +141,12 @@ public final class ContextArgumentClassifier {
         if (field instanceof MethodBackedField mbf) {
             collectFromMethodRef(mbf.method(), byName);
         }
-        // ServiceField is not a MethodBackedField; its context-arg slots live on the
-        // ServiceMethodCall carrier.
-        if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
-            collectFromCarrier(sf.serviceMethodCall(), byName);
-        }
         if (field instanceof SqlGeneratingField sgf) {
             for (WhereFilter wf : sgf.filters()) {
                 if (wf instanceof ConditionFilter cf) {
                     collectFromMethodRef(cf, byName);
                 }
             }
-        }
-    }
-
-    private static void collectFromCarrier(
-            no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier,
-            Map<String, List<Declared>> byName) {
-        var site = new ResolvedContextArg.Site.Carrier(carrier);
-        if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
-            for (var entry : inst.ctorArgs()) recordFromContext(entry, site, byName);
-        }
-        for (var entry : carrier.methodArgs()) recordFromContext(entry, site, byName);
-    }
-
-    private static void recordFromContext(
-            no.sikt.graphitron.rewrite.model.MappingEntry entry,
-            ResolvedContextArg.Site site,
-            Map<String, List<Declared>> byName) {
-        if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromContext fc) {
-            byName.computeIfAbsent(fc.contextKey(), k -> new ArrayList<>())
-                .add(new Declared(site, fc.javaType()));
         }
     }
 

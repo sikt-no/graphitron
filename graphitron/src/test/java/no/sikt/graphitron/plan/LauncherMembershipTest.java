@@ -34,10 +34,9 @@ class LauncherMembershipTest {
     // Every launch family in one fixture: the four root catalog shapes (plain table, routine
     // chain, discriminated interface, keyed lookup), the four batched child shapes (plain
     // split, split lookup at list-per-key cardinality, split pivot, discriminated interface at
-    // list cardinality), both @service child kinds
-    // (table-returning and scalar), the root @service table return whose fetcher lifts the
-    // returned records' keys, and all four reentry-carrying DML return arms. The Boolean
-    // DELETE is the deliberate non-member witness: present in the model, no row.
+    // list cardinality), and all four reentry-carrying DML return arms. The Boolean DELETE is
+    // the deliberate non-member witness: present in the model, no row. The two service
+    // families are not here: the store emits every @service, so the walk mints neither.
     private static final String SDL = """
         interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
           contentId: Int! @field(name: "CONTENT_ID")
@@ -59,10 +58,6 @@ class LauncherMembershipTest {
         }
         type Language @table(name: "language") {
           name: String
-          films: [Film!]! @service(
-            service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"})
-          rank: Int @service(
-            service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMapped"})
         }
         type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
         type Film @table(name: "film") {
@@ -84,8 +79,6 @@ class LauncherMembershipTest {
           content: Content
           tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
             @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
-          externalFilms: [Film!]! @service(
-            service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsAtRoot"})
         }
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
@@ -96,12 +89,10 @@ class LauncherMembershipTest {
         }
         """;
 
-    /** The 15 minting coordinates the fixture exercises, pinned so the fixture stays honest. */
+    /** The 12 minting coordinates the fixture exercises, pinned so the fixture stays honest. */
     private static final List<String> EXPECTED_COVERED = List.of(
         "Query.films", "Query.filmById", "Query.content", "Query.tilganger",
-        "Query.externalFilms",
         "Film.titleTextsSplit", "Film.actorsSplit", "Film.languages", "Film.contents",
-        "Language.films", "Language.rank",
         "Mutation.createFilm", "Mutation.createFilms",
         "Mutation.createContent", "Mutation.createContents");
 
@@ -138,19 +129,24 @@ class LauncherMembershipTest {
             observedFamilies.add(LauncherCommands.verdictOf(schema, field));
         }
         assertThat(observedFamilies)
-            .as("every launch family is observed over the fixture (NONE included: the"
-                + " non-member witnesses)")
-            .containsExactlyInAnyOrder(Launch.values());
+            .as("every launch family the walk still mints is observed over the fixture (NONE"
+                + " included: the non-member witnesses)")
+            .containsExactlyInAnyOrder(Launch.NONE, Launch.DML_REENTRY, Launch.ROOT_CATALOG,
+                Launch.BATCHED_CHILD_CATALOG);
 
         var observedSources = new LinkedHashSet<Class<?>>();
         for (var row : relation.rows()) {
             observedSources.add(row.source().getClass());
         }
+        // The two service arms are minted for no field: the store emits every @service.
         assertThat(observedSources)
             .as("every declared LaunchSource arm is produced over the fixture; a new arm must"
                 + " extend the fixture (or enumerate itself here with a prose reason)")
             .containsExactlyInAnyOrderElementsOf(
-                GeneratorCoverageTest.sealedLeaves(LaunchSource.class));
+                GeneratorCoverageTest.sealedLeaves(LaunchSource.class).stream()
+                    .filter(arm -> arm != LaunchSource.ServiceCall.class
+                        && arm != LaunchSource.ServiceTableLift.class)
+                    .toList());
     }
 
     /**
@@ -208,7 +204,7 @@ class LauncherMembershipTest {
             .toList();
         assertThat(expected)
             .as("the fixture must exercise every non-DML launch family member")
-            .hasSize(11);
+            .hasSize(8);
         assertThat(relation.rows())
             .extracting(r -> r.coordinate().getTypeName() + "." + r.coordinate().getFieldName())
             .containsExactlyInAnyOrderElementsOf(expected);

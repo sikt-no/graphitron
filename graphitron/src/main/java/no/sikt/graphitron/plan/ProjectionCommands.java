@@ -11,6 +11,7 @@ import no.sikt.graphitron.command.SelectTerm;
 import no.sikt.graphitron.command.TermAlias;
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.emit.FrameQuery;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.AliasScope;
@@ -24,6 +25,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -117,6 +119,21 @@ public final class ProjectionCommands {
      */
     public static ProjectionRelation produce(GraphitronSchema schema, ConditionRelation conditions,
             String outputPackage, no.sikt.graphitron.emit.VoucherBindingQuery.Rows vouchers) {
+        return produce(schema, conditions, outputPackage, vouchers, List.of());
+    }
+
+    /**
+     * As {@link #produce(GraphitronSchema, ConditionRelation, String,
+     * no.sikt.graphitron.emit.VoucherBindingQuery.Rows)}, with the store's frames: a {@code @service}
+     * under an object is the store's whole ({@link GraphitronField.StoreOwnedField}), so the key it
+     * batches on reaches the unit of the type declaring it from its frame rather than from a leaf
+     * ({@link ServiceKeys}). Projected under the field's name, the columns are selected exactly when
+     * the field is.
+     */
+    public static ProjectionRelation produce(GraphitronSchema schema, ConditionRelation conditions,
+            String outputPackage, no.sikt.graphitron.emit.VoucherBindingQuery.Rows vouchers,
+            List<FrameQuery.Row> frames) {
+        var serviceKeys = ServiceKeys.of(frames);
         var units = new GeneratedUnits(outputPackage);
         var glueEnvByMethod = conditions.rows().stream()
             .collect(Collectors.toMap(row -> row.glue(),
@@ -130,7 +147,8 @@ public final class ProjectionCommands {
             var anchor = units.typeClass(typeName);
             var contributions = collectContributions(
                 schema, schema.fieldsOf(typeName), anchor, typeName, units, glueEnvByMethod,
-                census, false);
+                census, serviceKeys, false);
+            contributions.addAll(serviceKeys.contributions(typeName, typeName, type.table()));
             vouchers.of(typeName).forEach((field, columns) -> contributions.add(new Contribution.Project(field,
                 columns.stream()
                     .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
@@ -218,11 +236,15 @@ public final class ProjectionCommands {
     private static List<Contribution> collectContributions(GraphitronSchema schema,
             List<? extends GraphitronField> fields,
             UnitRef owner, String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, ServiceKeys serviceKeys,
+            boolean nested) {
         var contributions = new ArrayList<Contribution>();
         for (var field : fields) {
-            if (field instanceof GraphitronField.UnclassifiedField) {
-                continue; // carries a rejection; the validator fails the build before production
+            // An unclassified field carries a rejection, which the validator fails the build on
+            // before production; a store-owned field is the store's whole, its key columns coming
+            // from its frame (ServiceKeys). Neither is an output leaf, and neither projects.
+            if (!(field instanceof OutputField)) {
+                continue;
             }
             if (!(field instanceof ChildField cf)) {
                 throw new IllegalStateException(
@@ -231,7 +253,7 @@ public final class ProjectionCommands {
                     + "root operation types are never projection units");
             }
             var contribution = contributionFor(schema, cf, owner, anchorTypeName, units,
-                glueEnvByMethod, census, nested);
+                glueEnvByMethod, census, serviceKeys, nested);
             contribution.ifPresent(c -> {
                 requireAliasedWriteArm(cf, c);
                 contributions.add(c);
@@ -242,7 +264,8 @@ public final class ProjectionCommands {
 
     private static Optional<Contribution> contributionFor(GraphitronSchema schema, ChildField field,
             UnitRef owner, String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, ServiceKeys serviceKeys,
+            boolean nested) {
         return switch (field) {
             case ChildField.ColumnBackedField cf -> Optional.of(new Contribution.Project(cf.name(),
                 cf.columns().stream()
@@ -275,7 +298,8 @@ public final class ProjectionCommands {
             // both off the schema's contract, the one the fetcher emitter reads.
             // The probe rides beside it, minted from the same contract the fetcher emitter reads.
             case ChildField.NestingField nf -> {
-                var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
+                var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census,
+                    serviceKeys);
                 var contract = schema.nullContractOf(nf);
                 yield Optional.of(new Contribution.Call(nf.name(), nested2,
                     new CallWrap.Splice(contract.presenceColumns(),
@@ -456,10 +480,13 @@ public final class ProjectionCommands {
 
     private static UnitRef mintNestedUnit(GraphitronSchema schema, ChildField.NestingField nf,
             String anchorTypeName,
-            GeneratedUnits units, Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census) {
+            GeneratedUnits units, Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census,
+            ServiceKeys serviceKeys) {
         var unit = units.nestingUnit(anchorTypeName, nf.returnType().returnTypeName());
         var contributions = collectContributions(
-            schema, nf.nestedFields(), unit, anchorTypeName, units, glueEnvByMethod, census, true);
+            schema, nf.nestedFields(), unit, anchorTypeName, units, glueEnvByMethod, census, serviceKeys, true);
+        contributions.addAll(serviceKeys.contributions(anchorTypeName, nf.returnType().returnTypeName(),
+            nf.returnType().table()));
         census.add(new ProjectionCommand.NestedUnit(unit, nf.returnType().table(), contributions),
             "nesting type '" + nf.returnType().returnTypeName() + "' under anchor '"
                 + anchorTypeName + "'");
@@ -594,6 +621,62 @@ public final class ProjectionCommands {
                 .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
                 .toList(),
             AliasOwner.shared(), AliasScope.rowOwner()));
+    }
+
+    /**
+     * The keys the {@code @service} fields under an object batch on, by the projection unit selecting
+     * the parent row: the frames whose key is read off the parent row the unit selects, a row of the
+     * table the declaring type binds or, under a nesting type, the row of the table it projects off.
+     * A nesting type is projected once per table-bound type it is reached from, so a frame belongs to
+     * the unit of its own occurrence's anchor, the type its coordinate starts at, and the declaring
+     * type: a nesting type two parents share takes each parent's key into that parent's unit. A frame
+     * whose key is read through a member of the parent's class reads no projected row and is not here.
+     */
+    private record ServiceKeys(Map<Unit, List<FrameQuery.Row>> byUnit) {
+
+        /** A projection unit: the table-bound type anchoring it and the type whose fields it projects. */
+        private record Unit(String anchorType, String declaringType) {}
+
+        static ServiceKeys of(List<FrameQuery.Row> frames) {
+            return new ServiceKeys(frames.stream()
+                .filter(frame -> frame.parent().isPresent() && frame.accessor().isEmpty())
+                .collect(Collectors.groupingBy(
+                    frame -> new Unit(frame.coordinate().substring(0, frame.coordinate().indexOf('.')),
+                        frame.declaringType()),
+                    LinkedHashMap::new, Collectors.toList())));
+        }
+
+        /**
+         * One projection of the parent's key columns per service {@code typeName} declares, for the
+         * unit {@code anchorTypeName} anchors, selecting rows of {@code table}. A field reached along
+         * two paths into one unit is projected once. A frame whose parent is a row of another table
+         * names a key that unit cannot select, which the store should have refused.
+         */
+        List<Contribution> contributions(String anchorTypeName, String typeName,
+                no.sikt.graphitron.model.jooq.TableRef table) {
+            var out = new ArrayList<Contribution>();
+            var projected = new java.util.HashSet<String>();
+            for (var frame : byUnit.getOrDefault(new Unit(anchorTypeName, typeName), List.of())) {
+                var parent = frame.parent().get();
+                String fieldName = frame.coordinate().substring(frame.coordinate().lastIndexOf('.') + 1);
+                if (!parent.constantsClassName().equals(table.constantsClassName())
+                        || !parent.javaFieldName().equals(table.javaFieldName())) {
+                    throw new IllegalStateException("Graphitron generator bug: @service " + frame.coordinate()
+                        + " batches on a key of " + parent.sqlName() + ", but " + typeName + "'s projection"
+                        + " selects rows of " + table.tableName() + ": the store accepted the graph, so it"
+                        + " should have refused this");
+                }
+                if (parent.key().isEmpty() || !projected.add(fieldName)) {
+                    continue;
+                }
+                out.add(new Contribution.Project(fieldName,
+                    parent.key().stream()
+                        .map(key -> (SelectTerm) new SelectTerm.Column(key.columnRef(), TermAlias.BY_COLUMN_IDENTITY))
+                        .toList(),
+                    AliasOwner.shared(), AliasScope.rowOwner()));
+            }
+            return out;
+        }
     }
 
     // ------------------------------------------------------------------------------------------

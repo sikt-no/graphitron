@@ -1,5 +1,6 @@
 package no.sikt.graphitron.emit;
 
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Records;
 
@@ -106,6 +107,42 @@ public final class FillQuery {
                 if (r.value4()) path.lists().add(r.value2());
             });
         return out;
+    }
+
+    /**
+     * A context key a service call reads: the key, the type of the parameter it fills, which is what
+     * the call casts the request context's value to, and the declared field and method making the call.
+     */
+    public record ContextKey(String key, TypeName type, String fieldCoordinate, String className,
+                             String methodName) {
+        public ContextKey {
+            Objects.requireNonNull(key, "key");
+            Objects.requireNonNull(type, "type");
+        }
+    }
+
+    /**
+     * The context keys the graph's service calls read, one per declared field, key and parameter
+     * type, ordered by key, then type, then field.
+     */
+    public static List<ContextKey> contextKeys(StoreHandle store) {
+        var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var p = CODE_METHOD_PARAMETER;
+        return store.dsl()
+            .selectDistinct(c.CONTEXT_KEY, p.PARAMETER_TYPE, o.ELEMENT_COORDINATE, s.METHOD_CLASS_NAME,
+                s.METHOD_NAME)
+            .from(s)
+            .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.COORDINATE))
+            .join(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.CALL.eq(s.CALL))
+            .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
+                p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR),
+                p.POSITION.eq(c.POSITION))
+            .where(s.GRAPH_NAME.eq(store.graphName()), s.CALL_KIND.eq("SERVICE"), c.FILL.eq("CONTEXT_KEY"))
+            .orderBy(c.CONTEXT_KEY, p.PARAMETER_TYPE, o.ELEMENT_COORDINATE)
+            .fetch(rec -> new ContextKey(rec.value1(), SessionIdentityRows.typeOf(rec.value2()), rec.value3(),
+                rec.value4(), rec.value5()));
     }
 
     /** The graph's calls, by coordinate. */

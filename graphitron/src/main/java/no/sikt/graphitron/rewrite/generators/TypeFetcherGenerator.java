@@ -181,8 +181,7 @@ public class TypeFetcherGenerator {
                         + "' names neither a fetcher-hosting classification nor a nesting-reached"
                         + " type; the producer's membership and this renderer have drifted");
                 }
-                var nestedFields = wiring.nestedFields().stream()
-                    .map(f -> (GraphitronField) f)
+                var nestedFields = no.sikt.graphitron.rewrite.NestingReach.wiredFields(wiring).stream()
                     .filter(ownership::hasFetcher)
                     .sorted(Comparator.comparing(GraphitronField::name))
                     .toList();
@@ -406,13 +405,14 @@ public class TypeFetcherGenerator {
     /**
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
      * only attached to input-object types (which {@link #generate} doesn't process), and
-     * {@link GraphitronField.UnclassifiedField} is filtered out inside {@link #generateForType}
-     * before dispatch, or emitted from the store where the store owns it. The switch still has a
-     * "cannot occur" arm for it (so the compiler sees the switch as exhaustive) but the arm throws
-     * {@link AssertionError} rather than emitting code.
+     * {@link GraphitronField.UnclassifiedField} and {@link GraphitronField.StoreOwnedField} are
+     * filtered out inside {@link #generateForType} before dispatch, or emitted from the store where
+     * the store owns them. The switch still has a "cannot occur" arm for each (so the compiler sees
+     * the switch as exhaustive) but the arm throws {@link AssertionError} rather than emitting code.
      */
     public static final Set<Class<? extends GraphitronField>> NOT_DISPATCHED_LEAVES = Set.of(
         GraphitronField.UnclassifiedField.class,
+        GraphitronField.StoreOwnedField.class,
         InputField.ColumnBackedField.class,
         InputField.ColumnBackedReferenceField.class,
         InputField.NestingField.class,
@@ -699,11 +699,6 @@ public class TypeFetcherGenerator {
             // says which, so no variant is named here.
             if (emitFromStore(ctx, builder, field, outputPackage)) {
                 continue;
-            }
-            // A classified service the store does not own reaches its classified arm only without a
-            // store; with one, it is a generator bug.
-            if (no.sikt.graphitron.rewrite.FetcherOwnership.CLASSIFIED_SERVICES.contains(field.getClass())) {
-                ctx.services().requireNoClassifiedService(field.qualifiedName());
             }
             switch (field) {
                 case ChildField.ColumnBackedField cf -> {
@@ -1064,8 +1059,9 @@ public class TypeFetcherGenerator {
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
-                case GraphitronField.UnclassifiedField ignored ->
-                    throw new AssertionError("UnclassifiedField in type dispatch: " + ignored.qualifiedName());
+                case GraphitronField.UnclassifiedField _, GraphitronField.StoreOwnedField _ ->
+                    throw new AssertionError(field.getClass().getSimpleName() + " in type dispatch: "
+                        + field.qualifiedName());
             }
             // Reify the inline / light reads onto this class. A dual-shape coordinate (reached both as a
             // nesting projection and a class-backed accessor) reifies the source-shape dispatch method,

@@ -28,50 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PkLessParentServiceSourcesRejectionTest {
 
     @Test
-    void sourcesBatchParam_onPkLessParentTable_isRejectedNamingTheTable() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type FilmList @table(name: "film_list") {
-                title: String @field(name: "title")
-                rank: Int @service(
-                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmListRankByRecord"}
-                )
-            }
-            type Query { filmList: FilmList }
-            """);
-
-        var field = schema.field("FilmList", "rank");
-        assertThat(field)
-            .as("a SOURCES batch parameter on a PK-less parent cannot be classified")
-            .isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .as("the rejection names the parent type, the table, and the missing primary key")
-            .contains("FilmList")
-            .contains("film_list")
-            .contains("no primary key");
-    }
-
-    @Test
-    void sourcesBatchParam_atRoot_keepsItsOwnDiagnostic() {
-        // Control: the root coordinate also arrives with an empty parent-PK list, and must still
-        // reach the root-specific diagnostic rather than the PK-less-table one.
-        var schema = TestSchemaHelper.buildSchema("""
-            type Film @table(name: "film") { title: String }
-            type Query {
-                films: [Film!]! @service(
-                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"}
-                )
-            }
-            """);
-
-        var field = schema.field("Query", "films");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .as("root keeps the batch-at-root wording, not the PK-less-table wording")
-            .contains("@service at the root does not support")
-            .doesNotContain("no primary key");
-    }
-
-    @Test
     void sourcesBatchParam_onParentWithPrimaryKey_classifies() {
         // Control: the same shape on a keyed parent is the ordinary supported case.
         var schema = TestSchemaHelper.buildSchema("""

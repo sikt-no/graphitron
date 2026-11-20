@@ -201,23 +201,41 @@ public class GraphitronSchemaBuilder {
      * from a different call than the one the build actually classified.
      */
     public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx) {
-        return buildBundle(attributed, assembled, ctx, java.util.Set.of(), java.util.Map.of());
+        return buildBundle(attributed, assembled, ctx, java.util.Set.of(), java.util.Map.of(), java.util.Map.of());
     }
 
     /**
      * {@link #buildBundle(AttributedRegistry, GraphQLSchema, RunContext)}, the tenant fold reading the
      * values {@code authoredTenants} names, a {@code $tenant} pair's as the store states them, as it
-     * reads a {@code @tenant} marker, and routing by its parent row's tenant each field
-     * {@code rowTenants} names, through the parent's column it names.
+     * reads a {@code @tenant} marker, routing by its parent row's tenant each field
+     * {@code rowTenants} names, through the parent's column it names, and handing below each
+     * {@code @service} field what the connection {@code serviceConnections} states for it hands down.
      */
     public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx,
                                      java.util.Set<String> authoredTenants,
-                                     java.util.Map<String, String> rowTenants) {
+                                     java.util.Map<String, String> rowTenants,
+                                     java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections) {
+        return buildBundle(attributed, assembled, ctx, authoredTenants, rowTenants, serviceConnections,
+            java.util.List.of());
+    }
+
+    /**
+     * {@link #buildBundle(AttributedRegistry, GraphQLSchema, RunContext, java.util.Set, java.util.Map, java.util.Map)},
+     * the context-argument classification adding to the keys the walk harvests the
+     * {@code serviceContextKeys} the store states the {@code @service} calls read.
+     */
+    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx,
+                                     java.util.Set<String> authoredTenants,
+                                     java.util.Map<String, String> rowTenants,
+                                     java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections,
+                                     java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys) {
         var registry = attributed.registry();
         boolean federationLink = attributed.federationLink();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
         bctx.authoredTenants = java.util.Set.copyOf(authoredTenants);
         bctx.rowTenants = java.util.Map.copyOf(rowTenants);
+        bctx.serviceConnections = java.util.Map.copyOf(serviceConnections);
+        bctx.serviceContextKeys = java.util.List.copyOf(serviceContextKeys);
         recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
@@ -375,7 +393,7 @@ public class GraphitronSchemaBuilder {
         var tenantBindings = TenantBindingIndex.compute(
             ctx.schema, SchemaReachability.reachableTypeNames(ctx.schema, ctx.nodeDeclaration),
             classifiedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
-            columnBindings, ctx.authoredTenants, ctx.rowTenants);
+            columnBindings, ctx.authoredTenants, ctx.rowTenants, ctx.serviceConnections);
         // The decode-coverage ledger's totality clause: every decoding @nodeId coordinate the walk
         // did not classify gets its NotReached row here, so an absent row downstream means one
         // thing only. Runs after the walk and writes only where a mint site left nothing.
@@ -383,7 +401,7 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(classifiedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            connectionSynthesis, operationMembers, deliveryFacts);
+            connectionSynthesis, operationMembers, deliveryFacts, ctx.serviceContextKeys);
         return new BuildResult(model, rebuiltAssembled);
     }
 

@@ -37,58 +37,6 @@ class ReFetchDerivationTest {
         """;
 
     @Test
-    void serviceTableReFetches_serviceRecordDoesNot() {
-        GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
-
-        // @service returning the Language @table: ServiceCall producing a Table target -> re-fetch.
-        OutputField language = (OutputField) schema.field("Film", "language");
-        assertThat(language.requiresReFetch())
-            .as("a @service field projecting a catalog @table re-queries (ServiceCall x Table target)")
-            .isTrue();
-
-        // @service returning a scalar/record: ServiceCall with a Record/Field target -> no re-fetch.
-        OutputField rating = (OutputField) schema.field("Film", "rating");
-        assertThat(rating.requiresReFetch())
-            .as("a @service field projecting a Record hands back the consumed shape, no re-query")
-            .isFalse();
-
-        // Root @service returning the Film @table: ServiceCall producing a Table target -> re-fetch.
-        OutputField externalFilm = (OutputField) schema.field("Query", "externalFilm");
-        assertThat(externalFilm.requiresReFetch()).isTrue();
-
-        // A plain catalog Fetch reads the table directly, no producer round-trip.
-        OutputField film = (OutputField) schema.field("Query", "film");
-        assertThat(film.requiresReFetch())
-            .as("a catalog Fetch is not a re-fetch")
-            .isFalse();
-    }
-
-    @Test
-    void siteLevelFactAgreesWithTheValueLevelFactAtEveryTableBoundServiceCoordinate() {
-        GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
-
-        // The child @service-table field emits its keyed re-query at its own site (the lift
-        // rows-method): value-level and site-level facts agree.
-        OutputField language = (OutputField) schema.field("Film", "language");
-        assertThat(language.requiresReFetch()).isTrue();
-        assertThat(language.emitsKeyedReQuery()).isTrue();
-
-        // And so does the root @service field, which is the coordinate the two facts used to
-        // disagree at: the fetcher lifts the returned records' primary keys and calls the
-        // reentry companion, so the re-query is emitted at this site, not deferred to whatever
-        // children happen to hang off the parent.
-        OutputField externalFilm = (OutputField) schema.field("Query", "externalFilm");
-        assertThat(externalFilm.requiresReFetch()).isTrue();
-        assertThat(externalFilm.emitsKeyedReQuery())
-            .as("a table-bound root service return re-queries at its own site")
-            .isTrue();
-
-        // Non-re-fetching fields are trivially not site-level reentry.
-        assertThat(((OutputField) schema.field("Query", "film")).emitsKeyedReQuery()).isFalse();
-        assertThat(((OutputField) schema.field("Film", "rating")).emitsKeyedReQuery()).isFalse();
-    }
-
-    @Test
     void reentryImplementednessGuardStaysQuietOnTheCorpus() {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
 

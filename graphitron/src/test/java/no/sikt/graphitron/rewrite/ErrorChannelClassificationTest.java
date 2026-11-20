@@ -580,7 +580,7 @@ class ErrorChannelClassificationTest {
     void singleErrorTypeElement_backingClassWithoutErrorsMember_bindsAndCarries() {
         // The backing class declares the data field only. The binding pass runs before the error
         // index exists and reads the SDL alone, so it must not take the @error-typed list for the
-        // payload's one data field: the payload binds to DataOnlyPayload and the channel forms.
+        // payload's one data field: the payload binds to DataOnlyPayload and its errors field forms.
         var schema = build(DB_ERR_SDL + """
             type ReviewPayload {
                 data: String
@@ -591,8 +591,6 @@ class ErrorChannelClassificationTest {
             }
             """);
 
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "review");
-        assertThat(f.errorChannel()).get().isInstanceOf(ErrorChannel.Mapped.class);
         assertThat(schema.field("ReviewPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
         assertThat(schema.field("ReviewPayload", "data")).isNotInstanceOf(UnclassifiedField.class);
     }

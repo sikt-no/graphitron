@@ -4,7 +4,6 @@ import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceShape;
@@ -21,6 +20,7 @@ import java.util.TreeMap;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
@@ -39,8 +39,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>{@link KeyLift.FkColumns} and {@link KeyLift.ProducedRecords} both read the keys as columns
  * off the object, the store's {@code COLUMNS}; which columns is the path's, so the comparison does
  * not ask. A producer under a table-row parent, or under a nesting field reading one, carries a lift
- * too, but its parent holds a row, not an object; a service under one is filled off that row, which
- * the classifier states as {@link ServiceKeySource.FromTableRow}, so the comparison leaves them out.
+ * too, but its parent holds a row, not an object, so the comparison leaves them out. A
+ * {@code @service} producer is the store's alone, the walk classifying no such field, so the store's
+ * service lifts are left out as well.
  */
 @PipelineTier
 class ProducerFillPinTest {
@@ -62,6 +63,7 @@ class ProducerFillPinTest {
             var f = GRAPHITRON_FIELD;
             var tt = GRAPHITRON_TABLETYPE;
             var ns = GRAPHITRON_OCCURRENCE_NESTING;
+            var p = GRAPHITRON_OCCURRENCE_PRODUCER;
             var rows = new TreeMap<String, String>();
             // An accessor key names the member it reads, its code_read_slot row. A field reached
             // under several parents is filled once per occurrence, the same way each time.
@@ -75,6 +77,8 @@ class ProducerFillPinTest {
                     .where(tt.GRAPH_NAME.eq(f.GRAPH_NAME), tt.TYPE_NAME.eq(f.TYPE_NAME)))
                 .andNotExists(selectOne().from(ns)
                     .where(ns.GRAPH_NAME.eq(o.GRAPH_NAME), ns.COORDINATE.eq(o.PARENT_COORDINATE)))
+                .andNotExists(selectOne().from(p)
+                    .where(p.GRAPH_NAME.eq(k.GRAPH_NAME), p.COORDINATE.eq(k.COORDINATE), p.KIND.eq("SERVICE")))
                 .fetch()
                 .forEach(r -> rows.merge(r.value1() + "." + r.value2(),
                     r.value3() + " " + r.value4() + (r.value5() == null ? "" : " " + r.value5()),
@@ -102,22 +106,6 @@ class ProducerFillPinTest {
         for (var f : schema.fields().values()) {
             if (!(f instanceof ChildField cf)
                 || !(schema.types().get(cf.parentTypeName()) instanceof GraphitronType.ResultType)) {
-                continue;
-            }
-            // A service under a held object keys its batch by records of the table its source
-            // parameter collects, off the parent itself or through the one member returning one.
-            var serviceKey = switch (cf) {
-                case ChildField.ServiceTableField s -> s.keySource();
-                case ChildField.ServiceRecordField s -> s.keySource();
-                default -> null;
-            };
-            if (serviceKey != null) {
-                switch (serviceKey) {
-                    case ServiceKeySource.FromHeldRecord x -> out.put(cf.parentTypeName() + "." + cf.name(), "COLUMNS ONE");
-                    case ServiceKeySource.FromAccessor x -> out.put(cf.parentTypeName() + "." + cf.name(),
-                        "ACCESSOR ONE " + x.accessor().methodName());
-                    case ServiceKeySource.FromTableRow x -> { }
-                }
                 continue;
             }
             KeyLift lift = switch (cf) {

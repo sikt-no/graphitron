@@ -97,30 +97,6 @@ class RecordValidationPipelineTest {
         """;
 
     @Test
-    void aRecordParameterUnderAValidationChannelIsAWrittenColumnsTarget() {
-        var schema = TestSchemaHelper.buildSchema(CHANNEL + FIELDS);
-        var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "draftFilms");
-        assertThat(f.serviceMethodCall().validationTargets())
-            .singleElement()
-            .satisfies(t -> {
-                assertThat(t).isInstanceOf(ServiceMethodCall.ValidationTarget.PerElement.class);
-                assertThat(t.subject()).isInstanceOf(ServiceMethodCall.ValidationSubject.WrittenColumns.class);
-            });
-    }
-
-    @Test
-    void aRecordBindingOnlyAKeyDecodeYieldsNoTarget() {
-        var schema = TestSchemaHelper.buildSchema(CHANNEL + FIELDS);
-        var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "keyFilm");
-        assertThat(f.serviceMethodCall().validationTargets()).isEmpty();
-    }
-
-    @Test
-    void theFetchersClassDeclaresAPathsConstantUnderTheChannel(@TempDir Path tmp) {
-        assertThat(pathsFields(TestSchemaHelper.storeBackedFetchers(tmp, CHANNEL + FIELDS))).hasSize(1);
-    }
-
-    @Test
     void withoutTheChannelNoPathsConstantIsDeclared(@TempDir Path tmp) {
         assertThat(pathsFields(TestSchemaHelper.storeBackedFetchers(tmp, NO_VALIDATION_CHANNEL + FIELDS))).isEmpty();
     }

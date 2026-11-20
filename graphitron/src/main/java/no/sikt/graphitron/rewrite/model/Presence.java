@@ -172,8 +172,9 @@ public final class Presence {
          *   <li>A scalar {@code @externalField} on the own row is a {@link PresenceLeaf.Computed}
          *       leaf.</li>
          *   <li>A nesting child contributes its own leaves.</li>
-         *   <li>Everything else blocks: a list taking arguments, a connection, a polymorphic or
-         *       service child, an {@code @externalField} returning an object type or reached over
+         *   <li>Everything else blocks: a list taking arguments, a connection, a polymorphic
+         *       child, a {@code @service} child ({@link GraphitronField.StoreOwnedField}, nested ones
+         *       riding {@link ChildField.NestingField#storeOwned}), an {@code @externalField} returning an object type or reached over
          *       a join path, a {@code @pivot} child, a field reached
          *       through a routine, an uncorrelated read of the own table, a {@code @splitQuery}
          *       child fetched on another tenant's or a global connection.</li>
@@ -184,7 +185,7 @@ public final class Presence {
          * {@link PresenceLeaf.Probe} over its target's column leaves alone
          * ({@code targetColumnLeaves}), which never recurses into the target's own references.
          */
-        static SubtreePresence over(List<? extends ChildField> fields, TypeFields types) {
+        static SubtreePresence over(List<? extends GraphitronField> fields, TypeFields types) {
             var leaves = new ArrayList<PresenceLeaf>();
             for (var child : fields) {
                 switch (child) {
@@ -220,7 +221,7 @@ public final class Presence {
                         leaves.add(new PresenceLeaf.Computed(cf));
                     }
                     case ChildField.NestingField inner -> {
-                        switch (over(inner.nestedFields(), types)) {
+                        switch (of(inner, types)) {
                             case Leaves l -> leaves.addAll(l.leaves());
                             case Blocked b -> {
                                 return b;
@@ -235,6 +236,17 @@ public final class Presence {
             return new Leaves(leaves);
         }
 
+        /**
+         * The presence of a nesting field's subtree: a store-owned child blocks it, as it would
+         * among the nested fields, and otherwise the nested fields decide ({@link #over}).
+         */
+        static SubtreePresence of(ChildField.NestingField nesting, TypeFields types) {
+            if (!nesting.storeOwned().isEmpty()) {
+                return new Blocked(nesting.storeOwned().getFirst());
+            }
+            return over(nesting.nestedFields(), types);
+        }
+
         /** Every value in the subtree is a presence leaf; the subtree is absent when all are. */
         record Leaves(List<PresenceLeaf> leaves) implements SubtreePresence {
             public Leaves {
@@ -243,7 +255,7 @@ public final class Presence {
         }
 
         /** The subtree holds {@code blocker}, a child whose absence no presence leaf decides. */
-        record Blocked(ChildField blocker) implements SubtreePresence {
+        record Blocked(GraphitronField blocker) implements SubtreePresence {
             public Blocked {
                 Objects.requireNonNull(blocker, "blocker");
             }
@@ -289,6 +301,9 @@ public final class Presence {
                 case ChildField.ColumnBackedReferenceField crf when crf.joinPath().isEmpty() ->
                     columns.addAll(crf.columns());
                 case ChildField.NestingField nf -> {
+                    if (!nf.storeOwned().isEmpty()) {
+                        return Optional.empty();
+                    }
                     var inner = targetColumnLeaves(nf.nestedFields());
                     if (inner.isEmpty()) {
                         return Optional.empty();
@@ -388,7 +403,7 @@ public final class Presence {
              * code outside the table's rows. Graphitron 9 counted some of these toward the
              * collapse; this is a documented divergence.
              */
-            record BlockedBy(ChildField blocker) implements Reason {
+            record BlockedBy(GraphitronField blocker) implements Reason {
                 public BlockedBy {
                     Objects.requireNonNull(blocker, "blocker");
                 }

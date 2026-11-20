@@ -264,7 +264,7 @@ class SingleRecordPayloadPipelineTest {
     void payload_dataFieldCarriesAtField_admitsUnderR178() {
         // The carrier walk applies no forbidden-directives HardReject on @field(name:) on
         // non-$source carrier data fields. With and without the directive, the payload classifies
-        // identically; see SettKvotesporsmalShapeRegressionTest for the contract pin.
+        // identically.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput { title: String }

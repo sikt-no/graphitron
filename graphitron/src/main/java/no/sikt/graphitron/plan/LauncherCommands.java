@@ -1256,8 +1256,7 @@ public final class LauncherCommands {
                         && foldable(fieldsByParentType.get(typeName))
                     ? java.util.Optional.of(no.sikt.graphitron.rewrite.model.Presence.SubtreePresence.over(
                         fieldsByParentType.get(typeName).stream()
-                            .filter(ChildField.class::isInstance)
-                            .map(ChildField.class::cast)
+                            .filter(RootPresence::presenceField)
                             .toList(),
                         types))
                     : java.util.Optional.empty(),
@@ -1265,9 +1264,14 @@ public final class LauncherCommands {
                     probe.filters(), units));
         }
 
-        /** Whether the presence fold reads every one of {@code fields}: each classified as a child. */
+        /** Whether the presence fold reads every one of {@code fields}: each a {@link #presenceField}. */
         private static boolean foldable(List<? extends GraphitronField> fields) {
-            return !fields.isEmpty() && fields.stream().allMatch(ChildField.class::isInstance);
+            return !fields.isEmpty() && fields.stream().allMatch(RootPresence::presenceField);
+        }
+
+        /** A field the presence fold reads: a child, or a store-owned field, which blocks it. */
+        private static boolean presenceField(GraphitronField field) {
+            return ChildField.class.isInstance(field) || GraphitronField.StoreOwnedField.class.isInstance(field);
         }
     }
 

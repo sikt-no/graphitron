@@ -36,14 +36,11 @@ class ProjectionMembershipTest {
     // Every unit-minting shape in one fixture: two anchors sharing a nesting type (per-anchor
     // nested units), a second-level nesting type, an inline and a batched pivot coordinate, and
     // the correlation-key leaves reachable without new types (a split child, a split lookup
-    // child, both @service child shapes), and a table child over the primary-key reference.
+    // child), and a table child over the primary-key reference. The @service child shapes are
+    // the store's whole, their key columns projected from its frames.
     private static final String SDL = """
         type Language @table(name: "language") {
             name: String
-            films: [Film!]! @service(
-                service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"})
-            rank: Int @service(
-                service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMapped"})
         }
         type TranslatedTexts { nn: String nb: String }
         type FilmDetails {
@@ -166,12 +163,14 @@ class ProjectionMembershipTest {
         unexercised.removeAll(observed);
         assertThat(unexercised)
             .as("declared minting kinds this fixture does not observe directly: the computed"
-                + " field (needs an authored @externalField method; its minting is covered by"
-                + " ServiceProjectionPipelineTest) and the polymorphic child shapes (both"
-                + " delivery halves of the interface/union pair, and both halves of the"
+                + " field (needs an authored @externalField method), the polymorphic child shapes"
+                + " (both delivery halves of the interface/union pair, and both halves of the"
                 + " single-table discriminated pair), whose gated correlation-key arms are"
-                + " pinned per-shape by CorrelationKeyArmPipelineTest")
+                + " pinned per-shape by CorrelationKeyArmPipelineTest, and the two service"
+                + " leaves, which the walk no longer mints")
             .containsExactlyInAnyOrder(
+                ChildField.ServiceTableField.class,
+                ChildField.ServiceRecordField.class,
                 ChildField.ComputedField.class,
                 ChildField.TableInterfaceField.class,
                 ChildField.BatchedTableInterfaceField.class,

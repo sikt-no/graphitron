@@ -217,8 +217,8 @@ class ServiceCatalogTest {
 
     // The DTO-shaped batch parameter at a child coordinate is answered by
     // ServiceDirectiveResolver's classify phase, which owns the "this coordinate batches, and your
-    // DTO parameter cannot be its key" verdict; ServiceCoordinatePrecedenceTest pins both container
-    // shapes at the pipeline tier. The root arm below stays here: it is binding's own fallback.
+    // DTO parameter cannot be its key" verdict. The root arm below stays here: it is binding's own
+    // fallback.
 
     @Test
     void reflectServiceMethod_dtoSources_onRootField_pointsAtArgCtxMismatch() {

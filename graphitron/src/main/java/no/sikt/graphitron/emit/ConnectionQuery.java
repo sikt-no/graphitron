@@ -7,14 +7,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION_PART;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT;
@@ -99,6 +102,26 @@ public final class ConnectionQuery {
                 + (walkTenanted ? "routes on a tenant column" : "has no tenant column") + " and the store "
                 + (stored ? "states one" : "states none") + " for graph '" + store.graphName() + "'");
         }
+    }
+
+    /**
+     * The connections the graph's {@code @service} producers run on, by the schema coordinate the walk's
+     * tenant fold keys its edges by, one outcome per occurrence: the store owns those fields whole, and
+     * the fold reads what each hands its subtree off this.
+     */
+    public static Map<String, Set<Outcome>> serviceOutcomes(StoreHandle store) {
+        var c = GRAPHITRON_OCCURRENCE_CONNECTION;
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var o = GRAPHITRON_OCCURRENCE;
+        return Map.copyOf(store.dsl().selectDistinct(o.ELEMENT_COORDINATE, c.OUTCOME)
+            .from(c)
+            .join(p).on(p.GRAPH_NAME.eq(c.GRAPH_NAME), p.COORDINATE.eq(c.COORDINATE))
+            .join(o).on(o.GRAPH_NAME.eq(c.GRAPH_NAME), o.COORDINATE.eq(c.COORDINATE))
+            .where(c.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
+            .fetch()
+            .stream()
+            .collect(Collectors.groupingBy(rec -> rec.value1(),
+                Collectors.mapping(rec -> Outcome.valueOf(rec.value2()), Collectors.toUnmodifiableSet()))));
     }
 
     /** The graph's producers' connections, by the producer's occurrence. */

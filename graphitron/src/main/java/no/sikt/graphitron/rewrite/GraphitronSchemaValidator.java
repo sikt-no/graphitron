@@ -561,6 +561,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.UnboundField f          -> {} // the malformed @condition(override:false) fact is minted at classification (BuildContext.classifyInputField, definition-and-table keyed); the cascade verdict is use-keyed and minted by the consumer walk
             case no.sikt.graphitron.rewrite.model.InputField.ConditionOwnedField f   -> {} // the explicit @condition(override:true) method owns the predicate; the carrier's compact constructor pins the shape and the DML walkers own the write-side rejections
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
+            case no.sikt.graphitron.rewrite.model.GraphitronField.StoreOwnedField f -> {} // the store owns the field whole; its defects are the only refusals it has
         }
         validatePaginationRequiresOrdering(field, errors);
         validateListRequiresOrdering(field, errors);

@@ -91,31 +91,4 @@ class ServiceRecordCompositeCarrierValidationTest {
                 && m.contains("doesNotExist"));
     }
 
-    /**
-     * (c) Cardinality mismatch at the re-levelled comparison: a single data field on the payload while
-     * the producer returns {@code List<composite>}. The producing {@code @service} field's
-     * re-levelled return-shape check names the single-vs-list mismatch precisely (rather than the
-     * element being left unbound and the payload dangling with a generic message).
-     */
-    @Test
-    void cardinalityMismatch_singleDataFieldListReturn_rejects() {
-        var schema = TestSchemaHelper.buildSchema(TABLES + """
-            type CreateFilmsResult {
-                film: Film! @field(name: "filmRecord")
-                actors: [Actor] @field(name: "actorRecords")
-            }
-            type CreateFilmPayload { result: CreateFilmsResult  errors: [CreateError] }
-            type Query { x: String }
-            type Mutation {
-                createFilm: CreateFilmPayload
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
-            }
-            """);
-
-        assertThat(validate(schema))
-            .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("Mutation.createFilm")
-                && m.contains("must return 'no.sikt.graphitron.rewrite.TestFilmWithActorsDto'")
-                && m.contains("java.util.List<no.sikt.graphitron.rewrite.TestFilmWithActorsDto>"));
-    }
 }

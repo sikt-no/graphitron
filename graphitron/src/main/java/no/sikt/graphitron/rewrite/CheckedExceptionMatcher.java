@@ -24,7 +24,7 @@ import java.util.Optional;
  * <p>{@link InterruptedException} and {@link java.io.IOException} (and subclasses) are exempt:
  * infrastructure errors that should redact rather than surface as a typed {@code @error}.
  * Unchecked exceptions are skipped even when declared; they still flow through the catch arm
- * at runtime. Behavior is covered by {@code CheckedExceptionClassificationTest}.
+ * at runtime.
  *
  * <p>The classifier turns a non-empty result into an {@code UnclassifiedField} with a
  * descriptive reason.

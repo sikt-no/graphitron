@@ -384,6 +384,21 @@ class BuildContext {
      */
     java.util.Map<String, String> rowTenants = java.util.Map.of();
 
+    /**
+     * The connections the store states for each {@code @service} field, by schema coordinate, one
+     * outcome per occurrence; the tenant fold reads what each such field hands its subtree off them.
+     * Empty where the build was handed none.
+     */
+    java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections =
+        java.util.Map.of();
+
+    /**
+     * The context keys the store states the {@code @service} calls read, each with the type of the
+     * parameter it fills; the context-argument classification adds them to the keys the walk
+     * harvests. Empty where the build was handed none.
+     */
+    java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys = java.util.List.of();
+
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RunContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
         // is required because every classifier the BuildContext fans into reads at least one of

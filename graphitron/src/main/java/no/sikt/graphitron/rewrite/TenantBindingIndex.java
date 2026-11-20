@@ -9,6 +9,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
+import no.sikt.graphitron.emit.ConnectionQuery;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
@@ -115,7 +116,7 @@ public record TenantBindingIndex(
             OperationMemberRelation operationMembers,
             ColumnBindingLedger columnBindings) {
         return compute(sdl, reachableTypes, fields, entitiesByType, types, scopes, operationMembers,
-            columnBindings, Set.of(), Map.of());
+            columnBindings, Set.of(), Map.of(), Map.of());
     }
 
     /**
@@ -123,7 +124,10 @@ public record TenantBindingIndex(
      * {@code $tenant} pair names a call's tenant by, as the store states them: each is read as a
      * {@code @tenant} marker on that value is, the store being the one reader of the sigil; and where
      * {@code rowTenants} names the fields routed by their parent row's tenant, each to the parent's
-     * column naming it, the store being the one decider of that routing.
+     * column naming it, the store being the one decider of that routing; and where
+     * {@code serviceConnections} states the connection each {@code @service} field runs on, by
+     * coordinate, one outcome per occurrence: the store owns those fields whole, so the fold reads
+     * what each hands its subtree off them.
      */
     public static TenantBindingIndex compute(
             GraphQLSchema sdl,
@@ -135,7 +139,8 @@ public record TenantBindingIndex(
             OperationMemberRelation operationMembers,
             ColumnBindingLedger columnBindings,
             Set<String> authoredTenants,
-            Map<String, String> rowTenants) {
+            Map<String, String> rowTenants,
+            Map<String, Set<ConnectionQuery.Outcome>> serviceConnections) {
         if (sdl == null) {
             return EMPTY;
         }
@@ -148,7 +153,7 @@ public record TenantBindingIndex(
                 : new TenantBindingIndex(Map.of(), Map.of(), markerRejections);
         }
         return new Fold(sdl, reachableTypes, fields, entitiesByType, types, configured,
-            operationMembers, columnBindings, authoredTenants, rowTenants).run();
+            operationMembers, columnBindings, authoredTenants, rowTenants, serviceConnections).run();
     }
 
     /**
@@ -465,6 +470,12 @@ public record TenantBindingIndex(
         private final Map<String, graphql.schema.GraphQLInputValueDefinition> tenantMarked;
         /** The fields routed by their parent row's tenant, as the store states them, to the parent's column. */
         private final Map<String, String> rowTenants;
+        /**
+         * The connections the store states for each {@code @service} field, by coordinate, one
+         * outcome per occurrence. The store owns those fields whole, so they have no {@link Site};
+         * {@link #serviceHandsDown} reads what their edges hand down off these.
+         */
+        private final Map<String, Set<ConnectionQuery.Outcome>> serviceConnections;
         /** The {@code @tenant} uses the fold minted a slot from: the marker sweep's verdict set. */
         private final Set<TenantMarkerUse> consumedTenantMarkers = new HashSet<>();
         /** The {@code @tenant} uses the fold found bound into a jOOQ record parameter. */
@@ -481,9 +492,11 @@ public record TenantBindingIndex(
              OperationMemberRelation operationMembers,
              ColumnBindingLedger columnBindings,
              Set<String> authoredTenants,
-             Map<String, String> rowTenants) {
+             Map<String, String> rowTenants,
+             Map<String, Set<ConnectionQuery.Outcome>> serviceConnections) {
             this.sdl = sdl;
             this.rowTenants = rowTenants;
+            this.serviceConnections = serviceConnections;
             this.domain = domain;
             this.entitiesByType = entitiesByType;
             this.types = types;
@@ -1346,10 +1359,12 @@ public record TenantBindingIndex(
          * node-dispatch and parent-row facts behind {@link #anyBoundAncestor}. True when any site
          * of the edge divines, since the fact it feeds is an any-path rejection fact. A
          * classification-rejected edge in {@link #countedRejectedEdges} divines too, so every type
-         * with a context still lies below a divining edge, a fanned edge, or a routed entry.
+         * with a context still lies below a divining edge, a fanned edge, or a routed entry; so does
+         * a {@code @service} edge whose connection {@link #serviceHandsDown hands a tenant down}.
          */
         private boolean edgeDivinesTenant(FieldCoordinates edge) {
             return countedRejectedEdges.contains(edge)
+                || serviceOutcomes(edge).stream().anyMatch(Fold::serviceHandsDown)
                 || sitesAt(edge).stream().anyMatch(this::siteDivinesTenant);
         }
 
@@ -2628,10 +2643,41 @@ public record TenantBindingIndex(
             if (countedRejectedEdges.contains(edge)) {
                 return true;
             }
+            // A @service field has no site, the store owning it whole: its connection decides, every
+            // occurrence's for the same reason as every site's below.
+            var outcomes = serviceOutcomes(edge);
+            if (!outcomes.isEmpty()) {
+                return outcomes.stream().allMatch(Fold::serviceHandsDown);
+            }
             // Every site, since the fact it feeds is the every-path context fact: an edge one of
             // whose instances hands nothing down leaves that path without a tenant.
             var edgeSites = sitesAt(edge);
             return !edgeSites.isEmpty() && edgeSites.stream().allMatch(this::siteEstablishesContext);
+        }
+
+        /** The outcomes the store states for a {@code @service} edge's occurrences; empty for any other edge. */
+        private Set<ConnectionQuery.Outcome> serviceOutcomes(FieldCoordinates edge) {
+            return serviceConnections.getOrDefault(edge.getTypeName() + "." + edge.getFieldName(), Set.of());
+        }
+
+        /**
+         * Whether a {@code @service} occurrence hands its subtree a tenant, by the connection the
+         * store states for it: what the walk's own service site handed down when it judged the field.
+         * An edge that hands none down passes its parent's context on.
+         */
+        private static boolean serviceHandsDown(ConnectionQuery.Outcome outcome) {
+            return switch (outcome) {
+                // Keyed by the tenant its arguments name, or its parent row's: the tenant the call
+                // runs on is the subtree's, as a guaranteed binding or a parent-row arm handed down.
+                case ROUTED -> true;
+                // On the key its parent handed down: the parent's context passes on unchanged, as
+                // it did below a child service that names no tenant of its own.
+                case INHERIT -> false;
+                // On the key with an empty tenant part: the call names no tenant, so none is handed
+                // down, as below a service on the default source; a child's subtree keeps its
+                // parent's context, a root's has none.
+                case UNSCOPED -> false;
+            };
         }
 
         private boolean siteEstablishesContext(Site site) {

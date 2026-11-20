@@ -182,8 +182,8 @@ class MethodClosureOracleTest {
     /**
      * Non-vacuity floor for the <b>node relation</b>, covering the families whose call sites
      * are <em>same-class and unqualified</em> in the emit and therefore invisible to the
-     * level-1 edge scan: the rows-methods, scatter, order-by, the service load method, and
-     * the record-instantiation helpers. Level 1 pins them as emitted nodes; their call edges
+     * level-1 edge scan: the rows-methods, scatter, order-by, the service the store emits, and
+     * the input carrier's factory. Level 1 pins them as emitted nodes; their call edges
      * are not assertable at this level.
      */
     @Test
@@ -206,10 +206,7 @@ class MethodClosureOracleTest {
         assertThat(declaredIn(pkg + ".fetchers.LanguageFetchers"))
             .contains("filmsViaService", "filmsViaServiceCall", "filmsViaServiceLift");
 
-        // Boundary helpers: the jOOQ-record instantiation pair at the @service
-        // parameter position, and the input carrier's fromMap factory.
-        assertThat(declaredIn(pkg + ".fetchers.QueryFetchers"))
-            .contains("createFilmRecord", "createFilmRecordList");
+        // Boundary helper: the input carrier's fromMap factory.
         assertThat(declaredIn(pkg + ".inputs.FilmInput")).contains("fromMap");
     }
 

@@ -378,15 +378,6 @@ public final class ServiceEmission {
     }
 
     /**
-     * Whether a store was read and states no fetcher for the field at {@code fieldCoordinate}: nothing
-     * in the schema leads to the field, so it gets no fetcher and no registration. Always false for
-     * {@link #none()}, which has no store to ask.
-     */
-    public boolean unfetched(String fieldCoordinate) {
-        return stored && !fetched.contains(fieldCoordinate);
-    }
-
-    /**
      * The coordinates the classified model's validation errors are dropped at, the store judging what
      * is there: every owned field, its arguments, and the input fields and input types reached through
      * a service's arguments and through no other field's. Empty for {@link #none()}.
@@ -396,13 +387,12 @@ public final class ServiceEmission {
     }
 
     /**
-     * Refuses a field the classified model took for a service and the store does not own, though it
-     * states a fetcher for it: with a store read, every service a fetcher is stated for is owned, so
-     * the classified model's fetcher would stand in for one the store should have stated. Passes for
-     * {@link #none()}, whose callers emit the classified model's fetchers on purpose.
+     * Refuses a {@code @service} field the store does not own, though it states a fetcher for it:
+     * with a store read, every service a fetcher is stated for is owned, so nothing would emit the
+     * fetcher the store asks for. Passes for {@link #none()}, which states no fetcher.
      */
-    public void requireNoClassifiedService(String fieldCoordinate) {
-        if (stored) {
+    public void requireOwnedWhereFetched(String fieldCoordinate) {
+        if (stored && fetched.contains(fieldCoordinate)) {
             throw new IllegalStateException("Graphitron generator bug: @service " + fieldCoordinate
                 + " has a fetcher, but the store states no service producer occurrence of it, so it is not"
                 + " emitted from the store");

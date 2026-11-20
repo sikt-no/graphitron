@@ -58,8 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the fixture instantiates its interface half, so a producer that started minting rows for it
  * fails both the model → row equality and the explicit negative pin here. The Encoded-DML pin
  * keeps the other deliberate absence visible: an encoded return arm carries no reentry, by the
- * fact, not by omission. Beside it, the root {@code @service} table return's pin is the positive
- * form of what used to be an absence there, its companion row named and its source arm read.
+ * fact, not by omission.
  */
 @PipelineTier
 class LauncherRelationClosureTest {
@@ -244,31 +243,12 @@ class LauncherRelationClosureTest {
      */
     @Test
     void familyWitnessesAndBoundaryPins() {
-        // Positive witnesses: the child service-table lift and the record-sourced carrier.
-        assertThat(launchers.rowFor("Language", "filmsViaService"))
-            .hasValueSatisfying(row -> {
-                assertThat(row.unit().methodName()).isEqualTo("loadFilmsViaService");
-                assertThat(row.unit().owner().fqcn())
-                    .isEqualTo(OUTPUT_PACKAGE + ".fetchers.LanguageFetchers");
-            });
+        // Positive witness: the record-sourced carrier.
         assertThat(launchers.rowFor("FilmPayload", "film"))
             .hasValueSatisfying(row -> {
                 assertThat(row.unit().methodName()).isEqualTo("rowsFilm");
                 assertThat(row.unit().owner().fqcn())
                     .isEqualTo(OUTPUT_PACKAGE + ".fetchers.FilmPayloadFetchers");
-            });
-
-        // Root @service table return: value-level and site-level facts agree, and the row is
-        // the companion the fetcher calls with the keys it lifted off the returned records.
-        OutputField externalFilm = (OutputField) model.field("Query", "externalFilm");
-        assertThat(externalFilm.requiresReFetch()).isTrue();
-        assertThat(externalFilm.emitsKeyedReQuery())
-            .as("a table-bound root service return re-projects at its own site")
-            .isTrue();
-        assertThat(launchers.rowFor("Query", "externalFilm"))
-            .hasValueSatisfying(row -> {
-                assertThat(row.unit().methodName()).isEqualTo("rowsExternalFilm");
-                assertThat(row.source()).isInstanceOf(LaunchSource.ProjectedReentry.class);
             });
 
         // The batched polymorphic pair's interface half: emitted-and-uncommitted by decision.

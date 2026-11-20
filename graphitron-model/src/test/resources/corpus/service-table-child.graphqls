@@ -1,10 +1,9 @@
 type Film @table(name: "film") { title: String }
-type Language @table(name: "language") {
+type Language @table(name: "language") @classifiedType(as: TableType) {
   name: String
   "Films for this language, produced by a service and re-queried as table rows."
   filmsViaService: [Film!]! @service(
     service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"})
-    @classified(source: OnlyChild, operations: [Reentry, ServiceCall], target: List, targetShape: Table)
 
 }
 extend type Query { language: Language }

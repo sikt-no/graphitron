@@ -979,14 +979,30 @@ public sealed interface ChildField extends OutputField
      * an object. The collapse reads columns the query may not have selected, which is this
      * field's {@link #parentRowColumns() parent-row demand}, and probes its references and lists
      * in the parent's statement.
+     *
+     * <p>{@code nestedFields} are the nested type's fields projected off the parent row;
+     * {@code storeOwned} are its {@code @service} fields, which the store owns whole and which are
+     * no projection, so they ride beside them. Only the readers that wire fetchers read them.
      */
     record NestingField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        List<ChildField> nestedFields
+        List<ChildField> nestedFields,
+        List<GraphitronField.StoreOwnedField> storeOwned
     ) implements ChildField, ParentRowDemand {
+        public NestingField {
+            nestedFields = List.copyOf(nestedFields);
+            storeOwned = List.copyOf(storeOwned);
+        }
+
+        /** A nesting field whose nested type holds no {@code @service} field. */
+        public NestingField(String parentTypeName, String name, SourceLocation location,
+                ReturnTypeRef.TableBoundReturnType returnType, List<ChildField> nestedFields) {
+            this(parentTypeName, name, location, returnType, nestedFields, List.of());
+        }
+
         /**
          * NestingField is a pass-through: the children of the nested SDL type receive the
          * parent's record verbatim. The parent's table varies across nesting-reuse sites (the
@@ -1006,7 +1022,7 @@ public sealed interface ChildField extends OutputField
          * target types of the object reference probes among them.
          */
         public Presence.NullContract nullContract(Presence.TypeFields types) {
-            return Presence.NullContract.of(returnType.wrapper(), Presence.SubtreePresence.over(nestedFields, types));
+            return Presence.NullContract.of(returnType.wrapper(), Presence.SubtreePresence.of(this, types));
         }
 
         /**
