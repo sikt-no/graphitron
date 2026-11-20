@@ -221,21 +221,21 @@ public class GraphitronSchemaBuilder {
 
     /**
      * {@link #buildBundle(AttributedRegistry, GraphQLSchema, RunContext, java.util.Set, java.util.Map, java.util.Map)},
-     * the context-argument classification adding to the keys the walk harvests the
-     * {@code serviceContextKeys} the store states the {@code @service} calls read.
+     * the context-argument classification folding the {@code contextKeys} the store states the
+     * {@code @service} and {@code @condition} calls read.
      */
     public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx,
                                      java.util.Set<String> authoredTenants,
                                      java.util.Map<String, String> rowTenants,
                                      java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections,
-                                     java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys) {
+                                     java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> contextKeys) {
         var registry = attributed.registry();
         boolean federationLink = attributed.federationLink();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
         bctx.authoredTenants = java.util.Set.copyOf(authoredTenants);
         bctx.rowTenants = java.util.Map.copyOf(rowTenants);
         bctx.serviceConnections = java.util.Map.copyOf(serviceConnections);
-        bctx.serviceContextKeys = java.util.List.copyOf(serviceContextKeys);
+        bctx.contextKeys = java.util.List.copyOf(contextKeys);
         recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
@@ -401,7 +401,7 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(classifiedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            connectionSynthesis, operationMembers, deliveryFacts, ctx.serviceContextKeys);
+            connectionSynthesis, operationMembers, deliveryFacts, ctx.contextKeys);
         return new BuildResult(model, rebuiltAssembled);
     }
 

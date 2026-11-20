@@ -25,12 +25,10 @@ import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.model.diagnostics.JooqRecordInputError;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
-import no.sikt.graphitron.rewrite.model.MappingEntry;
 import no.sikt.graphitron.model.diagnostics.MatchedKey;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -52,9 +50,6 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RootField;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
-import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
-import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
-import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.Target;
@@ -64,7 +59,6 @@ import no.sikt.graphitron.rewrite.model.TenantScopes;
 import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
 import no.sikt.graphitron.rewrite.model.ValueLocator;
-import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.model.WalkerResult;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 import no.sikt.graphitron.model.diagnostics.WireCoercionError;
@@ -171,7 +165,6 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.rewrite.model.EmittedCarrierBinding.class, HierarchyKind.WALKED_FACT),
         Map.entry(AccessorProbe.class, HierarchyKind.WALKED_FACT),
         Map.entry(ParamSource.class, HierarchyKind.WALKED_FACT),
-        Map.entry(ValueShape.class, HierarchyKind.WALKED_FACT),
         // Walker carriers for the DML directive walks.
         Map.entry(DeleteRows.class, HierarchyKind.WALKED_FACT),
         Map.entry(UpdateRows.class, HierarchyKind.WALKED_FACT),
@@ -284,8 +277,6 @@ class HierarchyKindRegistryTest {
         Map.entry(OrderBySpec.class, HierarchyKind.COMMAND),
         Map.entry(KeyLift.class, HierarchyKind.COMMAND),
         Map.entry(LookupMapping.class, HierarchyKind.COMMAND),
-        Map.entry(ServiceMethodCall.class, HierarchyKind.COMMAND),
-        Map.entry(MappingEntry.class, HierarchyKind.COMMAND),
         Map.entry(HelperRef.class, HierarchyKind.COMMAND),
         Map.entry(WhereFilter.class, HierarchyKind.COMMAND),
         Map.entry(ErrorChannel.class, HierarchyKind.COMMAND),
@@ -294,13 +285,10 @@ class HierarchyKindRegistryTest {
         Map.entry(Rejection.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(DeleteRowsError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(ErrorChannelWalkerError.class, HierarchyKind.ERROR_CHANNEL),
-        Map.entry(JooqRecordInputError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(MutationTableArgError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(FailOnMissingError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(PivotError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(ReflectionError.class, HierarchyKind.ERROR_CHANNEL),
-        Map.entry(ServiceCarrierShapeError.class, HierarchyKind.ERROR_CHANNEL),
-        Map.entry(ServiceMethodCallError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(UpdateRowsError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(WireCoercionError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(WalkerResult.class, HierarchyKind.ERROR_CHANNEL),

@@ -4,6 +4,7 @@ import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.emit.FillQuery;
 import no.sikt.graphitron.model.test.FactGraphs;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -17,13 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * L4 pipeline tests for {@link GraphitronFacadeGenerator}: drive the generator against a real
- * classified schema with multiple {@code @condition(contextArguments: [...])} sites and pin the
- * alphabetical-sorted factory parameter list (names + types + modifiers).
+ * classified schema with the context keys the store states its calls read, read off shared fact
+ * documents, and pin the factory parameter list (names + types + modifiers).
  *
  * <p>Sibling to the unit-tier {@code GraphitronFacadeGeneratorTest}, which uses an empty schema
- * to pin the empty-contextArgs collapse to {@code newExecutionInput(DSLContext)}. This test
- * exercises the multi-arg shape end-to-end through the classifier, the same code paths the
- * production generator runs.
+ * to pin the empty-contextArgs collapse to {@code newExecutionInput(DSLContext)}.
  *
  * <p>Body-shape behaviour (null-checks, GraphQLContext put pattern, DataLoaderRegistry attach) is
  * covered by the L5 compile gate plus the L6 round-trip in {@code FilmContextArgumentRoundTripTest};
@@ -36,24 +35,44 @@ class GraphitronFacadeGeneratorPipelineTest {
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     /**
-     * The context keys the store states the {@code @service} calls of two shared scenarios read:
-     * occurrence-call-parameter's, where only services read userId and label, and call-context-key's, where a
-     * service and a {@code @condition} both read it.
+     * The context keys the store states the calls of three shared scenarios read:
+     * occurrence-call-parameter's, where only services read userId and label, call-context-key's, where a
+     * service and a {@code @condition} both read userId and a service's pair reads viewerId, and occurrence-condition's, where only a
+     * {@code @condition} does.
      */
-    private static final class ServiceKeys {
+    private static final class StoreKeys {
         static final List<FillQuery.ContextKey> SERVICE_ONLY = FACTS
             .read("scenarios/occurrence-call-parameter", graph -> FillQuery.contextKeys(graph.handle()));
         static final List<FillQuery.ContextKey> SHARED = FACTS
             .read("scenarios/call-context-key", graph -> FillQuery.contextKeys(graph.handle()));
+        static final List<FillQuery.ContextKey> CONDITION_ONLY = FACTS
+            .read("scenarios/occurrence-condition", graph -> FillQuery.contextKeys(graph.handle()));
     }
 
-    private static MethodSpec newExecutionInput(String sdl, List<FillQuery.ContextKey> serviceKeys) {
-        var schema = TestSchemaHelper.buildSchema(sdl, TestConfiguration.testContext(), Map.of(), Map.of(),
-            serviceKeys);
+    /** The {@code @condition} reading userId in call-context-key and occurrence-condition. */
+    private static final String CONDITION_SDL = """
+        type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+        type Query {
+            customersSeenByUser: [Customer!]! @condition(condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                method: "customerSeenByUser"
+            }, contextArguments: ["userId"])
+        }
+        """;
+
+    private static GraphitronSchema schema(String sdl, List<FillQuery.ContextKey> keys) {
+        return TestSchemaHelper.buildSchema(sdl, TestConfiguration.testContext(), Map.of(), Map.of(), keys);
+    }
+
+    private static MethodSpec method(GraphitronSchema schema, String name) {
         return GraphitronFacadeGenerator.generate(schema, "com.example").get(0).methodSpecs().stream()
-            .filter(m -> m.name().equals("newExecutionInput"))
+            .filter(m -> m.name().equals(name))
             .findFirst()
             .orElseThrow();
+    }
+
+    private static MethodSpec newExecutionInput(String sdl, List<FillQuery.ContextKey> keys) {
+        return method(schema(sdl, keys), "newExecutionInput");
     }
 
     @Test
@@ -67,7 +86,7 @@ class GraphitronFacadeGeneratorPipelineTest {
                     className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
                     method: "greet"}, contextArguments: ["userId"])
             }
-            """, ServiceKeys.SERVICE_ONLY);
+            """, StoreKeys.SERVICE_ONLY);
 
         assertThat(factory.parameters()).extracting(p -> p.name())
             .containsExactly("defaultDsl", "label", "userId");
@@ -77,8 +96,9 @@ class GraphitronFacadeGeneratorPipelineTest {
 
     @Test
     void factory_takesAKeyAServiceAndAConditionBothReadOnce() {
-        // The walk harvests the @condition's userId and the store states the @service's; the two
-        // agree on String and the factory takes the key once.
+        // The store states both calls' userId; the two agree on String and the factory takes the
+        // key once, with both calls as its sites. The scenario's $context pair reads viewerId, which
+        // follows it in the factory's alphabetical order.
         var factory = newExecutionInput("""
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query {
@@ -90,82 +110,46 @@ class GraphitronFacadeGeneratorPipelineTest {
                     className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
                     method: "customerSeenByUser"}, contextArguments: ["userId"])
             }
-            """, ServiceKeys.SHARED);
+            """, StoreKeys.SHARED);
+
+        assertThat(factory.parameters()).extracting(p -> p.name())
+            .containsExactly("defaultDsl", "userId", "viewerId");
+        assertThat(factory.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("org.jooq.DSLContext", "java.lang.String", "java.lang.String");
+        assertThat(schema(CONDITION_SDL, StoreKeys.SHARED).contextArguments().resolved().get("userId").sites())
+            .extracting(site -> site.className())
+            .containsExactlyInAnyOrder(
+                "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+                "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures");
+    }
+
+    @Test
+    void factory_takesAContextKeyOnlyAConditionReads() {
+        // No @service reads userId here: the factory takes it because the store states the
+        // @condition's call reads it into a String parameter.
+        assertThat(StoreKeys.CONDITION_ONLY)
+            .extracting(key -> key.className() + "." + key.methodName())
+            .containsOnly("no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures.customerSeenByUser");
+        var factory = newExecutionInput(CONDITION_SDL, StoreKeys.CONDITION_ONLY);
 
         assertThat(factory.parameters()).extracting(p -> p.name())
             .containsExactly("defaultDsl", "userId");
         assertThat(factory.parameters()).extracting(p -> p.type().toString())
             .containsExactly("org.jooq.DSLContext", "java.lang.String");
+        assertThat(factory.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
 
     @Test
-    void factory_reflectsContextArgumentsAlphabeticallyWithReflectedJavaTypes() {
-        // Two root @condition sites with disjoint contextArguments (userId: String, brukerId: Long).
-        // The classifier walks both MethodRefs, collects them by name, and produces a sorted
-        // (alphabetical) ResolvedContextArg map. The factory emitter pastes one parameter slot
-        // per entry, in TreeMap iteration order.
-        String sdl = """
-            type Film @table(name: "film") { title: String }
-            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
-            type Query {
-                customersSeenByUser: [Customer!]! @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-                    method: "customerSeenByUser"
-                }, contextArguments: ["userId"])
-                filmsSeenByBruker: [Film!]! @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.TestConditionStub",
-                    method: "sessionBoxed"
-                }, contextArguments: ["brukerId"])
-            }
-            """;
-        var schema = TestSchemaHelper.buildSchema(sdl);
-        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
-
-        MethodSpec newExecutionInput = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("newExecutionInput"))
-            .findFirst()
-            .orElseThrow();
-
-        // First parameter is always defaultDsl. Contextargs follow alphabetically (brukerId before userId).
-        assertThat(newExecutionInput.parameters()).extracting(p -> p.name())
-            .containsExactly("defaultDsl", "brukerId", "userId");
-        assertThat(newExecutionInput.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("org.jooq.DSLContext", "java.lang.Long", "java.lang.String");
-        assertThat(newExecutionInput.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void ownedFactory_takesExactlyTheAlphabeticalContextArguments() {
-        // The owned-connection factory carries only the alphabetical contextArgument list (a
-        // configured mount's payload parameters would be ordinary entries in it). Distinct name
-        // from the escape-hatch newExecutionInput, so a caller passing a DSLContext cannot
-        // silently reach the owned path.
-        String sdl = """
-            type Film @table(name: "film") { title: String }
-            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
-            type Query {
-                customersSeenByUser: [Customer!]! @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-                    method: "customerSeenByUser"
-                }, contextArguments: ["userId"])
-                filmsSeenByBruker: [Film!]! @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.TestConditionStub",
-                    method: "sessionBoxed"
-                }, contextArguments: ["brukerId"])
-            }
-            """;
-        var schema = TestSchemaHelper.buildSchema(sdl);
-        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
-
-        MethodSpec owned = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("newOwnedExecutionInput"))
-            .findFirst()
-            .orElseThrow();
+    void ownedFactory_takesExactlyTheStatedContextKeys() {
+        // The owned-connection factory carries only the context keys (a configured mount's
+        // payload parameters would be ordinary entries in it). Distinct name from the escape-hatch
+        // newExecutionInput, so a caller passing a DSLContext cannot silently reach the owned path.
+        MethodSpec owned = method(schema(CONDITION_SDL, StoreKeys.CONDITION_ONLY), "newOwnedExecutionInput");
 
         assertThat(owned.parameters()).extracting(p -> p.name())
-            .containsExactly("source", "brukerId", "userId");
+            .containsExactly("source", "userId");
         assertThat(owned.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("com.example.schema.ConnectionSource", "java.lang.Long", "java.lang.String");
+            .containsExactly("com.example.schema.ConnectionSource", "java.lang.String");
         assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
 
@@ -184,7 +168,7 @@ class GraphitronFacadeGeneratorPipelineTest {
                 }, contextArguments: ["userId"])
             }
             """;
-        var schema = TestSchemaHelper.buildSchema(sdl);
+        var schema = schema(sdl, StoreKeys.CONDITION_ONLY);
         var spec = GraphitronFacadeGenerator.generate(schema, "com.example", false, false,
             no.sikt.graphitron.rewrite.session.SessionIdentityFixtures.handleLess(), false, true).get(0);
 

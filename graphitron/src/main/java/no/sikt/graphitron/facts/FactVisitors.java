@@ -29,7 +29,7 @@ public final class FactVisitors {
     /** One instance per registered visitor; a fresh set per gather (visitors accumulate state). */
     public static List<FactVisitor> builtIn() {
         return List.of(new PaginationFactVisitor(), new ConditionFactVisitor(),
-            new OrderByFactVisitor(), new LookupFactVisitor(), new ServiceFactVisitor(),
-            new WriteFactVisitor(), new DeliveryFactVisitor());
+            new OrderByFactVisitor(), new LookupFactVisitor(), new WriteFactVisitor(),
+            new DeliveryFactVisitor());
     }
 }

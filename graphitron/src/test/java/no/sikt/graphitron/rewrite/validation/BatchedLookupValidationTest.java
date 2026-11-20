@@ -82,7 +82,7 @@ class BatchedLookupValidationTest {
         TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(TestFixtures.filmIdCol()),
         TestFixtures.joinTarget("film"), List.of(TestFixtures.filmIdCol()), null, ""));
     private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
-        TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
+        TestFixtures.staticOnlyMethodRef("com.example.Conditions", "filmCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.filmTable(), ""));
 

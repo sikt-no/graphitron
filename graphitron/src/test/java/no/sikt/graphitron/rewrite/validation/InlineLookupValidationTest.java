@@ -50,7 +50,7 @@ class InlineLookupValidationTest {
     // surfaces a deferred-rejection for it.
 
     private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
-        TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
+        TestFixtures.staticOnlyMethodRef("com.example.Conditions", "filmCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.filmTable(), ""));
 

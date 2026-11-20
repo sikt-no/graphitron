@@ -666,10 +666,6 @@ public final class ConditionGlueRenderer {
                     localType(param), hosts.contextHelper().call(), param.name());
             case CallSiteExtraction.InputBean ib ->
                 beanBuild(hosts.beans(), ib, param, CodeBlock.of("args.get($S)", param.name()));
-            // Refused at classification (ServiceCatalog's condition carrier policy): the glue
-            // populates no jOOQ record from an input object.
-            case CallSiteExtraction.JooqRecord ignored -> throw new IllegalStateException(
-                "JooqRecord is a @service parameter carrier and never a condition binding");
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> throw new IllegalStateException(
                 "NodeIdDecodeRecord is an input-bean field leaf only and never a condition binding");
             case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored ->

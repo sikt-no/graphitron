@@ -36,7 +36,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * carry typed structural data (a name-lookup attempt with candidates, conflict
      * sites, ...) so downstream tooling reads it off the arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, AuthorError.UnroutedServiceCall, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, FailOnMissingError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError, JooqRecordInputError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, FailOnMissingError, ErrorChannelWalkerError, WireCoercionError, PivotError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -139,44 +139,6 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             @Override public Rejection prefixedWith(String prefix) {
                 return new RecordBindingMultiProducer(prefix + sdlTypeName, bindings);
-            }
-        }
-
-        /**
-         * Two or more directive sites reference the same {@code contextArgument} name with
-         * mutually-incompatible Java types. The per-name agreement walk over every
-         * {@code MethodRef.Param.Typed} whose source is {@code ParamSource.Context} keys by
-         * parameter name and requires every site to declare the same structural
-         * type. The factory emitter pastes that single type verbatim into the generated {@code Graphitron.newExecutionInput(...)} parameter
-         * list, and the call-site emitter pastes it as the {@code $T.class} literal at the
-         * {@code getContextArgument} call: any disagreement would mis-type the generated cast.
-         *
-         * <p>Carries the contextArgument name plus the {@link ConflictSite} list, each site named
-         * and its declared type spelled. Fires from
-         * {@code ContextArgumentClassifier} when the per-name fold finds
-         * disagreeing declared types across sites.
-         */
-        record TypeConflict(String contextArgumentName, List<ConflictSite> sites)
-                implements AuthorError {
-            public TypeConflict {
-                sites = List.copyOf(sites);
-            }
-
-            @Override public String message() {
-                var sb = new StringBuilder()
-                    .append("contextArgument '").append(contextArgumentName)
-                    .append("' has disagreeing Java types across directive sites:");
-                for (ConflictSite cs : sites) {
-                    sb.append("\n  - ").append(cs.className()).append('.').append(cs.methodName())
-                      .append(" declared ").append(cs.declared());
-                }
-                sb.append("\n  Resolve by aligning every directive site that references '")
-                  .append(contextArgumentName).append("' on a single Java type.");
-                return sb.toString();
-            }
-
-            @Override public Rejection prefixedWith(String prefix) {
-                return new TypeConflict(prefix + contextArgumentName, sites);
             }
         }
 
@@ -361,53 +323,6 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                 return new NoTenantBinding(prefix + coordinate, tableName, detail);
             }
         }
-
-        /**
-         * A root {@code @service} that is handed a connection (a {@code DSLContext} or the
-         * {@code $session} handle) while nothing in its arguments routes it to a tenant, in a
-         * database-per-tenant build. The service's own SQL is opaque to the build, so the call
-         * would run on the default database whatever that SQL touches. A sibling of
-         * {@link NoTenantBinding} rather than a use of it because the field need reach no
-         * tenant-scoped table of graphitron's own, so that arm's opening would be false here.
-         *
-         * <p>{@code declines} picks the message form. Empty: nothing names the tenant, and the
-         * message names both fixes, listing {@code evidence} (the argument values typed by a
-         * tenant-scoped table that bind no tenant) when there is any. Non-empty: the arguments
-         * name the tenant column only through shapes that cannot route the call, and each
-         * decline's detail carries its own fix.
-         */
-        record UnroutedServiceCall(String coordinate, String tenantColumn, List<String> declines,
-                                   List<String> evidence)
-                implements AuthorError {
-
-            public UnroutedServiceCall {
-                declines = List.copyOf(declines);
-                evidence = List.copyOf(evidence);
-            }
-
-            @Override public String message() {
-                String opening = "'" + coordinate + "' is a @service that is handed a connection";
-                if (!declines.isEmpty()) {
-                    return opening + ", and its arguments name tenant column '" + tenantColumn
-                        + "' only through shapes that cannot route the call, so it would run on"
-                        + " the default database: " + String.join(" ", declines);
-                }
-                String fixes = opening + ", but nothing in its arguments names a tenant for"
-                    + " tenant column '" + tenantColumn + "', so it would run on the default"
-                    + " database. Take the node table's jOOQ record with @nodeId(typeName:)"
-                    + " (a bean member, a parameter, or a top-level argument), or bind a jOOQ"
-                    + " record field to '" + tenantColumn + "', or mark the scalar argument or"
-                    + " input field that holds the tenant with @tenant.";
-                return evidence.isEmpty()
-                    ? fixes + " If the service works only on global data, take no connection."
-                    : fixes + " Its arguments carry tenant-scoped values that bind no tenant: "
-                        + String.join(", ", evidence) + ".";
-            }
-
-            @Override public Rejection prefixedWith(String prefix) {
-                return new UnroutedServiceCall(prefix + coordinate, tenantColumn, declines, evidence);
-            }
-        }
     }
 
     /**
@@ -579,11 +494,6 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         return new AuthorError.AccessorMismatch(reason);
     }
 
-    /** {@link AuthorError.TypeConflict} factory. */
-    static Rejection contextArgumentTypeConflict(String name, List<ConflictSite> sites) {
-        return new AuthorError.TypeConflict(name, sites);
-    }
-
     /** {@link AuthorError.SortEnumMissingOrder} factory. */
     static Rejection sortEnumMissingOrder(String enumTypeName, List<String> missingValues) {
         return new AuthorError.SortEnumMissingOrder(enumTypeName, missingValues);
@@ -598,12 +508,6 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /** {@link AuthorError.NoTenantBinding} factory. */
     static Rejection noTenantBinding(String coordinate, String tableName, String detail) {
         return new AuthorError.NoTenantBinding(coordinate, tableName, detail);
-    }
-
-    /** {@link AuthorError.UnroutedServiceCall} factory. */
-    static Rejection unroutedServiceCall(String coordinate, String tenantColumn,
-                                         List<String> declines, List<String> evidence) {
-        return new AuthorError.UnroutedServiceCall(coordinate, tenantColumn, declines, evidence);
     }
 
     /** {@link InvalidSchema.Structural} factory; the majority shape. */

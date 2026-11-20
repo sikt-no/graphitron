@@ -40,7 +40,7 @@ class RetiredDimensionTypesAreGoneTest {
     /**
      * Retired type simple names for the import guard. {@code Carrier} / {@code Mapping} are listed here
      * (an import is an unambiguous type reference) but deliberately not bare-word-grepped, because both
-     * collide with live identifiers ({@code LookupMapping}, {@code MappingEntry}, {@code ColumnMapping})
+     * collide with live identifiers ({@code LookupMapping}, {@code ColumnMapping})
      * and ordinary prose ("carrier-side", "carrier classifier").
      */
     private static final Pattern RETIRED_IMPORT = Pattern.compile(
@@ -51,7 +51,7 @@ class RetiredDimensionTypesAreGoneTest {
 
     /** Kept-by-design neighbours the deletions must not have swept. */
     private static final List<String> CARVE_OUT_FILES =
-        List.of("SourceShape.java", "LookupMapping.java", "MappingEntry.java");
+        List.of("SourceShape.java", "LookupMapping.java");
 
     @Test
     void retiredTypeSourceFilesAreDeleted() {
@@ -105,7 +105,7 @@ class RetiredDimensionTypesAreGoneTest {
         });
         assertThat(present)
             .as("the carve-out types kept by design must still exist; the remnant guard must not be "
-                + "satisfiable by over-deleting SourceShape / LookupMapping / MappingEntry")
+                + "satisfiable by over-deleting SourceShape / LookupMapping")
             .containsAll(CARVE_OUT_FILES);
     }
 

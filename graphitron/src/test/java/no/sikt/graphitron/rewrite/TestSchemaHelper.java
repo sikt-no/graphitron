@@ -83,16 +83,16 @@ public final class TestSchemaHelper {
 
     /**
      * {@link #buildSchema(String, RunContext, java.util.Map, java.util.Map)} where the context-argument
-     * classification also takes the {@code serviceContextKeys} the store states the {@code @service}
-     * calls read, read off a fact document as {@code rowTenants} is.
+     * classification folds the {@code contextKeys} the store states the {@code @service} and
+     * {@code @condition} calls read, read off a fact document as {@code rowTenants} is.
      */
     public static GraphitronSchema buildSchema(String schemaText, RunContext ctx, java.util.Map<String, String> rowTenants,
             java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections,
-            java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys) {
+            java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> contextKeys) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
         return GraphitronSchemaBuilder.buildBundle(AttributedRegistry.from(registry),
             GraphitronSchemaBuilder.assembleOrFail(no.sikt.graphitron.model.schema.SchemaAssembly.of(registry)),
-            ctx, java.util.Set.of(), rowTenants, serviceConnections, serviceContextKeys).model();
+            ctx, java.util.Set.of(), rowTenants, serviceConnections, contextKeys).model();
     }
 
     /**

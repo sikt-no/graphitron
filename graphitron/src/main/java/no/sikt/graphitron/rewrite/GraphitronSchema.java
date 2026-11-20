@@ -31,8 +31,7 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * the build. Surfaced by the plugin's mojos to the Maven log.
  *
  * <p>{@link #contextArguments} is the cached output of {@link ContextArgumentClassifier},
- * computed once at construction time. The validator and the facade generator both read this
- * field rather than re-classifying, so a single-producer guarantee holds across the consumers.
+ * computed once at construction time off the context keys the store states the calls read.
  *
  * <p>{@link #diagnostics} carries build-time validation findings accumulated instead of
  * demoting a classified verdict to {@code UnclassifiedType} / {@code UnclassifiedField}. Each
@@ -129,7 +128,7 @@ public record GraphitronSchema(
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
-            ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
+            ContextArgumentClassifier.classify(List.of()), List.of(), Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY,
             ConnectionSynthesisRelation.EMPTY, OperationMemberRelation.EMPTY,
             DeliveryFactRelation.EMPTY);
@@ -232,8 +231,9 @@ public record GraphitronSchema(
 
     /**
      * The {@link GraphitronSchemaBuilder} constructor with the context keys the store states the
-     * {@code @service} calls read ({@link no.sikt.graphitron.emit.FillQuery#contextKeys}), which
-     * {@link ContextArgumentClassifier} adds to the keys the walk harvests.
+     * {@code @service} and {@code @condition} calls read
+     * ({@link no.sikt.graphitron.emit.FillQuery#contextKeys}), which {@link ContextArgumentClassifier}
+     * folds.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -247,9 +247,9 @@ public record GraphitronSchema(
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers,
                             DeliveryFactRelation deliveryFacts,
-                            List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys) {
+                            List<no.sikt.graphitron.emit.FillQuery.ContextKey> contextKeys) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
-            ContextArgumentClassifier.classify(fields.values(), serviceContextKeys), List.copyOf(diagnostics),
+            ContextArgumentClassifier.classify(contextKeys), List.copyOf(diagnostics),
             Map.copyOf(arrivals), Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings,
             connectionSynthesis, operationMembers, deliveryFacts);
     }

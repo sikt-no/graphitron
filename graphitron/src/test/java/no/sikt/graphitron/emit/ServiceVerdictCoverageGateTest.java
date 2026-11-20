@@ -27,12 +27,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The services that do not hold yet are listed in {@code uncovered-services.txt}, each with the
  * node whose landing deletes its line, and the list is asserted exactly: a new one fails here, and so
- * does a line whose service now holds. The list only shrinks, and the walk's service path is deleted
- * only once it is empty; the test and its list go with it.
+ * does a line whose service now holds. The list only shrinks.
  *
  * <p>It captures every fact document, so it runs on demand rather than in every build: by a change to
- * service emission or to the store's service refusals, and by the commit deleting the walk's service
- * path, which runs it green with an empty list:
+ * service emission or to the store's service refusals:
  * {@code mvn test -pl graphitron -Dtest=ServiceVerdictCoverageGateTest -Dgraphitron.flipGate=true}.
  */
 @PipelineTier

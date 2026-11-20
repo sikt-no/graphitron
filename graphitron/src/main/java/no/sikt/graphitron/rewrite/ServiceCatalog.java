@@ -5,13 +5,11 @@ import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLInputValueDefinition;
 import graphql.schema.GraphQLList;
-import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -25,7 +23,6 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
 import no.sikt.graphitron.model.diagnostics.ReflectionError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
-import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.model.jooq.TableRef;
 import org.slf4j.Logger;
@@ -73,23 +70,6 @@ class ServiceCatalog {
     Optional<TableRef> resolveTableByRecordClass(Class<?> recordClass) {
         return ctx.catalog.findTableByRecordClass(recordClass)
             .map(e -> e.toTableRef(e.table().getName()));
-    }
-
-    /**
-     * The catalog table a jOOQ record class names, keyed on the javapoet {@link ClassName} a decoded
-     * SOURCES shape carries rather than on a live {@link Class}. Empty when the class does not load
-     * or is not a catalog record. The classify phase asks this to turn an author-declared batch-key
-     * element type into a real table; the load stays inside this parse-boundary class so no raw
-     * reflection type has to travel to the caller.
-     */
-    Optional<TableRef> resolveTableByRecordClassName(ClassName recordClass) {
-        try {
-            return resolveTableByRecordClass(
-                // nameability: exempt (jOOQ catalog record class, a catalog concept the census excludes by design)
-                Class.forName(recordClass.reflectionName(), false, ctx.codegenLoader()));
-        } catch (ClassNotFoundException e) {
-            return Optional.empty();
-        }
     }
 
     Optional<ColumnRef> resolveKeyColumn(String colName, String tableSqlName) {
@@ -155,440 +135,7 @@ class ServiceCatalog {
             .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()));
     }
 
-    /**
-     * Returns the SQL table name for a GraphQL type name when the type is table-backed, or
-     * {@code null} when the type has no associated table.
-     */
-    String getTableSqlNameForType(String typeName) {
-        // Resolve table-backedness through the TableIndex (a fixed point built before the walk),
-        // not ctx.types: under the single classify-and-emit walk a field's target composite may
-        // not be registered yet when the field classifies, so a registry read would miss it. The
-        // index agrees with the registry for table-backed types by construction.
-        var type = ctx.tables.forName(typeName).orElse(null);
-        if (type instanceof TableBackedType tbt) return tbt.table().tableName();
-        return null;
-    }
-
     // ===== Service method reflection =====
-
-    /**
-     * A {@code @service} method reduced to the facts the classifier and the binder need, with no
-     * {@link java.lang.reflect.Method} left in it: the decode phase's product. Everything a
-     * downstream phase would otherwise re-derive from live reflection is precomputed here, which
-     * is what keeps raw reflection types inside this parse-boundary class structurally rather
-     * than by convention (see {@code development-principles.adoc}).
-     *
-     * @param returnType     the method's generic return type, parameterised so emitters can
-     *                       declare matching fetcher return types without parsing a string
-     * @param ctorParams     the instance-holder constructor's parameters, empty for a static
-     *                       method and {@code null} when the holder is unconstructible
-     * @param unconstructible the holder rejection decode captured, surfaced by
-     *                       {@link #bindServiceMethod}; {@code null} when the holder resolved
-     */
-    record ServiceSignature(
-        String className,
-        String methodName,
-        TypeName returnType,
-        boolean isStatic,
-        List<String> declaredExceptions,
-        List<MethodRef.Param> ctorParams,
-        Rejection unconstructible,
-        List<DecodedParam> params
-    ) {
-        /** Declared parameter names, in declaration order, skipping nameless parameters. */
-        java.util.LinkedHashSet<String> namedParameters() {
-            return params.stream().map(DecodedParam::name).filter(java.util.Objects::nonNull)
-                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
-        }
-    }
-
-    /**
-     * One decoded parameter. {@code name} is {@code null} when the class was compiled without
-     * {@code -parameters}; {@code displayName} falls back to the declared type's simple name so
-     * diagnostics still have something to print.
-     *
-     * @param sourcesShape the shape {@link #classifySourcesType} recognises, or {@code null}.
-     *                     Recognition is a type question and is answered once here; whether it
-     *                     can be honoured is the coordinate's question and belongs to classify.
-     * @param dtoSourcesReason the {@code List<DTO>} / {@code Set<DTO>} rejection prose, or
-     *                     {@code null} when the parameter is not DTO-shaped
-     */
-    record DecodedParam(
-        String name,
-        String displayName,
-        String typeName,
-        TypeName javaType,
-        boolean isDslContext,
-        SourcesShape sourcesShape,
-        String dtoSourcesReason
-    ) {}
-
-    /** Outcome of {@link #decodeServiceMethod}: the signature fact, or a decode-level rejection. */
-    record DecodeResult(ServiceSignature signature, Rejection rejection) {
-        boolean failed() { return rejection != null; }
-    }
-
-    /**
-     * The role a parameter plays once membership in the binding map, the context-key set and the
-     * SOURCES shape recogniser have all been consulted. Deciding candidacy once, as a carried
-     * value, is what lets classify and bind switch on the same answer instead of re-evaluating
-     * three predicates they would have to agree to spell the same way.
-     */
-    sealed interface ParamRole {
-        /** A {@code DSLContext} slot, resolved by type before any name is consulted. */
-        record Dsl() implements ParamRole {}
-        /** Name-claimed by the {@code $session} argMapping sigil: bound to the session handle. */
-        record SessionBound() implements ParamRole {}
-        /** Name-claimed by a {@code $session.<member>} sigil: bound to one member of the handle. */
-        record SessionMemberBound(String member) implements ParamRole {}
-        /** Name-claimed by a GraphQL argument (possibly through an {@code argMapping} path). */
-        record ArgBound(PathExpr path) implements ParamRole {}
-        /** Name-claimed by a declared context key. */
-        record ContextBound() implements ParamRole {}
-        /** Unclaimed by name and SOURCES-shaped; the coordinate decides whether it can be honoured. */
-        record SourcesCandidate(SourcesShape shape) implements ParamRole {}
-        /** Unclaimed by name and not SOURCES-shaped. */
-        record Unclaimed() implements ParamRole {}
-    }
-
-    /**
-     * Product of the claim-reduction step: one {@link ParamRole} per decoded parameter, in
-     * declaration order, plus the binding map the roles were reduced against (augmented by
-     * {@link #inferBindingsByType}), which the binder's diagnostics name.
-     */
-    record ClaimedParams(List<ParamRole> roles, Map<String, PathExpr> argByJavaName) {
-        ParamRole roleOf(int index) { return roles.get(index); }
-    }
-
-    /**
-     * Decode: loads the service class, resolves the single method of that name, and reduces it to
-     * a {@link ServiceSignature}. Pure over the class and the method name; no binding inputs, no
-     * coordinate inputs, so nothing decided here can depend on either.
-     *
-     * <p>Instance-holder resolution runs here too. It reads only the class, so it is decode by
-     * that definition even though its rejection is a binding-level concern; the
-     * outcome rides on the signature and {@link #bindServiceMethod} surfaces it.
-     *
-     * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
-     * A warning is logged proactively as soon as any nameless parameter is detected.
-     */
-    DecodeResult decodeServiceMethod(String className, String methodName) {
-        if (className == null || methodName == null) {
-            return new DecodeResult(null, Rejection.structural("service reference is incomplete"));
-        }
-        if (ctx.nameability().verdictFor(className)
-                instanceof ClasspathNameability.Verdict.Rejected rejected) {
-            return new DecodeResult(null, Rejection.structural("@service " + rejected.reason()));
-        }
-        // nameability: checked (author-written @service className, gated above)
-        var load = ConsumerClassLoad.reflect(className, ctx.codegenLoader());
-        if (!(load instanceof ConsumerClassLoad.Loaded loaded)) {
-            return new DecodeResult(null, load.rejection());
-        }
-        Class<?> cls = loaded.cls();
-        MethodPick pick = pickMethod(cls, className, methodName);
-        if (pick instanceof MethodPick.Rejected rejected) {
-            return new DecodeResult(null, rejected.rejection());
-        }
-        var javaMethod = ((MethodPick.Picked) pick).method();
-        boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
-        List<MethodRef.Param> ctorParams = List.of();
-        Rejection unconstructible = null;
-        if (!isStatic) {
-            InstanceHolderResolution holder = resolveInstanceHolder(cls, methodName, className);
-            if (holder.rejection() != null) {
-                unconstructible = holder.rejection();
-                ctorParams = null;
-            } else {
-                ctorParams = holder.ctorParams();
-            }
-        }
-        if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
-            emitParametersWarning();
-        }
-        var decoded = new ArrayList<DecodedParam>();
-        for (var p : javaMethod.getParameters()) {
-            boolean isDsl = org.jooq.DSLContext.class.isAssignableFrom(p.getType());
-            String pName = p.isNamePresent() ? p.getName() : null;
-            String displayName = pName != null
-                ? pName
-                : (isDsl ? "dsl" : p.getType().getSimpleName());
-            decoded.add(new DecodedParam(pName, displayName,
-                p.getParameterizedType().getTypeName(),
-                TypeName.get(p.getParameterizedType()),
-                isDsl,
-                isDsl ? null : classifySourcesType(p.getParameterizedType()).orElse(null),
-                isDsl ? null : dtoSourcesRejectionReason(p.getParameterizedType())));
-        }
-        return new DecodeResult(new ServiceSignature(className, methodName,
-            TypeName.get(javaMethod.getGenericReturnType()), isStatic,
-            declaredExceptionFqns(javaMethod), ctorParams, unconstructible,
-            List.copyOf(decoded)), null);
-    }
-
-    /**
-     * Claim reduction: folds {@link ArgBindingMap#byJavaName}, {@link #inferBindingsByType} and
-     * the context-key set into one {@link ParamRole} per decoded parameter. Membership only; no
-     * extraction runs here, and no rejection is raised. The role order mirrors the binding
-     * precedence the loop used to apply inline: type-resolved {@code DSLContext} first, then the
-     * name claims, then SOURCES shape recognition, then nothing.
-     */
-    ClaimedParams reduceClaims(ServiceSignature sig, ArgBindingMap argBindings, Set<String> ctxKeys,
-            Map<String, GraphQLInputType> slotTypes) {
-        return reduceClaims(sig, argBindings, ctxKeys, slotTypes, Map.of());
-    }
-
-    /**
-     * Sigil-aware overload of {@link #reduceClaims}: {@code sessionBound} carries, by Java
-     * parameter name, the argMapping {@code $session} and {@code $session.<member>} entries (the
-     * lifted {@link no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding}s). An explicit
-     * binding, so it claims right after the type-resolved {@code DSLContext} slot, ahead of every
-     * name claim.
-     */
-    ClaimedParams reduceClaims(ServiceSignature sig, ArgBindingMap argBindings, Set<String> ctxKeys,
-            Map<String, GraphQLInputType> slotTypes,
-            Map<String, no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding> sessionBound) {
-        var argByJavaName = inferBindingsByType(sig, argBindings.byJavaName(), ctxKeys, slotTypes);
-        var roles = new ArrayList<ParamRole>(sig.params().size());
-        for (var p : sig.params()) {
-            if (p.isDslContext()) {
-                roles.add(new ParamRole.Dsl());
-                continue;
-            }
-            var sessionBinding = p.name() == null ? null : sessionBound.get(p.name());
-            if (sessionBinding != null) {
-                roles.add(switch (sessionBinding) {
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SessionHandle ignored ->
-                        new ParamRole.SessionBound();
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SessionMember m ->
-                        new ParamRole.SessionMemberBound(m.member());
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SourceColumn ignored ->
-                        throw new IllegalStateException("a $source binding reached @service claims; the"
-                            + " SERVICE site does not admit it");
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ResultRoot ignored ->
-                        throw new IllegalStateException("a $result binding reached @service claims; the"
-                            + " SERVICE site does not admit it");
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ResultPath ignored ->
-                        throw new IllegalStateException("a $result binding reached @service claims; the"
-                            + " SERVICE site does not admit it");
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ErrorRoot ignored ->
-                        throw new IllegalStateException("an $error binding reached @service claims; the"
-                            + " SERVICE site does not admit it");
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ErrorPath ignored ->
-                        throw new IllegalStateException("an $error binding reached @service claims; the"
-                            + " SERVICE site does not admit it");
-                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ScopeMember ignored ->
-                        throw new IllegalStateException("a $scope binding reached @service claims; the"
-                            + " SERVICE site does not admit it");
-                });
-                continue;
-            }
-            PathExpr resolvedPath = p.name() != null ? argByJavaName.get(p.name()) : null;
-            if (resolvedPath != null) {
-                roles.add(new ParamRole.ArgBound(resolvedPath));
-            } else if (p.name() != null && ctxKeys.contains(p.name())) {
-                roles.add(new ParamRole.ContextBound());
-            } else if (p.sourcesShape() != null) {
-                roles.add(new ParamRole.SourcesCandidate(p.sourcesShape()));
-            } else {
-                roles.add(new ParamRole.Unclaimed());
-            }
-        }
-        return new ClaimedParams(List.copyOf(roles), argByJavaName);
-    }
-
-    /**
-     * Bind: the argMapping override typo guard, then extraction and {@link MethodRef.Param}
-     * minting over the carried roles. Every rejection raised here is binding-level by
-     * construction; coordinate-level and signature-fit verdicts have already been decided by
-     * the caller's classify phase and cannot be masked by a parameter
-     * declared before the one they concern.
-     *
-     * <p>{@code batchKeyColumns} is the batch key the classify phase resolved: the key owner's
-     * primary key at a child site, empty at the root. The key owner is the parent's own table at a
-     * {@code @table}-parent site and the table the {@code Sources} element type names at a
-     * class-backed one, which is why this is the resolved columns and not the parent's primary key.
-     * A {@link ParamRole.SourcesCandidate} reaching bind with no key columns exists only where
-     * classify declined to claim it (a root {@code List<XRecord>} input bean), which is why the
-     * fallback below is binding's own diagnostic rather than an invariant throw.
-     *
-     * <p>An explicit override entry ({@code key != value}) whose target is not among the resolved
-     * method's parameter names fails with a typo-guard message naming the directive site, the
-     * override target, and the available parameter names.
-     *
-     * <p>{@code fieldDef} is the coordinate the {@code @service} sits on, and it is here for one
-     * question: a single-segment path binds the argument itself, whose directives live on the
-     * argument and not on the type {@code slotTypes} carries for it. Reading them is what lets an
-     * argument's {@code @nodeId} reach {@link #nodeIdSlotExtraction} rather than the type gate.
-     */
-    ServiceReflectionResult bindServiceMethod(ServiceSignature sig, ClaimedParams claims,
-            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> batchKeyColumns,
-            Map<String, GraphQLInputType> slotTypes, GraphQLFieldDefinition fieldDef,
-            String parentTypeName) {
-        if (sig.unconstructible() != null) {
-            return new ServiceReflectionResult(null, sig.unconstructible());
-        }
-        String typoGuard = checkOverrideTargets(argBindings.byJavaName(), sig.namedParameters(),
-            sig.methodName(), sig.className());
-        if (typoGuard != null) {
-            return new ServiceReflectionResult(null, Rejection.structural(typoGuard));
-        }
-        var argByJavaName = claims.argByJavaName();
-        var params = new ArrayList<MethodRef.Param>();
-        for (int i = 0; i < sig.params().size(); i++) {
-            var p = sig.params().get(i);
-            switch (claims.roleOf(i)) {
-                case ParamRole.Dsl ignored ->
-                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
-                        new ParamSource.DslContext()));
-                // The $session-bound slot: structural, supplied by the generator off the resolved
-                // DSLContext's Configuration data. Whether a handle exists (and matches the
-                // declared type) is the validator's session-hook pass, over the resolved carrier.
-                case ParamRole.SessionBound ignored ->
-                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
-                        new ParamSource.SessionHandle()));
-                case ParamRole.SessionMemberBound m ->
-                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
-                        new ParamSource.SessionHandleMember(m.member())));
-                case ParamRole.ArgBound bound -> {
-                    String where = "parameter '" + p.displayName() + "' of method '" + sig.methodName()
-                        + "' in class '" + sig.className() + "'";
-                    // The named-parameter carrier only: a parameter no argMapping pair claims, whose
-                    // name matched an argument of its own. A pair binding the same argument is the
-                    // mapped carrier, whose decode the projected-binding path already emits and
-                    // whose two refusals the argMapping defect family already mints; minting either
-                    // here would be a second copy with a precedence between them.
-                    ArgExtraction ext = argBindings.authoredTargets().contains(p.name())
-                        ? null
-                        : nodeIdSlotExtraction(bound.path(), fieldDef, slotTypes, p.javaType(), where);
-                    if (ext == null) {
-                        ext = argExtraction(p.typeName(),
-                            resolvePathLeafType(bound.path(), slotTypes), where);
-                    }
-                    // The slot rail's disposition, transcribed where the slot's own verdict is
-                    // pronounced. A parameter an argMapping pair claims is the projected-key rail's
-                    // to dispose of and draws nothing here, which is the same precedence the
-                    // extraction above already takes.
-                    var at = argBindings.authoredTargets().contains(p.name())
-                        ? null
-                        : pathCoordinate(bound.path(), parentTypeName, fieldDef, slotTypes);
-                    if (at != null && pathLeafDeclaresNodeId(bound.path(), fieldDef, slotTypes)) {
-                        if (ext instanceof ArgExtraction.Rejected rejected) {
-                            ctx.decodeLedger().recordRefusal(at, rejected.rejection());
-                        } else {
-                            ctx.decodeLedger().recordSlot(at,
-                                ((ArgExtraction.Resolved) ext).extraction());
-                        }
-                    }
-                    if (ext instanceof ArgExtraction.Rejected rej) {
-                        return new ServiceReflectionResult(null, rej.rejection());
-                    }
-                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
-                        new ParamSource.Arg(((ArgExtraction.Resolved) ext).extraction(), bound.path())));
-                }
-                case ParamRole.ContextBound ignored ->
-                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
-                        new ParamSource.Context()));
-                case ParamRole.SourcesCandidate candidate -> {
-                    if (!batchKeyColumns.isEmpty()) {
-                        params.add(new MethodRef.Param.Sourced(p.displayName(), candidate.shape().wrap(),
-                            batchKeyColumns, candidate.shape().container()));
-                        break;
-                    }
-                    // No key columns, so classify declined to claim this candidate. Only the root
-                    // List<XRecord> input bean gets here (every anonymous-key shape is answered by
-                    // the classify phase at every coordinate); it is the canonical
-                    // InputBeanResolver shape and falls through to the arg-mismatch arm.
-                    if (p.name() == null) {
-                        return new ServiceReflectionResult(null,
-                            new ReflectionError.ParameterNamesMissing(sig.className(), sig.methodName()));
-                    }
-                    if (!(candidate.shape().wrap() instanceof SourceKey.Wrap.TableRecord)) {
-                        return new ServiceReflectionResult(null,
-                            new ServiceMethodCallError.UnrecognizedSourcesType(
-                                p.displayName(), sig.methodName(), p.typeName()));
-                    }
-                    return new ServiceReflectionResult(null,
-                        argumentParameterMismatch(p, sig, argByJavaName, ctxKeys, slotTypes));
-                }
-                case ParamRole.Unclaimed ignored -> {
-                    if (p.name() == null) {
-                        return new ServiceReflectionResult(null,
-                            new ReflectionError.ParameterNamesMissing(sig.className(), sig.methodName()));
-                    }
-                    // A DTO-shape parameter (List<DTO> / Set<DTO>) at a batching coordinate is
-                    // answered by the classify phase, which owns the "this coordinate batches, and
-                    // your DTO parameter cannot be its key" verdict; the root's List<DTO> has no
-                    // batching context and lands here, on the arg-mismatch arm (pinned by
-                    // dtoSources_onRootField_pointsAtArgCtxMismatch).
-                    return new ServiceReflectionResult(null,
-                        argumentParameterMismatch(p, sig, argByJavaName, ctxKeys, slotTypes));
-                }
-            }
-        }
-        MethodRef.CallShape callShape;
-        if (sig.isStatic()) {
-            // A $session-bound slot forces the dsl local too: its extraction reads the handle
-            // off the resolved DSLContext's own Configuration data.
-            boolean needsDslLocal = params.stream()
-                .anyMatch(p -> p.source() instanceof ParamSource.DslContext
-                    || p.source() instanceof ParamSource.SessionHandle
-                    || p.source() instanceof ParamSource.SessionHandleMember);
-            callShape = new MethodRef.CallShape.Static(needsDslLocal);
-        } else {
-            callShape = new MethodRef.CallShape.InstanceWithDslHolder(sig.ctorParams());
-        }
-        return new ServiceReflectionResult(
-            new MethodRef.Service(sig.className(), sig.methodName(), sig.returnType(),
-                List.copyOf(params), sig.declaredExceptions(), callShape),
-            null);
-    }
-
-    /**
-     * The name-mismatch rejection for a parameter that matched no GraphQL argument and no context
-     * key, with its {@code argMapping} suggestion. The suggestion pre-fills a concrete dot-path
-     * when exactly one reachable slot field has the parameter's Java type, and falls back to a
-     * {@code <fieldName>} placeholder otherwise.
-     */
-    private Rejection argumentParameterMismatch(DecodedParam p, ServiceSignature sig,
-            Map<String, PathExpr> argByJavaName, Set<String> ctxKeys,
-            Map<String, GraphQLInputType> slotTypes) {
-        String suggestion;
-        if (argByJavaName.isEmpty()) {
-            suggestion = " — this field declares no GraphQL arguments;"
-                + " remove the Java parameter, add a matching GraphQL argument to the field,"
-                + " or register a context key that supplies it";
-        } else {
-            String soleArg = argByJavaName.size() == 1
-                ? argByJavaName.keySet().iterator().next()
-                : "<argName>";
-            String reachablePath = unambiguousReachablePath(p.typeName(), slotTypes);
-            String pathExample;
-            String pathTrailer;
-            if (reachablePath != null) {
-                pathExample = "argMapping: \"" + p.displayName() + ": " + reachablePath + "\"";
-                pathTrailer = " — that path is the only field reachable from the available"
-                    + " arguments whose type matches '" + p.typeName() + "', so the suggestion"
-                    + " is concrete";
-            } else {
-                pathExample = "argMapping: \"" + p.displayName() + ": " + soleArg + ".<fieldName>\"";
-                pathTrailer = " when the parameter pulls one field out of a wrapper input"
-                    + " type";
-            }
-            suggestion = " — either rename the Java parameter to match one of the available argument names, or bind explicitly via the @service directive's argMapping field"
-                + " (e.g. argMapping: \"" + p.displayName() + ": " + soleArg + "\""
-                + ", which reads as \"the Java parameter named '" + p.displayName()
-                + "' binds to the GraphQL argument named '" + soleArg + "'\")."
-                + " The right-hand side may also be a dot-path into a nested"
-                + " input field (e.g. " + pathExample + ")"
-                + pathTrailer;
-        }
-        return new ServiceMethodCallError.ArgumentParameterMismatch(
-            p.displayName(), sig.methodName(),
-            List.copyOf(argByJavaName.keySet()),
-            List.copyOf(ctxKeys),
-            suggestion);
-    }
 
     /**
      * Outcome of {@link #pickMethod}: sealed ok-or-rejected, so the resolution arms arrive as
@@ -643,67 +190,6 @@ class ServiceCatalog {
     }
 
     /**
-     * Outcome of {@link #resolveInstanceHolder}: the resolved constructor's parameter sources (in
-     * declaration order) on success, or a typed {@link ServiceMethodCallError.InstanceHolderUnconstructible}
-     * rejection.
-     */
-    private record InstanceHolderResolution(List<MethodRef.Param> ctorParams, Rejection rejection) {}
-
-    /**
-     * Resolves the holder constructor for an instance {@code @service} method. The class must be
-     * concrete and expose a public constructor the generated code can call: every parameter the
-     * jOOQ context, a {@code DSLContext} by exact type, at most once. Of those the widest wins, and
-     * no two are equally wide, since the only ones are the no-argument and the
-     * {@code (DSLContext)} constructor. The store states the same choice in
-     * {@code graphitron_service_holder}.
-     *
-     * <p>Returns the chosen constructor's parameters projected onto {@link MethodRef.Param} with
-     * {@link ParamSource.DslContext} sources, which the walker translates into
-     * {@code ServiceMethodCall.Instance.ctorArgs}.
-     */
-    private static InstanceHolderResolution resolveInstanceHolder(
-            Class<?> cls, String methodName, String className) {
-        int classMods = cls.getModifiers();
-        if (java.lang.reflect.Modifier.isAbstract(classMods) || cls.isInterface()) {
-            return new InstanceHolderResolution(null,
-                new ServiceMethodCallError.InstanceHolderUnconstructible(className, methodName,
-                    cls.getSimpleName(), ServiceMethodCallError.HolderProblem.ABSTRACT_OR_INTERFACE));
-        }
-        java.lang.reflect.Constructor<?> chosen = null;
-        for (var ctor : cls.getDeclaredConstructors()) {
-            if (!java.lang.reflect.Modifier.isPublic(ctor.getModifiers())) continue;
-            if (!buildable(ctor)) continue;
-            if (chosen == null || ctor.getParameterCount() > chosen.getParameterCount()) {
-                chosen = ctor;
-            }
-        }
-        if (chosen == null) {
-            return new InstanceHolderResolution(null,
-                new ServiceMethodCallError.InstanceHolderUnconstructible(className, methodName,
-                    cls.getSimpleName(), ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR));
-        }
-        var ctorParams = new ArrayList<MethodRef.Param>();
-        for (var p : chosen.getParameters()) {
-            String paramName = p.isNamePresent() ? p.getName() : "dsl";
-            ctorParams.add(new MethodRef.Param.Typed(paramName,
-                p.getParameterizedType().getTypeName(),
-                TypeName.get(p.getParameterizedType()),
-                new ParamSource.DslContext()));
-        }
-        return new InstanceHolderResolution(List.copyOf(ctorParams), null);
-    }
-
-    /**
-     * True when the generated code can call {@code ctor} to make a holder: it takes nothing, or one
-     * {@code DSLContext} by exact type, the jOOQ context the run holds. A context value fills a
-     * method parameter, never a constructor's.
-     */
-    private static boolean buildable(java.lang.reflect.Constructor<?> ctor) {
-        var types = ctor.getParameterTypes();
-        return types.length == 0 || (types.length == 1 && types[0] == org.jooq.DSLContext.class);
-    }
-
-    /**
      * Captures the developer method's declared exception classes as FQNs, in source order,
      * feeding {@link MethodRef#declaredExceptions()} so the classifier can verify each declared
      * exception is covered by an {@code @error} handler on the field's channel.
@@ -720,8 +206,7 @@ class ServiceCatalog {
      * a binding may target. Returns a failure message naming the directive site, the target, and
      * that name set, or {@code null} when every target resolves. On the {@code @condition} path the
      * set is the admitted shape's bindable names, table slots excluded, so the message lists only
-     * names an {@code argMapping} entry may actually name; the {@code @service} path passes its own
-     * decoded parameter names unchanged.
+     * names an {@code argMapping} entry may actually name.
      *
      * <p>Identity entries skip the guard: an unresolved identity entry produces the per-parameter
      * "does not match any GraphQL argument" error in the main loop, which is already actionable.
@@ -1015,10 +500,9 @@ class ServiceCatalog {
      * shape is an error, as is a method with no {@code Table<?>} parameter at all, and so is a set
      * of same-named declarations that do not agree on the binding shape.
      *
-     * <p>{@code argBindings} carries the Java-target to GraphQL-arg-name mapping per
-     * {@link #bindServiceMethod}, with the same override typo guard; an override entry
-     * targeting the reserved Table slot is additionally rejected by
-     * {@link #checkConditionOverrideTargets}.
+     * <p>{@code argBindings} carries the Java-target to GraphQL-arg-name mapping, under the
+     * override typo guard; an override entry targeting the reserved Table slot is additionally
+     * rejected by {@link #checkConditionOverrideTargets}.
      *
      * <p>If the compiler was not invoked with {@code -parameters}, a warning is logged as soon
      * as any nameless parameter is detected, even if type-based classification would otherwise
@@ -1062,9 +546,8 @@ class ServiceCatalog {
     /**
      * Session-aware overload: {@code sessionBound} carries, by Java parameter name, the
      * {@code $session} and {@code $session.<member>} entries the condition's argMapping lifted.
-     * A bound name claims its parameter ahead of every argument and context-key claim, as on the
-     * {@code @service} path; a name that is no bindable parameter of the method rejects naming the
-     * available ones.
+     * A bound name claims its parameter ahead of every argument and context-key claim; a name that
+     * is no bindable parameter of the method rejects naming the available ones.
      */
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes,
@@ -1182,9 +665,8 @@ class ServiceCatalog {
             PathExpr resolvedPath = argByJavaName.get(pName);
             if (resolvedPath != null) {
                 // Two arms by the bound leaf. An input-object leaf goes through the carrier decision
-                // the @service input-bean path shares, under the condition's own policy; a scalar or
-                // enum leaf keeps legacyArgExtraction, which casts without the wire-coercion check
-                // the @service path applies through argExtraction.
+                // under the condition's own policy; a scalar or enum leaf keeps legacyArgExtraction,
+                // which casts without the wire-coercion check argExtraction applies.
                 GraphQLInputType leafType = resolvePathLeafType(resolvedPath, slotTypes);
                 CallSiteExtraction extraction;
                 if (InputBeanResolver.inputObjectLeaf(leafType) != null) {
@@ -1452,8 +934,7 @@ class ServiceCatalog {
      * Extraction without the wire-coercion check: a jOOQ enum gets
      * {@link CallSiteExtraction.EnumValueOf}, everything else {@link CallSiteExtraction.Direct}.
      * Used by the {@code @condition} argument path for a scalar or enum leaf; an input-object leaf
-     * goes through {@link #conditionCarrier} instead, and the {@code @service} path checks every
-     * leaf through {@link #argExtraction}.
+     * goes through {@link #conditionCarrier} instead. {@link #argExtraction} is the checked form.
      */
     static CallSiteExtraction legacyArgExtraction(String typeName, ClassLoader codegenLoader) {
         try {
@@ -1467,13 +948,12 @@ class ServiceCatalog {
 
     /**
      * The extraction for a {@code @condition} parameter bound to an input-object slot, or why it has
-     * none. The decision is {@link InputBeanResolver#decideCarrier}, the one the {@code @service}
-     * input-bean path makes; the policy over its arms is the condition's:
+     * none. The decision is {@link InputBeanResolver#decideCarrier}; the policy over its arms is
+     * the condition's:
      *
      * <ul>
      *   <li>{@link InputBeanResolver.SlotCarrier.MapPassThrough} keeps {@link CallSiteExtraction.Direct}.
-     *       graphql-java delivers exactly that type, so the cast is wire-safe; {@code @service} bans
-     *       the same shape as a matter of its own policy, not of soundness.</li>
+     *       graphql-java delivers exactly that type, so the cast is wire-safe.</li>
      *   <li>{@link InputBeanResolver.SlotCarrier.Bean} is built into a
      *       {@link CallSiteExtraction.InputBean} at a {@link ConditionSite.Consuming} site, keyed on
      *       the consuming coordinate the bound path descends from, and refused as
@@ -1483,7 +963,7 @@ class ServiceCatalog {
      *       {@code List}, which is what graphql-java delivers.</li>
      *   <li>{@link InputBeanResolver.SlotCarrier.JooqRecordInput}, and a bean class that is itself a
      *       jOOQ record, are refused as {@link WireCoercionError.ConditionJooqRecordCarrier}: a record
-     *       carrier is bound on the column axis, which only the {@code @service} path generates.</li>
+     *       carrier is bound on the column axis, which the condition path does not generate.</li>
      *   <li>{@link InputBeanResolver.SlotCarrier.Rejected} is refused as
      *       {@link WireCoercionError.Assignability}: the declared type against the {@code Map} (or
      *       {@code List} of it) graphql-java delivers, the input-object arm of the cast guard
@@ -1535,8 +1015,7 @@ class ServiceCatalog {
                         new WireCoercionError.ConditionBeanAtInputField(inputField.inputTypeName(),
                             inputField.fieldName(), typeName, where));
                     case ConditionSite.Consuming consuming -> switch (beans.buildBean(bean, slot,
-                            pathUseSite(path, consuming, slotTypes),
-                            InputBeanResolver.BindingAxis.CONDITION)) {
+                            pathUseSite(path, consuming, slotTypes))) {
                         case InputBeanResolver.CarrierBuild.Ok ok -> new ArgExtraction.Resolved(ok.extraction());
                         case InputBeanResolver.CarrierBuild.Fail f -> new ArgExtraction.Rejected(f.rejection());
                     };
@@ -1653,165 +1132,6 @@ class ServiceCatalog {
         };
     }
 
-    /**
-     * The decode a {@code @nodeId} slot receives, or {@code null} when this binding is not one,
-     * which now means one thing only: the leaf carries no {@code @nodeId} at all. A {@code null}
-     * return sends the caller to {@link #argExtraction}, which is what every binding did before this
-     * arm existed. The caller has already established the carrier, so the path here is the name
-     * match's own single segment and the declaration is the argument itself.
-     *
-     * <p>Both authored forms resolve here, and that is the point of the split below rather than an
-     * incidental convenience: {@code @nodeId(typeName: T)} names its target and a bare
-     * {@code @nodeId} inherits one through {@link #inferNodeTypeAtSlot}. A bare directive falling
-     * through to {@link #argExtraction} would meet the wire-coercion gate, which admits the
-     * signature that receives the base64 and refuses the one that receives the key with a message
-     * prescribing the decode the schema had already written, so an author had no signature left.
-     *
-     * <p>Two destinations: a slot typed as the generated record of the node type's own table takes
-     * the whole decoded tuple, and every other slot takes one value. So a record slot
-     * gets {@link CallSiteExtraction.NodeIdDecodeRecord} and anything else gets
-     * {@link CallSiteExtraction.ThrowOnMismatch}, whose helper projects a one-column key to that
-     * column's own value.
-     *
-     * <p>Arity is deliberately not consulted. A composite key at a slot holding one value has
-     * nowhere to put the second value, and the store refuses it by name; consulting the width here
-     * would either duplicate that refusal or fabricate one from a key list the walk cannot read
-     * before capture. What the walk owes is that the consumer never receives base64, which the
-     * decode delivers at whatever arity, so an unreadable operand costs a compiler error at worst
-     * and never a silent pass-through.
-     */
-    private ArgExtraction nodeIdSlotExtraction(PathExpr path, GraphQLFieldDefinition fieldDef,
-            Map<String, GraphQLInputType> slotTypes, TypeName slotType, String site) {
-        var declaration = pathLeafDeclaration(path, fieldDef, slotTypes);
-        if (declaration == null || !declaration.hasAppliedDirective(BuildContext.DIR_NODE_ID)) {
-            return null;
-        }
-        var written = BuildContext.argString(declaration, BuildContext.DIR_NODE_ID, BuildContext.ARG_TYPE_NAME);
-        String nodeTypeName;
-        if (written.isPresent()) {
-            nodeTypeName = written.get();
-        } else {
-            var inferred = inferNodeTypeAtSlot(fieldDef);
-            if (inferred.error() != null) {
-                return new ArgExtraction.Rejected(Rejection.structural(site + ": " + inferred.error()));
-            }
-            nodeTypeName = inferred.typeName();
-        }
-        var recordDecode = ctx.resolveNodeIdRecordDecode(nodeTypeName);
-        if (recordDecode instanceof BuildContext.NodeIdRecordDecode.Rejected rejected) {
-            return new ArgExtraction.Rejected(Rejection.structural(site + ": " + rejected.message()));
-        }
-        if (recordDecode instanceof BuildContext.NodeIdRecordDecode.Polymorphic poly) {
-            // A container at this slot is decided by assignability, not by equality, and a miss is a
-            // refusal rather than the one-value fall-through below. Falling through would route an
-            // UpdatableRecord<?> parameter to the one-column projection and leave the store to
-            // refuse it as KEY_ARITY_EXCEEDS_SLOT, a message about a mistake the author did not make.
-            var admission = ctx.admitPolymorphicSlotType(poly, elementTypeName(slotType));
-            if (admission instanceof BuildContext.PolymorphicSlotAdmission.Refused refused) {
-                return new ArgExtraction.Rejected(
-                    Rejection.structural(site + ": " + refused.message()));
-            }
-            if (admission instanceof BuildContext.PolymorphicSlotAdmission.Unlinkable unlinkable) {
-                return new ArgExtraction.Rejected(unlinkable.rejection());
-            }
-            var admitted = (BuildContext.PolymorphicSlotAdmission.Admitted) admission;
-            return new ArgExtraction.Resolved(InputBeanResolver.polymorphicLeaf(poly,
-                admitted.slotType(), GraphQLTypeUtil.isNonNull(declaration.getType())));
-        }
-        var resolved = (BuildContext.NodeIdRecordDecode.Resolved) recordDecode;
-        if (takesTheNodeTablesRecord(slotType, CatalogRefs.recordClass(resolved.table()))) {
-            return new ArgExtraction.Resolved(new CallSiteExtraction.NodeIdDecodeRecord(
-                resolved.encoderClass(), resolved.typeName(), resolved.typeId(),
-                resolved.keyColumns(), resolved.table(),
-                GraphQLTypeUtil.isNonNull(declaration.getType())));
-        }
-        String named = nodeTypeName;
-        return ctx.resolveDecodeHelperForType(named)
-            .<ArgExtraction>map(decode ->
-                new ArgExtraction.Resolved(new CallSiteExtraction.ThrowOnMismatch(decode)))
-            .orElseGet(() -> new ArgExtraction.Rejected(Rejection.structural(site
-                + ": @nodeId(typeName: \"" + named + "\") names no @node type, so no decode"
-                + " helper exists to turn the wire id into a key value")));
-    }
-
-    /**
-     * The node type a bare {@code @nodeId} names at this carrier, inferred the way the fact model's
-     * {@code TARGET_TABLE_NODE_TYPE} basis infers it: the table the slot's own scope resolves to,
-     * then the one node type over that table. Which table that is comes from two rungs, in that
-     * order.
-     *
-     * <ul>
-     *   <li>The consuming field's own return table, the store's {@code NAMED_TYPE_TABLE}: an
-     *       argument's predicate binds on the table its field returns.</li>
-     *   <li>The table {@code @mutation(table:)} names, the store's {@code MUTATION_TABLE}: a delete
-     *       surface returns a scalar or a status type, so it has no return table and its arguments
-     *       still bind against the table the mutation names. Beneath the first rung rather than
-     *       beside it, which is the precedence the relation itself ranks them with.</li>
-     * </ul>
-     *
-     * <p>Neither rung answering is the third absence, and it is a refusal rather than a
-     * fall-through. The directive is written, so the author asked for a decode; there is no table to
-     * infer the target from, and the answer an author needs is that {@code typeName:} settles it.
-     * Falling through instead would land on the wire-coercion gate, whose message prescribes the
-     * {@code @nodeId} decode the schema already wrote.
-     */
-    private BuildContext.InferredNodeType inferNodeTypeAtSlot(GraphQLFieldDefinition fieldDef) {
-        if (fieldDef == null) {
-            return new BuildContext.InferredNodeType(null,
-                "@nodeId without typeName: cannot infer node type, no consuming field is in scope to"
-                + " inherit a target from. Add typeName: explicitly.");
-        }
-        var returnType = GraphQLTypeUtil.unwrapAll(fieldDef.getType());
-        String returnTypeName = returnType instanceof GraphQLNamedType named ? named.getName() : null;
-        var scopeTable = ctx.tableNameForTypeName(returnTypeName)
-            .or(() -> MutationInputResolver.parseMutationTableArg(fieldDef));
-        return scopeTable
-            .map(ctx::inferNodeTypeOverTable)
-            .orElseGet(() -> new BuildContext.InferredNodeType(null,
-                "@nodeId without typeName: cannot infer node type, the field's return type"
-                + (returnTypeName == null ? "" : " '" + returnTypeName + "'")
-                + " binds no table and the field names none with @mutation(table:), so there is"
-                + " nothing to inherit a target from. Add typeName: explicitly."));
-    }
-
-    /**
-     * Whether a slot takes the node table's own generated record, looking past one {@code List<…>}
-     * wrap: a list-shaped {@code @nodeId} argument hands one decoded tuple to each element of the
-     * parameter, so the element type is what has to be the record for the tuple to have somewhere to
-     * go. Comparing the declared type as written would read {@code List<XRecord>} as a single-valued
-     * slot and route it to the one-column projection, which is a compiler error at the consumer
-     * instead of the destination the author asked for.
-     */
-    private static boolean takesTheNodeTablesRecord(TypeName slotType, ClassName recordClass) {
-        TypeName element = slotType;
-        if (element instanceof ParameterizedTypeName ptn
-                && ptn.rawType().equals(ClassName.get(java.util.List.class))
-                && ptn.typeArguments().size() == 1) {
-            element = ptn.typeArguments().getFirst();
-        }
-        return element.equals(recordClass);
-    }
-
-    /**
-     * The slot's element type as a binary class name: one {@code List<…>} unwrapped, on
-     * {@link #takesTheNodeTablesRecord}'s own terms, since a list-shaped {@code @nodeId} slot hands
-     * one decoded record to each element. {@code null} where the peeled type is not a class name
-     * javapoet can spell as one (a primitive, a type variable, a wildcard), which the admission
-     * check reads as a slot nothing says the records can land in.
-     */
-    private static String elementTypeName(TypeName slotType) {
-        TypeName element = slotType;
-        if (element instanceof ParameterizedTypeName ptn
-                && ptn.rawType().equals(ClassName.get(java.util.List.class))
-                && ptn.typeArguments().size() == 1) {
-            element = ptn.typeArguments().getFirst();
-        }
-        if (element instanceof ParameterizedTypeName ptn) {
-            element = ptn.rawType();
-        }
-        return element instanceof ClassName cn ? cn.reflectionName() : null;
-    }
-
     /** Unwraps one NonNull, one optional List, one inner NonNull to the named SDL leaf type, or null. */
     private static GraphQLType namedSdlType(GraphQLInputType type) {
         if (type == null) return null;
@@ -1884,10 +1204,8 @@ class ServiceCatalog {
     /**
      * Whether the SDL declaration a {@link PathExpr} binds to carries {@code @nodeId}.
      *
-     * <p>Every type gate over a bound leaf reads this and stands aside on {@code true}: the
-     * {@code @routine} parameter gate, and the {@code @service} parameter gate in
-     * {@link #bindServiceMethod}, where standing aside means minting the decode
-     * ({@link #nodeIdSlotExtraction}) instead of running {@link #argExtraction}. Not a laxity: a
+     * <p>The {@code @routine} parameter gate reads this and stands aside on {@code true} rather
+     * than running {@link #argExtraction}. Not a laxity: a
      * {@code @nodeId} leaf is a wire value that is decoded before anything consumes it, so the
      * parameter receives a key column's own value and never the {@code ID}'s coercion output. A gate
      * comparing the SDL leaf's coercion output against the declared Java type is therefore comparing
@@ -1995,16 +1313,9 @@ class ServiceCatalog {
     }
 
     /**
-     * Classification of a {@code @service} SOURCES parameter: the per-row shape
-     * ({@link SourceKey.Wrap}) and the container axis ({@link LoaderRegistration.Container})
-     * needed to construct {@link MethodRef.Param.Sourced}. The columns axis is the caller's
-     * batch-key input and is not repeated here.
-     *
-     * <p>The {@link SourceKey.Wrap.TableRecord} arm's class is what lets a class-backed parent host a
-     * batched child: {@link #resolveTableByRecordClassName} turns it into a real table whose primary
-     * key is a real column tuple, so the coordinate's question becomes "can this parent produce a
-     * record of that table?" rather than "what is this parent's own primary key?". That lookup is the
-     * classify phase's to make, not this record's to carry.
+     * Classification of a SOURCES-shaped parameter: the per-row shape ({@link SourceKey.Wrap}) and
+     * the container axis ({@link LoaderRegistration.Container}). The condition path's binding
+     * inference reads it to skip such a parameter.
      */
     record SourcesShape(SourceKey.Wrap wrap, LoaderRegistration.Container container) {}
 
@@ -2015,11 +1326,7 @@ class ServiceCatalog {
      * <p>Purely a type question, and deliberately no catalog lookup: whether a recognised shape can
      * actually be honoured depends on the coordinate (a root type has no parent to batch against; a
      * PK-less parent table and a class-backed parent that cannot produce the declared record each
-     * fail for their own reason), and the classify phase decides that. Keeping both out of here is
-     * what lets one recognition serve the {@link MethodRef.Param.Sourced} construction, the
-     * {@link ServiceMethodCallError.SourcesOnPkLessParent} rejection, and the class-backed parent's
-     * key resolution alike, and what keeps {@link #decodeServiceMethod} pure over the class, the
-     * method name and the context keys.
+     * fail for their own reason), and the classify phase decides that.
      */
     static Optional<SourcesShape> classifySourcesType(java.lang.reflect.Type paramType) {
         var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
@@ -2117,63 +1424,7 @@ class ServiceCatalog {
             : names.stream().sorted().collect(Collectors.joining(", ", "[", "]"));
     }
 
-    /**
-     * Returns a descriptive rejection reason when {@code paramType} is a {@code List<?>} or
-     * {@code Set<?>} whose element is a plain class that is not a jOOQ
-     * {@link org.jooq.TableRecord} subtype, indicating DTO-parent sources are unsupported.
-     * Returns {@code null} for any other shape (not a DTO rejection; handled by the generic
-     * unrecognized-sources path).
-     */
-    private static String dtoSourcesRejectionReason(java.lang.reflect.Type paramType) {
-        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)) {
-            return null;
-        }
-        boolean isList = pt.getRawType() == java.util.List.class;
-        boolean isSet = pt.getRawType() == java.util.Set.class;
-        if (!isList && !isSet) {
-            return null;
-        }
-        java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
-        if (typeArgs.length != 1 || !(typeArgs[0] instanceof Class<?> elementClass)) {
-            return null;
-        }
-        if (org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
-            return null;
-        }
-        return "sources type '" + elementClass.getName() + "' is not backed by a jOOQ TableRecord"
-            + " — free-form DTO sources on @service SOURCES parameters are not supported."
-            + " Declare the batch key as a jOOQ record class instead: the element type names the"
-            + " table the batch keys on, and on a class-backed parent the parent must either be"
-            + " that record or expose exactly one zero-arg accessor returning it";
-    }
-
     // ===== Suggestion-side path search =====
-
-    /**
-     * Walks every slot in {@code slotTypes} looking for a single nested input-object field
-     * whose GraphQL type maps to {@code targetTypeName} (the Java type of an unmatched method
-     * parameter). Returns the dotted path (e.g. {@code "input.filmId"}) when exactly one such
-     * field exists across all slots; returns {@code null} when there is no match or more than
-     * one (the caller then falls back to the {@code <fieldName>} placeholder).
-     *
-     * <p>The search is conservative on purpose: it only descends through non-list
-     * {@link GraphQLInputObjectType} intermediates and only matches leaves whose GraphQL kind
-     * maps to a standard Java type via {@link #mapToJavaTypeName}, compared literally against
-     * the parameter's parameterized-type name. Custom scalars, enums and named input objects
-     * don't count as candidate leaves; the suggestion would mislead users by pointing at a path
-     * whose runtime Java shape isn't guaranteed to match.
-     */
-    private String unambiguousReachablePath(
-            String targetTypeName, Map<String, GraphQLInputType> slotTypes) {
-        if (slotTypes.isEmpty()) return null;
-        var matches = new ArrayList<String>(2);
-        for (var entry : slotTypes.entrySet()) {
-            searchSlotForMatchingPath(entry.getKey(), entry.getValue(), targetTypeName,
-                new ArrayList<>(), new HashSet<>(), matches);
-            if (matches.size() > 1) return null;
-        }
-        return matches.size() == 1 ? matches.get(0) : null;
-    }
 
     /**
      * Recursive search helper. {@code trail} is the path of names from the slot down to (but
@@ -2273,25 +1524,6 @@ class ServiceCatalog {
         return inferBindingsByType(paramNames, eligible, existing, ctxKeys, slotTypes);
     }
 
-    /**
-     * Decoded-signature form of {@link #inferBindingsByType}: the eligibility filter reads the
-     * precomputed {@link DecodedParam#sourcesShape()} rather than re-running shape recognition.
-     */
-    private Map<String, PathExpr> inferBindingsByType(
-            ServiceSignature sig,
-            Map<String, PathExpr> existing,
-            Set<String> ctxKeys,
-            Map<String, GraphQLInputType> slotTypes) {
-        if (slotTypes == null || slotTypes.isEmpty()) return existing;
-        var paramNames = new HashSet<>(sig.namedParameters());
-        var eligible = new ArrayList<InferParam>();
-        for (var p : sig.params()) {
-            if (p.isDslContext() || p.name() == null || p.sourcesShape() != null) continue;
-            eligible.add(new InferParam(p.name(), p.typeName()));
-        }
-        return inferBindingsByType(paramNames, eligible, existing, ctxKeys, slotTypes);
-    }
-
     /** A named parameter and its declared Java type, the only two facts inference reads. */
     private record InferParam(String name, String typeName) {}
 
@@ -2334,10 +1566,9 @@ class ServiceCatalog {
         // Arity-unique branch: one unbound parameter, one unclaimed slot. Bind positionally only
         // when the slot has no canonical Java scalar mapping (named input object, enum), the
         // parameter's Java type is not a canonical scalar, and no reachable nested field of the
-        // parameter's type exists inside the slot: the input-bean case the
-        // unambiguousReachablePath hint can't disambiguate. Otherwise fall through, so a real
-        // type mismatch surfaces the existing diagnostic or the dot-path suggestion captures the
-        // likely intent (a nested field pull).
+        // parameter's type exists inside the slot: the input-bean case a dot-path cannot
+        // disambiguate. Otherwise fall through, so a real type mismatch surfaces the existing
+        // diagnostic.
         if (unboundParams.size() == 1 && unclaimedSlotNames.size() == 1) {
             String slotName = unclaimedSlotNames.get(0);
             String slotJavaType = mapToJavaTypeName(slotTypes.get(slotName));
@@ -2371,7 +1602,7 @@ class ServiceCatalog {
             // Bind only when there is one and only one possible mapping. A top-level slot is one
             // possible mapping; any reachable nested field of the same Java type inside any
             // unclaimed slot is another. When both exist, the binding is ambiguous and inference
-            // yields to the unambiguousReachablePath dot-path suggestion.
+            // yields.
             if (anyReachableNestedMatch(paramEntry.getKey(), unclaimedSlotNames, slotTypes)) continue;
             augmented.put(paramEntry.getValue().get(0), PathExpr.head(slots.get(0)));
         }
@@ -2383,8 +1614,7 @@ class ServiceCatalog {
         // `argMapping: "p: slot.field"` produces, so downstream emission is unchanged. Identity
         // binding is handled earlier in ArgBindingMap.of, so a parameter that matched a slot by
         // its own name is already bound and skipped here. Zero or >1 candidates leave the
-        // parameter unbound, so the per-parameter rejection (with its unambiguousReachablePath
-        // argMapping suggestion) still fires.
+        // parameter unbound, so the per-parameter rejection still fires.
         for (var p : unboundParams) {
             if (augmented.containsKey(p.name())) continue;
             PathExpr nested = inferNestedFieldByName(
@@ -2432,9 +1662,8 @@ class ServiceCatalog {
 
     /**
      * True when any unclaimed slot's input-object type contains a reachable nested field whose
-     * GraphQL type maps to {@code targetTypeName}. Mirrors the search in
-     * {@link #unambiguousReachablePath} but stops at the first hit: ambiguity detection in
-     * {@link #inferBindingsByType} needs existence, not uniqueness.
+     * GraphQL type maps to {@code targetTypeName}, stopping at the first hit: ambiguity detection
+     * in {@link #inferBindingsByType} needs existence, not uniqueness.
      */
     private boolean anyReachableNestedMatch(
             String targetTypeName, List<String> unclaimedSlotNames,
@@ -2515,7 +1744,7 @@ class ServiceCatalog {
     // ===== Result container =====
 
     /**
-     * Carries the result of {@link #bindServiceMethod}: either a successfully resolved
+     * Carries the result of a method reflection: either a successfully resolved
      * {@link MethodRef} or a typed {@link Rejection} carrying the failure shape (so consumers
      * that wrap with caller-specific prose can preserve {@link Rejection.AuthorError.UnknownName}
      * fields rather than collapsing back to {@link Rejection.AuthorError.Structural}).

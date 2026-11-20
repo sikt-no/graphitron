@@ -19,8 +19,7 @@ import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.model.selection.ParsedEntry;
 
 /**
- * Pre-resolved binding map used by {@link ServiceCatalog#reduceClaims} and
- * {@link ServiceCatalog#reflectTableMethod} to bind reflected method parameters to their
+ * Pre-resolved binding map used by {@link ServiceCatalog#reflectTableMethod} to bind reflected method parameters to their
  * GraphQL counterparts.
  *
  * <p>Keys are Java parameter names; values are {@link PathExpr} expressions that resolve to a

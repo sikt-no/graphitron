@@ -79,17 +79,6 @@ public final class NodeIdDecodeLedger {
         }
     }
 
-    /**
-     * Records an install the caller has already established, for a site whose decode is not held in
-     * a {@link CallSiteExtraction} the ledger could be shown. The record rail's per-field key
-     * decode is the one such site: its leaf is a {@code RecordKeyDecode}, which is not an arm of
-     * the seal, and the arm that will carry it is assembled from every field of the input type
-     * after this one has been decided.
-     */
-    void recordInstall(NodeIdDecodeCoordinate at) {
-        put(at, installedByTheWalk());
-    }
-
     /** Records a refusal some site other than the leaf resolver minted. */
     void recordRefusal(NodeIdDecodeCoordinate at,
                        no.sikt.graphitron.model.diagnostics.Rejection rejection) {
@@ -123,7 +112,7 @@ public final class NodeIdDecodeLedger {
      *
      * <p>{@code NodeIdDecodeArmCoverageTest} computes the same set structurally, off which arms
      * reach a handle on the opaque wire format, and fails when the two disagree. That is what makes
-     * a fifth decode arm someone else's build failure: the switch below stops compiling because it
+     * a new decode arm someone else's build failure: the switch below stops compiling because it
      * is exhaustive, and if it is answered {@code false} the meta-test says the arm carries a
      * decode anyway. Neither guard alone catches both mistakes.
      *
@@ -134,14 +123,13 @@ public final class NodeIdDecodeLedger {
         java.util.Set.of(CallSiteExtraction.ThrowOnMismatch.class,
             CallSiteExtraction.PruneOnMismatch.class,
             CallSiteExtraction.NodeIdDecodeRecord.class,
-            CallSiteExtraction.NodeIdDecodePolymorphicRecord.class,
-            CallSiteExtraction.JooqRecord.class);
+            CallSiteExtraction.NodeIdDecodePolymorphicRecord.class);
 
     /**
      * Whether this extraction carries a node-id decode, and so is the walk rail installing one.
      *
      * <p>Exhaustive over {@link CallSiteExtraction} on purpose, and the exhaustiveness is the pin
-     * this design rests on rather than a style preference: a fifth decode arm is a compile error in
+     * this design rests on rather than a style preference: a new decode arm is a compile error in
      * this switch, where an author has to say which side it falls on, instead of a silent absence
      * downstream that reads as a dropped instruction and fails a build that should pass.
      * {@code NodeIdDecodeArmCoverageTest} states the other half, that no arm carrying a decode
@@ -152,10 +140,6 @@ public final class NodeIdDecodeLedger {
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> true;
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> true;
             case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored -> true;
-            // The one decode leaf that is not itself an arm of the seal: a record-bound input type
-            // holds one RecordKeyDecode per @nodeId field under it, so the arm installs exactly
-            // where it holds at least one.
-            case CallSiteExtraction.JooqRecord r -> !r.keyDecodes().isEmpty();
             // A descent installs whatever its leaf does; ConditionResolver.rewrapForNested carries
             // a whole-slot install through as that leaf.
             case CallSiteExtraction.NestedInputField n -> installedBy(n.leaf());

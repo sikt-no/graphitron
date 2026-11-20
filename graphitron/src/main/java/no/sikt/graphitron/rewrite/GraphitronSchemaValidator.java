@@ -67,7 +67,6 @@ public class GraphitronSchemaValidator {
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
         validateWrapperArmSiblingPosture(schema, errors);
-        validateContextArgumentTypeAgreement(schema, errors);
         validateSessionConditionsUnderFanOut(schema, errors);
         validateSessionConditionsUnderLegacyProjection(schema, errors);
         validateTenantBindings(schema, errors);
@@ -232,8 +231,7 @@ public class GraphitronSchemaValidator {
 
     /**
      * Drains the cached tenant-scope classification's typed rejections into
-     * {@link ValidationError}s (same validator-mirrors-classifier shape as
-     * {@link #validateContextArgumentTypeAgreement}). {@link TenantScopeClassifier} runs once at
+     * {@link ValidationError}s. {@link TenantScopeClassifier} runs once at
      * catalog load; the validator and the tenant-routing emitters read the identical
      * {@link GraphitronSchema#tenantScopes()}. A tenant-column defect has no SDL coordinate, so
      * the errors surface at {@code <schema>}.
@@ -265,26 +263,6 @@ public class GraphitronSchemaValidator {
      */
     private void drainBuildDiagnostics(GraphitronSchema schema, List<ValidationError> errors) {
         errors.addAll(schema.diagnostics());
-    }
-
-    /**
-     * Drains the cached {@link ContextArgumentClassifier} output's typed
-     * {@link Rejection.AuthorError.TypeConflict} list into {@link ValidationError}s: two or more
-     * directive sites referencing the same context-argument name with disagreeing Java types
-     * reject here, before the factory emitter is asked to paste a non-existent {@code TypeName}
-     * into {@code Graphitron.newExecutionInput(...)}.
-     *
-     * <p>Reads {@link GraphitronSchema#contextArguments()}, populated once at parse boundary, so
-     * the validator and {@code GraphitronFacadeGenerator} see the identical classification.
-     */
-    private void validateContextArgumentTypeAgreement(GraphitronSchema schema, List<ValidationError> errors) {
-        for (Rejection conflict : schema.contextArguments().conflicts()) {
-            errors.add(new ValidationError(
-                "<schema>",
-                conflict,
-                graphql.language.SourceLocation.EMPTY
-            ));
-        }
     }
 
     /**

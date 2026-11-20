@@ -110,8 +110,9 @@ public final class FillQuery {
     }
 
     /**
-     * A context key a service call reads: the key, the type of the parameter it fills, which is what
-     * the call casts the request context's value to, and the declared field and method making the call.
+     * A context key a call reads, a {@code @service}'s or a {@code @condition}'s: the key, the type of
+     * the parameter it fills, which is what the call casts the request context's value to, and the
+     * declared element and method making the call.
      */
     public record ContextKey(String key, TypeName type, String fieldCoordinate, String className,
                              String methodName) {
@@ -122,8 +123,10 @@ public final class FillQuery {
     }
 
     /**
-     * The context keys the graph's service calls read, one per declared field, key and parameter
-     * type, ordered by key, then type, then field.
+     * The context keys the graph's service and condition calls read, one per declared element, key,
+     * parameter type and method, ordered by key, then type, then element, then method. A condition's
+     * call is made once per table its occurrence binds, and each reads the same key; the distinct
+     * read folds them.
      */
     public static List<ContextKey> contextKeys(StoreHandle store) {
         var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
@@ -139,8 +142,10 @@ public final class FillQuery {
             .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR),
                 p.POSITION.eq(c.POSITION))
-            .where(s.GRAPH_NAME.eq(store.graphName()), s.CALL_KIND.eq("SERVICE"), c.FILL.eq("CONTEXT_KEY"))
-            .orderBy(c.CONTEXT_KEY, p.PARAMETER_TYPE, o.ELEMENT_COORDINATE)
+            .where(s.GRAPH_NAME.eq(store.graphName()), s.CALL_KIND.in("SERVICE", "CONDITION"),
+                c.FILL.eq("CONTEXT_KEY"))
+            .orderBy(c.CONTEXT_KEY, p.PARAMETER_TYPE, o.ELEMENT_COORDINATE, s.METHOD_CLASS_NAME,
+                s.METHOD_NAME)
             .fetch(rec -> new ContextKey(rec.value1(), SessionIdentityRows.typeOf(rec.value2()), rec.value3(),
                 rec.value4(), rec.value5()));
     }

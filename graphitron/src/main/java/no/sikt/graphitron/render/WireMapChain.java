@@ -21,12 +21,6 @@ import java.util.Map;
  * statement form the development principles prefer, hoisted onto a named helper method, and
  * converging the two would be a change to what is emitted rather than to where it is spelled.
  *
- * <p>A list-aware variant of this same descent lives at
- * {@code ServiceMethodCallEmitter.walkSegments}: it lifts a list-shaped segment into a
- * {@code stream().map(...)} and numbers its bindings off one shared counter, so it is a superset of
- * this shape rather than a copy of it and folding this one into it would renumber every binding
- * both call sites here emit. Named so a reader who finds one finds the family.
- *
  * @see ArgPathHelperRegistry the statement-form sibling, and the form to grow towards
  */
 public final class WireMapChain {

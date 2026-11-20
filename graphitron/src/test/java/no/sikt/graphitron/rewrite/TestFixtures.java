@@ -55,122 +55,6 @@ public final class TestFixtures {
         return new MethodRef.StaticOnly(className, methodName, returnType, params, declaredExceptions);
     }
 
-    /**
-     * Builds a {@link MethodRef.Service} with the given {@link MethodRef.CallShape} explicit.
-     */
-    public static MethodRef.Service serviceMethodRef(String className, String methodName, TypeName returnType,
-                                                      List<MethodRef.Param> params, MethodRef.CallShape callShape) {
-        return new MethodRef.Service(className, methodName, returnType, params, List.of(), callShape);
-    }
-
-    public static MethodRef.Service serviceMethodRef(String className, String methodName, TypeName returnType,
-                                                      List<MethodRef.Param> params, List<String> declaredExceptions,
-                                                      MethodRef.CallShape callShape) {
-        return new MethodRef.Service(className, methodName, returnType, params, declaredExceptions, callShape);
-    }
-
-    /**
-     * Convenience overload for static-{@code @service} fixtures: builds a {@link MethodRef.Service}
-     * with a {@link MethodRef.CallShape.Static} arm whose {@code needsDslLocal} is derived from the
-     * params (any param whose source is {@link ParamSource.DslContext} flips it on, matching
-     * what {@code ServiceCatalog.bindServiceMethod} does at classify time).
-     */
-    public static MethodRef.Service staticServiceMethodRef(String className, String methodName, TypeName returnType,
-                                                            List<MethodRef.Param> params) {
-        boolean needsDslLocal = params.stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
-        return new MethodRef.Service(className, methodName, returnType, params, List.of(),
-            new MethodRef.CallShape.Static(needsDslLocal));
-    }
-
-    public static MethodRef.Service staticServiceMethodRef(String className, String methodName, TypeName returnType,
-                                                            List<MethodRef.Param> params, List<String> declaredExceptions) {
-        boolean needsDslLocal = params.stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
-        return new MethodRef.Service(className, methodName, returnType, params, declaredExceptions,
-            new MethodRef.CallShape.Static(needsDslLocal));
-    }
-
-    /**
-     * Convenience overload for instance-{@code @service} test fixtures: a {@link MethodRef.Service}
-     * with a {@link MethodRef.CallShape.InstanceWithDslHolder} arm. Used by tests that exercise
-     * the {@code new ServiceClass(dsl).method(...)} emit shape.
-     */
-    public static MethodRef.Service instanceServiceMethodRef(String className, String methodName, TypeName returnType,
-                                                              List<MethodRef.Param> params) {
-        return new MethodRef.Service(className, methodName, returnType, params, List.of(),
-            new MethodRef.CallShape.InstanceWithDslHolder());
-    }
-
-    /**
-     * Builds a {@link MethodRef.Param.Sourced} carrying the full per-axis triple. The convenience
-     * overloads below cover the common shorthand cases (Wrap.Row + POSITIONAL_LIST; typed
-     * TableRecord with POSITIONAL_LIST or MAPPED_SET).
-     */
-    public static MethodRef.Param.Sourced sourced(String name, SourceKey.Wrap wrap,
-                                                   List<ColumnRef> columns,
-                                                   LoaderRegistration.Container container) {
-        return new MethodRef.Param.Sourced(name, wrap, columns, container);
-    }
-
-    /**
-     * Shorthand for the common case: {@code List<RowN<...>>}-shaped SOURCES, projecting to
-     * {@link SourceKey.Wrap.Row} + {@link LoaderRegistration.Container#POSITIONAL_LIST}.
-     */
-    public static MethodRef.Param.Sourced sourcedRow(String name, List<ColumnRef> columns) {
-        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Row(),
-            columns, LoaderRegistration.Container.POSITIONAL_LIST);
-    }
-
-    /**
-     * Shorthand for the {@code Set<RowN<...>>}-shaped SOURCES: {@link SourceKey.Wrap.Row} +
-     * {@link LoaderRegistration.Container#MAPPED_SET}.
-     */
-    public static MethodRef.Param.Sourced sourcedRowMapped(String name, List<ColumnRef> columns) {
-        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Row(),
-            columns, LoaderRegistration.Container.MAPPED_SET);
-    }
-
-    /**
-     * Shorthand for the {@code List<RecordN<...>>}-shaped SOURCES: {@link SourceKey.Wrap.Record} +
-     * {@link LoaderRegistration.Container#POSITIONAL_LIST}.
-     */
-    public static MethodRef.Param.Sourced sourcedRecord(String name, List<ColumnRef> columns) {
-        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Record(),
-            columns, LoaderRegistration.Container.POSITIONAL_LIST);
-    }
-
-    /**
-     * Shorthand for the {@code Set<RecordN<...>>}-shaped SOURCES: {@link SourceKey.Wrap.Record} +
-     * {@link LoaderRegistration.Container#MAPPED_SET}.
-     */
-    public static MethodRef.Param.Sourced sourcedRecordMapped(String name, List<ColumnRef> columns) {
-        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Record(),
-            columns, LoaderRegistration.Container.MAPPED_SET);
-    }
-
-    /**
-     * Shorthand for the {@code List<X extends TableRecord>}-shaped SOURCES: typed
-     * {@link SourceKey.Wrap.TableRecord} carrying {@code recordClass} + POSITIONAL_LIST.
-     */
-    public static MethodRef.Param.Sourced sourcedTableRecord(String name,
-                                                              List<ColumnRef> columns,
-                                                              Class<? extends org.jooq.TableRecord<?>> recordClass) {
-        return new MethodRef.Param.Sourced(name,
-            new SourceKey.Wrap.TableRecord(ClassName.get(recordClass)),
-            columns, LoaderRegistration.Container.POSITIONAL_LIST);
-    }
-
-    /**
-     * Shorthand for the {@code Set<X extends TableRecord>}-shaped SOURCES: typed
-     * {@link SourceKey.Wrap.TableRecord} carrying {@code recordClass} + MAPPED_SET.
-     */
-    public static MethodRef.Param.Sourced sourcedTableRecordMapped(String name,
-                                                                    List<ColumnRef> columns,
-                                                                    Class<? extends org.jooq.TableRecord<?>> recordClass) {
-        return new MethodRef.Param.Sourced(name,
-            new SourceKey.Wrap.TableRecord(ClassName.get(recordClass)),
-            columns, LoaderRegistration.Container.MAPPED_SET);
-    }
-
     // ===== SourceKey / LoaderRegistration test fixtures =====
     //
     // Test fixtures use these to compose the same per-axis shapes the field-classifier
@@ -245,13 +129,6 @@ public final class TestFixtures {
             mapped ? LoaderRegistration.Container.MAPPED_SET : LoaderRegistration.Container.POSITIONAL_LIST,
             loadMany ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
     }
-
-    public static MethodRef.Service instanceServiceMethodRef(String className, String methodName, TypeName returnType,
-                                                              List<MethodRef.Param> params, List<String> declaredExceptions) {
-        return new MethodRef.Service(className, methodName, returnType, params, declaredExceptions,
-            new MethodRef.CallShape.InstanceWithDslHolder());
-    }
-
 
     // ===== TableRef =====
 

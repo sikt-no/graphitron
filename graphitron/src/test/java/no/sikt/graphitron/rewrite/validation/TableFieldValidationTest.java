@@ -34,7 +34,7 @@ class TableFieldValidationTest {
     }
 
     private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
-        TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
+        TestFixtures.staticOnlyMethodRef("com.example.Conditions", "actorCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.actorTable(),
         ""));

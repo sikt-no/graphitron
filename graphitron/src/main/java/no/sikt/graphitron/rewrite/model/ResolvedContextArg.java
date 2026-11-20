@@ -3,45 +3,23 @@ package no.sikt.graphitron.rewrite.model;
 import com.palantir.javapoet.TypeName;
 
 import java.util.List;
-import no.sikt.graphitron.model.diagnostics.ConflictSite;
 
 /**
- * Classifier output for one {@code contextArgument} name resolved to a single Java type across
- * every directive site that references it.
+ * One request-context key the graph's calls read, resolved to the single Java type they read it
+ * as.
  *
- * <p>Produced by the cross-site context-argument agreement classifier. The classifier walks every
- * {@link MethodRef.Param.Typed} whose source is {@link ParamSource.Context}, keys by parameter
- * name, and requires the structural {@link TypeName} to agree across all sites. The agreed type is
- * stored on {@link #javaType} and consumed verbatim by both the factory emitter (parameter list of
- * {@code Graphitron.newExecutionInput(...)}) and the call-site emitter ({@code $T.class} literal
- * at the {@code getContextArgument} call).
+ * <p>Produced by {@code ContextArgumentClassifier} off the keys the store states every call reads.
+ * The type is stored on {@link #javaType} and consumed verbatim by the factory emitter (parameter
+ * list of {@code Graphitron.newExecutionInput(...)}).
  *
- * <p>{@link #sites} carries every directive site that referenced this name in declaration order,
- * useful for downstream tooling (LSP fix-its) that wants to navigate to a declaring method. Each
- * entry is a {@link Site}, which wraps the model value or the store's names the reference came from
- * and so stays with the classifier's output rather than riding a rejection: {@link ConflictSite}
- * carries the same coordinate as names, because a rejection is a fact the store holds.
+ * <p>{@link #sites} carries every call that reads this key, useful for downstream tooling (LSP
+ * fix-its) that wants to navigate to a declaring method.
  */
 public record ResolvedContextArg(String name, TypeName javaType, List<Site> sites) {
     public ResolvedContextArg {
         sites = List.copyOf(sites);
     }
 
-    /**
-     * The directive coordinate a context-argument reference came from. Every arm projects the
-     * class + method names a message or a fix-it reads, so a consumer need not switch on the arm.
-     */
-    public sealed interface Site permits Site.Method, Site.Service {
-        String className();
-        String methodName();
-
-        /** A {@link MethodRef}-backed coordinate ({@code @condition} / {@code @externalField}). */
-        record Method(MethodRef ref) implements Site {
-            @Override public String className() { return ref.className(); }
-            @Override public String methodName() { return ref.methodName(); }
-        }
-
-        /** A {@code @service} call's method, as the store states it. */
-        record Service(String className, String methodName) implements Site {}
-    }
+    /** The method a call reading the key makes, as the store states it. */
+    public record Site(String className, String methodName) {}
 }

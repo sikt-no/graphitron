@@ -85,10 +85,7 @@ public class TestServiceStub {
 
     /**
      * Fixture: a static service method with two {@link DSLContext} parameters in the same
-     * method round. The walker's {@code MultipleDslContextSlots} invariant fires when more than
-     * one DSL slot lands per round; the test verifies the rejection projects to a typed
-     * {@code ServiceMethodCallError.MultipleDslContextSlots} arm carrying its
-     * {@code lspCode()} through to LSP.
+     * method round.
      */
     public static String getWithTwoDsls(DSLContext a, DSLContext b) { throw new UnsupportedOperationException(); }
 
@@ -373,8 +370,7 @@ public class TestServiceStub {
      * that the type-unique inference yields when an unclaimed sibling slot is a named input
      * object containing a reachable nested field of the same Java type — the binding is
      * then ambiguous (top-level positional + nested dot-path are both reachable), and the
-     * inference must defer to name-based matching and let {@link ServiceCatalog#unambiguousReachablePath}
-     * surface the dot-path suggestion.
+     * inference must defer to name-based matching.
      */
     public static String getByFilmId(String filmId) {
         throw new UnsupportedOperationException();
@@ -640,10 +636,8 @@ public class TestServiceStub {
     // ===== §4 declared-checked-exception fixtures =====
 
     /**
-     * Declares {@code throws java.sql.SQLException}. Used by classifier tests verifying that
-     * {@link ServiceCatalog#decodeServiceMethod} captures declared exceptions onto
-     * {@link MethodRef.Basic#declaredExceptions()} and that the §4 match check rejects the
-     * field when no covering {@code @error} handler is present on its channel.
+     * Declares {@code throws java.sql.SQLException}. Used by tests verifying that the §4 match
+     * check rejects the field when no covering {@code @error} handler is present on its channel.
      */
     public static String getThrowingSqlException() throws java.sql.SQLException {
         throw new UnsupportedOperationException();
@@ -800,8 +794,7 @@ public class TestServiceStub {
     /**
      * Root list: a {@code List<FilmRecord>} bound directly as a {@code @service} input param —
      * the consumer's motivating shape ({@code endreUtdanningsspesifikasjonsstatus(List<…Record>)}).
-     * Differs from the singular only by a {@code ValueShape.ListOf} wrap; the same {@code JooqRecord}
-     * carrier drives one shared {@code createFilmRecord} construction site.
+     * Differs from the singular only by the list wrap.
      */
     public static String modifyFilmRecords(java.util.List<FilmRecord> in) {
         throw new UnsupportedOperationException();
@@ -838,11 +831,8 @@ public class TestServiceStub {
 
     /**
      * Child coordinate parity: a child {@code @service} rows-method on a {@code @table} parent,
-     * taking the parent key (Sources, {@code List<Row1<Integer>>}) plus a {@link FilmRecord} arg. The
-     * arg classifies to {@code CallSiteExtraction.JooqRecord} exactly as the root param does, and the
-     * child rows-method emits {@code createFilmRecord} through {@code ArgCallEmitter}; the binding
-     * is coordinate-agnostic because {@code enrich} runs for child
-     * {@code @service} too. Returns {@code List<LanguageRecord>} to match a singular {@code Language}
+     * taking the parent key (Sources, {@code List<Row1<Integer>>}) plus a {@link FilmRecord} arg,
+     * bound exactly as the root param is. Returns {@code List<LanguageRecord>} to match a singular {@code Language}
      * child field's rows-method outer shape (V = {@code LanguageRecord}).
      */
     public static java.util.List<LanguageRecord> childModifyFilmRecord(

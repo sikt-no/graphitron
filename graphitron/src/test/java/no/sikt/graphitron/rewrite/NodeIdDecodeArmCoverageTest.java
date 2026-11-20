@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * went stale inside a week: {@code NodeIdDecodePolymorphicRecord} landed as a fourth decode arm
  * while the plan sat waiting for review. Making the list a compiler-and-meta-test question is what
  * replaces the prose. The exhaustive switch in {@link NodeIdDecodeLedger#installedBy} catches a
- * fifth arm at compile time and makes an author answer for it; this catches an arm answered
+ * new arm at compile time and makes an author answer for it; this catches an arm answered
  * <em>wrongly</em>, which the compiler cannot see. The failure mode it guards is the dangerous one:
  * a decode arm the ledger does not recognise reads downstream as a dropped instruction and fails a
  * build that should pass.
@@ -34,8 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code encoderClass} naming the generated encoder the emitter calls through. Those are the two
  * spellings the tree has, and either one means the arm turns a wire id into key values. The search
  * descends through record components and through the element types of generic ones, so a decode
- * held one record down ({@code JooqRecord}'s {@code RecordKeyDecode} list, the one decode leaf that
- * is not an arm of the seal) is found where it sits.
+ * held one record down is found where it sits.
  *
  * <p>The descent deliberately stops at a component typed as {@link CallSiteExtraction} itself.
  * Such a component is a delegation rather than a decode: {@code NestedInputField} carries whatever
@@ -65,7 +64,7 @@ class NodeIdDecodeArmCoverageTest {
             .isEqualTo(declared);
         assertThat(structural)
             .as("arms scanned (the reflection must not be vacuous)")
-            .hasSizeGreaterThanOrEqualTo(5);
+            .hasSizeGreaterThanOrEqualTo(4);
     }
 
     /**

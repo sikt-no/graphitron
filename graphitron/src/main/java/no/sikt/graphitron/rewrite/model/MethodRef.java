@@ -8,7 +8,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 /**
  * A resolved reference to a user-provided Java method.
  *
- * <p>Used for all user-provided method references: {@code @service} methods, {@code @condition}
+ * <p>Used for the user-provided method references the walk reflects: {@code @condition}
  * methods, {@code @condition} references, and {@code @externalField} methods.
  *
  * <p>{@code className} is the binary class name, e.g. {@code "com.example.FilmService"}.
@@ -16,7 +16,6 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * <p>{@code methodName} is the method name, e.g. {@code "getFilms"}.
  *
  * <p>{@code returnType} is the structured javapoet {@link TypeName} captured from
- * {@link java.lang.reflect.Method#getGenericReturnType()} (services) or
  * {@link java.lang.reflect.Method#getReturnType()} (table methods, conditions). Carries the
  * full parameterised shape so emitters can declare matching fetcher signatures without parsing
  * a string back into a {@code TypeName}, and so the strict-return classifier check compares
@@ -27,8 +26,6 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  *
  * <p>Sealed permits map each variant to its producer set and emit shape:
  * <ul>
- *   <li>{@link Service}: {@code @service} methods, the only variant whose call shape can vary
- *       ({@link Service#callShape()}). Producer: {@code ServiceCatalog.bindServiceMethod}.</li>
  *   <li>{@link StaticOnly}: static-by-construction method references on the {@code @condition} /
  *       {@code @externalField} paths. Producers: {@code ServiceCatalog.reflectTableMethod},
  *       {@code reflectExternalField}, and {@link no.sikt.graphitron.rewrite.EnumMappingResolver}
@@ -49,23 +46,9 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * (i.e. {@link java.lang.reflect.Method#getExceptionTypes()}). Empty when the method has no
      * {@code throws} clause or when this {@link MethodRef} variant doesn't reflect a Java method
      * (e.g. {@code @condition} expressions). Populated by the catalog at reflection time
-     * ({@code ServiceCatalog.bindServiceMethod} / {@code reflectTableMethod}).
+     * ({@code ServiceCatalog.reflectTableMethod}).
      */
     default List<String> declaredExceptions() { return List.of(); }
-
-    /**
-     * Returns the single {@link Param.Sourced} parameter — the DataLoader batch-key parameter
-     * whose value comes from the DataLoader {@code keys} list.
-     *
-     * <p>Throws if no such parameter exists. Service methods always have exactly one.
-     */
-    default Param.Sourced sourcedParam() {
-        return params().stream()
-            .filter(p -> p instanceof Param.Sourced)
-            .map(p -> (Param.Sourced) p)
-            .findFirst()
-            .orElseThrow();
-    }
 
     /**
      * Extracted parameters only ({@link ParamSource.Arg}, {@link ParamSource.Context} and the two
@@ -140,36 +123,12 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     }
 
     /**
-     * Sub-interface for the {@code @condition}-incompatible populations: {@link Service} and
-     * {@link StaticOnly}. Consumers that post-process method parameters (e.g.
-     * {@link no.sikt.graphitron.rewrite.InputBeanResolver}) narrow their parameter type to
+     * Sub-interface for the {@code @condition}-incompatible population, {@link StaticOnly}.
+     * Consumers that post-process method parameters narrow their parameter type to
      * {@link NonCondition} so that passing a {@link ConditionFilter} is a compile error rather
-     * than a runtime throw — the unreachable-by-construction case becomes unreachable
-     * structurally.
+     * than a runtime throw.
      */
-    sealed interface NonCondition extends MethodRef permits Service, StaticOnly {}
-
-    /**
-     * The {@code @service} variant. The only {@link MethodRef} variant whose call shape can vary
-     * (static utility vs instance method on a {@code (DSLContext)}-ctor holder); the static-vs-
-     * instance fork is carried by {@link #callShape()}.
-     *
-     * <p>When resolution fails, the builder classifies the containing field as
-     * {@link GraphitronField.UnclassifiedField}.
-     */
-    record Service(
-        String className,
-        String methodName,
-        TypeName returnType,
-        List<Param> params,
-        List<String> declaredExceptions,
-        CallShape callShape
-    ) implements NonCondition {
-
-        public Service {
-            declaredExceptions = List.copyOf(declaredExceptions);
-        }
-    }
+    sealed interface NonCondition extends MethodRef permits StaticOnly {}
 
     /**
      * Static-by-construction method references: {@code @condition}, {@code @externalField},
@@ -187,67 +146,6 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
 
         public StaticOnly {
             declaredExceptions = List.copyOf(declaredExceptions);
-        }
-    }
-
-    /**
-     * The static/instance fork on a {@link Service} variant. Sealed so a call-target emitter can
-     * switch exhaustively; a hypothetical third arm (e.g. a {@code ServiceHolderFactory}
-     * extension point) would be a compile error at every consumer rather than a silent fall-through.
-     *
-     * <p>{@link Static#needsDslLocal()} is pre-resolved at classify time inside
-     * {@code ServiceCatalog.bindServiceMethod} (the disjunction "any param has
-     * {@link ParamSource.DslContext}" is computed once at the parse boundary). The
-     * {@link InstanceWithDslHolder} arm carries the holder constructor's resolved parameter
-     * sources ({@link InstanceWithDslHolder#ctorParams()}); whether a {@code dsl} local is needed
-     * is read from those (the holder is not restricted to {@code (DSLContext)}-only: any
-     * constructor whose parameters bind from a DSLContext slot or a declared context argument is
-     * accepted).
-     */
-    sealed interface CallShape permits CallShape.Static, CallShape.InstanceWithDslHolder {
-
-        /**
-         * Whether the surrounding generated method needs a {@code DSLContext dsl} local to host
-         * this call: the {@link Static} arm's pre-resolved flag, or (for the holder arm) whether
-         * any constructor parameter binds from {@link ParamSource.DslContext}. The one home of
-         * the static-vs-instance fork; every emit site reads this rather than re-stating the
-         * disjunction.
-         */
-        default boolean needsDsl() {
-            return switch (this) {
-                case Static s -> s.needsDslLocal();
-                case InstanceWithDslHolder holder -> holder.ctorParams().stream()
-                    .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
-            };
-        }
-
-        /**
-         * Static utility method. Emits {@code ClassName.method(...)} at the call site.
-         * {@code needsDslLocal} reflects whether any parameter has
-         * {@link ParamSource.DslContext}.
-         */
-        record Static(boolean needsDslLocal) implements CallShape {}
-
-        /**
-         * Instance method on a holder class constructed per call. {@code ctorParams} are the
-         * holder constructor's parameters in declaration order, each sourced from
-         * {@link ParamSource.DslContext} or {@link ParamSource.Context}; the call site emits
-         * {@code new ClassName(<ctorArgs>).method(...)}. The plain {@code (DSLContext)}-only
-         * holder is the single-{@link ParamSource.DslContext}-param case; the arm also carries
-         * richer constructors (e.g. {@code (DSLContext, ctxArg)}).
-         */
-        record InstanceWithDslHolder(List<Param> ctorParams) implements CallShape {
-            public InstanceWithDslHolder {
-                ctorParams = List.copyOf(ctorParams);
-            }
-
-            /** The plain {@code (DSLContext)}-holder shape: a single {@link ParamSource.DslContext}
-             *  ctor parameter named {@code "dsl"}. Used by test fixtures. */
-            public InstanceWithDslHolder() {
-                this(List.of(new Param.Typed("dsl", "org.jooq.DSLContext",
-                    com.palantir.javapoet.ClassName.get("org.jooq", "DSLContext"),
-                    new ParamSource.DslContext())));
-            }
         }
     }
 

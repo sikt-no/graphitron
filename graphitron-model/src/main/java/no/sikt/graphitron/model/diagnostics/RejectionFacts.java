@@ -3,14 +3,11 @@ package no.sikt.graphitron.model.diagnostics;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
 import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
-import no.sikt.graphitron.model.diagnostics.JooqRecordInputError;
 import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
 import no.sikt.graphitron.model.diagnostics.PivotError;
 import no.sikt.graphitron.model.diagnostics.ReflectionError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
-import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
-import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.WireCoercionError;
@@ -154,13 +151,10 @@ public final class RejectionFacts {
             case Rejection.AuthorError.Structural ignored -> NONE;
             case Rejection.AuthorError.AccessorMismatch ignored -> NONE;
             case Rejection.AuthorError.RecordBindingMultiProducer ignored -> NONE;
-            case Rejection.AuthorError.TypeConflict ignored -> NONE;
             case Rejection.AuthorError.MultiProducerDomainTypeDisagreement ignored -> NONE;
             case Rejection.AuthorError.SortEnumMissingOrder ignored -> NONE;
             case Rejection.AuthorError.TenantColumnTypeDisagreement ignored -> NONE;
             case Rejection.AuthorError.NoTenantBinding ignored -> NONE;
-            case Rejection.AuthorError.UnroutedServiceCall ignored -> NONE;
-            case ServiceMethodCallError e -> coded(e.lspCode());
             case ReflectionError e -> coded(e.lspCode());
             case UpdateRowsError e -> coded(e.lspCode());
             case DeleteRowsError e -> coded(e.lspCode());
@@ -168,9 +162,7 @@ public final class RejectionFacts {
             case FailOnMissingError e -> coded(e.lspCode());
             case ErrorChannelWalkerError e -> coded(e.lspCode());
             case WireCoercionError e -> coded(e.lspCode());
-            case ServiceCarrierShapeError e -> coded(e.lspCode());
             case PivotError e -> coded(e.lspCode());
-            case JooqRecordInputError e -> coded(e.lspCode());
             case Rejection.InvalidSchema.DirectiveConflict d ->
                 new TypedColumns(null, null, null, null, d.directives());
             case Rejection.InvalidSchema.CaseFoldCollision ignored -> NONE;

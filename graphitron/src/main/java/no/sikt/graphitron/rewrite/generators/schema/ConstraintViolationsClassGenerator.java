@@ -7,8 +7,6 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
-import no.sikt.graphitron.rewrite.model.ValueShape;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -23,8 +21,8 @@ import java.util.List;
  * splices the field's execution path, the argument path (the argument name, then the element index
  * when the argument is a list validated element by element), and the property path translated from
  * the Java members of the class or the properties of the jOOQ record the service binds to the SDL
- * input fields they were bound from (a {@code Paths} tree, built per validated class or record by
- * {@link #pathsInitializer(ServiceMethodCall.ValidationSubject, List, String)}), and
+ * input fields they were bound from (a {@code Paths} tree, built per validated class or record at
+ * the call site), and
  * an {@code extensions} map carrying the violated constraint annotation's simple name under
  * {@code "constraint"}. Schema authors opt into client visibility of the constraint name by
  * declaring an {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type,
@@ -214,57 +212,5 @@ public final class ConstraintViolationsClassGenerator {
                 .addStatement("return this")
                 .build())
             .build();
-    }
-
-    /**
-     * The expression that builds a validation subject's {@code ConstraintViolations.Paths}. For a
-     * bound class, {@link #pathsInitializer(ValueShape.BoundClass, String)}; for a jOOQ record, each of
-     * its {@code checks} binds the property {@code validateProperty} names to the column binding's
-     * primary SDL path, with nothing below it.
-     */
-    public static CodeBlock pathsInitializer(ServiceMethodCall.ValidationSubject subject,
-                                             List<ServiceMethodCall.ValidationSubject.ColumnCheck> checks,
-                                             String outputPackage) {
-        return switch (subject) {
-            case ServiceMethodCall.ValidationSubject.WholeObject whole -> pathsInitializer(whole.boundClass(), outputPackage);
-            case ServiceMethodCall.ValidationSubject.WrittenColumns ignored -> {
-                var b = CodeBlock.builder().add("new $T()", pathsClass(outputPackage));
-                for (var check : checks) {
-                    b.add(".bind($S, $L, null)", check.property(), sdlPath(check.primaryPath()));
-                }
-                yield b.build();
-            }
-        };
-    }
-
-    /**
-     * The expression that builds a bound class's {@code ConstraintViolations.Paths}: a projection of
-     * its {@link ValueShape.FieldBinding} tree. Each binding names its Java member
-     * ({@link ValueShape.FieldBinding#javaFieldName()}) by its whole
-     * {@link ValueShape.FieldBinding#accessPath()}, more than one segment where the field flattened
-     * out of a grouping input, and descends into a member that binds a class itself, directly or as
-     * list elements.
-     */
-    public static CodeBlock pathsInitializer(ValueShape.BoundClass bound, String outputPackage) {
-        var b = CodeBlock.builder().add("new $T()", pathsClass(outputPackage));
-        for (var field : bound.fields()) {
-            var child = switch (field.shape()) {
-                case ValueShape.BoundClass nested -> pathsInitializer(nested, outputPackage);
-                case ValueShape.ListOf list when list.elementShape() instanceof ValueShape.BoundClass nested ->
-                    pathsInitializer(nested, outputPackage);
-                default -> CodeBlock.of("null");
-            };
-            b.add(".bind($S, $L, $L)", field.javaFieldName(), sdlPath(field.accessPath()), child);
-        }
-        return b.build();
-    }
-
-    /** {@code List.of(...)} over an SDL access path. */
-    private static CodeBlock sdlPath(List<String> accessPath) {
-        var sdl = CodeBlock.builder().add("$T.of(", List.class);
-        for (int i = 0; i < accessPath.size(); i++) {
-            sdl.add(i == 0 ? "$S" : ", $S", accessPath.get(i));
-        }
-        return sdl.add(")").build();
     }
 }

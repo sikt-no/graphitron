@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -524,32 +523,6 @@ class TenantBindingClassificationTest {
 
         assertInherited(schema, "Language", "films");
         assertThat(schema.tenantBindings().rejections()).isEmpty();
-    }
-
-    /**
-     * The no-declines form of the unrouted-service refusal: one rejection at the coordinate,
-     * naming the tenant column and both fixes.
-     */
-    static Rejection.AuthorError.UnroutedServiceCall assertUnroutedWithoutDeclines(
-            GraphitronSchema schema, String coordinate) {
-        var unrouted = schema.tenantBindings().rejections().stream()
-            .filter(e -> e.coordinate().equals(coordinate))
-            .map(e -> e.rejection())
-            .filter(r -> r instanceof Rejection.AuthorError.UnroutedServiceCall)
-            .map(r -> (Rejection.AuthorError.UnroutedServiceCall) r)
-            .toList();
-        assertThat(unrouted).hasSize(1);
-        var rejection = unrouted.get(0);
-        assertThat(rejection.declines()).isEmpty();
-        assertThat(rejection.message())
-            .contains("'" + coordinate + "' is a @service that is handed a connection")
-            .contains("tenant column 'film_id'")
-            .contains("@nodeId(typeName:)")
-            .doesNotContain("reaches tenant-scoped table");
-        if (rejection.evidence().isEmpty()) {
-            assertThat(rejection.message()).contains("take no connection");
-        }
-        return rejection;
     }
 
     @Test

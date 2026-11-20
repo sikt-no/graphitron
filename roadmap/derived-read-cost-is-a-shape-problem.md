@@ -93,7 +93,7 @@ The walk's read path is gone
 │   ├── A nesting field's leaves state how they're read
 │   ├── A leaf a filter compares is stated once
 │   └── Every list states its order or is refused, claimed by F
-└── The walk's service path is gone
+└── A field on a type handed over both as a row and as an object is judged on the object arm
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -752,7 +752,7 @@ static method needs no holder.
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
 * **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
-* **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store" and "The walk's service path is gone". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
+* **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
 * **The projection units are rendered from the store** `blocked`, on the facts below. The flip goes
   as soon as it can, each piece when the store states it whole and the walk keeps the rest
   without much work, censused as the service fields were (Alf, 2026-11-15).
@@ -1167,23 +1167,7 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **The walk's service path is gone** `open`, E's. The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
-  `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go. What of `ServiceCatalog` stays has its
-  owners: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
-  `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
-  `pathLeafDeclaresNodeId`, `resolvePathLeafType`). A nesting parent whose only cause is a
-  refused child service the store owns stays a walk error until the walk's service path is gone; the
-  subtract emits it.
-  `ServiceEmission.statedVerdict`'s verdict ladder and `walkSilenced`'s partition decide in Java
-  what the store should state; each goes with the subtract or moves into a stored relation as it
-  lands.
-  `JooqRecordInstantiationEmitter`, the classified model's helper that builds a service's jOOQ
-  record, goes beside the service leaves, and the subtract removes the defect it still carries (R534):
-  a `fromArray` load emitted after an explicit null was set for a `NOT NULL` column clears that
-  null's touched flag, so the null is neither validated nor written. `BuildEmitter.recordHelper`
-  does not have it and is pinned on it; no consumer's schema reaches the classified helper since
-  the service flip, only the classified model's own tests do.
-  * **A field on a type handed over both as a row and as an object is judged on the object arm** `open`: the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then.
+* **A field on a type handed over both as a row and as an object is judged on the object arm** `open`: the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then.
 * **A $context pair on @condition fills its parameter** `open`. The condition fill rule's `paired` set (`graphitron_occurrence_condition_parameter_rule`'s `paired` CTE) holds the `$context` pair itself, so its `CONTEXT_KEY` arm never fills the parameter, and the walk's condition path (`BuildContext`'s `@condition` argMapping parse) still refuses the sigil; admitting it means leaving `$context` pairs out of `paired` and narrowing `CONTEXT_SITE_UNSUPPORTED` further, as `@service`'s exemption did.
 * **A stub node at a root @service is routed by its key, or refused, as Alf rules** `open`, off the
   critical path. A stub node type whose key holds the tenant column mints a tenant slot at a root
@@ -1209,6 +1193,17 @@ static method needs no holder.
   projection `ProjectionCommands` derives from it lost its test with the walk's service tests;
   `ServiceKeyProjectionTest` covers the nesting case only. A plan-tier case for a direct table-parent
   child, `Film.titleUppercase`, asserts the projection is exactly `film_id`.
+* **A discriminated service the store cannot lift is refused in the store** `open`, E's, off the
+  critical path. `ServiceEmission.statedVerdict` still refuses in Java a service whose participants
+  a discriminator tells apart where it has no lift, or a lift not at the root. The stored codes judge
+  participant shapes instead: `SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED` leaves out outcome fields and
+  union returns, and nothing refuses a root discriminated service with no lift row. A stored refusal
+  of exactly that shape lets the rung become a generator-bug throw.
+* **A service argument read through a list is judged on the containers Java peels** `open`, E's, off
+  the critical path. `ServiceEmission.statedVerdict`'s argument-path rung peels `List` only, where the
+  store's `element_class` peels every container, so an enum landing read through one list into a
+  `List<Set<String>>` parameter passes the store and is refused in Java. The stored rule peels as
+  the emitter reads, and the rung becomes a generator-bug throw.
 * **An object type handed back as two classes by two services is judged in the store** `open`, off
   the critical path. `FilmShelf` returned by one service as a bean and by another as a
   `FilmLookupPayload` record, both offering `title`, is one OBJECT result with two result-class rows

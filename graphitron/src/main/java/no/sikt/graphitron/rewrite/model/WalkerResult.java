@@ -9,8 +9,7 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
  * {@link Rejection.AuthorError} list plus diagnostics, signalling that the orchestrator must exclude the
  * field from classification.
  *
- * <p>The wrapper landed alongside {@link ServiceMethodCall}; every subsequent walker-carrier
- * slice reuses this shape.
+ * <p>Every walker-carrier slice reuses this shape.
  */
 public sealed interface WalkerResult<C> {
 

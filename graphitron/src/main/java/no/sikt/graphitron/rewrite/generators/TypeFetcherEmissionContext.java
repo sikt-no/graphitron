@@ -285,12 +285,11 @@ final class TypeFetcherEmissionContext {
     }
 
     /**
-     * The helper-name resolver for this class, the single home for the {@code create*} (jOOQ record +
-     * bean) and {@code decode*} method-name decisions. Consulted by the two call-site emitters
-     * ({@link ArgCallEmitter}, {@link ServiceMethodCallEmitter}), the bean / decode helper emitters
-     * ({@link InputBeanInstantiationEmitter}), and the helper-emission drain in
-     * {@link TypeFetcherGenerator}, so a call site and its helper always agree on the name. Defaults
-     * to the bare resolver until {@link #setFetchersHelperNames} installs a populated one.
+     * The helper-name resolver for this class, the single home for the {@code decode*} method-name
+     * decisions. Consulted by the projected key read ({@link #projectedKeyHost}) and the
+     * helper-emission drain in {@link TypeFetcherGenerator}, so a call site and its helper always
+     * agree on the name. Defaults to the bare resolver until {@link #setFetchersHelperNames}
+     * installs a populated one.
      */
     FetchersHelperNames fetchersHelperNames() {
         return fetchersHelperNames;

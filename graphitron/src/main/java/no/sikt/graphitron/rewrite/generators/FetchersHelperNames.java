@@ -1,34 +1,20 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import com.palantir.javapoet.ClassName;
-import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.InputBeanFragments;
-import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
  * The single home for every private-static helper-method name emitted on one {@code <Type>Fetchers}
- * class. Two prefix namespaces write into that class's method namespace, keyed on two different
- * things:
+ * class. Two prefix namespaces write into that class's method namespace:
  *
  * <ul>
- *   <li>the <b>{@code create*}</b> namespace, whose stem set spans the <em>union</em> of the
- *       jOOQ-record carrier classes and the collected bean (POJO / {@code @record}) classes. Both
- *       families emit {@code create<stem>} / {@code create<stem>List}, so their stems must be
- *       unique across the union, not merely within each family. The jOOQ-record arm's shape
- *       contention (one record class reached by several binding shapes, disambiguated with ordinal
- *       suffixes) is layered on top by {@link JooqRecordHelperNames}, whose per-class <em>base
- *       stem</em> comes from this resolver's {@code create*} stem map. Cross-class
- *       disambiguation ("which class") and within-class shape contention ("which binding shape")
- *       are orthogonal and compose as {@code create<stem><ordinal>}.</li>
+ *   <li>the <b>{@code create*}</b> namespace, a bean class's {@code create<stem>} /
+ *       {@code create<stem>List} pair, whose stem is the class's {@link ClassName#simpleName()}.</li>
  *   <li>the <b>{@code decode*}</b> namespace, which is <em>not</em> keyed on a Java class at all:
  *       both its arms are GraphQL type names. The single-type arm names one {@code @node} type
  *       ({@code decode<TypeName>Record} / {@code decode<TypeName>RecordList}; scalar and list
@@ -41,97 +27,55 @@ import java.util.Set;
  *       type name.</li>
  * </ul>
  *
- * <h3>Stem rule</h3>
- *
- * <p>A class whose simple name is unique within its namespace keeps {@link ClassName#simpleName()}
- * as its stem (the overwhelmingly common single-schema case). A class whose simple name collides
- * gets a disambiguator <em>prefixed</em> to the simple name, derived from the class's own package
- * (a stable per-class fact, independent of which other classes happen to collide with it); token
- * choice and escalation live on {@link #disambiguatorTokens} and {@link #disambiguate}. Uniqueness
- * is enforced over the <em>emitted method names</em> (singular and plural forms both), catching the
- * {@code create<A>List}-versus-bean-named-{@code AList} overlap.
- *
- * <p>The disambiguator is derived from the already-resolved javapoet {@link ClassName#packageName()}
- * only: it never reaches back into raw jOOQ ({@code Table.getSchema()} stays behind the
- * {@code JooqCatalog} parse boundary).
- *
- * <p>The rule governs the {@code create*} namespace alone. The {@code decode*} names are the
- * schema's own type names, unique within a schema, so there is nothing there to disambiguate; what
- * that namespace keeps instead is the claimed-name check in {@link #of}.
- *
  * <h3>The populated / default split</h3>
  *
- * <p>{@link #of} builds a <em>populated</em> resolver from a class's collected carriers, beans, and
- * decoders. {@link #bare} returns the <em>default</em> resolver of schema-free / unit / out-of-band
- * contexts, which by construction carry at most one class per simple name and so answer the bare
- * {@code simpleName()}-based names unconditionally.
+ * <p>{@link #of} builds a <em>populated</em> resolver from a class's collected decoders.
+ * {@link #bare} returns the <em>default</em> resolver of schema-free / unit / out-of-band contexts,
+ * which answers every name unconditionally.
  */
 final class FetchersHelperNames implements InputBeanFragments.Names {
 
     private final boolean populated;
-    /** {@code create*}-namespace class → base stem (before jOOQ shape-contention ordinals). */
-    private final Map<ClassName, String> createStems;
     /** The node types whose {@code decode<TypeName>Record} helper this class hosts. */
     private final Set<String> decodeTypeNames;
     /** The polymorphic containers whose {@code decode<Container>Record} helper this class hosts. */
     private final Set<String> decodeContainerNames;
-    /** The jOOQ-record shape-contention arm, built with base stems drawn from {@link #createStems}. */
-    private final JooqRecordHelperNames jooqRecord;
 
-    private FetchersHelperNames(boolean populated, Map<ClassName, String> createStems,
-            Set<String> decodeTypeNames, Set<String> decodeContainerNames,
-            JooqRecordHelperNames jooqRecord) {
+    private FetchersHelperNames(boolean populated, Set<String> decodeTypeNames,
+            Set<String> decodeContainerNames) {
         this.populated = populated;
-        this.createStems = createStems;
         this.decodeTypeNames = decodeTypeNames;
         this.decodeContainerNames = decodeContainerNames;
-        this.jooqRecord = jooqRecord;
     }
 
     /**
-     * The default (never-populated) resolver: answers {@code simpleName()}-based names for any class
-     * and carries a bare jOOQ arm. Used by schema-free / unit / out-of-band emission contexts, which
-     * by construction carry at most one class per simple name.
+     * The default (never-populated) resolver: answers every name. Used by schema-free / unit /
+     * out-of-band emission contexts.
      */
     static FetchersHelperNames bare() {
-        return new FetchersHelperNames(false, Map.of(), Set.of(), Set.of(),
-            JooqRecordHelperNames.bare());
+        return new FetchersHelperNames(false, Set.of(), Set.of());
     }
 
     /**
-     * Build the populated resolver for one {@code <Type>Fetchers} class from every jOOQ-record
-     * carrier, every collected bean class, and every node type whose {@code @nodeId} record decode
-     * this class hosts. The {@code create*} stem set is computed over the union of the jOOQ-record
-     * carrier classes and the bean classes; the jOOQ arm is then built with the {@code create*} base
-     * stems so its shape ordinals compose over the cross-class stem.
+     * Build the populated resolver for one {@code <Type>Fetchers} class from every node type whose
+     * {@code @nodeId} record decode this class hosts.
      */
-    static FetchersHelperNames of(Collection<CallSiteExtraction.JooqRecord> jooqCarriers,
-            Collection<ClassName> beanClasses, Collection<String> decodeTypeNames) {
-        return of(jooqCarriers, beanClasses, decodeTypeNames, Map.of());
+    static FetchersHelperNames of(Collection<String> decodeTypeNames) {
+        return of(decodeTypeNames, Map.of());
     }
 
     /**
-     * The four-input form, adding the polymorphic containers a {@code @nodeId(typeName:)} names at a
+     * The two-input form, adding the polymorphic containers a {@code @nodeId(typeName:)} names at a
      * slot on this class, each mapped to the member type names its helper dispatches over. The
      * members are taken rather than inferred because they are a third claimant on the same
      * namespace ({@link #decodeContainerMember}) and the check below is the only place all three
      * meet.
      */
-    static FetchersHelperNames of(Collection<CallSiteExtraction.JooqRecord> jooqCarriers,
-            Collection<ClassName> beanClasses, Collection<String> decodeTypeNames,
+    static FetchersHelperNames of(Collection<String> decodeTypeNames,
             Map<String, ? extends Collection<String>> decodeContainers) {
-        var createClasses = new LinkedHashSet<ClassName>();
-        for (var jr : jooqCarriers) {
-            createClasses.add(CatalogRefs.recordClass(jr.table()));
-        }
-        createClasses.addAll(beanClasses);
-
-        var createStems = disambiguate("create", createClasses);
         var types = new LinkedHashSet<>(decodeTypeNames);
         checkDecodeNamespace(types, decodeContainers);
-        var jooqRecord = JooqRecordHelperNames.of(jooqCarriers, createStems);
-        return new FetchersHelperNames(true, createStems, types,
-            new LinkedHashSet<>(decodeContainers.keySet()), jooqRecord);
+        return new FetchersHelperNames(true, types, new LinkedHashSet<>(decodeContainers.keySet()));
     }
 
     /**
@@ -168,14 +112,9 @@ final class FetchersHelperNames implements InputBeanFragments.Names {
         }
     }
 
-    /** The jOOQ-record shape-aware {@code create<Record>} resolver for this class. */
-    JooqRecordHelperNames jooqRecord() {
-        return jooqRecord;
-    }
-
     /** {@code create<Bean>} singular helper name for a bean / {@code @record} POJO class. */
     @Override public String createSingular(ClassName beanClass) {
-        return "create" + createStem(beanClass);
+        return "create" + beanClass.simpleName();
     }
 
     /** {@code create<Bean>List} plural helper name. */
@@ -227,156 +166,18 @@ final class FetchersHelperNames implements InputBeanFragments.Names {
         return decodeContainerSingular(containerName) + memberTypeName;
     }
 
-    private String createStem(ClassName c) {
-        if (!populated) {
-            return c.simpleName();
-        }
-        return required(createStems, c, "create");
-    }
-
     /** The one spelling of a {@code decode*} stem: both arms are GraphQL type names. */
     private static String decodeRecordName(String graphqlTypeName) {
         return "decode" + graphqlTypeName + "Record";
     }
 
     /**
-     * The same routing hole {@link #required} refuses for the class-keyed namespace, for the same
-     * reason: a silent fallback would name a helper nothing emitted.
+     * A routing hole: a silent fallback would name a helper nothing emitted.
      */
     private static IllegalStateException uncollectedDecode(String what, String name) {
         return new IllegalStateException(
             "FetchersHelperNames was asked to name a decode* helper for a " + what
             + " it never collected: " + name + ". Every naming site must route through the resolver"
-            + " built from this <Type>Fetchers class's carriers, beans, decoders and containers.");
-    }
-
-    private static String required(Map<ClassName, String> stems, ClassName c, String namespace) {
-        String stem = stems.get(c);
-        if (stem == null) {
-            // A populated resolver asked to name a class it never collected is a routing hole: a
-            // silent simpleName fallback would re-bury the collision this resolver exists to prevent
-            // (a call site naming a helper that was never emitted, or the wrong class's helper).
-            throw new IllegalStateException(
-                "FetchersHelperNames was asked to name a " + namespace + "* helper for a class it "
-                + "never collected: " + c + ". Every naming site must route through the resolver "
-                + "built from this <Type>Fetchers class's carriers, beans, and decoders.");
-        }
-        return stem;
-    }
-
-    // -----------------------------------------------------------------------
-    // Stem disambiguation
-    // -----------------------------------------------------------------------
-
-    /**
-     * Resolve a collision-free base stem for every class in one prefix namespace. Starts each class
-     * at its bare {@link ClassName#simpleName()}; while any two classes' emitted method names (the
-     * {@code prefix + stem} singular and {@code prefix + stem + "List"} plural forms) collide, bumps
-     * the colliding classes one disambiguation level deeper (one more package segment prefixed,
-     * right-to-left). When the package segments are exhausted for every still-colliding class, a
-     * 1-based ordinal ordered by full class name guarantees termination.
-     */
-    private static Map<ClassName, String> disambiguate(String prefix, Set<ClassName> classes) {
-        var order = new ArrayList<>(classes);
-        var level = new LinkedHashMap<ClassName, Integer>();
-        var tokens = new LinkedHashMap<ClassName, List<String>>();
-        for (var c : order) {
-            level.put(c, 0);
-            tokens.put(c, disambiguatorTokens(c));
-        }
-
-        while (true) {
-            var stems = new LinkedHashMap<ClassName, String>();
-            for (var c : order) {
-                stems.put(c, stemAtLevel(c, level.get(c), tokens.get(c)));
-            }
-            var colliding = collidingClasses(prefix, order, stems);
-            if (colliding.isEmpty()) {
-                return stems;
-            }
-            boolean bumped = false;
-            for (var c : colliding) {
-                if (level.get(c) < tokens.get(c).size()) {
-                    level.put(c, level.get(c) + 1);
-                    bumped = true;
-                }
-            }
-            if (!bumped) {
-                // Every still-colliding class has exhausted its package segments: fall back to a
-                // 1-based ordinal (ordered by full class name) appended to its deepest stem.
-                var ordered = new ArrayList<>(colliding);
-                ordered.sort(Comparator.comparing(ClassName::toString));
-                for (int i = 0; i < ordered.size(); i++) {
-                    var c = ordered.get(i);
-                    stems.put(c, stems.get(c) + (i + 1));
-                }
-                return stems;
-            }
-        }
-    }
-
-    /** Classes whose singular or plural emitted method name is claimed by more than one class. */
-    private static Set<ClassName> collidingClasses(String prefix, List<ClassName> order,
-            Map<ClassName, String> stems) {
-        var owners = new LinkedHashMap<String, List<ClassName>>();
-        for (var c : order) {
-            String stem = stems.get(c);
-            owners.computeIfAbsent(prefix + stem, k -> new ArrayList<>()).add(c);
-            owners.computeIfAbsent(prefix + stem + "List", k -> new ArrayList<>()).add(c);
-        }
-        var colliding = new LinkedHashSet<ClassName>();
-        for (var owned : owners.values()) {
-            if (owned.size() > 1) {
-                colliding.addAll(owned);
-            }
-        }
-        return colliding;
-    }
-
-    /**
-     * The stem for {@code c} at a disambiguation level: level 0 is the bare simple name; level
-     * {@code k} prefixes the {@code k} deepest disambiguator tokens, in package order (leftmost
-     * package segment leftmost in the stem).
-     */
-    private static String stemAtLevel(ClassName c, int level, List<String> tokens) {
-        if (level == 0) {
-            return c.simpleName();
-        }
-        var sb = new StringBuilder();
-        for (int i = level - 1; i >= 0; i--) {
-            sb.append(tokens.get(i));
-        }
-        return sb.append(c.simpleName()).toString();
-    }
-
-    /**
-     * The ordered pascal-cased package tokens available to disambiguate {@code c}, primary token
-     * first. For a jOOQ-layout package ({@code …<schema>.tables.records}) the primary is the schema
-     * segment (the one immediately before {@code tables.records}); for any other package it is the
-     * last segment. Remaining tokens extend right-to-left toward the package root.
-     */
-    private static List<String> disambiguatorTokens(ClassName c) {
-        String pkg = c.packageName();
-        if (pkg.isEmpty()) {
-            return List.of();
-        }
-        String[] segs = pkg.split("\\.");
-        int primaryIdx = pkg.endsWith(".tables.records")
-            ? segs.length - 3   // the schema segment, before "tables.records"
-            : segs.length - 1;  // the last package segment
-        var out = new ArrayList<String>(primaryIdx + 1);
-        for (int i = primaryIdx; i >= 0; i--) {
-            out.add(pascalCase(segs[i]));
-        }
-        return out;
-    }
-
-    /** Pascal-case a snake_case package segment: {@code multischema_a} → {@code MultischemaA}. */
-    private static String pascalCase(String segment) {
-        if (segment.isEmpty()) {
-            return segment;
-        }
-        String camel = GeneratorUtils.toCamelCase(segment);
-        return Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
+            + " built from this <Type>Fetchers class's decoders and containers.");
     }
 }

@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The population pins for the operation trigger slots landed at the keystone: one fixture
- * exercising every population of the condition, orderBy, lookup, service, write and delivery
+ * exercising every population of the condition, orderBy, lookup, write and delivery
  * gathers,
  * with each slot's rows asserted against the fixture's authored applications by coordinate.
  * The pagination slot's pins live in {@link PaginationFactPipelineTest}; the fixture here
@@ -54,7 +54,6 @@ class TriggerFactPopulationPinTest {
                 languagesByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
                 byInput(in: LookupInput): [Language!]!
                 byOuter(in: LookupOuter): [Language!]!
-                stub: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
                 ordered: [Language!]! @defaultOrder(primaryKey: true)
                 sorted(order: LangOrder @orderBy): [Language!]!
                 fannedFilms: [Film!]! @tenantFanOut
@@ -114,14 +113,6 @@ class TriggerFactPopulationPinTest {
             .as("an input-typed argument without the directive").isFalse();
         assertThat(facts.lookup().triggersFor(query.getFieldDefinition("untouched")))
             .as("no application on the argument surface").isFalse();
-    }
-
-    @Test
-    void serviceSlotGathersTheApplicationSites() {
-        var facts = gatherFixture();
-        assertThat(facts.service().rows())
-            .extracting(r -> r.parentTypeName() + "." + r.fieldName())
-            .containsExactlyInAnyOrder("Query.stub");
     }
 
     @Test

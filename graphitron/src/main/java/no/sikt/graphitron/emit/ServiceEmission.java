@@ -352,7 +352,8 @@ public final class ServiceEmission {
     private String statedVerdict(String coordinate) {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
-        if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
+        // A field with several service occurrences is not judged here: the store refuses it as
+        // SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED, and emit throws on it.
         if (toldApart.contains(coordinate) && (!lifts.containsKey(coordinate) || !lifts.get(coordinate).root())) {
             return "DISCRIMINATED";
         }
@@ -453,9 +454,12 @@ public final class ServiceEmission {
             return Optional.empty();
         }
         var occurrences = occurrencesOf(fieldCoordinate);
-        String verdict = occurrences.isEmpty() ? "NO_FRAME"
-            : occurrences.size() > 1 ? "SEVERAL_OCCURRENCES"
-            : statedVerdict(occurrences.getFirst());
+        if (occurrences.size() > 1) {
+            throw new IllegalStateException("Graphitron generator bug: @service " + fieldCoordinate
+                + " has " + occurrences.size() + " service occurrences; the store refuses this shape as"
+                + " SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED, so reaching it is a generator bug");
+        }
+        String verdict = occurrences.isEmpty() ? "NO_FRAME" : statedVerdict(occurrences.getFirst());
         if (!EMITTED.equals(verdict)) {
             throw notEmitted(fieldCoordinate, verdict, null);
         }

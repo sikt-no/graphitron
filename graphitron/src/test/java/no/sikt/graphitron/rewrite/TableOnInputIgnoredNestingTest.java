@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *     exercised here. Its descent used to require the absence of {@code @table}; with the
  *     directive present control fell through to the column-lookup path below and resolved the
  *     whole group as a column named after the nested field.</li>
- *   <li>{@code InputBeanResolver.collectJooqBindings}, the jOOQ-record param path, pinned by
- *     {@link no.sikt.graphitron.rewrite.generators.JooqRecordServiceParamPipelineTest}'s
+ *   <li>The jOOQ-record param path, now the store's, pinned by
+ *     {@code JooqRecordServiceParamPipelineTest}'s
  *     nested-flattening equivalence case.</li>
  *   <li>{@code MutationInputResolver.rejectInputFieldDirectives}, whose recursion was gated the
  *     same way. Unlike the other two this failed <em>open</em>: a {@code @condition} buried inside a

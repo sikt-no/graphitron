@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLEnumType;
-import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInputType;
@@ -13,47 +12,29 @@ import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnOverlap;
-import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.model.diagnostics.JooqRecordInputError;
-import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.model.diagnostics.Rejection;
-import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
 /**
- * Resolves the {@link CallSiteExtraction.InputBean} arm: a {@code @service} method parameter whose
- * Java type is a consumer-authored class mirroring an SDL {@code input} type, instantiated at the
- * fetcher boundary so the service body never sees a {@code Map}. Post-processes a resolved
- * {@link MethodRef.Service} produced by {@link ServiceCatalog#bindServiceMethod}.
- *
- * <p>Walks the method's parameters and rewrites the {@code CallSiteExtraction.Direct} arms that
- * the catalog could not classify in isolation (no SDL access at reflection time) into a richer
- * extraction that carries the bean instantiation plan.
+ * Resolves the {@link CallSiteExtraction.InputBean} arm: a {@code @condition} method parameter
+ * whose Java type is a consumer-authored class mirroring an SDL {@code input} type, instantiated at
+ * the fetcher boundary so the condition body never sees a {@code Map}. The per-slot decision is
+ * {@link #decideCarrier}; {@code ServiceCatalog}'s condition path states the policy over its arms
+ * and builds a decided bean through {@link #buildBean}.
  *
  * <p>Classification rule (SDL-driven): {@link CallSiteExtraction.Direct} is reserved for GraphQL
  * scalar SDL arguments, including custom scalars wired via {@code @scalarType}. graphql-java's
@@ -74,90 +55,6 @@ final class InputBeanResolver {
 
     InputBeanResolver(BuildContext ctx) {
         this.ctx = ctx;
-    }
-
-    /**
-     * Result of enrichment. {@link Ok} carries the rewritten method (possibly equal to the input
-     * when nothing matched). {@link Failed} carries a structural rejection ready for the caller
-     * to surface verbatim, prefixed if the surrounding directive demands it.
-     */
-    sealed interface Result {
-        record Ok(MethodRef.Service method) implements Result {}
-        record Failed(Rejection rejection) implements Result {}
-    }
-
-    /**
-     * Walks the method's {@link ParamSource.Arg} parameters and rewrites every Direct extraction
-     * whose SDL arg is an input-object into a typed {@link CallSiteExtraction.InputBean}, or a
-     * {@link CallSiteExtraction.JooqRecord} when the input type classified as a jOOQ-record input.
-     * Scalar SDL args keep the Direct extraction. An input-object SDL arg always arrives as a
-     * {@code Map<String, Object>} from graphql-java, and only a typed instantiation plan can
-     * populate the consumer's parameter without an unchecked cast that fails at first field
-     * access. Every unusable pairing returns {@link Result.Failed}, never a silent fallback; the
-     * rejection messages name each case.
-     *
-     * <p>The per-parameter decision is {@link #decideCarrier}, shared with the {@code @condition}
-     * site; this caller states the {@code @service} policy over its arms, which differs from the
-     * condition's in one place: a {@link SlotCarrier.MapPassThrough} parameter is a permanent
-     * rejection here.
-     */
-    Result enrich(MethodRef.Service method, GraphQLFieldDefinition fieldDef, String parentTypeName) {
-        var argTypes = fieldDef.getArguments().stream()
-            .collect(Collectors.toMap(
-                graphql.schema.GraphQLArgument::getName,
-                graphql.schema.GraphQLArgument::getType,
-                (a, b) -> a,
-                LinkedHashMap::new));
-        var newParams = new ArrayList<MethodRef.Param>(method.params().size());
-        for (var p : method.params()) {
-            if (!(p.source() instanceof ParamSource.Arg arg)) {
-                newParams.add(p);
-                continue;
-            }
-            if (!(arg.extraction() instanceof CallSiteExtraction.Direct)) {
-                newParams.add(p);
-                continue;
-            }
-            // Bean-shaped params are always top-level argument bindings; a nested-path binding
-            // (a param drilling one field out of an input) carries a scalar leaf type by
-            // construction and stays on the Direct path.
-            if (!arg.path().isHead()) {
-                newParams.add(p);
-                continue;
-            }
-            GraphQLInputType sdlType = argTypes.get(arg.path().headName());
-            if (inputObjectLeaf(sdlType) == null) {
-                newParams.add(p);
-                continue;
-            }
-            var site = new SlotSite(p.name(), method.methodName(), method.className(),
-                arg.path().headName());
-            var useSite = ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(),
-                arg.path().headName());
-            var carrier = decideCarrier(site, p.typeName(), sdlType);
-            CarrierBuild built = switch (carrier) {
-                case SlotCarrier.Rejected r -> new CarrierBuild.Fail(r.rejection());
-                case SlotCarrier.MapPassThrough ignored -> new CarrierBuild.Fail(Rejection.structural(
-                    site.where() + " has Java type '" + p.typeName() + "' for"
-                    + " the GraphQL input-object argument '" + site.slotName() + "' (type '"
-                    + GraphQLTypeUtil.simplePrint(sdlType) + "') — Map<K, V> at the service"
-                    + " boundary is a permanent anti-pattern in graphitron; replace the parameter"
-                    + " with a typed bean (record or class with a public no-arg constructor"
-                    + " mirroring the input-object fields), or — for open-ended-JSON semantics —"
-                    + " declare a custom scalar via `@scalarType` and bind its Java type instead"));
-                case SlotCarrier.Bean bean -> buildBean(bean, site, useSite, BindingAxis.SERVICE);
-                case SlotCarrier.JooqRecordInput jri -> buildRecordCarrier(jri, site, useSite);
-            };
-            if (built instanceof CarrierBuild.Fail f) {
-                return new Result.Failed(f.rejection());
-            }
-            var typed = (MethodRef.Param.Typed) p;
-            newParams.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
-                new ParamSource.Arg(((CarrierBuild.Ok) built).extraction(), arg.path())));
-        }
-        return new Result.Ok(new MethodRef.Service(method.className(), method.methodName(),
-            method.returnType(), List.copyOf(newParams), method.declaredExceptions(),
-            method.callShape()));
     }
 
     /**
@@ -184,8 +81,8 @@ final class InputBeanResolver {
      *       {@code List} of either (or a type a {@code List} is assignable to) on a list slot. The
      *       raw cast is wire-safe.</li>
      *   <li>{@link Bean}: a consumer class to build from the map, through {@link #buildBean}.</li>
-     *   <li>{@link JooqRecordInput}: the input type classified as a jOOQ-record input, built
-     *       through {@link #buildRecordCarrier}.</li>
+     *   <li>{@link JooqRecordInput}: the input type classified as a jOOQ-record input, a carrier
+     *       bound on the column axis.</li>
      *   <li>{@link Rejected}: the declared type is no carrier for an input object at all (not
      *       loadable, a JDK / jOOQ / enum / array type, a {@code Map} shape graphql-java does not
      *       deliver, or a list-versus-single mismatch).</li>
@@ -271,11 +168,9 @@ final class InputBeanResolver {
         // The classifier's verdict for this SDL input is JooqTableRecordInputType, table and
         // all; read that answer rather than re-resolving. lookAheadVerdict recomputes it
         // registry-free: this runs during field classification, when the input may be a
-        // not-yet-visited child of the walk. A jOOQ-record param binds on the
-        // column axis (@field(name:) → ColumnRef, plus optional @nodeId identity decodes), not
+        // not-yet-visited child of the walk. A jOOQ-record param binds on the column axis, not
         // the Java-member axis the bean path uses. Sits after the shared input-object gates
-        // above so it reuses the loadable / Map / cardinality-parity checks; the walker relies
-        // on that parity to read list-ness off the Java type alone.
+        // above so it reuses the loadable / Map / cardinality-parity checks.
         if (ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
             return new SlotCarrier.JooqRecordInput(jtr, iot);
         }
@@ -311,291 +206,17 @@ final class InputBeanResolver {
      * that cannot be built (not public, abstract, recursive, no no-arg constructor, a field set with
      * no bijection to the SDL fields) fails with the message naming that case.
      */
-    CarrierBuild buildBean(SlotCarrier.Bean bean, SlotSite site, ClassifyContext.UseSite useSite,
-            BindingAxis axis) {
+    CarrierBuild buildBean(SlotCarrier.Bean bean, SlotSite site, ClassifyContext.UseSite useSite) {
         return switch (buildInputBean(bean.beanClass(), bean.inputType(), site.paramName(),
-                site.methodName(), site.className(), new HashSet<>(), useSite, axis)) {
+                site.methodName(), site.className(), new HashSet<>(), useSite)) {
             case Built.Ok ok -> new CarrierBuild.Ok(ok.bean());
             case Built.Fail f -> new CarrierBuild.Fail(f.rejection());
-        };
-    }
-
-    /** Builds the {@link CallSiteExtraction.JooqRecord} a {@link SlotCarrier.JooqRecordInput} decided on. */
-    CarrierBuild buildRecordCarrier(SlotCarrier.JooqRecordInput record, SlotSite site,
-            ClassifyContext.UseSite useSite) {
-        return switch (buildJooqRecord(record.verdict(), record.inputType(), site.paramName(),
-                site.methodName(), site.className(), site.slotName(), useSite)) {
-            case JooqBuilt.Ok ok -> new CarrierBuild.Ok(ok.record());
-            case JooqBuilt.Fail f -> new CarrierBuild.Fail(f.rejection());
         };
     }
 
     private sealed interface Built {
         record Ok(CallSiteExtraction.InputBean bean) implements Built {}
         record Fail(Rejection rejection) implements Built {}
-    }
-
-    /** Outcome of building a {@link CallSiteExtraction.JooqRecord}: the carrier or a structural fail. */
-    private sealed interface JooqBuilt {
-        record Ok(CallSiteExtraction.JooqRecord record) implements JooqBuilt {}
-        record Fail(Rejection rejection) implements JooqBuilt {}
-    }
-
-    /**
-     * Builds the {@link CallSiteExtraction.JooqRecord} for a {@code @service} param whose SDL input
-     * type classified as {@link GraphitronType.JooqTableRecordInputType}. Binds each SDL field on
-     * the column axis: a {@code @nodeId(typeName:)} field becomes a
-     * {@link CallSiteExtraction.RecordKeyDecode} whose decoded values load into resolved target
-     * columns on this record (the record's own key, or a foreign key's child columns); every other
-     * field names a column through {@code @field(name:)} (a {@link CallSiteExtraction.ColumnBinding}).
-     * A record may carry several {@code @nodeId} fields.
-     *
-     * <p>A directiveless nested grouping input flattens transparently onto the one backing table:
-     * {@link #collectJooqBindings} recurses and keeps producing the same column-axis carriers, each
-     * carrying the full access path from the record's own {@code Map} down to the leaf (so
-     * {@code details.title} carries {@code ["details", "title"]}).
-     *
-     * <p>Several plain leaves may name one column, which is the rename-deprecation pattern: they
-     * merge into one {@link CallSiteExtraction.ColumnBinding} with ordered read paths when all but at
-     * most one carry {@code @deprecated} (see {@link #foldColumnBindings}). Two live leaves on one
-     * column stay an author error.
-     *
-     * <p>Unusable shapes reject, surfacing at validate time as {@code UnclassifiedField}: uncataloged
-     * record type, unresolvable {@code @nodeId}, a field matching no column, a cyclic, list-shaped, or
-     * {@code @table}-carrying nested input, or two live plain fields on one column (the typed
-     * {@link JooqRecordInputError.LiveColumnCollision}). The rejection messages here and in
-     * {@link #collectJooqBindings} name each case.
-     */
-    private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
-            graphql.schema.GraphQLInputObjectType iot, String paramName, String methodName,
-            String className, String slotName, ClassifyContext.UseSite useSite) {
-        String where = "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-            + className + "' (GraphQL argument '" + slotName + "')";
-        TableRef table = jtr.table();
-        if (table == null) {
-            return new JooqBuilt.Fail(Rejection.structural(where
-                + ": param record type '" + jtr.fqClassName() + "' is not in the jOOQ catalog —"
-                + " the backing class comes from a catalog not loaded at build time"));
-        }
-        var plainLeaves = new ArrayList<PlainLeaf>();
-        var keyDecodes = new ArrayList<CallSiteExtraction.RecordKeyDecode>();
-        // Seed the cycle guard with the param record's own input type name, so an immediate
-        // self-reference (a nested field typed as the outer input) is named at the first hop.
-        // Cycle detection is on SDL nested-input type names (ClassifyContext's "expanding" set),
-        // a different axis than buildInputBean's Set<Class<?>> visited.
-        Rejection rejection = collectJooqBindings(iot, table, where, List.of(),
-            ClassifyContext.under(useSite).expanding(iot.getName()), plainLeaves, keyDecodes);
-        if (rejection != null) {
-            return new JooqBuilt.Fail(rejection);
-        }
-        var folded = foldColumnBindings(plainLeaves, keyDecodes, paramName, methodName, className,
-            slotName, table);
-        if (folded instanceof ColumnFold.Fail cf) {
-            return new JooqBuilt.Fail(cf.rejection());
-        }
-        return new JooqBuilt.Ok(new CallSiteExtraction.JooqRecord(
-            table, ((ColumnFold.Ok) folded).columnBindings(), List.copyOf(keyDecodes)));
-    }
-
-    /**
-     * One plain ({@code @field}) leaf gathered by {@link #collectJooqBindings}, before the per-column
-     * fold decides how many bindings the leaves become. Carries the leaf's resolved column and its
-     * native {@code @deprecated} status alongside the access path; the deprecation flag exists only
-     * to answer the alias-admission question in {@link #foldColumnBindings} and dies here rather than
-     * riding into {@link CallSiteExtraction.ColumnBinding}, whose ordered read paths already encode
-     * the answer.
-     */
-    private record PlainLeaf(List<String> path, ColumnRef column, boolean deprecated) {}
-
-    /** Outcome of {@link #foldColumnBindings}: the folded bindings or a typed collision reject. */
-    private sealed interface ColumnFold {
-        record Ok(List<CallSiteExtraction.ColumnBinding> columnBindings) implements ColumnFold {}
-        record Fail(Rejection rejection) implements ColumnFold {}
-    }
-
-    /**
-     * Folds the gathered plain leaves into one {@link CallSiteExtraction.ColumnBinding} per written
-     * column, through the {@link ColumnOverlap#groupByColumn} the mutation write paths already
-     * read, so the classifier's admission decision and the emitters' overlap dispatch consume one
-     * grouping by construction.
-     *
-     * <p>Per column: a single plain leaf passes through as a single-read-path binding. Several plain
-     * leaves are a declared alias group when all but at most one carry {@code @deprecated} (the
-     * rename-deprecation pattern: the author said "one column, several names"), and merge into one
-     * binding whose ordered read paths are the live path first, then the deprecated paths in reverse
-     * declaration order. Two or more <em>live</em> leaves reject as
-     * {@link JooqRecordInputError.LiveColumnCollision}. Deprecation is the native {@code @deprecated}
-     * directive on the SDL leaf, the only spelling this surface has.
-     *
-     * <p>The key decodes join the fold so its grouping is the emitter's, but a decode among a column's
-     * writers changes nothing about the plain-subset decision: the plain leaves are admitted or
-     * rejected on their own count, and a decode-vs-plain overlap keeps its existing deferral to the
-     * runtime value-agreement check. The consequence is the invariant the emitter relies on: at most
-     * one plain writer per column ever reaches it, so every overlap it sees involves a decode.
-     */
-    private static ColumnFold foldColumnBindings(List<PlainLeaf> plainLeaves,
-            List<CallSiteExtraction.RecordKeyDecode> keyDecodes, String paramName, String methodName,
-            String className, String slotName, TableRef table) {
-        var writers = new ArrayList<ColumnOverlap.ColumnWriter>(plainLeaves.size() + keyDecodes.size());
-        // Plain leaves first, so a column written by any of them is keyed in plain-declaration order
-        // and the emitted binding list keeps the SDL order it had before the fold.
-        plainLeaves.forEach(leaf -> writers.add(new PlainLeafWriter(leaf)));
-        keyDecodes.forEach(kd -> writers.add(new KeyDecodeWriter(kd)));
-
-        var columnBindings = new ArrayList<CallSiteExtraction.ColumnBinding>();
-        for (var oc : ColumnOverlap.groupByColumn(writers)) {
-            var group = oc.contributors().stream()
-                .map(ColumnOverlap.Contributor::writer)
-                .filter(PlainLeafWriter.class::isInstance)
-                .map(w -> ((PlainLeafWriter) w).leaf())
-                .toList();
-            if (group.isEmpty()) {
-                continue; // a column only a @nodeId decode writes carries no plain binding
-            }
-            if (group.size() == 1) {
-                var only = group.get(0);
-                columnBindings.add(CallSiteExtraction.ColumnBinding.of(only.path(), only.column()));
-                continue;
-            }
-            long live = group.stream().filter(leaf -> !leaf.deprecated()).count();
-            if (live >= 2) {
-                return new ColumnFold.Fail(new JooqRecordInputError.LiveColumnCollision(
-                    paramName, methodName, className, slotName,
-                    group.stream()
-                        .map(leaf -> new JooqRecordInputError.CollidingField(
-                            dottedPath(leaf.path()), leaf.deprecated()))
-                        .toList(),
-                    group.get(0).column().sqlName(), table.tableName()));
-            }
-            columnBindings.add(new CallSiteExtraction.ColumnBinding(
-                aliasReadPaths(group), group.get(0).column()));
-        }
-        return new ColumnFold.Ok(List.copyOf(columnBindings));
-    }
-
-    /**
-     * The read paths of an admitted alias group, in precedence order: the live path first (a group has
-     * at most one, or none while every alias in a rename chain is still awaiting its removal date),
-     * then the deprecated paths in reverse declaration order so the latest-declared alias outranks the
-     * one it superseded. Declaration order alone is not the rule, because a reformat or a field
-     * reorder would silently change which value a client sees.
-     */
-    private static List<List<String>> aliasReadPaths(List<PlainLeaf> group) {
-        var ordered = new ArrayList<List<String>>(group.size());
-        group.stream().filter(leaf -> !leaf.deprecated()).map(PlainLeaf::path).forEach(ordered::add);
-        var deprecated = group.stream().filter(PlainLeaf::deprecated).map(PlainLeaf::path)
-            .collect(Collectors.toCollection(ArrayList::new));
-        Collections.reverse(deprecated);
-        ordered.addAll(deprecated);
-        return ordered;
-    }
-
-    /** Adapts a gathered {@link PlainLeaf} into the shared per-column grouping view: one column, no
-     *  decode, the dotted access path as the label. The fold downcasts back to reach the leaf. */
-    private record PlainLeafWriter(PlainLeaf leaf) implements ColumnOverlap.ColumnWriter {
-        @Override public List<ColumnOverlap.SlotColumn> targetColumns() {
-            return List.of(new ColumnOverlap.SlotColumn(0, leaf.column()));
-        }
-        @Override public boolean decode() { return false; }
-        @Override public String label() { return dottedPath(leaf.path()); }
-    }
-
-    /** Adapts a {@link CallSiteExtraction.RecordKeyDecode} into the shared per-column grouping view:
-     *  its resolved target columns, which are one whole decode record, so the slots are contiguous. */
-    private record KeyDecodeWriter(CallSiteExtraction.RecordKeyDecode keyDecode)
-            implements ColumnOverlap.ColumnWriter {
-        @Override public List<ColumnOverlap.SlotColumn> targetColumns() {
-            return ColumnOverlap.SlotColumn.contiguous(keyDecode.targetColumns());
-        }
-        @Override public boolean decode() { return true; }
-        @Override public String label() { return dottedPath(keyDecode.path()); }
-    }
-
-    /**
-     * Recursively walks the SDL fields of {@code iot}, appending gathered {@link PlainLeaf}s to
-     * {@code plainLeaves} and column-axis decode carriers to {@code keyDecodes}. Each leaf / carrier
-     * path is {@code pathPrefix} (the ordered enclosing nested-input field names, empty at depth 1)
-     * plus the leaf field name. Returns the first {@link Rejection} encountered, or {@code null} on
-     * success. The plain leaves are per-leaf gathering state, one per SDL field: the per-column fold
-     * in {@link #foldColumnBindings} turns them into the record's {@code ColumnBinding}s, which is
-     * where several leaves naming one column collapse or reject.
-     *
-     * <p>Deliberately parallel to the member-axis recursion ({@code bindField} /
-     * {@code buildInputBean}) rather than routing through {@code BuildContext.classifyInputField}:
-     * that produces a different carrier family ({@code InputField.*}) on the filter axis and
-     * resolves different identity semantics.
-     */
-    private Rejection collectJooqBindings(graphql.schema.GraphQLInputObjectType iot, TableRef table,
-            String where, List<String> pathPrefix, ClassifyContext classifyCtx,
-            List<PlainLeaf> plainLeaves,
-            List<CallSiteExtraction.RecordKeyDecode> keyDecodes) {
-        for (var f : iot.getFieldDefinitions()) {
-            List<String> path = append(pathPrefix, f.getName());
-            SdlElement sdlElt = peelSdlListNonNull(f.getType());
-            if (f.hasAppliedDirective(DIR_NODE_ID)) {
-                // Multiple @nodeId fields are legal (an FK-reference record carries several FK
-                // references). Each resolves independently to its target columns on this record;
-                // two decodes targeting the same column are a data-dependent concern deferred to
-                // the runtime value-agreement check (last-write-wins here).
-                var built = buildRecordKeyDecode(f, path, table, where);
-                var at = classifyCtx.coordinateOf(iot.getName(), f.getName());
-                if (built instanceof KeyDecodeResult.Fail kf) {
-                    if (at != null) ctx.decodeLedger().recordRefusal(at, kf.rejection());
-                    return kf.rejection();
-                }
-                var decode = ((KeyDecodeResult.Ok) built).decode();
-                keyDecodes.add(decode);
-                // The record rail's install: this leaf is one of the JooqRecord arm's key decodes,
-                // which is what makes that arm carry a decode at all. The arm itself is assembled
-                // from every field of the input type, so the install is recorded here rather than
-                // shown as a carrier the ledger reads.
-                if (at != null) {
-                    ctx.decodeLedger().recordInstall(at);
-                }
-            } else if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
-                // Nested directiveless grouping input → flatten its fields onto this table.
-                if (sdlElt.list()) {
-                    return Rejection.structural(where
-                        + ": nested input field '" + dottedPath(path) + "' is list-shaped (a list of '"
-                        + nestedIot.getName() + "'), but a single backing record has one value per column"
-                        + " — a list of column-groups cannot flatten onto one record. Make the field"
-                        + " singular, or model the repetition as a separate list-valued mutation");
-                }
-                // A nested @table input is not a second DML target: @table on an input is
-                // deprecated and inert, so the type is an ordinary grouping input and flattens
-                // onto the parent record exactly as its directiveless twin does.
-                if (classifyCtx.isExpanding(nestedIot.getName())) {
-                    return Rejection.structural(where
-                        + ": nested input field '" + dottedPath(path) + "' reaches input type '"
-                        + nestedIot.getName() + "' which is already expanding — a cyclic input shape cannot"
-                        + " flatten onto a single record (the column-axis analogue of a recursive bean)");
-                }
-                Rejection nested = collectJooqBindings(nestedIot, table, where, path,
-                    classifyCtx.expanding(nestedIot.getName())
-                        .descending(iot.getName(), f.getName()),
-                    plainLeaves, keyDecodes);
-                if (nested != null) {
-                    return nested;
-                }
-            } else {
-                String key = fieldNameOrDirective(f);
-                var col = ctx.catalog.findColumn(table.tableName(), key);
-                if (col.isEmpty()) {
-                    return Rejection.structural(where
-                        + ": input field '" + dottedPath(path) + "' (binding key '" + key + "') resolves to"
-                        + " no column on table '" + table.tableName() + "' backing param record '"
-                        + CatalogRefs.recordClass(table) + "'"
-                        + BuildContext.candidateHint(key, ctx.catalog.columnSqlNamesOf(table.tableName())));
-                }
-                var ce = col.get();
-                // f.isDeprecated() is the native @deprecated directive on the SDL leaf, the same read
-                // InputTypeGenerator makes when it re-emits the marker onto the generated input type.
-                plainLeaves.add(new PlainLeaf(path,
-                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()),
-                    f.isDeprecated()));
-            }
-        }
-        return null;
     }
 
     /** Appends {@code element} to {@code prefix}, returning a new immutable list (the carrier's path). */
@@ -611,103 +232,6 @@ final class InputBeanResolver {
         return String.join(".", path);
     }
 
-    private sealed interface KeyDecodeResult {
-        record Ok(CallSiteExtraction.RecordKeyDecode decode) implements KeyDecodeResult {}
-        record Fail(Rejection rejection) implements KeyDecodeResult {}
-    }
-
-    /**
-     * Resolves one {@code @nodeId(typeName:)} field of a jOOQ-record param into a
-     * {@link CallSiteExtraction.RecordKeyDecode}:
-     *
-     * <ul>
-     *   <li><b>Same table, no {@code @reference}</b>: the decode loads the record's own key
-     *       columns (own-PK identity).</li>
-     *   <li><b>Same table, with {@code @reference}</b>: the directive names a same-table self-FK;
-     *       the node-key columns map through it to the self-FK's child columns on this record
-     *       (never the record's own PK), via {@link BuildContext#resolveRecordFkTargetColumns}
-     *       oriented with {@code selfRefFkOnSource=true}.</li>
-     *   <li><b>Different table</b>: the node-key columns map through the foreign key (deduced when
-     *       exactly one connects the two tables, else named by {@code @reference(key:)}) to the
-     *       FK's child columns on this record, via the same resolver.</li>
-     * </ul>
-     *
-     * The decode's {@code nonNull} is read off the SDL field's {@code ID!}-vs-{@code ID}
-     * nullability and drives the emitter's throw-vs-conditional-set, identically for both branches.
-     */
-    private KeyDecodeResult buildRecordKeyDecode(graphql.schema.GraphQLInputObjectField f,
-            List<String> path, TableRef table, String where) {
-        var typeName = argString(f, DIR_NODE_ID, ARG_TYPE_NAME);
-        if (typeName.isEmpty()) {
-            return new KeyDecodeResult.Fail(Rejection.structural(where
-                + ": @nodeId on field '" + f.getName() + "' must specify typeName:"
-                + " explicitly (the param record type alone does not name the NodeType to decode against)"));
-        }
-        var resolution = ctx.resolveNodeIdRecordDecode(typeName.get());
-        if (resolution instanceof BuildContext.NodeIdRecordDecode.Rejected r) {
-            return new KeyDecodeResult.Fail(Rejection.structural(where
-                + ": @nodeId(typeName: \"" + typeName.get() + "\") on field '" + f.getName() + "': "
-                + r.message()));
-        }
-        if (resolution instanceof BuildContext.NodeIdRecordDecode.Polymorphic poly) {
-            // A field of a jOOQ-record parameter loads its decoded values onto that record's own
-            // columns, which is the single-type premise: several candidates have several key shapes
-            // and no shared column set to land on. The polymorphic spelling is a slot rule, so the
-            // refusal says where it applies rather than describing a mistake the author did not make.
-            return new KeyDecodeResult.Fail(Rejection.structural(where
-                + ": @nodeId(typeName: \"" + poly.containerName() + "\") on field '" + f.getName()
-                + "' names a multitable container, and this field's value is loaded onto the"
-                + " record's own columns rather than into a slot of its own. A polymorphic node id"
-                + " is decoded into a record-supertype slot at a @service input; name one of the"
-                + " implementations here"));
-        }
-        var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
-        boolean nonNull = GraphQLTypeUtil.isNonNull(f.getType());
-        List<ColumnRef> targetColumns;
-        if (CatalogRefs.recordClass(resolved.table()).equals(CatalogRefs.recordClass(table))
-                && !f.hasAppliedDirective(DIR_REFERENCE)) {
-            // Same-table identity: the decoded values are the record's own key columns.
-            targetColumns = resolved.keyColumns();
-        } else {
-            // Cross-table FK reference, or a same-table self-FK reference: map the node-key
-            // columns through the FK to this record's child columns (see the method javadoc).
-            var fkTargets = ctx.resolveRecordFkTargetColumns(
-                table, resolved.table().tableName(), resolved.keyColumns(), firstReferenceKey(f));
-            if (fkTargets instanceof BuildContext.RecordFkTargets.Rejected fr) {
-                return new KeyDecodeResult.Fail(Rejection.structural(where
-                    + ": @nodeId(typeName: \"" + typeName.get() + "\") on field '" + f.getName()
-                    + "': " + fr.message()));
-            }
-            targetColumns = ((BuildContext.RecordFkTargets.Resolved) fkTargets).targetColumns();
-        }
-        return new KeyDecodeResult.Ok(new CallSiteExtraction.RecordKeyDecode(
-            path, resolved.encoderClass(), resolved.typeName(), resolved.typeId(),
-            resolved.keyColumns(), targetColumns, nonNull));
-    }
-
-    /**
-     * Reads the FK constraint name from the first {@code @reference(path:)} element on {@code f}, when
-     * present. Only the first element is consulted for record population (later hops are a fetch/join
-     * concern); an absent directive, empty path, or a first element without a {@code key:} yields empty,
-     * and FK deduction then applies.
-     */
-    private static Optional<String> firstReferenceKey(GraphQLInputObjectField f) {
-        var directive = f.getAppliedDirective(DIR_REFERENCE);
-        if (directive == null) {
-            return Optional.empty();
-        }
-        var pathArg = directive.getArgument(ARG_PATH);
-        if (pathArg == null) {
-            return Optional.empty();
-        }
-        Object value = pathArg.getValue();
-        List<?> elements = value instanceof List<?> l ? l : (value == null ? List.of() : List.of(value));
-        if (elements.isEmpty() || !(elements.get(0) instanceof Map<?, ?> m)) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(m.get(ARG_KEY)).map(Object::toString).filter(s -> !s.isBlank());
-    }
-
     /**
      * Recursively builds an {@link CallSiteExtraction.InputBean} for a given Java class paired with
      * an SDL {@link GraphQLInputObjectType}. Walks the SDL fields in declaration order, locating
@@ -721,8 +245,7 @@ final class InputBeanResolver {
      */
     private Built buildInputBean(Class<?> beanClass, GraphQLInputObjectType iot,
                                   String paramName, String methodName, String className,
-                                  Set<Class<?>> visited, ClassifyContext.UseSite useSite,
-                                  BindingAxis axis) {
+                                  Set<Class<?>> visited, ClassifyContext.UseSite useSite) {
         if (!visited.add(beanClass)) {
             return new Built.Fail(Rejection.structural(
                 "parameter '" + paramName + "' on method '" + methodName + "' in class '"
@@ -732,7 +255,7 @@ final class InputBeanResolver {
         }
         try {
             return buildInputBeanBody(beanClass, iot, paramName, methodName, className, visited,
-                useSite, axis);
+                useSite);
         } finally {
             visited.remove(beanClass);
         }
@@ -740,8 +263,7 @@ final class InputBeanResolver {
 
     private Built buildInputBeanBody(Class<?> beanClass, GraphQLInputObjectType iot,
                                       String paramName, String methodName, String className,
-                                      Set<Class<?>> visited, ClassifyContext.UseSite useSite,
-                                      BindingAxis axis) {
+                                      Set<Class<?>> visited, ClassifyContext.UseSite useSite) {
         if (!Modifier.isPublic(beanClass.getModifiers())) {
             return new Built.Fail(Rejection.structural(
                 "parameter '" + paramName + "' on method '" + methodName + "' in class '"
@@ -773,7 +295,7 @@ final class InputBeanResolver {
         var sdlByBindingKey = new LinkedHashMap<String, IndexEntry>();
         Rejection indexRejection = indexSdlFields(iot, javaMembersByName, List.of(),
             ClassifyContext.under(useSite).expanding(iot.getName()), beanClass, paramName,
-            methodName, className, sdlByBindingKey, axis);
+            methodName, className, sdlByBindingKey);
         if (indexRejection != null) {
             return new Built.Fail(indexRejection);
         }
@@ -783,9 +305,9 @@ final class InputBeanResolver {
         // per-field leaf classification (bindField).
         return switch (target) {
             case RECORD -> bindRecord(beanClass, iot, javaMembersByName, sdlByBindingKey,
-                paramName, methodName, className, visited, axis);
+                paramName, methodName, className, visited);
             case JAVA_BEAN -> bindJavaBean(beanClass, iot, javaMembersByName, sdlByBindingKey,
-                paramName, methodName, className, visited, axis);
+                paramName, methodName, className, visited);
         };
     }
 
@@ -811,20 +333,18 @@ final class InputBeanResolver {
      *       and {@link #bindField} recurses into a nested bean leaf, exactly as before. Wins
      *       unconditionally, including when the matched member is not a viable bean class (that
      *       stays {@code bindField}'s rejection rather than becoming a flatten).</li>
-     *   <li><b>No member matches, and {@code g} carries neither {@code @field(name:)} nor
-     *       {@code @nodeId}.</b> {@code g} is a grouping input: its own fields are hoisted into this
+     *   <li><b>No member matches, and {@code g} carries no {@code @nodeId}.</b> {@code g} is a grouping input: its own fields are hoisted into this
      *       index under the access path {@code ["g", <leaf>]} and bind against the enclosing bean's
      *       members by the normal rules. Recursive, so a hoisted group descends again.</li>
-     *   <li><b>No member matches, and {@code g} carries {@code @field(name:)} or {@code @nodeId}.</b>
-     *       Reject. Both directives are an authored claim that the field binds to a named Java
+     *   <li><b>No member matches, and {@code g} carries {@code @nodeId}.</b>
+     *       Reject. The directive is an authored claim that the field binds to a named Java
      *       member; flattening past a claim that does not resolve would turn a typo into
      *       silently-different behaviour.</li>
      * </ol>
      *
-     * <p>Rules 2 and 3 read {@code @field(name:)} as a member claim only on
-     * {@link BindingAxis#SERVICE}. On {@link BindingAxis#CONDITION} the directive names a column, so
-     * there only {@code @nodeId} is a claim, and two fields can collide on one key only by sharing a
-     * GraphQL name across a hoist.
+     * <p>The binding key is the field's own GraphQL name: on the condition's input
+     * {@code @field(name:)} names a column, so only {@code @nodeId} is a member claim, and two fields
+     * can collide on one key only by sharing a GraphQL name across a hoist.
      *
      * <p>Hoisting makes a leaf a peer of the enclosing type's own fields, so a hoisted leaf collides
      * with a top-level field, and with another group's hoisted leaf, by exactly the rule that already
@@ -839,36 +359,26 @@ final class InputBeanResolver {
     private Rejection indexSdlFields(GraphQLInputObjectType iot,
             Map<String, JavaMember> javaMembersByName, List<String> pathPrefix,
             ClassifyContext classifyCtx, Class<?> beanClass, String paramName, String methodName,
-            String className, Map<String, IndexEntry> out, BindingAxis axis) {
+            String className, Map<String, IndexEntry> out) {
         String where = "parameter '" + paramName + "' on method '" + methodName + "' in class '"
             + className + "'";
         for (var f : iot.getFieldDefinitions()) {
             List<String> path = append(pathPrefix, f.getName());
-            String key = bindingKey(f, axis);
-            // A present-but-blank @field(name:) yields an empty key (GraphQL field names are never
-            // empty, so only the directive can produce one). It can match no record component or
-            // setter; reject the malformed directive at classify time rather than silently
-            // skipping the field on the JavaBean arm.
-            if (key.isEmpty()) {
-                return Rejection.structural(where + ": SDL input field '" + dottedPath(path)
-                    + "' on type '" + iot.getName() + "' carries @field(name:) with a blank value —"
-                    + " give it the Java member name to bind (record component / JavaBean property),"
-                    + " or drop the directive to bind by the field's own name");
-            }
+            String key = f.getName();
             SdlElement sdlElt = peelSdlListNonNull(f.getType());
             boolean groups = sdlElt.elementType() instanceof GraphQLInputObjectType
                 && !javaMembersByName.containsKey(key);
             if (groups) {
                 var nestedIot = (GraphQLInputObjectType) sdlElt.elementType();
                 Rejection gate = groupingGate(f, path, nestedIot, sdlElt.list(), classifyCtx,
-                    beanClass, where, axis);
+                    beanClass, where);
                 if (gate != null) {
                     return gate;
                 }
                 Rejection nested = indexSdlFields(nestedIot, javaMembersByName, path,
                     classifyCtx.expanding(nestedIot.getName())
                         .descending(iot.getName(), f.getName()),
-                    beanClass, paramName, methodName, className, out, axis);
+                    beanClass, paramName, methodName, className, out);
                 if (nested != null) {
                     return nested;
                 }
@@ -883,8 +393,7 @@ final class InputBeanResolver {
                 return Rejection.structural(where + ": SDL input fields '"
                     + dottedPath(prior.path()) + "' and '" + dottedPath(path)
                     + "' both bind to Java member '" + key + "' on bean class '" + beanClass.getName()
-                    + "' (via @field(name:) or a matching name) — two input fields cannot populate one"
-                    + " member; rename one field or adjust its @field(name:)");
+                    + "' by name; two input fields cannot populate one member, so rename one field");
             }
         }
         return null;
@@ -897,14 +406,12 @@ final class InputBeanResolver {
      */
     private Rejection groupingGate(GraphQLInputObjectField f, List<String> path,
             GraphQLInputObjectType nestedIot, boolean list, ClassifyContext classifyCtx,
-            Class<?> beanClass, String where, BindingAxis axis) {
-        // @field(name:) is a member-binding claim only on the axis that reads it as one; at a
-        // condition site it names a column, so only @nodeId is a claim there.
-        boolean fieldClaim = axis.fieldNamesMember() && f.hasAppliedDirective(DIR_FIELD);
-        if (fieldClaim || f.hasAppliedDirective(DIR_NODE_ID)) {
-            String directive = fieldClaim ? "@field(name:)" : "@nodeId";
+            Class<?> beanClass, String where) {
+        // @field(name:) names a column on the condition's input, not a member, so only @nodeId is
+        // a binding claim here.
+        if (f.hasAppliedDirective(DIR_NODE_ID)) {
             return Rejection.structural(where + ": nested input field '" + dottedPath(path)
-                + "' carries " + directive + ", binding it to Java member '" + bindingKey(f, axis)
+                + "' carries @nodeId, binding it to Java member '" + f.getName()
                 + "', but bean class '" + beanClass.getName() + "' has no such member — a nested"
                 + " input field with no matching member flattens onto the bean only when it makes no"
                 + " binding claim of its own. Add the member, correct the directive, or drop the"
@@ -915,7 +422,7 @@ final class InputBeanResolver {
                 + "' is list-shaped (a list of '" + nestedIot.getName() + "') and matches no member of"
                 + " bean class '" + beanClass.getName() + "', so it would flatten onto the bean — but"
                 + " a list of groups has no flat member to land on. Make the field singular, or add a"
-                + " member named '" + bindingKey(f, axis) + "' typed as a list of a bean mirroring '"
+                + " member named '" + f.getName() + "' typed as a list of a bean mirroring '"
                 + nestedIot.getName() + "'");
         }
         // Cycle detection is on SDL grouping-input type names, not the Java axis buildInputBean's
@@ -928,60 +435,6 @@ final class InputBeanResolver {
                 + "' (there is no member to bind the recursion to)");
         }
         return null;
-    }
-
-    /**
-     * Which reading of {@code @field(name:)} a bean's members are matched by, named by the site that
-     * builds the bean. A bean is parameter-local, so the directive's meaning on the input is not the
-     * bean's to choose: it is whatever the input's own classification makes it.
-     */
-    enum BindingAxis {
-        /**
-         * A {@code @service} parameter. The input is not classified against a table, and
-         * {@code @field(name:)} names the Java member, the input-side mirror of the output-side
-         * "{@code @field} names the Java accessor" read ({@code FieldBuilder.collectAccessorMatches}).
-         */
-        SERVICE,
-        /**
-         * A {@code @condition} parameter at a consuming field. The input is classified on the column
-         * axis against the consuming field's table, where {@code @field(name:)} names a column, so
-         * members match by the GraphQL field name and the directive is not read.
-         */
-        CONDITION;
-
-        /** Whether {@code @field(name:)} on an input field names the member the field binds. */
-        boolean fieldNamesMember() {
-            return switch (this) {
-                case SERVICE -> true;
-                case CONDITION -> false;
-            };
-        }
-
-        /** The parameter kind a message names. */
-        String parameterKind() {
-            return switch (this) {
-                case SERVICE -> "@service input";
-                case CONDITION -> "@condition parameter's input";
-            };
-        }
-    }
-
-    /**
-     * The Java-member binding key for an SDL input field on {@code axis}: on
-     * {@link BindingAxis#SERVICE} the {@code @field(name:)} value when the directive is present, else
-     * the field's own name; on {@link BindingAxis#CONDITION} always the field's own name. The key
-     * names the record component / JavaBean property the field binds to; the field's own name stays
-     * the {@code Map} key the generated helper reads the wire value from.
-     */
-    private static String bindingKey(GraphQLInputObjectField f, BindingAxis axis) {
-        return axis.fieldNamesMember() ? fieldNameOrDirective(f) : f.getName();
-    }
-
-    /** The {@code @field(name:)} value when the directive is present, else the field's own name. */
-    private static String fieldNameOrDirective(GraphQLInputObjectField f) {
-        return f.hasAppliedDirective(DIR_FIELD)
-            ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName())
-            : f.getName();
     }
 
     /**
@@ -999,8 +452,7 @@ final class InputBeanResolver {
     private Built bindRecord(Class<?> beanClass, GraphQLInputObjectType iot,
             Map<String, JavaMember> componentsByName,
             Map<String, IndexEntry> sdlByBindingKey,
-            String paramName, String methodName, String className, Set<Class<?>> visited,
-            BindingAxis axis) {
+            String paramName, String methodName, String className, Set<Class<?>> visited) {
         var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
         var consumedKeys = new HashSet<String>();
         // Direction A: every component binds, a component nothing fills being the store's
@@ -1013,7 +465,7 @@ final class InputBeanResolver {
             }
             consumedKeys.add(component);
             FieldResult r = bindField(entry.field(), entry.path(), entry.definition(), ce.getValue(),
-                paramName, methodName, className, visited, entry.at(), axis);
+                paramName, methodName, className, visited, entry.at());
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
             }
@@ -1029,12 +481,9 @@ final class InputBeanResolver {
                     + className + "': SDL input field '" + dottedPath(e.getValue().path())
                     + "' (binding key '"
                     + e.getKey() + "') on type '" + iot.getName() + "' names no component of record '"
-                    + beanClass.getName() + "' — every field of a record-backed "
-                    + axis.parameterKind() + " must bind to a component (else its value is silently"
-                    + " dropped); remove the field, or "
-                    + (axis.fieldNamesMember()
-                        ? "point its @field(name:) at a component"
-                        : "add a component named after it")));
+                    + beanClass.getName() + "': every field of a record-backed"
+                    + " @condition parameter's input must bind to a component (else its value is"
+                    + " silently dropped); remove the field, or add a component named after it"));
             }
         }
         return new Built.Ok(new CallSiteExtraction.InputBean(
@@ -1044,8 +493,8 @@ final class InputBeanResolver {
 
     /**
      * JavaBean arm: setters are applied independently. Each SDL field whose binding key names a
-     * setter binds. The empty-bindings rejection fires only when no field, by name or by
-     * {@code @field(name:)}, matches any setter, the "this bean does not mirror this input" case.
+     * setter binds. The empty-bindings rejection fires only when no field matches any setter by
+     * name, the "this bean does not mirror this input" case.
      *
      * <p>An input field nothing takes is a defect (Alf, 2026-11-17), but this arm does not judge
      * it: the fact store refuses it as {@code MEMBER_UNKNOWN}, once at the outermost unbound field,
@@ -1056,8 +505,7 @@ final class InputBeanResolver {
     private Built bindJavaBean(Class<?> beanClass, GraphQLInputObjectType iot,
             Map<String, JavaMember> settersByName,
             Map<String, IndexEntry> sdlByBindingKey,
-            String paramName, String methodName, String className, Set<Class<?>> visited,
-            BindingAxis axis) {
+            String paramName, String methodName, String className, Set<Class<?>> visited) {
         var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
         // sdlByBindingKey iterates in SDL declaration order (LinkedHashMap), so the bindings list
         // keeps that order; for JavaBean setters the order is not load-bearing, only stable.
@@ -1068,7 +516,7 @@ final class InputBeanResolver {
             }
             FieldResult r = bindField(e.getValue().field(), e.getValue().path(),
                 e.getValue().definition(), member,
-                paramName, methodName, className, visited, e.getValue().at(), axis);
+                paramName, methodName, className, visited, e.getValue().at());
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
             }
@@ -1104,7 +552,7 @@ final class InputBeanResolver {
     private FieldResult bindField(GraphQLInputObjectField sdlField, List<String> accessPath,
             String definition, JavaMember member,
             String paramName, String methodName, String className, Set<Class<?>> visited,
-            ClassifyContext.UseSite at, BindingAxis axis) {
+            ClassifyContext.UseSite at) {
         // Messages name the dotted access path, so a hoisted leaf points at the SDL the author
         // wrote rather than at a bare field name that appears nowhere on the enclosing input type.
         String fieldPath = dottedPath(accessPath);
@@ -1127,7 +575,7 @@ final class InputBeanResolver {
                     + "' is not a viable bean class"));
             }
             Built nested = buildInputBean(nestedClass, nestedIot, paramName, methodName,
-                className, visited, at, axis);
+                className, visited, at);
             if (nested instanceof Built.Fail f) {
                 return new FieldResult.Fail(f.rejection());
             }
@@ -1316,9 +764,7 @@ final class InputBeanResolver {
 
     /**
      * The polymorphic decode leaf built from a resolution and an admitted slot type. Here rather than
-     * inline at either call site because the producer-parameter path
-     * ({@code ServiceCatalog.nodeIdSlotExtraction}) builds the very same leaf from the very same two
-     * operands, and one spelling is what keeps the two slot kinds emitting one helper shape.
+     * inline at the call site so the leaf has one spelling.
      */
     static CallSiteExtraction.NodeIdDecodePolymorphicRecord polymorphicLeaf(
             BuildContext.NodeIdRecordDecode.Polymorphic poly,

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.diagnostics;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Sealed sub-family of {@link Rejection.AuthorError} for the error-channel domain: errors raised
@@ -12,7 +11,7 @@ import java.util.stream.Collectors;
  *
  * <p>{@link #lspCode()} projects an arm to its {@code Diagnostic} code under the
  * {@code graphitron.error-channel.} namespace. The wire strings are literals next to each arm, not
- * derived from the Java identifier, mirroring the {@link ServiceMethodCallError} wire convention.
+ * derived from the Java identifier.
  *
  * <p>Classification-raised and channel-raised arms share one family because they share one SDL
  * surface (the outcome type and its errors field) and one LSP namespace; each arm's javadoc names
@@ -25,9 +24,7 @@ import java.util.stream.Collectors;
 public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError permits
     ErrorChannelWalkerError.MultipleErrorsFields,
     ErrorChannelWalkerError.NonNullableSuccessProjectionField,
-    ErrorChannelWalkerError.NonNullableErrorsField,
-    ErrorChannelWalkerError.ChannelRuleViolation,
-    ErrorChannelWalkerError.HandlerSourceAccessorMissing
+    ErrorChannelWalkerError.NonNullableErrorsField
 {
     /** LSP wire code under the {@code graphitron.error-channel.} namespace. */
     String lspCode();
@@ -95,72 +92,5 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
                 + "field. Errors fields must be nullable";
         }
         @Override public String lspCode() { return "graphitron.error-channel.non-nullable-errors-field"; }
-    }
-
-    /**
-     * Raised by {@code walk()}: a channel-level handler rule is violated. Rule 7 forbids two
-     * VALIDATION handlers in one channel; rule 8 forbids duplicate match-criteria across the
-     * flattened handler list. {@code ruleNumber} selects the wire code.
-     */
-    record ChannelRuleViolation(
-        String payloadTypeName,
-        String errorsFieldName,
-        int ruleNumber,
-        String detail
-    ) implements ErrorChannelWalkerError {
-        @Override public String message() {
-            return "outcome type '" + payloadTypeName + "' errors field '" + errorsFieldName
-                + "' violates channel rule " + ruleNumber + ": " + detail;
-        }
-        @Override public String lspCode() {
-            return switch (ruleNumber) {
-                case 7 -> "graphitron.error-channel.multi-validation";
-                case 8 -> "graphitron.error-channel.duplicate-match-criteria";
-                default -> "graphitron.error-channel.channel-rule-violation";
-            };
-        }
-    }
-
-    /**
-     * Raised by {@code walk()}: an {@code @error} type's handler source class does not expose a
-     * {@code PropertyDataFetcher}-visible accessor for one of the {@code @error} type's declared
-     * SDL fields ({@code path} and {@code message} are exempt). {@code accessorBaseName} is the
-     * accessor the resolver looked for: equal to {@code missingFieldName} when no
-     * {@code @field(name:)} override applies, otherwise the directive value (the {@code message()}
-     * then flags the remap).
-     *
-     * <p>{@code expectedReturnType} is the type that accessor had to return, and the message names
-     * it because it is no longer derivable from the SDL field the author is looking at: a field
-     * carrying {@code @nodeId} is read as the node type's key column and encoded afterwards, so a
-     * same-named accessor returning the encoded form is a miss. Without the type, such a message
-     * would list an accessor of exactly the looked-for name among the available ones and still say
-     * none was found.
-     */
-    record HandlerSourceAccessorMissing(
-        String payloadTypeName,
-        String errorTypeName,
-        String handlerClassName,
-        String missingFieldName,
-        String accessorBaseName,
-        String expectedReturnType,
-        List<String> available
-    ) implements ErrorChannelWalkerError {
-        public HandlerSourceAccessorMissing { available = List.copyOf(available); }
-        @Override public String message() {
-            var sb = new StringBuilder("outcome type '").append(payloadTypeName)
-                .append("' @error type '").append(errorTypeName)
-                .append("': handler source class '").append(handlerClassName)
-                .append("' exposes no accessor returning ").append(expectedReturnType)
-                .append(" for SDL field '").append(missingFieldName).append('\'');
-            if (!accessorBaseName.equals(missingFieldName)) {
-                sb.append(" (remapped to '").append(accessorBaseName).append("' by @field)");
-            }
-            if (!available.isEmpty()) {
-                sb.append("; available accessors: ")
-                  .append(available.stream().collect(Collectors.joining(", ")));
-            }
-            return sb.toString();
-        }
-        @Override public String lspCode() { return "graphitron.error-channel.handler-accessor-missing"; }
     }
 }

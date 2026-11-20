@@ -7,7 +7,6 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import no.sikt.graphitron.model.diagnostics.ReflectionError;
-import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**

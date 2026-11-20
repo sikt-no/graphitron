@@ -54,7 +54,6 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
 import no.sikt.graphitron.rewrite.model.SetColumn;
 import no.sikt.graphitron.rewrite.model.UpdateRows;
-import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -624,50 +623,15 @@ public class TypeFetcherGenerator {
                 : no.sikt.graphitron.rewrite.model.SourceShape.Record,
             sourceIsOutcome, outputPackage);
 
-        // Build the create* / decode* helper-name resolver from every jOOQ-record @service carrier,
-        // every bean (POJO / @record) class, and every @nodeId record-decode target on this class
-        // (both coordinates) BEFORE any field body emits, then stash it on ctx. Every naming site
-        // (the two call-site emitters, the bean / decode helper emitters, and the helper-emission
-        // drain) reads this one resolver, so a call site and its helper agree on the name by
-        // construction. The bean-class and decode-record collection is hoisted up front here (out of
-        // the drain below) so the resolver can compute a cross-class-collision-free stem for the union
-        // of jOOQ records and beans before any name is emitted; the drain reuses the same collected
-        // maps. The jOOQ arm keys on binding shape, not record class, so two @service fields taking one
-        // record through different input shapes get distinct helpers (and identical shapes collapse).
-        var jooqCarriers = collectJooqRecordCarriers(fields);
-        var beanHelpers = collectBeanHelpers(fields);
+        // Build the decode* helper-name resolver from every @nodeId record-decode target on this
+        // class BEFORE any field body emits, then stash it on ctx. Every naming site reads this one
+        // resolver, so a call site and its helper agree on the name by construction. A projected
+        // argMapping binding decodes a node id into that node type's own record; one class hosts one
+        // body under one name however many sites call it.
         var scalarDecoders = new java.util.LinkedHashMap<String,
             CallSiteExtraction.NodeIdDecodeRecord>();
-        var listDecoders = new java.util.LinkedHashMap<String,
-            CallSiteExtraction.NodeIdDecodeRecord>();
-        InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(),
-            scalarDecoders, listDecoders);
-        // A projected argMapping binding decodes a node id into that node type's own record, which is
-        // the same decode<TypeName>Record body an input-bean member's @nodeId needs; both register here so one
-        // class hosts one body under one name however many sites call it. Registered before the
-        // resolver is built, so the decode* namespace is sized over the union.
         collectProjectionDecoders(keyProjections, typeName, outputPackage, scalarDecoders);
-        // A producer parameter typed as a node type's own record takes the whole decoded tuple, and
-        // the body that materialises it is the same decode<TypeName>Record an input-bean member's @nodeId
-        // needs. Registered alongside those so one class hosts one body under one name, whichever
-        // coordinate calls it.
-        collectParamRecordDecoders(fields, scalarDecoders, listDecoders);
-        // The polymorphic containers a @nodeId(typeName:) names at a slot on this class, from both
-        // slot kinds, keyed on the container. Collected before the resolver is built so the decode*
-        // namespace check sees the node types, the containers and the containers' per-member helpers
-        // together; all three are GraphQL type names writing into one method namespace.
-        var scalarPolyDecoders = new java.util.LinkedHashMap<String,
-            CallSiteExtraction.NodeIdDecodePolymorphicRecord>();
-        var listPolyDecoders = new java.util.LinkedHashMap<String,
-            CallSiteExtraction.NodeIdDecodePolymorphicRecord>();
-        InputBeanInstantiationEmitter.collectPolymorphicDecoders(beanHelpers.values(),
-            scalarPolyDecoders, listPolyDecoders);
-        collectParamPolymorphicDecoders(fields, scalarPolyDecoders, listPolyDecoders);
-        var decodeContainers = new java.util.LinkedHashMap<String, List<String>>();
-        scalarPolyDecoders.forEach((container, poly) -> decodeContainers.put(container,
-            poly.candidates().stream().map(CallSiteExtraction.PolymorphicCandidate::typeName).toList()));
-        var fetchersHelperNames = FetchersHelperNames.of(
-            jooqCarriers, beanHelpers.keySet(), scalarDecoders.keySet(), decodeContainers);
+        var fetchersHelperNames = FetchersHelperNames.of(scalarDecoders.keySet());
         ctx.setFetchersHelperNames(fetchersHelperNames);
 
         // One decode-helper registry per <Type>Fetchers class: split rows-method and lookup-rows
@@ -1013,46 +977,12 @@ public class TypeFetcherGenerator {
             builder.addMethod(no.sikt.graphitron.emit.OutboxEmitter.jsonValueHelper());
         }
 
-        // Emit per-bean instantiation helpers (createBean / createBeans) for any InputBean
-        // extraction. The bean-class dedup map was collected up front (collectBeanHelpers) so the
-        // resolver could size the create* stem namespace; the emission here reuses it. A single bean
-        // class always emits exactly one pair of helpers per *Fetchers class, named through the same
-        // resolver every call site consulted.
-        for (var ib : beanHelpers.values()) {
-            builder.addMethod(InputBeanInstantiationEmitter.buildSingularHelper(ib, fetchersHelperNames));
-            builder.addMethod(InputBeanInstantiationEmitter.buildPluralHelper(ib,
-                com.palantir.javapoet.ClassName.bestGuess(outputPackage + "." + className),
-                fetchersHelperNames));
-        }
-
-        // Emit one decode<TypeName>Record helper per node type named by a jOOQ-record-typed @nodeId
-        // input-bean member on the collected beans, plus a decode<TypeName>RecordList variant for
-        // list-valued members (which delegates to the scalar helper per element). The create<Bean>
-        // helper bodies call these by name. Scalar and list decode maps were also collected up front
-        // (so the resolver could size the decode* namespace); reuse them here. Scalar and list
-        // variants dedup independently by node type; the scalar helper is always emitted because
-        // the list variant delegates to it.
+        // Emit one decode<TypeName>Record helper per node type a projected binding on this class
+        // decodes into. The decode map was collected up front so the resolver could size the
+        // decode* namespace; reuse it here.
         for (var rec : scalarDecoders.values()) {
             builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelper(rec, fetchersHelperNames,
                 outputPackage));
-        }
-        for (var rec : listDecoders.values()) {
-            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelperList(rec, fetchersHelperNames));
-        }
-
-        // Per polymorphic container: the null-returning per-candidate helpers and the container
-        // helper that peeks the wire id's prefix and dispatches over them, plus the list variant
-        // where any slot naming the container is list-shaped. Same dedup discipline as the
-        // single-type pair above, one rung up: the container is the key, and the scalar helper is
-        // always emitted because the list one delegates to it.
-        for (var poly : scalarPolyDecoders.values()) {
-            InputBeanInstantiationEmitter
-                .buildPolymorphicDecodeHelpers(poly, fetchersHelperNames, outputPackage)
-                .forEach(builder::addMethod);
-        }
-        for (var poly : listPolyDecoders.values()) {
-            builder.addMethod(InputBeanInstantiationEmitter
-                .buildPolymorphicDecodeHelperList(poly, fetchersHelperNames));
         }
 
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
@@ -1199,7 +1129,7 @@ public class TypeFetcherGenerator {
      * union-namespace resolver in place this never fires on valid input; it is the invariant's enforcer
      * against a future naming site that bypasses the resolver, turning silently-uncompilable emitted
      * output into a loud generator failure. Mirrors the routing-hole throw in
-     * {@link JooqRecordHelperNames} and {@link FetchersHelperNames}, and correctly stays at generation
+     * {@link FetchersHelperNames}, and correctly stays at generation
      * time (it guards a generator naming decision, not a classifier fact).
      */
     private static void assertNoDuplicateHelperSignatures(String className, TypeSpec typeSpec) {
@@ -1662,111 +1592,6 @@ public class TypeFetcherGenerator {
         var success = ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
             .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
         return no.sikt.graphitron.render.FetcherResult.outcomeSuccess(outcomeType, success, resultLocal, handDown);
-    }
-
-    /**
-     * Collect every bean (POJO / {@code @record}) class reached by an {@code InputBean} extraction on
-     * this {@code <Type>Fetchers} class, across both coordinates, into a dedup map keyed by bean
-     * {@link com.palantir.javapoet.ClassName} in first-encounter order. Nested beans are
-     * collected transitively so a single bean class appears exactly once, off the
-     * {@link MethodBackedField#method() callParams} walk. Hoisted out of the drain so the resolver can size the {@code create*} stem namespace over
-     * the union of these bean classes and the jOOQ-record carrier classes before any name is emitted;
-     * the drain reuses the returned map for emission.
-     */
-    private static java.util.LinkedHashMap<com.palantir.javapoet.ClassName, CallSiteExtraction.InputBean>
-            collectBeanHelpers(List<GraphitronField> fields) {
-        var beanHelpers = new java.util.LinkedHashMap<com.palantir.javapoet.ClassName,
-            CallSiteExtraction.InputBean>();
-        fields.stream()
-            .filter(f -> f instanceof MethodBackedField)
-            .map(f -> (MethodBackedField) f)
-            .flatMap(f -> f.method().callParams().stream())
-            .filter(p -> p.extraction() instanceof CallSiteExtraction.InputBean)
-            .map(p -> (CallSiteExtraction.InputBean) p.extraction())
-            .forEach(ib -> InputBeanInstantiationEmitter.collectTransitively(ib, beanHelpers));
-        return beanHelpers;
-    }
-
-    /**
-     * Collect every {@link CallSiteExtraction.NodeIdDecodeRecord} sitting directly on a producer
-     * parameter of this {@code <Type>Fetchers} class, off the
-     * {@link MethodBackedField#method() callParams}. Sibling to
-     * {@link InputBeanInstantiationEmitter#collectRecordDecoders}, which collects the same leaf one
-     * level in, on a bean's member; both feed the same two dedup maps so a record type reached both
-     * ways emits one helper.
-     *
-     * <p>List-ness is read off the slot's declared Java type rather than off the leaf, exactly as
-     * the bean walk reads it off the enclosing binding: the leaf is arity- and shape-agnostic and a
-     * {@code List<XRecord>} parameter is what asks for the plural variant.
-     */
-    private static void collectParamRecordDecoders(List<GraphitronField> fields,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
-        for (var field : fields) {
-            if (field instanceof MethodBackedField mbf) {
-                for (var p : mbf.method().callParams()) {
-                    if (p.extraction() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
-                        record0(rec, p.list(), scalarOut, listOut);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Sibling of {@link #collectParamRecordDecoders} for the polymorphic leaf: every
-     * {@link CallSiteExtraction.NodeIdDecodePolymorphicRecord} sitting directly on a producer
-     * parameter of this class.
-     */
-    private static void collectParamPolymorphicDecoders(List<GraphitronField> fields,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> scalarOut,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> listOut) {
-        for (var field : fields) {
-            if (field instanceof MethodBackedField mbf) {
-                for (var p : mbf.method().callParams()) {
-                    if (p.extraction() instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord poly) {
-                        poly0(poly, p.list(), scalarOut, listOut);
-                    }
-                }
-            }
-        }
-    }
-
-    /** One container registration: the scalar body always, the plural variant on a list slot. */
-    private static void poly0(CallSiteExtraction.NodeIdDecodePolymorphicRecord poly, boolean list,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> scalarOut,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> listOut) {
-        scalarOut.putIfAbsent(poly.containerName(), poly);
-        if (list) {
-            listOut.putIfAbsent(poly.containerName(), poly);
-        }
-    }
-
-    /** One decode-record registration: the scalar body always, the plural variant on a list slot. */
-    private static void record0(CallSiteExtraction.NodeIdDecodeRecord rec, boolean list,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
-            java.util.Map<String, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
-        scalarOut.putIfAbsent(rec.typeName(), rec);
-        if (list) {
-            listOut.putIfAbsent(rec.typeName(), rec);
-        }
-    }
-
-    /**
-     * Collect every jOOQ-record carrier on this {@code <Type>Fetchers} class into a flat list (dedup
-     * by shape happens in {@link JooqRecordHelperNames#of}), off the
-     * {@link MethodBackedField#method() callParams} walk. Order is first-encounter, so the resolver's uncontended work-list preserves the original emission order.
-     */
-    private static List<CallSiteExtraction.JooqRecord> collectJooqRecordCarriers(List<GraphitronField> fields) {
-        var out = new java.util.ArrayList<CallSiteExtraction.JooqRecord>();
-        fields.stream()
-            .filter(f -> f instanceof MethodBackedField)
-            .map(f -> (MethodBackedField) f)
-            .flatMap(f -> f.method().callParams().stream())
-            .filter(p -> p.extraction() instanceof CallSiteExtraction.JooqRecord)
-            .map(p -> (CallSiteExtraction.JooqRecord) p.extraction())
-            .forEach(out::add);
-        return out;
     }
 
     /**

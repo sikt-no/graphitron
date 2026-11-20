@@ -9,7 +9,7 @@ import java.util.List;
  * projection need, so downstream tooling switches on the arm rather than parsing prose.
  *
  * <p>The arm-to-code mapping is exposed via {@link #lspCode()} under the {@code graphitron.pivot.}
- * namespace, mirroring {@link ServiceMethodCallError}'s convention.
+ * namespace, mirroring {@link UpdateRowsError}'s convention.
  */
 public sealed interface PivotError extends Rejection.AuthorError permits
     PivotError.NonNullSlot,

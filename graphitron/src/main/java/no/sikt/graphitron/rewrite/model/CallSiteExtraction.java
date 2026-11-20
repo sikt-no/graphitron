@@ -3,8 +3,6 @@ package no.sikt.graphitron.rewrite.model;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeName;
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -28,8 +26,7 @@ public sealed interface CallSiteExtraction
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
                 CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.NodeIdDecodeRecord,
                 CallSiteExtraction.NodeIdDecodePolymorphicRecord,
-                CallSiteExtraction.InputBean, CallSiteExtraction.JooqRecord,
-                CallSiteExtraction.ElementRows {
+                CallSiteExtraction.InputBean, CallSiteExtraction.ElementRows {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -540,8 +537,7 @@ public sealed interface CallSiteExtraction
      * {@code Map} key the helper reads the value from ({@link FieldBinding#mapKey()}), and any
      * earlier elements are the enclosing <em>grouping</em> input fields the leaf was flattened out
      * of. A field declared directly on the bean's input type is a one-element path. The path is
-     * bean-local, relative to the {@code Map} the bean's own helper receives, the same scoping
-     * {@link ColumnBinding#path()} uses on the column axis.
+     * bean-local, relative to the {@code Map} the bean's own helper receives.
      *
      * <p>{@code javaFieldName} is the corresponding
      * member name on the consumer-authored bean: for a record target this is the canonical
@@ -603,231 +599,6 @@ public sealed interface CallSiteExtraction
          */
         public String mapKey() {
             return accessPath.get(accessPath.size() - 1);
-        }
-    }
-
-    /**
-     * Construct a generated jOOQ {@link org.jooq.TableRecord} from a GraphQL input-object {@code Map}
-     * at a {@code @service} parameter position. Sibling to {@link InputBean}: same "instantiate
-     * the consumer's typed parameter at the fetcher boundary so the service body never sees a
-     * {@code Map}" goal, opposite binding axis. Where {@link InputBean} binds SDL fields on the
-     * Java-<em>member</em> axis ({@link FieldBinding#javaFieldName()}), a {@code JooqRecord} binds them
-     * on the <em>column</em> axis: each plain field names a jOOQ column through {@code @field(name:)}
-     * (carried as a resolved {@link ColumnBinding}), and each {@code @nodeId} field decodes a node
-     * identity into resolved target columns on this record (carried as a {@link RecordKeyDecode}). A
-     * record may carry several {@code @nodeId} fields: a same-table identity decode loads the
-     * record's own key columns, a cross-table FK-reference decode loads the foreign key's child
-     * columns on this record.
-     *
-     * <p>A field whose SDL type is itself a directiveless nested grouping input flattens transparently
-     * onto this one table: the resolver recurses into the nested type's fields and keeps producing
-     * {@link ColumnBinding} / {@link RecordKeyDecode} carriers, each carrying the full access
-     * {@code path} from the record's own {@code Map} down to the leaf. The binding lists are a flat
-     * projection of an arbitrarily-nested input onto the table's columns; there is no nested-record
-     * sub-structure here.
-     *
-     * <p>{@code table} is read off the param's classified
-     * {@link GraphitronType.JooqTableRecordInputType}; the record class is {@code CatalogRefs.recordClass(table)}
-     * (the two name the same class by construction, so no separate component is carried).
-     * {@code columnBindings} is the SET payload, {@code keyDecodes} are the {@code @nodeId}-decoded
-     * identities / FK references; either may be empty, but not both.
-     *
-     * <p>Produced only by {@code InputBeanResolver}, which fully resolves every {@code JooqRecord}:
-     * a non-null {@code table}, resolved {@code ColumnRef}s on every binding, and a fully-resolved
-     * (possibly empty) {@code keyDecodes} list. Named by {@code ServiceMethodCallEmitter}'s
-     * {@code create<Record>} / {@code create<Record>List} call through
-     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}. It is a top-level {@code param.extraction()}, never an
-     * {@link InputBean} field leaf, so the bean-field-leaf switch
-     * ({@code InputBeanInstantiationEmitter.perFieldValueExpr}) treats it as
-     * unreachable-by-construction.
-     */
-    record JooqRecord(TableRef table,
-                      List<ColumnBinding> columnBindings,
-                      List<RecordKeyDecode> keyDecodes) implements CallSiteExtraction {
-        public JooqRecord {
-            if (table == null) {
-                throw new IllegalArgumentException("JooqRecord table must be non-null");
-            }
-            columnBindings = List.copyOf(columnBindings);
-            if (keyDecodes == null) {
-                throw new IllegalArgumentException("JooqRecord keyDecodes must be non-null (use List.of())");
-            }
-            keyDecodes = List.copyOf(keyDecodes);
-            // At-least-one-binding floor: an input with neither a SET column nor a key/reference decode
-            // would construct an empty record, the column-axis analogue of InputBean's empty-bindings
-            // rejection. Producers reject such an input before reaching the constructor; this is the
-            // structural backstop.
-            if (columnBindings.isEmpty() && keyDecodes.isEmpty()) {
-                throw new IllegalArgumentException(
-                    "JooqRecord must carry at least one column binding or a key decode");
-            }
-        }
-    }
-
-    /**
-     * One column of the record, written through one or more plain ({@code @field}) input fields.
-     * Each element of {@code paths} is an ordered, non-empty access path from the record's own input
-     * {@code Map} down to a leaf field: the last element is the leaf SDL field name (the {@code Map}
-     * key the {@code create<Record>} helper reads the wire value from), and any earlier elements are
-     * the enclosing nested-grouping-input field names a flatten descends through. A top-level leaf
-     * carries a single-element path; the nested {@code details.title} carries
-     * {@code ["details", "title"]}. Same access-path representation as {@link NestedInputField},
-     * scoped to the keys from the record's own {@code Map} down to the leaf (the outer argument name
-     * stays on the enclosing
-     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}, not duplicated here).
-     *
-     * <p><strong>One writer, several read paths.</strong> The overwhelmingly common case is the
-     * degenerate one-element {@code paths}: one SDL leaf names one column. Several paths mean the
-     * author declared the <em>same</em> column reachable through several names, which is the standard
-     * GraphQL rename-deprecation pattern (add the new field, keep the old one {@code @deprecated}
-     * until its removal date, both pointing at one column). The classifier admits that overlap only
-     * when all but at most one of the colliding leaves carry {@code @deprecated}, and merges the group
-     * into this one binding, so an admitted alias group is one writer with ordered read paths rather
-     * than several writers racing for one column; two live leaves on one column stay an author error.
-     *
-     * <p><strong>Precedence.</strong> {@code paths} is ordered, and the order is the resolution rule
-     * rather than an accident of list position: the live (non-{@code @deprecated}) path first, then
-     * the deprecated paths in reverse declaration order (latest declaration first); a group whose
-     * every leaf is deprecated orders entirely by reverse declaration. The emitted load tries the
-     * paths in this order and takes the first <em>present</em> one, presence being the wire
-     * {@code Map}'s {@code containsKey}, so an explicitly-sent {@code null} on the winning path still
-     * writes SQL NULL. A client sending several of the names gets the highest-precedence one; a client
-     * sending only a deprecated name still writes; a client sending none leaves the column
-     * {@code changed=false}, which keeps the jOOQ changed-flag contract per column rather than per
-     * alias. {@link #path()} names the first path as the binding's primary, for the emitter helpers
-     * that need one name per column.
-     *
-     * <p>{@code column} is the <em>resolved</em> {@link ColumnRef} (not a raw {@code @field(name:)}
-     * string) on the enclosing {@link JooqRecord#table()}, so the emitter reaches the typed
-     * {@code Tables.<T>.<col>} field with no re-parsing. Column-axis sibling to the member-axis
-     * {@link FieldBinding}. No list flag: a scalar column cannot take a list value, and the absence
-     * documents that.
-     */
-    record ColumnBinding(List<List<String>> paths, ColumnRef column) {
-        public ColumnBinding {
-            if (paths == null || paths.isEmpty()) {
-                throw new IllegalArgumentException("ColumnBinding paths must be non-empty");
-            }
-            var copied = new ArrayList<List<String>>(paths.size());
-            var seen = new LinkedHashSet<List<String>>();
-            for (var path : paths) {
-                if (path == null || path.isEmpty()) {
-                    throw new IllegalArgumentException("ColumnBinding path must be non-empty");
-                }
-                for (var element : path) {
-                    if (element == null || element.isEmpty()) {
-                        throw new IllegalArgumentException("ColumnBinding path elements must be non-empty");
-                    }
-                }
-                var copy = List.copyOf(path);
-                // Distinct read paths: one SDL leaf listed twice would emit a dead second read and
-                // make the precedence order say nothing.
-                if (!seen.add(copy)) {
-                    throw new IllegalArgumentException("ColumnBinding read paths must be distinct, got '"
-                        + String.join(".", copy) + "' twice");
-                }
-                copied.add(copy);
-            }
-            paths = List.copyOf(copied);
-            if (column == null) {
-                throw new IllegalArgumentException("ColumnBinding column must be non-null");
-            }
-        }
-
-        /** A single-read-path binding: the common case, one SDL leaf naming one column. */
-        public static ColumnBinding of(List<String> path, ColumnRef column) {
-            return new ColumnBinding(List.of(path), column);
-        }
-
-        /**
-         * The binding's <em>primary</em> read path: the highest-precedence element of
-         * {@link #paths()}, which is the live field for a merged alias group and the only path for
-         * the common single-path binding. The emitter's per-column local names and the value-agreement
-         * message label derive from it, so a column has one name in generated output however many
-         * aliases read it.
-         */
-        public List<String> path() {
-            return paths.get(0);
-        }
-
-        /** The primary path's leaf SDL field name: the {@code Map} key for the wire value. */
-        public String leaf() {
-            List<String> primary = path();
-            return primary.get(primary.size() - 1);
-        }
-    }
-
-    /**
-     * One {@code @nodeId} decode of a {@link JooqRecord}: the wire NodeId is decoded
-     * ({@code encoderClass.decodeColumns(typeId, nodeId, parseClasses, targetColumns...)}) and the decoded values load into
-     * {@code targetColumns} on the enclosing {@link JooqRecord#table()}. Only the projection target
-     * differs from {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
-     *
-     * <p>Unlike {@link NodeIdDecodeRecord} (which rides as a {@link FieldBinding} leaf and inherits
-     * its {@code Map} key from {@link FieldBinding#mapKey()}), a {@code RecordKeyDecode} sits
-     * directly on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it carries its own
-     * {@code path}: the ordered, non-empty access path from the record's own {@code Map} down to the
-     * {@code @nodeId} field, in the same representation {@link ColumnBinding} uses. The last element
-     * is the leaf field name (the {@code Map} key the helper decodes from); earlier elements are
-     * enclosing nested-grouping-input field names a flatten descends through.
-     *
-     * <p>{@code targetColumns} is the resolved list of columns <em>on this record</em> the decoded
-     * values load into, in key (decode) order (one entry for a single-column key, N for a
-     * composite key). For a same-table identity decode these are the record's own key columns;
-     * for a cross-table FK-reference decode they are the FK's child columns on this record,
-     * resolved by FK-constraint pairing in {@code BuildContext}. The identity-vs-FK distinction
-     * lives <em>only in the resolver</em>; the carrier holds the resolved target either way (both
-     * arms load the columns identically, so there is no sub-axis).
-     *
-     * <p>{@code typeName} names the {@code @nodeId(typeName:)} target, a node type or a
-     * {@code @table} type over a table with catalog node metadata, and {@code keyColumns} is that
-     * target's own key tuple in decode order. Both sit beside {@code targetColumns} because a
-     * reference decode lands the key on foreign-key columns that need not carry the tenant
-     * column's name, so the tenant position is read off the target's own tuple.
-     *
-     * <p>{@code nonNull} reflects the SDL field's nullability ({@code ID!} vs {@code ID}) and drives
-     * the emitter's null semantics, applied identically to identity and FK-reference decodes:
-     * a {@code nonNull} ({@code ID!}) decode always loads, throwing on a null / type-mismatched id;
-     * a nullable ({@code ID}) decode is conditional on the wire key being present (omitted: columns
-     * left unwritten / {@code changed=false}; present-{@code null}: columns set to {@code NULL};
-     * present-value: decoded and loaded, a wrong-type decode still throwing). The {@code @service}
-     * method owns the insert/update, so the framework does not force even a same-table identity to be
-     * non-null; a nullable identity is a legitimate service-side upsert input.
-     */
-    record RecordKeyDecode(List<String> path, ClassName encoderClass, String typeName, String typeId,
-                           List<ColumnRef> keyColumns, List<ColumnRef> targetColumns, boolean nonNull) {
-        public RecordKeyDecode {
-            if (path == null || path.isEmpty()) {
-                throw new IllegalArgumentException("RecordKeyDecode path must be non-empty");
-            }
-            for (var element : path) {
-                if (element == null || element.isEmpty()) {
-                    throw new IllegalArgumentException("RecordKeyDecode path elements must be non-empty");
-                }
-            }
-            path = List.copyOf(path);
-            if (encoderClass == null) {
-                throw new IllegalArgumentException("RecordKeyDecode encoderClass must be non-null");
-            }
-            if (typeName == null || typeName.isEmpty()) {
-                throw new IllegalArgumentException("RecordKeyDecode typeName must be non-empty");
-            }
-            if (typeId == null || typeId.isEmpty()) {
-                throw new IllegalArgumentException("RecordKeyDecode typeId must be non-empty");
-            }
-            if (keyColumns == null || keyColumns.isEmpty()) {
-                throw new IllegalArgumentException("RecordKeyDecode keyColumns must be non-empty");
-            }
-            keyColumns = List.copyOf(keyColumns);
-            if (targetColumns == null || targetColumns.isEmpty()) {
-                throw new IllegalArgumentException("RecordKeyDecode targetColumns must be non-empty");
-            }
-            targetColumns = List.copyOf(targetColumns);
-        }
-
-        /** The leaf SDL field name: the last path element, the {@code Map} key for the wire id. */
-        public String leaf() {
-            return path.get(path.size() - 1);
         }
     }
 }

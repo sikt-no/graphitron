@@ -27,16 +27,12 @@ import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.model.jooq.ColumnRef;
-import no.sikt.graphitron.model.diagnostics.ConflictSite;
 import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
 import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
-import no.sikt.graphitron.model.diagnostics.JooqRecordInputError;
 import no.sikt.graphitron.model.diagnostics.MatchedKey;
 import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
 import no.sikt.graphitron.model.diagnostics.PivotError;
 import no.sikt.graphitron.model.diagnostics.ReflectionError;
-import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
-import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
 import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 
@@ -214,17 +210,6 @@ class RejectionSeverityCoverageTest {
                     "@service on Query.filmDetails via com.example.FilmService.getFilm",
                     String.class.getName())));
         }
-        if (permit == Rejection.AuthorError.TypeConflict.class) {
-            // Cross-site contextArgument type-agreement rejection. Build a minimal
-            // ConflictSite list with two entries so message() renders the multi-site shape.
-            return new Rejection.AuthorError.TypeConflict(
-                "fnr",
-                List.of(
-                    new no.sikt.graphitron.model.diagnostics.ConflictSite(
-                        "com.example.S", "m", String.class.getName()),
-                    new no.sikt.graphitron.model.diagnostics.ConflictSite(
-                        "com.example.T", "m", Long.class.getName())));
-        }
         if (permit == Rejection.AuthorError.MultiProducerDomainTypeDisagreement.class) {
             // Cross-producer source-type disagreement. Two participants on the same SDL payload
             // type with disagreeing claims is the minimum shape that exercises the multi-arm
@@ -271,13 +256,6 @@ class RejectionSeverityCoverageTest {
                 "no argument or input field maps to tenant column 'eier_organisasjon', and no"
                     + " ancestor established a tenant context.");
         }
-        if (permit == Rejection.AuthorError.UnroutedServiceCall.class) {
-            // Tenant-binding fold rejection: a root service handed a connection whose arguments
-            // name no tenant. Diagnostics.compute's switch on Rejection.AuthorError catches it
-            // uniformly (Error severity).
-            return new Rejection.AuthorError.UnroutedServiceCall(
-                "Mutation.godkjenn", "eier_organisasjon", List.of(), List.of());
-        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }
@@ -294,42 +272,6 @@ class RejectionSeverityCoverageTest {
             return new Rejection.Deferred(
                 "summary",
                 new Rejection.StubKey.VariantClass(null));
-        }
-        // ServiceMethodCallError sub-seal of AuthorError. The seal carries only the two arms
-        // the translator-walker actually produces; the minimal sample is sufficient for the
-        // severity-coverage walk (Diagnostics.compute's switch on Rejection.AuthorError catches the
-        // whole sub-family uniformly). Further arms re-land later as their producer paths do.
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots(
-                "com.example.Svc");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ParameterUnbindable.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ParameterUnbindable(
-                "title", List.of("name", "year"), "name");
-        }
-        // Re-added ServiceMethodCallError service-binding arms. One sample per arm;
-        // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error),
-        // and lspCodeOf forwards each arm's stable graphitron.service-method-call.* code.
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible(
-                "com.example.Svc", "getFilm", "Svc",
-                no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR);
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ArgumentParameterMismatch.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ArgumentParameterMismatch(
-                "title", "getFilm", List.of("name", "year"), List.of("tenantId"), " — rename or argMapping");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.DtoSourcesUnsupported.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.DtoSourcesUnsupported(
-                "keys", "getFilms", "sources type 'com.example.Dto' is not backed by a jOOQ TableRecord");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.UnrecognizedSourcesType.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.UnrecognizedSourcesType(
-                "input", "getFilms", "java.util.List<com.example.Weird>");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.SourcesOnPkLessParent.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.SourcesOnPkLessParent(
-                "keys", "getRank", "FilmList", "film_list");
         }
         // ReflectionError sub-seal of AuthorError (shared reflection-intrinsic arms). One
         // sample per arm; lspCodeOf forwards each arm's stable graphitron.reflect.* code.
@@ -471,15 +413,6 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.NonNullableErrorsField(
                 "FilmPayload", "errors");
         }
-        if (permit == no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.ChannelRuleViolation.class) {
-            return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.ChannelRuleViolation(
-                "FilmPayload", "errors", 7, "two VALIDATION handlers in one channel");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.HandlerSourceAccessorMissing.class) {
-            return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.HandlerSourceAccessorMissing(
-                "FilmPayload", "FilmError", "com.example.FilmErrorHandler", "code", "code",
-                "java.lang.String", List.of("message", "path"));
-        }
         // WireCoercionError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches them uniformly (Error severity), and lspCodeOf
         // forwards each arm's stable graphitron.wire-coercion.* code.
@@ -507,22 +440,6 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.model.diagnostics.WireCoercionError.ConditionJooqRecordCarrier(
                 "com.example.jooq.tables.records.FilmRecord",
                 "parameter 'input' of condition method 'byFilter' in class 'com.example.Conditions'");
-        }
-        // ServiceCarrierShapeError sub-seal of AuthorError. One sample per arm;
-        // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
-        // severity), and lspCodeOf forwards each arm's stable graphitron.service-carrier-shape.* code.
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.ProducerArrivalMismatch.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.ProducerArrivalMismatch(
-                "FilmPayload", "Mutation", "runFilms",
-                no.sikt.graphitron.model.diagnostics.Arity.MANY,
-                no.sikt.graphitron.model.diagnostics.Arity.ONE,
-                "com.example.FilmService", "runFilm");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.DataFieldArrivalConflict.class) {
-            return new no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.DataFieldArrivalConflict(
-                "FilmListPayload", "Mutation", "runFilmsList", "films", "Film",
-                no.sikt.graphitron.model.diagnostics.Arity.MANY,
-                no.sikt.graphitron.model.diagnostics.Arity.MANY);
         }
         // PivotError sub-seal of AuthorError (@pivot classification). One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
@@ -570,17 +487,6 @@ class RejectionSeverityCoverageTest {
         if (permit == no.sikt.graphitron.model.diagnostics.PivotError.InvalidProjectionType.class) {
             return new no.sikt.graphitron.model.diagnostics.PivotError.InvalidProjectionType(
                 "Film.titleTranslations", "Language", "is not a plain output type");
-        }
-        // JooqRecordInputError sub-seal of AuthorError, minted by InputBeanResolver's per-column fold
-        // over a @service jOOQ-record parameter. Two live writers is the rejecting shape; a group whose
-        // superseded fields carry @deprecated is admitted and never reaches a rejection at all.
-        if (permit == no.sikt.graphitron.model.diagnostics.JooqRecordInputError.LiveColumnCollision.class) {
-            return new no.sikt.graphitron.model.diagnostics.JooqRecordInputError.LiveColumnCollision(
-                "in", "modifyFilm", "com.example.FilmService", "in",
-                List.of(
-                    new no.sikt.graphitron.model.diagnostics.JooqRecordInputError.CollidingField("title", false),
-                    new no.sikt.graphitron.model.diagnostics.JooqRecordInputError.CollidingField("details.aka", false)),
-                "title", "film");
         }
         return null;
     }

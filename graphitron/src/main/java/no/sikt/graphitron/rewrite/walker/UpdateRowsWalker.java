@@ -35,7 +35,7 @@ import java.util.Set;
  * column set is a subset of the input-covered columns, then partitions the input fields into the
  * WHERE (matched-key) and SET (everything else) halves.
  *
- * <p><b>Substrate concession (mirrors {@code ServiceMethodCallWalker}).</b> The walker
+ * <p><b>Substrate concession.</b> The walker
  * translates over the already-classified {@link InputField} permits rather than re-deriving the
  * column classification from raw SDL: re-running {@code InputFieldResolver} /
  * {@code EnumMappingResolver.buildLookupBindings} (with {@code @reference} FK-join and {@code @nodeId}

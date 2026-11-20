@@ -59,7 +59,7 @@ class GraphitronDevExecutorGeneratorTest {
             resolved.put(arg.name(), arg);
         }
         return new GraphitronSchema(Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
-            new ContextArgumentClassifier.Classification(resolved, List.of()), List.of());
+            new ContextArgumentClassifier.Classification(resolved), List.of());
     }
 
     private static TypeSpec generate(GraphitronSchema schema, SessionIdentityRows identity) {

@@ -1465,7 +1465,6 @@ class FieldBuilder {
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> false;
             case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored -> false;
             case CallSiteExtraction.InputBean ignored -> false;
-            case CallSiteExtraction.JooqRecord ignored -> false;
             // Branch-safe: the row read is built by a helper the participant's own conditions
             // class hosts, and the call site passes only the args map, as for any other glue.
             case CallSiteExtraction.ElementRows ignored -> true;
@@ -2881,9 +2880,6 @@ class FieldBuilder {
             // A polymorphic record decode is a @service slot leaf on the same terms as the arm
             // above, so the column's own type is the same unreached answer.
             case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored -> column.columnClass();
-            // JooqRecord is a top-level @service param extraction, never a column-bound BodyParam;
-            // unreached here, same trivially-correct answer as the NodeIdDecodeRecord arm above.
-            case CallSiteExtraction.JooqRecord ignored -> column.columnClass();
             // A list-of-input filter's row read carries its cell columns itself; unreached here.
             case CallSiteExtraction.ElementRows ignored -> column.columnClass();
         };

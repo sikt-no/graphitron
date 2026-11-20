@@ -48,7 +48,7 @@ class ArchitectureDocSymbolScannerTest {
         // A method call keeps its receiver and loses its tail.
         assertThat(ArchitectureDocSymbolScanner.symbolOf("SelectedField.getArguments()")).isEqualTo("SelectedField");
         // A nested type keeps the qualification the page wrote.
-        assertThat(ArchitectureDocSymbolScanner.symbolOf("AuthorError.TypeConflict")).isEqualTo("AuthorError.TypeConflict");
+        assertThat(ArchitectureDocSymbolScanner.symbolOf("AuthorError.NoTenantBinding")).isEqualTo("AuthorError.NoTenantBinding");
         // Generics and arrays are stripped.
         assertThat(ArchitectureDocSymbolScanner.symbolOf("RowN<...>")).isEqualTo("RowN");
         assertThat(ArchitectureDocSymbolScanner.symbolOf("GraphitronField[]")).isEqualTo("GraphitronField");

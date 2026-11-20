@@ -49,17 +49,14 @@ class ModelEmitVocabularyGuardTest {
         "DomainReturnType.java",
         "HelperRef.java",
         "InputRecordShape.java",
-        "MappingEntry.java",
         "MethodRef.java",
         "OutputField.java",
         "ResolvedContextArg.java",
         "RoutineRef.java",
         "RowsMethodShape.java",
         "ScalarResolution.java",
-        "ServiceMethodCall.java",
         "SourceKey.java",
-        "TenantScopes.java",
-        "ValueShape.java"
+        "TenantScopes.java"
     );
 
     @Test

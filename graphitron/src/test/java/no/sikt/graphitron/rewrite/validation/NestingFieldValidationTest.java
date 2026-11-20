@@ -72,7 +72,7 @@ class NestingFieldValidationTest {
     private static final ParameterizedTypeName BOOLEAN_FIELD =
         ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(Boolean.class));
 
-    private static final MethodRef IS_ENGLISH = TestFixtures.staticServiceMethodRef(
+    private static final MethodRef IS_ENGLISH = TestFixtures.staticOnlyMethodRef(
         "com.example.FilmExtensions", "isEnglish",
         ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(Boolean.class)),
         List.of(new MethodRef.Param.Typed("table", "com.example.tables.Film", new ParamSource.Table(new ParamSource.Table.TableSlot.Wildcard()))));
@@ -174,7 +174,7 @@ class NestingFieldValidationTest {
                 List.of(new ComputedField("FilmDetails", "isEnglish", null,
                     new ReturnTypeRef.ScalarReturnType("Boolean", new FieldWrapper.Single(true)),
                     List.of(TestFixtures.conditionJoin(
-                        TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition",
+                        TestFixtures.staticOnlyMethodRef("com.example.Conditions", "liftCondition",
                             ClassName.get("org.jooq", "Condition"), List.of()),
                         TestFixtures.filmTable(),
                         "")),
@@ -342,7 +342,7 @@ class NestingFieldValidationTest {
         return new ComputedField("FilmDetails", "flag", null,
             new ReturnTypeRef.ScalarReturnType(scalar, new FieldWrapper.Single(true)),
             List.of(),
-            TestFixtures.staticServiceMethodRef("com.example.FilmExtensions", "flag", helperReturn,
+            TestFixtures.staticOnlyMethodRef("com.example.FilmExtensions", "flag", helperReturn,
                 List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table(new ParamSource.Table.TableSlot.Wildcard())))),
             AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());
     }
@@ -484,7 +484,7 @@ class NestingFieldValidationTest {
         return new ComputedField("FilmNames", name, null,
             new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
             List.of(),
-            TestFixtures.staticServiceMethodRef("com.example.FilmExtensions", name,
+            TestFixtures.staticOnlyMethodRef("com.example.FilmExtensions", name,
                 ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(String.class)),
                 List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table(new ParamSource.Table.TableSlot.Wildcard())))),
             AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());

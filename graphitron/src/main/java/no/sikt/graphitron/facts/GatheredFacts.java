@@ -35,7 +35,6 @@ public record GatheredFacts(PaginationFacts pagination,
                             ConditionFacts condition,
                             OrderByFacts orderBy,
                             LookupFacts lookup,
-                            ServiceFacts service,
                             WriteFacts write,
                             DeliveryFacts delivery) {
 
@@ -44,7 +43,6 @@ public record GatheredFacts(PaginationFacts pagination,
         Objects.requireNonNull(condition, "condition");
         Objects.requireNonNull(orderBy, "orderBy");
         Objects.requireNonNull(lookup, "lookup");
-        Objects.requireNonNull(service, "service");
         Objects.requireNonNull(write, "write");
         Objects.requireNonNull(delivery, "delivery");
     }
@@ -55,7 +53,6 @@ public record GatheredFacts(PaginationFacts pagination,
             new ConditionFacts(Map.of(), Map.of()),
             new OrderByFacts(Map.of()),
             new LookupFacts(Map.of()),
-            new ServiceFacts(Map.of()),
             new WriteFacts(Map.of()),
             new DeliveryFacts(Map.of()));
     }
@@ -74,7 +71,6 @@ public record GatheredFacts(PaginationFacts pagination,
         ConditionFacts condition = null;
         OrderByFacts orderBy = null;
         LookupFacts lookup = null;
-        ServiceFacts service = null;
         WriteFacts write = null;
         DeliveryFacts delivery = null;
         for (var visitor : visitors) {
@@ -83,12 +79,11 @@ public record GatheredFacts(PaginationFacts pagination,
                 case ConditionFactVisitor c -> condition = c.relation();
                 case OrderByFactVisitor o -> orderBy = o.relation();
                 case LookupFactVisitor l -> lookup = l.relation();
-                case ServiceFactVisitor s -> service = s.relation();
                 case WriteFactVisitor w -> write = w.relation();
                 case DeliveryFactVisitor d -> delivery = d.relation();
             }
         }
-        return new GatheredFacts(pagination, condition, orderBy, lookup, service, write, delivery);
+        return new GatheredFacts(pagination, condition, orderBy, lookup, write, delivery);
     }
 
     /**

@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
  * input object cannot be handed although {@code @service} can: the value graphql-java delivers would
  * have to be converted, and at those sites no conversion is generated.
  *
- * <p>Sibling to {@link ServiceMethodCallError} / {@link ReflectionError} / {@link UpdateRowsError}
+ * <p>Sibling to {@link ReflectionError} / {@link UpdateRowsError}
  * / {@link DeleteRowsError} / {@link ErrorChannelWalkerError}: each typed arm carries the
  * structural data its diagnostic message needs and a stable {@link #lspCode()} under the
  * {@code graphitron.wire-coercion.} namespace so the LSP {@code Diagnostic} projector reads the

@@ -31,7 +31,7 @@ import java.util.zip.ZipFile;
  * carrying a space or a slash is out because it is prose or a path, not a name. Method tails,
  * generic arguments and array brackets are stripped before resolution, so
  * {@code SelectedField.getArguments()} is a citation of {@code SelectedField}. Nested types are
- * resolved by their dotted suffix first ({@code AuthorError.TypeConflict}) and by the outermost
+ * resolved by their dotted suffix first ({@code AuthorError.NoTenantBinding}) and by the outermost
  * simple name second, which is how the pages actually spell them.
  *
  * <p><b>The gap this does not close.</b> Resolution is by simple name, so a cited name resolves
@@ -157,8 +157,8 @@ public final class ArchitectureDocSymbolScanner {
 
     /**
      * Simple and dotted-suffix names of every type on {@code java.class.path}. A nested type
-     * contributes each of its suffixes ({@code TypeConflict}, {@code AuthorError.TypeConflict},
-     * {@code Rejection.AuthorError.TypeConflict}) so a page resolves however deep it chose to
+     * contributes each of its suffixes ({@code NoTenantBinding}, {@code AuthorError.NoTenantBinding},
+     * {@code Rejection.AuthorError.NoTenantBinding}) so a page resolves however deep it chose to
      * qualify, and each of its segments, since the pages name outer types on their own too.
      */
     static Set<String> classpathTypeNames() {

@@ -24,7 +24,7 @@ import java.util.Set;
  * dispatcher consults {@link #kinds()} and never calls an unsubscribed callback.
  */
 public sealed interface FactVisitor permits PaginationFactVisitor, ConditionFactVisitor,
-        OrderByFactVisitor, LookupFactVisitor, ServiceFactVisitor, WriteFactVisitor,
+        OrderByFactVisitor, LookupFactVisitor, WriteFactVisitor,
         DeliveryFactVisitor {
 
     /** The subject kinds this visitor gathers from. */

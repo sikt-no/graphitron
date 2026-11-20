@@ -111,7 +111,7 @@ class BuildContext {
     // Trigger-fact gathers own these directives' reads; each name has one home on its visitor.
     static final String DIR_DEFAULT_ORDER       = no.sikt.graphitron.facts.OrderByFactVisitor.DIR_DEFAULT_ORDER;
     static final String DIR_SPLIT_QUERY         = no.sikt.graphitron.facts.DeliveryFactVisitor.DIR_SPLIT_QUERY;
-    static final String DIR_SERVICE             = no.sikt.graphitron.facts.ServiceFactVisitor.DIR_SERVICE;
+    static final String DIR_SERVICE             = "service";
     static final String DIR_EXTERNAL_FIELD      = "externalField";
     static final String DIR_LOOKUP_KEY          = no.sikt.graphitron.facts.LookupFactVisitor.DIR_LOOKUP_KEY;
     static final String DIR_TENANT_FAN_OUT      = no.sikt.graphitron.facts.DeliveryFactVisitor.DIR_TENANT_FAN_OUT;
@@ -391,11 +391,11 @@ class BuildContext {
         java.util.Map.of();
 
     /**
-     * The context keys the store states the {@code @service} calls read, each with the type of the
-     * parameter it fills; the context-argument classification adds them to the keys the walk
-     * harvests. Empty where the build was handed none.
+     * The context keys the store states the {@code @service} and {@code @condition} calls read, each
+     * with the type of the parameter it fills, which the context-argument classification folds.
+     * Empty where the build was handed none.
      */
-    java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> serviceContextKeys = java.util.List.of();
+    java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> contextKeys = java.util.List.of();
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RunContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
@@ -1304,24 +1304,6 @@ class BuildContext {
         /** The check did not run: no return table at this site, an empty path, or an earlier
          *  parse error short-circuited the terminal-target assertion. */
         record NotApplicable() implements TerminalTargetVerdict {}
-    }
-
-    /**
-     * The SQL table name a GraphQL type binds through its {@code @table} directive, defaulting to
-     * the lower-cased type name where the directive names none. Empty when the type is not in the
-     * schema, is not an object type, or carries no {@code @table} at all.
-     *
-     * <p>The name only, deliberately: callers that want the resolved {@link TableRef} route it
-     * through {@link #resolveTable}, and callers that want the node types over it route it through
-     * {@link #inferNodeTypeOverTable}, neither of which needs the catalog to have answered first.
-     */
-    Optional<String> tableNameForTypeName(String typeName) {
-        if (typeName == null) return Optional.empty();
-        var raw = schema.getType(typeName);
-        if (!(raw instanceof GraphQLObjectType obj) || !obj.hasAppliedDirective(DIR_TABLE)) {
-            return Optional.empty();
-        }
-        return Optional.of(argString(obj, DIR_TABLE, ARG_NAME).orElse(typeName.toLowerCase()));
     }
 
     /** Either the node type a bare {@code @nodeId} inferred, or why the inference could not pick one. */
@@ -3278,10 +3260,8 @@ class BuildContext {
         // a type. No return type name is threaded in here (this method's own `parentTypeName` is
         // the *input* type's name, and a mutation input has no node type in its SDL at all), so the
         // node is resolved through the by-table view: a singleton is the answer, and an ambiguous
-        // table is a rejection naming the argument that settles it. This is not the table
-        // reverse-lookup resolveDecodeHelperForType exists to avoid: that one discarded a type name
-        // the call site was already holding, and here there is no name to discard, so the table is
-        // the only source there has ever been.
+        // table is a rejection naming the argument that settles it. There is no type name to
+        // resolve by here, so the table is the only source there has ever been.
         if ("ID".equals(typeName)
                 && NODE_INTERFACE_ID_FIELD.equals(name)
                 && !hasFieldDir
@@ -3564,27 +3544,6 @@ class BuildContext {
             (coordinate.isBlank() ? "" : coordinate + ": ") + because
             + ", so '" + name + "' is ambiguous. Add `@nodeId` to select the node id, or"
             + " `@field(name: \"" + shadowedColumn + "\")` to select the raw column.");
-    }
-
-    /**
-     * Resolves the {@code decode<TypeName>} helper of the node type a call site <em>names</em>,
-     * either through {@code @nodeId(typeName:)} or through an inference that already produced a
-     * unique name. The name is the author's own answer to "which NodeType", so the
-     * {@link NodeIndex} by-name view answers it directly; how many other node types happen to
-     * share the backing table is irrelevant.
-     *
-     * <p>Empty when no NodeType carries that name, a {@code @table}-only type over a table with
-     * catalog node metadata included, on purpose. The one caller is {@link ServiceCatalog}'s
-     * named-parameter key slot, a {@code @service} parameter that takes a decoded key, and that slot
-     * leaves the check of its Java parameter type against the key to the fact store, whose views read
-     * node types only; a {@code @table}-only target there would reach the Java compiler unchecked.
-     * Coordinates that legitimately hold only a table
-     * resolve through {@link NodeIndex#forTable} at their own site, where an ambiguous table is a
-     * rejection naming {@code typeName:} rather than a silent pick.
-     */
-    Optional<no.sikt.graphitron.rewrite.model.HelperRef.Decode> resolveDecodeHelperForType(String refTypeName) {
-        return nodes.forName(refTypeName)
-            .map(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType::decodeMethod);
     }
 
     /**

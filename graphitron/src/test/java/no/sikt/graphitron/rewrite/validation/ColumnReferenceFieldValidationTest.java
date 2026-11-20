@@ -35,7 +35,7 @@ class ColumnReferenceFieldValidationTest {
         TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(TestFixtures.languageIdCol()),
         TestFixtures.joinTarget("language"), List.of(TestFixtures.languageIdCol()), null, ""));
     private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
-        TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition",
+        TestFixtures.staticOnlyMethodRef("com.example.Conditions", "languageCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.languageTable(), ""));
 

@@ -119,9 +119,8 @@ public final class GraphitronFacadeGenerator {
 
         // TreeMap iteration order is alphabetical by key: same order generated fetchers will
         // resolve them in, same order the user docs talk about them in, deterministic across runs.
-        // Read off the schema's cached classification rather than re-running the classifier:
-        // GraphitronSchemaValidator.validateContextArgumentTypeAgreement reads the same field,
-        // so both consumers see one producer.
+        // Read off the schema's cached classification of the context keys the store states the
+        // calls read.
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
 
         // The factories are the same in every build: which tenants a request may reach is the

@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
  * Sealed sub-family of {@link Rejection.AuthorError} for {@code UpdateRowsWalker}. Each typed
  * arm carries the structural data its diagnostic message and LSP {@code relatedInformation} need;
  * downstream tooling switches on the arm rather than parsing prose. Sibling to
- * {@link ServiceMethodCallError}: per the dimensional-model-pivot principle, each walker slice adds
+ * {@link DeleteRowsError}: per the dimensional-model-pivot principle, each walker slice adds
  * its own sub-seal of {@link Rejection.AuthorError} (and one row in that interface's {@code permits}
  * clause) rather than piling typed arms under the flat {@link Rejection.AuthorError.Structural}.
  *
