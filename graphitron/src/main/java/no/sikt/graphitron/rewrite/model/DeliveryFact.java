@@ -13,10 +13,7 @@ import java.util.Objects;
  * <p>{@link Inline} is the complement, and it deliberately covers two situations that agree on
  * the falsifiable content (no split SQL statement arrives batched): a coordinate riding its
  * parent's statement (a correlated multiset, a spliced nesting projection, a column term), and
- * a coordinate with no SQL statement at all (a {@code @service} invocation's delegation, a
- * record read off a held producer record). A {@code @service} coordinate reads {@link Inline}
- * even though its loader is batched, because the serviceCall member owns that delivery the same
- * way it claims the projection slot; the launch derives from the member, never from this axis.
+ * a coordinate with no SQL statement at all (a record read off a held producer record).
  *
  * <p>{@link Batched}'s trigger is the sealed provenance disjunction, the arm's falsifiable
  * content: an authored marker ({@link Trigger.Authored}), a record-handing parent
@@ -99,7 +96,6 @@ public sealed interface DeliveryFact {
                  ChildField.TableInterfaceField _,
                  ChildField.InterfaceField _, ChildField.UnionField _, ChildField.NestingField _,
                  ChildField.PivotField _, ChildField.PivotSlotField _,
-                 ChildField.ServiceTableField _, ChildField.ServiceRecordField _,
                  ChildField.RecordReadField _, ChildField.RecordCompositeField _,
                  ChildField.ComputedField _, ChildField.SingleRecordIdField _,
                  ChildField.SingleRecordIdFieldFromReturning _, ChildField.ErrorsField _ ->

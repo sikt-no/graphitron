@@ -103,8 +103,7 @@ class ScalarTypeResolverTest {
     @Test
     void builtInJavaType_returnsNullForUnknown() {
         // builtInJavaType is the convenience callers use when they don't need the
-        // GraphQLScalarType constant; null means "not a built-in", same as the legacy
-        // RowsMethodShape.standardScalarJavaType contract.
+        // GraphQLScalarType constant; null means "not a built-in".
         assertThat(ScalarTypeResolver.builtInJavaType("Int")).isEqualTo(ClassName.get(Integer.class));
         assertThat(ScalarTypeResolver.builtInJavaType("ID")).isEqualTo(ClassName.get(String.class));
         assertThat(ScalarTypeResolver.builtInJavaType("BigDecimal")).isNull();

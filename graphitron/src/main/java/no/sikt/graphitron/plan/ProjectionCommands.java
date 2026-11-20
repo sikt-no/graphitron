@@ -51,7 +51,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * coordinate (inline and batched delivery alike, since both hosts consume the same unit).
  *
  * <p>The table-target family's contribution fork reads the operation members and the delivery
- * fact (the serviceCall member and batched delivery route to correlation-key arms, the lookup
+ * fact (a batched delivery routes to correlation-key arms, the lookup
  * member picks the multiset wrap); the payload extraction inside still reads the leaf-carried
  * resolutions, the additive window's sanctioned half, and the renderer never notices.
  *
@@ -95,8 +95,6 @@ public final class ProjectionCommands {
         ChildField.BatchedPivotField.class,
         ChildField.PivotSlotField.class,
         ChildField.BatchedTableField.class,
-        ChildField.ServiceTableField.class,
-        ChildField.ServiceRecordField.class,
         ChildField.TableInterfaceField.class,
         ChildField.BatchedTableInterfaceField.class,
         ChildField.InterfaceField.class,
@@ -328,14 +326,13 @@ public final class ProjectionCommands {
                 "PivotSlotField '" + slot.qualifiedName() + "' reached a table-context projection "
                 + "walk; slots live on the pivot projection type and mint inside their pivot unit");
             // Correlation-key arms: these leaves deliver their data through their own fetcher
-            // methods (service delegations, polymorphic dispatch), but the fetchers extract
+            // methods (polymorphic dispatch), but the fetchers extract
             // their key / correlation columns off the parent row, so the parent SELECT must
             // carry those columns exactly when the field is selected. The column list is read
             // from the same accessors the extraction emitters consume
             // (BatchKeyField.sourceKey(), ParentRowDemand.parentRowColumns()), so supply and
             // demand are one read, not two derivations to cross-check. The
             // table-target family's correlation-key arms live in the merged arm above.
-            case ChildField.ServiceRecordField sr -> correlationKeyArm(sr, sr.sourceKey().columns());
             case ChildField.InterfaceField pif -> correlationKeyArm(pif, pif.parentRowColumns());
             case ChildField.UnionField uf -> correlationKeyArm(uf, uf.parentRowColumns());
             case ChildField.BatchedInterfaceField bif -> correlationKeyArm(bif, bif.parentRowColumns());
@@ -352,8 +349,7 @@ public final class ProjectionCommands {
 
     /**
      * The table-target family's contribution, dispatched on the operation members, the
-     * delivery fact and the parent-row-demand capability: a serviceCall member delegates
-     * through its loader and projects the key columns; a batched delivery re-queries and
+     * delivery fact and the parent-row-demand capability: a batched delivery re-queries and
      * projects the key columns; the parent-row-demanding twin (the single-table interface
      * child) projects its demand columns; the inline remainder composes into the parent
      * statement, with the Multiset-vs-LookupMultiset fork read off the lookup member and the
@@ -370,8 +366,7 @@ public final class ProjectionCommands {
         var delivery = nested
             ? DeliveryFact.leafDerivedOf(ttf)
             : schema.deliveryOf(FieldCoordinates.coordinates(ttf.parentTypeName(), ttf.name()));
-        boolean serviceCall = hasKind(members, OperationMember.Kind.SERVICE_CALL);
-        if (serviceCall || delivery instanceof DeliveryFact.Batched) {
+        if (delivery instanceof DeliveryFact.Batched) {
             var keyed = (BatchKeyField) ttf;
             return correlationKeyArm(ttf, keyed.sourceKey() == null
                 ? List.of() : keyed.sourceKey().columns());
@@ -472,10 +467,6 @@ public final class ProjectionCommands {
             + ttf.qualifiedName() + "' (" + ttf.getClass().getSimpleName()
             + ") reached the inline multiset arm; the delivery fork above must route batched,"
             + " service and interface deliveries to their correlation-key arms first");
-    }
-
-    private static boolean hasKind(List<OperationMember> members, OperationMember.Kind kind) {
-        return members.stream().anyMatch(m -> m.kind() == kind);
     }
 
     private static UnitRef mintNestedUnit(GraphitronSchema schema, ChildField.NestingField nf,

@@ -204,13 +204,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * {@code List}, {@code Set}, {@code Collection}, {@code Result}) one level deep, returning
      * the inner element {@link ClassName} or {@link #OBJECT_CLASS} when the inner type is not a
      * bare class. Mirrors {@code RecordBindingResolver.peelReturnElement} on the javapoet axis;
-     * used by the root {@code @service} permits ({@link QueryField.QueryServiceRecordField} and
-     * {@link MutationField.MutationServiceRecordField}) on their
-     * {@link ReturnTypeRef.ScalarReturnType} arm, and by {@link ChildField.ComputedField}, to
-     * derive a {@link DomainReturnType.Plain} payload without classloading. Class-backed result
-     * returns mint through {@link DomainReturnType#claimForBacking} instead: a root's reflected
-     * return peels honestly (the payload is returned directly), but a batched child's peels to
-     * {@code java.util.Map}, a type that never reaches {@code env.getSource()}.
+     * used by {@link ChildField.ComputedField} to derive a {@link DomainReturnType.Plain} payload
+     * without classloading. Class-backed result returns mint through
+     * {@link DomainReturnType#claimForBacking} instead.
      */
     static ClassName peelToClassName(TypeName t) {
         if (t instanceof ClassName cn) return cn;

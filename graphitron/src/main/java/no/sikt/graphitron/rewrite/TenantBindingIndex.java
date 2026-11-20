@@ -11,17 +11,12 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.emit.ConnectionQuery;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ArgPath;
-import no.sikt.graphitron.rewrite.model.MappingEntry;
-import no.sikt.graphitron.rewrite.model.ServiceCallCarrier;
-import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
@@ -35,7 +30,6 @@ import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.ServiceField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -70,9 +64,7 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * not "everything {@link TenantBinding.Untenanted}".
  *
  * <p>{@link #rejections()} carries the typed {@code noTenantBinding} findings (a field or
- * dispatch surface reaching a tenant-scoped table with no binding in scope), the
- * {@code unroutedServiceCall} findings (a root service handed a connection whose arguments name
- * no tenant), and the tenancy markers' ladder and sweep rejections. The validator drains them
+ * dispatch surface reaching a tenant-scoped table with no binding in scope) and the tenancy markers' ladder and sweep rejections. The validator drains them
  * through its tenant mirror; nothing here demotes a classified verdict.
  */
 public record TenantBindingIndex(
@@ -476,12 +468,6 @@ public record TenantBindingIndex(
          * {@link #serviceHandsDown} reads what their edges hand down off these.
          */
         private final Map<String, Set<ConnectionQuery.Outcome>> serviceConnections;
-        /** The {@code @tenant} uses the fold minted a slot from: the marker sweep's verdict set. */
-        private final Set<TenantMarkerUse> consumedTenantMarkers = new HashSet<>();
-        /** The {@code @tenant} uses the fold found bound into a jOOQ record parameter. */
-        private final Set<TenantMarkerUse> jooqBoundTenantMarkers = new HashSet<>();
-        /** The {@code @tenant} uses the type rung declined, with the rung's text. */
-        private final Map<TenantMarkerUse, String> mistypedTenantMarkers = new HashMap<>();
 
         Fold(GraphQLSchema sdl,
              Set<String> domain,
@@ -715,15 +701,7 @@ public record TenantBindingIndex(
         private void sweepTenantMarkers() {
             if (tenantMarked.isEmpty()) return;
             var uses = tenantMarkerUses();
-            // armOf can leave a coordinate before reading its direct binding (a marker ladder, a
-            // cross-scope reach), and the binding is what consumes a marked use; read it here so
-            // the verdict does not depend on which rung the field stopped at.
-            uses.stream().map(TenantMarkerUse::field).distinct()
-                .flatMap(c -> sitesAt(c).stream())
-                .filter(site -> site.field() instanceof ServiceField)
-                .forEach(this::directBinding);
             for (TenantMarkerUse use : uses) {
-                if (consumedTenantMarkers.contains(use)) continue;
                 rejections.add(markerRejection(List.of(BuildContext.DIR_TENANT), use.definition(),
                     "'" + use.definition() + "' declares @tenant, but at '"
                         + use.field().getTypeName() + "." + use.field().getFieldName() + "' "
@@ -734,48 +712,17 @@ public record TenantBindingIndex(
         private String unconsumedTenantMarkerReason(TenantMarkerUse use) {
             FieldCoordinates coord = use.field();
             var field = sitesAt(coord).stream().map(Site::field).findFirst().orElse(null);
-            if (!(field instanceof ServiceField && field instanceof OutputField out)) {
-                GraphQLFieldDefinition def = fieldDefinition(coord);
-                if (roots.contains(coord.getTypeName()) && def != null
-                        && def.hasAppliedDirective(BuildContext.DIR_SERVICE)
-                        && !(field instanceof OutputField)) {
-                    return "the field did not classify (see its own error), so nothing reads the"
-                        + " marked value.";
-                }
-                return "it is read by a field that is not a root @service:"
-                    + " a query or @mutation field binds the tenant through @field(name: \""
-                    + scopes.columnName() + "\") on the tenant column, and a child service runs on"
-                    + " its parent's tenant. Remove the directive.";
+            GraphQLFieldDefinition def = fieldDefinition(coord);
+            if (roots.contains(coord.getTypeName()) && def != null
+                    && def.hasAppliedDirective(BuildContext.DIR_SERVICE)
+                    && !(field instanceof OutputField)) {
+                return "the field did not classify (see its own error), so nothing reads the"
+                    + " marked value.";
             }
-            var definition = tenantMarked.get(use.definition());
-            var named = GraphQLTypeUtil.unwrapAll(definition.getType());
-            if (!(named instanceof graphql.schema.GraphQLScalarType)) {
-                return "it is not a scalar: @tenant marks the one value that names the tenant, so"
-                    + " put it on the scalar argument or input field that holds it.";
-            }
-            if (definition.hasAppliedDirective(BuildContext.DIR_NODE_ID)) {
-                return "it carries @nodeId, whose decoded id already names its tenant. Remove"
-                    + " @tenant.";
-            }
-            if (jooqBoundTenantMarkers.contains(use)) {
-                return "it is bound into a jOOQ record parameter, where a field names a column:"
-                    + " bind it to the tenant column with @field(name: \"" + scopes.columnName()
-                    + "\") instead, which routes the call.";
-            }
-            var global = reachedTables(out).stream().filter(t -> !tenantScoped(t)).findFirst();
-            if (global.isPresent()) {
-                return "the service returns global @table type '"
-                    + GraphQLTypeUtil.unwrapAll(fieldDefinition(coord).getType()).getName()
-                    + "' (table '" + global.get().tableName() + "'), which runs on the default"
-                    + " source, so there is no tenant to route. Remove the directive.";
-            }
-            String mistyped = mistypedTenantMarkers.get(use);
-            if (mistyped != null) {
-                return mistyped;
-            }
-            return "the service's parameters do not read it as a plain value. Mark a scalar the"
-                + " service receives as a parameter, or as a member of a Java bean or record"
-                + " parameter, or remove the directive.";
+            return "it is read by a field that is not a root @service:"
+                + " a query or @mutation field binds the tenant through @field(name: \""
+                + scopes.columnName() + "\") on the tenant column, and a child service runs on"
+                + " its parent's tenant. Remove the directive.";
         }
 
         /**
@@ -871,8 +818,7 @@ public record TenantBindingIndex(
             }
             var members = site.members();
             var direct = directBinding(site);
-            boolean connectionService = connectionService(site, anyGlobal);
-            boolean needsTenant = needsTenant(site, reach);
+            boolean needsTenant = needsTenant(reach);
             // The parent decides first, ahead of the field's own arguments: a parent that already
             // supplies a tenant, named by its row or handed down from above, is the tenant the
             // child runs on, and an argument that names the tenant column only filters inside it.
@@ -886,17 +832,6 @@ public record TenantBindingIndex(
             var parentRow = parentRowBinding(site);
             if (parentRow != null) {
                 return new Verdict.Arm(parentRow);
-            }
-            // A method call handed a connection-bound value (a DSLContext, or the $session handle
-            // its connection's mount returned) runs on whichever connection it is handed, so which
-            // connection serves it is semantics, not plumbing: under a tenant context the call runs
-            // on the inherited tenant's connection. Decided ahead of the reach-derived Untenanted
-            // arm, whose "touches no tables" reading is about graphitron's SQL only, a service's
-            // own SQL being opaque. Not where the field's own reach is global: graphitron re-reads
-            // that global return table on the same connection, and a global service runs on the
-            // default source, so the field keeps the Untenanted.DefaultSource leaf below.
-            if (!anyGlobal && bindsConnection(out) && tenantContextOf(coord.getTypeName())) {
-                return new Verdict.Arm(new TenantBinding.Inherited(coord.getTypeName()));
             }
             // Only where the statement needs a tenant: a field touching no tenant table keeps its
             // Untenanted leaf below.
@@ -913,8 +848,7 @@ public record TenantBindingIndex(
                 // every decline's fix lands in a slot, so the ancestor folds treat its subtree as
                 // the fix leaves it (handsDownAsIfFixed).
                 case Reading.Declined declined when needsTenant -> {
-                    return rejectUnrouted(coordinate, reach, anyTenant, declined.declines(),
-                        direct.evidence());
+                    return rejectUnrouted(coordinate, reach, declined.declines());
                 }
                 case Reading.Guaranteed guaranteed -> {
                     return new Verdict.Arm(new TenantBinding.ArgumentBound(guaranteed.slots(),
@@ -927,9 +861,8 @@ public record TenantBindingIndex(
                 // falls through like an unbound field, and a tenant-scoped child below it then
                 // finds no context and rejects on its own.
                 case Reading.Conditional conditional when needsTenant -> {
-                    return rejectUnrouted(coordinate, reach, anyTenant,
-                        List.of(optionalOnlyDetail(site, coordinate, conditional.slots())),
-                        direct.evidence());
+                    return rejectUnrouted(coordinate, reach,
+                        List.of(optionalOnlyDetail(site, coordinate, conditional.slots())));
                 }
                 default -> { }
             }
@@ -944,14 +877,6 @@ public record TenantBindingIndex(
             }
             if (!needsTenant) {
                 return new Verdict.Arm(untenantedLeaf(members));
-            }
-            if (connectionService) {
-                // The service fix, not the generic one: whatever the reach, what routes the call
-                // is a tenant in its arguments, or taking no connection.
-                return Verdict.rejected(new ValidationError(coordinate,
-                    Rejection.unroutedServiceCall(coordinate, scopes.columnName(), List.of(),
-                        direct.evidence()),
-                    graphql.language.SourceLocation.EMPTY));
             }
             String detail = "no argument or input field maps to tenant column '"
                 + scopes.columnName() + "', and no ancestor established a tenant context.";
@@ -972,18 +897,10 @@ public record TenantBindingIndex(
 
         /**
          * The rejection for a field whose arguments name the tenant column without routing it, one
-         * per detail. Picks the family by reach: {@link Rejection#noTenantBinding} names the first
-         * tenant-scoped table the field reaches, and where nothing in reach is tenant-scoped (a
-         * connection-bound root {@code @service}) that opening would be false, so the service arm
-         * carries the details instead.
+         * per detail: {@link Rejection#noTenantBinding} names the first tenant-scoped table the
+         * field reaches.
          */
-        private Verdict rejectUnrouted(String coordinate, List<TableRef> reach, boolean anyTenant,
-                                       List<String> details, List<String> evidence) {
-            if (!anyTenant) {
-                return Verdict.rejected(new ValidationError(coordinate,
-                    Rejection.unroutedServiceCall(coordinate, scopes.columnName(), details, evidence),
-                    graphql.language.SourceLocation.EMPTY));
-            }
+        private Verdict rejectUnrouted(String coordinate, List<TableRef> reach, List<String> details) {
             String tenantTable = reach.stream().filter(this::tenantScoped).findFirst()
                 .orElseThrow().tableName();
             return new Verdict.Rejected(details.stream()
@@ -1022,24 +939,11 @@ public record TenantBindingIndex(
 
         /**
          * Whether the field's own statement needs a tenant: {@code reach} (its
-         * {@link #reachedTables}) holds a tenant-scoped table, or it is a
-         * {@link #connectionService}. A function of the site alone, so the ancestor fold can ask it
-         * before any arm is assigned.
+         * {@link #reachedTables}) holds a tenant-scoped table. A function of the site alone, so the
+         * ancestor fold can ask it before any arm is assigned.
          */
-        private boolean needsTenant(Site site, List<TableRef> reach) {
-            return reach.stream().anyMatch(this::tenantScoped)
-                || connectionService(site, reach.stream().anyMatch(t -> !tenantScoped(t)));
-        }
-
-        /**
-         * A root service handed a connection runs its own SQL on that connection, and that SQL is
-         * opaque, so it needs a tenant whatever graphitron's own reach says. Not where the reach
-         * holds a global table: graphitron re-reads that return on the same connection, and a
-         * global service runs on the default source, so the structure decides the field.
-         */
-        private boolean connectionService(Site site, boolean anyGlobal) {
-            return roots.contains(site.coord().getTypeName())
-                && site.field() instanceof ServiceField && bindsConnection(site.field()) && !anyGlobal;
+        private boolean needsTenant(List<TableRef> reach) {
+            return reach.stream().anyMatch(this::tenantScoped);
         }
 
         /**
@@ -1047,9 +951,7 @@ public record TenantBindingIndex(
          * {@link #siteEstablishesContext} and {@link #siteDivinesTenant}, whatever its own verdict:
          * the field carries neither tenancy marker, its own statement {@link #needsTenant needs a
          * tenant}, that statement does not span tenant-scoped and global tables, its reading is not
-         * {@link Reading.Guaranteed} (which both folds count on its own), and it is not a root
-         * service that would run on the default source by taking no connection
-         * ({@link #runsOnDefaultSourceWithoutConnection}).
+         * {@link Reading.Guaranteed} (which both folds count on its own).
          * {@link #run} computes the answer once per site into {@link #countedSites}, which both
          * folds and {@link #checkedArmOf} read.
          *
@@ -1067,9 +969,6 @@ public record TenantBindingIndex(
          * <ul>
          *   <li>A cross-scope statement offers no tenant fix at all; restructuring the field may
          *   leave it global.</li>
-         *   <li>Taking no connection hands nothing down: a root connection service that reaches no
-         *   table and names no tenant is offered it, and after taking it its subtree really has no
-         *   tenant, so its children's errors are real now.</li>
          *   <li>A marked field takes its verdict from the marker's ladder, and a field that needs
          *   no tenant runs on the default source; neither subtree gets one.</li>
          * </ul>
@@ -1093,26 +992,9 @@ public record TenantBindingIndex(
             List<TableRef> reach = reachedTables(site.field());
             boolean crossScope = reach.stream().anyMatch(this::tenantScoped)
                 && reach.stream().anyMatch(t -> !tenantScoped(t));
-            return needsTenant(site, reach)
+            return needsTenant(reach)
                 && !crossScope
-                && !(directBinding(site).reading() instanceof Reading.Guaranteed)
-                && !runsOnDefaultSourceWithoutConnection(site);
-        }
-
-        /**
-         * Whether a field is a root {@code @service} handed a connection that reaches no table and
-         * whose arguments name no tenant and carry no tenant-scoped value: the one shape whose
-         * rejection offers it to take no connection, after which it runs on the default source and
-         * hands no tenant down. A nesting type's field never qualifies.
-         */
-        private boolean runsOnDefaultSourceWithoutConnection(Site site) {
-            if (site.nested() || !roots.contains(site.coord().getTypeName())
-                    || !(site.field() instanceof ServiceField) || !bindsConnection(site.field())
-                    || !reachedTables(site.field()).isEmpty()) {
-                return false;
-            }
-            var direct = directBinding(site);
-            return direct.reading() instanceof Reading.Unbound && direct.evidence().isEmpty();
+                && !(directBinding(site).reading() instanceof Reading.Guaranteed);
         }
 
         /**
@@ -1218,9 +1100,7 @@ public record TenantBindingIndex(
         /**
          * The {@code @tenantFanOut} rejection ladder, closed and validate-time: a marked field
          * either survives every rung and classifies {@link TenantBinding.FanOut}, or rejects with
-         * a fan-out-specific message. The {@code @service} rung runs ahead of
-         * the reach-derived rungs because a plain service return's reach is structurally empty and
-         * would misreport as "nothing to fan out over". Optional tenant slots survive and become
+         * a fan-out-specific message. Optional tenant slots survive and become
          * the arm's narrowing; a required one rejects, since the field would never fan.
          *
          * <p>Free of side effects (the marker verdict is recorded in {@link #armOf}), so the
@@ -1237,13 +1117,6 @@ public record TenantBindingIndex(
                         + " a write fanned across every claimed tenant is not supported.");
             }
             GraphQLFieldDefinition fieldDef = fieldDefinition(coord);
-            if (fieldDef.hasAppliedDirective(BuildContext.DIR_SERVICE)) {
-                return rejectFanOut(coordinate,
-                    List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_SERVICE),
-                    "'" + coordinate + "' combines @tenantFanOut with @service: fan-out generates"
-                        + " the field's SQL itself, and the service fan-out combination is"
-                        + " deferred. Remove one of the directives.");
-            }
             if (fieldDef.hasAppliedDirective(BuildContext.DIR_ROUTINE)) {
                 return rejectFanOut(coordinate,
                     List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_ROUTINE),
@@ -1402,47 +1275,6 @@ public record TenantBindingIndex(
         }
 
         /**
-         * Whether the field's method call is handed a connection-bound value, a {@code DSLContext}
-         * or the {@code $session} handle. For a
-         * {@link no.sikt.graphitron.rewrite.model.MethodBackedField}: a
-         * {@link no.sikt.graphitron.rewrite.model.MethodRef.Service} whose
-         * {@link no.sikt.graphitron.rewrite.model.MethodRef.CallShape#needsDsl()} holds (a
-         * {@code DSLContext} method parameter, or a holder constructor taking one), any other
-         * method ref with a {@link no.sikt.graphitron.rewrite.model.ParamSource.DslContext}
-         * parameter, or a parameter sourced
-         * {@link no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle}. For a
-         * {@link no.sikt.graphitron.rewrite.model.ServiceField}: a carrier entry of
-         * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromDsl} or
-         * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle}, across the
-         * constructor and method rounds.
-         */
-        private static boolean bindsConnection(OutputField out) {
-            if (out instanceof no.sikt.graphitron.rewrite.model.MethodBackedField mbf) {
-                var method = mbf.method();
-                boolean needsDsl = method instanceof no.sikt.graphitron.rewrite.model.MethodRef.Service svc
-                    ? svc.callShape().needsDsl()
-                    : method.params().stream().anyMatch(p ->
-                        p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.DslContext);
-                return needsDsl || method.params().stream().anyMatch(p ->
-                    p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle
-                        || p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandleMember);
-            }
-            if (out instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
-                var carrier = sf.serviceMethodCall();
-                var entries = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.MappingEntry>(
-                    carrier.methodArgs());
-                if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
-                    entries.addAll(inst.ctorArgs());
-                }
-                return entries.stream().anyMatch(e ->
-                    e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromDsl
-                        || e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle
-                        || e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandleMember);
-            }
-            return false;
-        }
-
-        /**
          * The tables the field's own SQL touches: the Record-shaped return target, a multi-table
          * polymorphic field's table-backed participants (including a joined participant's detail
          * table), or a pivot field's attribute table. Empty for fields that execute no SQL of
@@ -1456,8 +1288,6 @@ public record TenantBindingIndex(
             switch (out) {
                 case QueryField.QueryInterfaceField f -> addParticipantTables(f.participants(), tables);
                 case QueryField.QueryUnionField f -> addParticipantTables(f.participants(), tables);
-                case QueryField.QueryServicePolymorphicField f -> addParticipantTables(f.participants(), tables);
-                case MutationField.MutationServicePolymorphicField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.InterfaceField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.UnionField f -> addParticipantTables(f.participants(), tables);
                 case ChildField.BatchedInterfaceField f -> addParticipantTables(f.participants(), tables);
@@ -1501,9 +1331,7 @@ public record TenantBindingIndex(
 
         /**
          * The field's answer to no input, where it is an empty value graphitron can build: the
-         * list DML verbs, the list-returning service leaves (whose fetcher value is the
-         * re-selected or dispatched {@code List<Record>} whatever the service's own container),
-         * a record service by its return container, and a keyed list lookup. Every other leaf
+         * list DML verbs and a keyed list lookup. Every other leaf
          * (filters, connections, single returns, the child batched lookup) has none.
          */
         private static Optional<TenantBinding.EmptyValue> emptyAnswerOf(OutputField out) {
@@ -1512,32 +1340,10 @@ public record TenantBindingIndex(
                 case MutationField.DmlTableField f when f.write().listInput() -> emptyList;
                 case MutationField.MutationBulkDmlRecordField f ->
                     Optional.of(new TenantBinding.EmptyValue.EmptyResult(f.write().table()));
-                case MutationField.MutationServiceTableField f when f.returnType().wrapper().isList() -> emptyList;
-                case QueryField.QueryServiceTableField f when f.returnType().wrapper().isList() -> emptyList;
-                case MutationField.MutationServicePolymorphicField f when f.returnType().wrapper().isList() -> emptyList;
-                case QueryField.QueryServicePolymorphicField f when f.returnType().wrapper().isList() -> emptyList;
-                case MutationField.MutationServiceTableInterfaceField f when f.returnType().wrapper().isList() -> emptyList;
-                case QueryField.QueryServiceTableInterfaceField f when f.returnType().wrapper().isList() -> emptyList;
-                case MutationField.MutationServiceRecordField f -> emptyOfContainer(f.serviceMethodCall());
-                case QueryField.QueryServiceRecordField f -> emptyOfContainer(f.serviceMethodCall());
                 case QueryField.QueryTableField f
                         when f.lookup().isKeyed() && f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List ->
                     emptyList;
                 default -> Optional.empty();
-            };
-        }
-
-        private static Optional<TenantBinding.EmptyValue> emptyOfContainer(
-                no.sikt.graphitron.rewrite.model.ServiceMethodCall call) {
-            return switch (call.returnContainer()) {
-                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.ListLike ignored ->
-                    Optional.of(TenantBinding.EmptyValue.EmptyList.INSTANCE);
-                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.SetLike ignored ->
-                    Optional.of(TenantBinding.EmptyValue.EmptySet.INSTANCE);
-                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.JooqResult r ->
-                    Optional.of(new TenantBinding.EmptyValue.EmptyResult(r.table()));
-                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.Other ignored ->
-                    Optional.empty();
             };
         }
 
@@ -1787,12 +1593,12 @@ public record TenantBindingIndex(
          * argument typically binds on every polymorphic participant, and one slot per name
          * suffices for the agreement fold).
          *
-         * <p>On a field that only reads (no {@code WRITE} and no {@code SERVICE_CALL} member), a
+         * <p>On a field that only reads (no {@code WRITE} member), a
          * node id that only filters beside an anchor on its own table is left out of the slots
          * ({@link SlotCollector#stepsDown}): the anchor decides the tenant and its predicate keeps
          * another tenant's rows out, so an id naming another tenant matches nothing rather than
          * failing the field. A write keeps every slot, because one statement across two tenants
-         * has no correct execution; so does a service, whose SQL is opaque.
+         * has no correct execution.
          */
         private DirectBinding directBinding(Site site) {
             var collector = new SlotCollector(fieldDefinition(site.coord()));
@@ -1807,28 +1613,25 @@ public record TenantBindingIndex(
                     // Dml.whereKeyColumns(), so a third WHERE-bearing write arm is covered on
                     // arrival rather than falling silently to the no-op default below.
                     case OperationMember.Write.Dml dml -> collectFromWhereKeys(dml, collector);
-                    case OperationMember.ServiceCall sc -> collectFromServiceCall(site, sc, collector);
                     default -> { }
                 }
             }
             // A @routine write contributes nothing here: its only member is the routine call,
             // which carries no filter, lookup or input surface, so it mints no slot at all.
-            return collector.result(!hasKind(site.members(), OperationMember.Kind.WRITE)
-                && !hasKind(site.members(), OperationMember.Kind.SERVICE_CALL));
+            return collector.result(!hasKind(site.members(), OperationMember.Kind.WRITE));
         }
 
         /**
          * Which {@link TenantBinding.Untenanted} leaf a field touching only global tables takes,
-         * read off its own operation members: a statement that writes or calls a service runs on
-         * the key whose tenant part is empty, since the build cannot see what that SQL touches;
-         * anything else is graphitron's own read, on the same key.
+         * read off its own operation members: a statement that writes runs on the key whose tenant
+         * part is empty, since the build cannot see what that SQL touches; anything else is
+         * graphitron's own read, on the same key.
          * {@code REENTRY} is deliberately not in the test: on a producing coordinate it rides
-         * beside the {@code WRITE} or {@code SERVICE_CALL} that already decides the leaf, and on
+         * beside the {@code WRITE} that already decides the leaf, and on
          * a record-sourced child it marks a payload re-projection, which is a global read.
          */
         private static TenantBinding.Untenanted untenantedLeaf(List<OperationMember> members) {
             return hasKind(members, OperationMember.Kind.WRITE)
-                    || hasKind(members, OperationMember.Kind.SERVICE_CALL)
                 ? TenantBinding.Untenanted.DefaultSource.INSTANCE
                 : TenantBinding.Untenanted.GlobalRead.INSTANCE;
         }
@@ -1979,299 +1782,12 @@ public record TenantBindingIndex(
             }
         }
 
-        /**
-         * A root {@code @service} call's tenant-bearing arguments: every argument-sourced
-         * parameter's {@link ValueShape} tree, walked to the leaves that carry a column. A child
-         * service carries a reflected method rather than the structured call and contributes
-         * nothing: it gets its tenant from its parent ({@link #bindsConnection}).
-         *
-         * <p>A service whose own reach holds a global table (a {@code @table} return over one)
-         * mints nothing, whatever its arguments name: graphitron re-reads that return table on
-         * the connection the call is handed, and global tables live on the default source. The
-         * gate sits here rather than in {@link #armOf} so {@link #edgeEstablishesContext}
-         * reads the same answer, and the fields under such a service inherit no tenant that
-         * nothing stamped.
-         */
-        private void collectFromServiceCall(Site site, OperationMember.ServiceCall member,
-                                            SlotCollector collector) {
-            if (!(member.call() instanceof ServiceCallCarrier.StructuredCall structured)) {
-                return;
-            }
-            if (reachedTables(site.field()).stream().anyMatch(t -> !tenantScoped(t))) {
-                return;
-            }
-            // Constructor rounds carry no argument-sourced entry (the walker refuses one there).
-            for (MappingEntry entry : structured.call().methodArgs()) {
-                if (entry instanceof MappingEntry.FromArg arg) {
-                    collectFromValueShape(arg.shape(), site.coord(), collector);
-                }
-            }
-        }
-
-        private void collectFromValueShape(ValueShape shape, FieldCoordinates use,
-                                           SlotCollector collector) {
-            switch (shape) {
-                case ValueShape.ListOf list -> collectFromValueShape(list.elementShape(), use, collector);
-                case ValueShape.BoundClass bound -> {
-                    for (var field : bound.fields()) collectFromValueShape(field.shape(), use, collector);
-                }
-                case ValueShape.JooqRecordInput jr -> collectFromJooqRecord(jr, use, collector);
-                case ValueShape.Scalar scalar -> {
-                    var path = pathOf(scalar.sdlPath());
-                    if (scalar.leafTransform() instanceof CallSiteExtraction.Direct
-                            && tenantMarked.containsKey(scalar.definition())) {
-                        collectFromMarkedScalar(scalar.definition(), path, use, collector);
-                    } else {
-                        collectFromServiceLeaf(scalar.leafTransform(), path, collector);
-                    }
-                }
-            }
-        }
-
-        /**
-         * A scalar the author marked {@code @tenant}, read as the client sent it: the read's value
-         * is the tenant, so the slot projects {@link TenantBinding.SlotProjection.Raw}. The
-         * marker is the author's statement that the opaque service uses the value as its tenant;
-         * what the build checks is the type, since the generated agreement fold compares
-         * candidates with {@code equals} before anything is coerced, so a value of any other type
-         * than the key's would disagree with a decoded sibling naming the same tenant. A mismatch
-         * declines, so nothing routes on a value the fold might misjudge. Only a
-         * {@link CallSiteExtraction.Direct} leaf reaches here; a marked value read through any
-         * other leaf mints what that leaf mints and is left for the marker sweep.
-         */
-        private void collectFromMarkedScalar(String definition, List<String> path,
-                                             FieldCoordinates use, SlotCollector collector) {
-            var marked = new TenantMarkerUse(use, definition);
-            String typeMismatch = tenantKeyTypeMismatch(definition);
-            if (typeMismatch != null) {
-                mistypedTenantMarkers.put(marked, typeMismatch);
-                collector.decline("'" + definition + "' is marked @tenant, but " + typeMismatch);
-                return;
-            }
-            consumedTenantMarkers.add(marked);
-            collector.add(slotNameOf(path),
-                new SlotAccess.Resolved(readOf(path), TenantBinding.SlotProjection.Raw.INSTANCE));
-        }
-
-        /**
-         * The type rung: {@code null} when the marked value arrives as the tenant key's Java type,
-         * otherwise the decline's reason, phrased to follow "but". The wire type is the one forward mapping graphql-java's
-         * argument coercion follows ({@link ScalarTypeResolver#coercionOutputType}), read over the
-         * definition's own scalar (the element type for a list), not the Java member's declared
-         * type, which the wire-coercion check lets through unjudged for a scalar it does not know.
-         */
-        private String tenantKeyTypeMismatch(String definition) {
-            var named = GraphQLTypeUtil.unwrapAll(tenantMarked.get(definition).getType());
-            var wire = ScalarTypeResolver.coercionOutputType(named.getName(), types.values());
-            var key = scopes.tenantType() == null ? null
-                : scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
-            if (wire != null && wire.equals(key)) {
-                return null;
-            }
-            String arrives = wire == null
-                ? "arrives as a Java type graphitron cannot determine"
-                : "arrives as " + wire;
-            return "its scalar '" + named.getName() + "' " + arrives + ", not the tenant key type " + key + " of tenant column '"
-                + scopes.columnName() + "'. Graphitron does not convert a marked value, so it must"
-                + " arrive as the key's own type: declare it with a scalar that does.";
-        }
-
-        /**
-         * Records every {@code @tenant} application inside the input a jOOQ record parameter
-         * binds, at {@code base}, as bound into a record: a field there names a column, and the
-         * record field bound to the tenant column already routes the call, so the marker decides
-         * nothing and the sweep says which binding to write instead.
-         */
-        private void declineMarkersInJooqRecord(FieldCoordinates use, List<String> base) {
-            if (tenantMarked.isEmpty()) return;
-            var argument = fieldDefinition(use) == null ? null
-                : fieldDefinition(use).getArgument(base.get(0));
-            if (argument == null) return;
-            var type = GraphQLTypeUtil.unwrapAll(argument.getType());
-            for (String segment : base.subList(1, base.size())) {
-                if (!(type instanceof GraphQLInputObjectType input) || input.getField(segment) == null) {
-                    return;
-                }
-                type = GraphQLTypeUtil.unwrapAll(input.getField(segment).getType());
-            }
-            if (type instanceof GraphQLInputObjectType input) {
-                forEachInputField(input, new HashSet<>(), definition -> {
-                    if (tenantMarked.containsKey(definition)) {
-                        jooqBoundTenantMarkers.add(new TenantMarkerUse(use, definition));
-                    }
-                });
-            }
-        }
-
-        /**
-         * A jOOQ record parameter: a column binding on the tenant column reads the tenant off the
-         * wire as it is, and a {@code @nodeId} decode whose target's key includes the tenant column
-         * reads it off the decoded key at that position (see {@link #decodedSlotAccess}). Both
-         * paths are relative to the record's own input, so they extend the parameter's argument
-         * path. A tenant-scoped table's record that binds neither is tenant evidence.
-         */
-        private void collectFromJooqRecord(ValueShape.JooqRecordInput jr, FieldCoordinates use,
-                                           SlotCollector collector) {
-            List<String> base = pathOf(jr.sdlPath());
-            declineMarkersInJooqRecord(use, base);
-            boolean bound = false;
-            for (var binding : jr.carrier().columnBindings()) {
-                if (!matchesTenantColumn(binding.column())) continue;
-                for (List<String> path : binding.paths()) {
-                    var full = concat(base, path);
-                    bound = true;
-                    collector.add(slotNameOf(full), new SlotAccess.Resolved(
-                        readOf(full), TenantBinding.SlotProjection.Raw.INSTANCE));
-                }
-            }
-            for (var keyDecode : jr.carrier().keyDecodes()) {
-                // Read off the target's own key tuple rather than the record's target columns: a
-                // reference decode lands the key on foreign-key columns that need not carry the
-                // tenant column's name, and the tuple is what the decode projects from.
-                var full = concat(base, keyDecode.path());
-                var access = decodedSlotAccess(keyDecode.typeName(), keyDecode.keyColumns(),
-                    readOf(full), slotNameOf(full));
-                if (access.isEmpty()) continue;
-                bound = true;
-                collector.add(slotNameOf(full), access.get());
-            }
-            if (!bound && tenantScoped(jr.carrier().table())) {
-                collector.evidence(recordNameOf(jr.carrier().table()) + " at " + slotNameOf(base));
-            }
-        }
-
-        /**
-         * One service leaf. A record decode of one target type and a key decode read the tenant off
-         * the decoded key at the tenant column's position; a polymorphic record decode declines,
-         * since its candidates decode the same id with their own key columns; every other leaf
-         * carries no column and mints nothing. A decode of a tenant-scoped type whose key misses
-         * the tenant column is tenant evidence.
-         */
-        private void collectFromServiceLeaf(CallSiteExtraction leaf, List<String> path,
-                                            SlotCollector collector) {
-            switch (leaf) {
-                case CallSiteExtraction.NodeIdDecodeRecord record -> {
-                    var access = decodedSlotAccess(record.typeName(), record.keyColumns(),
-                        readOf(path), slotNameOf(path));
-                    if (access.isEmpty()) {
-                        if (tenantScoped(record.table())) {
-                            collector.evidence(recordNameOf(record.table()) + " at " + slotNameOf(path));
-                        }
-                        return;
-                    }
-                    collector.add(slotNameOf(path), access.get());
-                }
-                case CallSiteExtraction.NodeIdDecodeKeys keys -> {
-                    var shape = keys.decodeMethod().outputColumnShape();
-                    int slot = tenantIndex(shape);
-                    if (slot < 0) {
-                        // The decode carries the table it reads, so the evidence needs no type
-                        // lookup; the target may be a node type or a @table type decoded from
-                        // catalog node metadata.
-                        var decode = keys.decodeMethod();
-                        if (tenantScoped(decode.table())) {
-                            collector.evidence(decode.targetTypeName() + " id at " + slotNameOf(path));
-                        }
-                        return;
-                    }
-                    collector.add(slotNameOf(path), accessOf(keys, readOf(path), slot));
-                }
-                // The service-side twin of PruneOnMismatch. Minting nothing would leave the id
-                // unchecked beside a divining sibling, and the service would be handed a record
-                // from another tenant to act on in the wrong database. Only where some candidate
-                // is tenant-scoped: an id every candidate of which is global names no tenant.
-                case CallSiteExtraction.NodeIdDecodePolymorphicRecord poly -> {
-                    if (poly.candidates().stream().anyMatch(c -> tenantScoped(c.table()))) {
-                        collector.decline("the tenant is reached through a @nodeId slot naming '"
-                            + poly.containerName() + "', whose members decode the same id as"
-                            + " different node types, each with its own key columns: there is no"
-                            + " single decode to route the service call on. Take a record of one"
-                            + " node type, or bind the tenant through a field mapping to tenant"
-                            + " column '" + scopes.columnName() + "'.");
-                    }
-                }
-                default -> { }
-            }
-        }
-
-        /** The simple name of a table's generated record class, as an author reads it in a parameter. */
-        private static String recordNameOf(TableRef table) {
-            String fq = table.recordClassName();
-            return fq.substring(fq.lastIndexOf('.') + 1);
-        }
-
         /** The tenant column's position in {@code columns}, or {@code -1}. */
         private int tenantIndex(List<ColumnRef> columns) {
             for (int i = 0; i < columns.size(); i++) {
                 if (matchesTenantColumn(columns.get(i))) return i;
             }
             return -1;
-        }
-
-        /**
-         * Where a record-shaped {@code @nodeId(typeName:)} decode reads the tenant, or empty when
-         * the target's key tuple {@code keyColumns} has no tenant column. A target that is a node
-         * type reads the tenant off its {@code decode<TypeName>} helper at the tenant column's
-         * position. A {@code @table} type that is not a node type declines when its key carries the
-         * tenant column: the record carriers hold no {@link HelperRef.Decode}, so a record decode of
-         * such a type does not route the statement on its tenant. That is a scope decision rather
-         * than a missing helper; a leaf naming the same type does route, through the catalog decode
-         * it carries. Looked up by {@code typeName}, not by type id: two
-         * types can back one table, and a {@code @table}-only type's catalog type id can coincide
-         * with a node type's.
-         */
-        private Optional<SlotAccess> decodedSlotAccess(String typeName, List<ColumnRef> keyColumns,
-                                                       TenantBinding.SlotRead read, String slotName) {
-            int slot = tenantIndex(keyColumns);
-            if (slot < 0) {
-                return Optional.empty();
-            }
-            if (types.get(typeName) instanceof GraphitronType.NodeType nt) {
-                return Optional.of(new SlotAccess.Resolved(
-                    read, new TenantBinding.SlotProjection.DecodedKeySlot(nt.decodeMethod(), slot)));
-            }
-            return Optional.of(new SlotAccess.Declined("the tenant is reached through @nodeId(typeName: '"
-                + typeName + "') at " + slotName + ", whose key carries tenant column '"
-                + scopes.columnName() + "', but '" + typeName + "' is not a node type, and a record"
-                + " decode of a @table-only type does not route the statement on its tenant. Make '"
-                + typeName + "' a node type, or bind the tenant through a field mapping to tenant"
-                + " column '" + scopes.columnName() + "'."));
-        }
-
-        /** An argument path as its SDL names: the argument, then each input field below it. */
-        private static List<String> pathOf(ArgPath path) {
-            var names = new ArrayList<String>(path.deeperSegments().size() + 1);
-            names.add(path.outerArgName());
-            for (var segment : path.deeperSegments()) names.add(segment.name());
-            return names;
-        }
-
-        private static List<String> concat(List<String> head, List<String> tail) {
-            var out = new ArrayList<String>(head.size() + tail.size());
-            out.addAll(head);
-            out.addAll(tail);
-            return out;
-        }
-
-        /**
-         * A one-segment path is the argument itself; a longer one walks into its input. The
-         * runtime walk maps a list-shaped level over its elements, so a batch input needs nothing
-         * further here.
-         */
-        private static TenantBinding.SlotRead readOf(List<String> path) {
-            return path.size() == 1
-                ? TenantBinding.SlotRead.TopLevelArg.INSTANCE
-                : new TenantBinding.SlotRead.NestedInput(path.get(0), path.subList(1, path.size()));
-        }
-
-        /**
-         * The argument name for a top-level slot, which is what {@link TenantBinding.SlotRead.TopLevelArg}
-         * reads by, and the dot-joined path for a nested one: the collector dedupes by name, so a
-         * name stopping at the last segment would merge two {@code id} fields at different paths
-         * and drop the second from the agreement fold.
-         */
-        private static String slotNameOf(List<String> path) {
-            return String.join(".", path);
         }
 
         private void collectFromTableInput(ArgumentRef.InputTypeArg.TableInputArg input,

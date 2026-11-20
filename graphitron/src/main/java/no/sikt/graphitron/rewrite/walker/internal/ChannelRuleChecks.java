@@ -7,17 +7,14 @@ import java.util.LinkedHashMap;
 import java.util.Optional;
 
 /**
- * Channel-level handler rules over a resolved {@code @error}-type list. Absorbed from
- * {@code FieldBuilder.checkChannelLevelHandlerRules} / {@code checkDuplicateMatchCriteria} so the
- * {@code ErrorChannelWalker} owns the in-scope error-channel rule surface; the two checks are pure
- * functions of {@code mappedErrorTypes}, so they live here as static helpers the walker wraps into
- * {@link no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.ChannelRuleViolation} arms with
- * the rule number and the returned detail string.
+ * Channel-level handler rules over a resolved {@code @error}-type list. The two checks are pure
+ * functions of {@code mappedErrorTypes}, so they live here as static helpers the DML path's
+ * {@code FieldBuilder.checkChannelLevelHandlerRules} / {@code checkDuplicateMatchCriteria}
+ * delegate to.
  *
  * <p>Each method returns the detail (the actionable second half of the diagnostic, no type/field
- * prefix) when the rule fires, or {@code null} when the channel is well-formed; the walker supplies
- * the outcome-type and errors-field names. The DML path keeps its own
- * {@code FieldBuilder} copies during the additive window; a later slice consolidates onto these.
+ * prefix) when the rule fires, or {@code null} when the channel is well-formed; the caller supplies
+ * the outcome-type and errors-field names.
  */
 public final class ChannelRuleChecks {
 

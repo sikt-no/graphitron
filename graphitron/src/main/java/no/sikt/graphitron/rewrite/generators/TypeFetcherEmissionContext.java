@@ -315,14 +315,6 @@ final class TypeFetcherEmissionContext {
     }
 
     /**
-     * The shape-aware {@code create<Record>} jOOQ-record arm of {@link #fetchersHelperNames()}, the
-     * seam the two jOOQ-record call-site emitters read.
-     */
-    JooqRecordHelperNames jooqRecordHelperNames() {
-        return fetchersHelperNames.jooqRecord();
-    }
-
-    /**
      * Install the populated {@link FetchersHelperNames} resolver for this class. Called once by
      * {@link TypeFetcherGenerator} <em>before</em> any field body emits, so every call site and the
      * helper drain read the same resolver.
@@ -346,48 +338,6 @@ final class TypeFetcherEmissionContext {
     java.util.List<com.palantir.javapoet.MethodSpec> drainCompanionMethods() {
         var out = java.util.List.copyOf(companionMethods);
         companionMethods.clear();
-        return out;
-    }
-
-    // The ConstraintViolations.Paths constants this class's validation pre-steps name, keyed by the
-    // translation they build, so two fields binding one class through the same SDL layout share one
-    // and the same class bound through two layouts gets two.
-    private final java.util.Map<String, String> validationPathNames = new java.util.LinkedHashMap<>();
-    private final java.util.List<com.palantir.javapoet.FieldSpec> validationPathFields =
-        new java.util.ArrayList<>();
-
-    /**
-     * The name of this class's {@code private static final ConstraintViolations.Paths} constant
-     * translating {@code subject}'s Java members to the SDL input fields they bind, declaring it on
-     * first request: a bound class's members, or a jOOQ record's {@code checks}. Class assembly drains
-     * the declarations through {@link #drainValidationPathFields()}.
-     */
-    String validationPathsConstant(no.sikt.graphitron.rewrite.model.ServiceMethodCall.ValidationSubject subject,
-            java.util.List<no.sikt.graphitron.rewrite.model.ServiceMethodCall.ValidationSubject.ColumnCheck> checks,
-            String outputPackage) {
-        var initializer = no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator
-            .pathsInitializer(subject, checks, outputPackage);
-        var javaClass = (com.palantir.javapoet.ClassName) subject.javaType();
-        return validationPathNames.computeIfAbsent(initializer.toString(), key -> {
-            String stem = "VALIDATION_PATHS_"
-                + javaClass.simpleName().replaceAll("([a-z0-9])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT);
-            String name = stem;
-            for (int n = 2; validationPathNames.containsValue(name); n++) {
-                name = stem + "_" + n;
-            }
-            validationPathFields.add(com.palantir.javapoet.FieldSpec.builder(
-                    no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator.pathsClass(outputPackage),
-                    name, javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC,
-                    javax.lang.model.element.Modifier.FINAL)
-                .initializer(initializer)
-                .build());
-            return name;
-        });
-    }
-
-    java.util.List<com.palantir.javapoet.FieldSpec> drainValidationPathFields() {
-        var out = java.util.List.copyOf(validationPathFields);
-        validationPathFields.clear();
         return out;
     }
 }

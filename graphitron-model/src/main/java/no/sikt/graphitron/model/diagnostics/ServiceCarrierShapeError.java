@@ -8,8 +8,7 @@ package no.sikt.graphitron.model.diagnostics;
  * {@link #lspCode()} namespace, rather than collapsing into the flat
  * {@link Rejection.AuthorError.Structural} bare-string arm.
  *
- * <p>These arms are the typed reject variants of {@code BuildContext.ServiceCarrierShape},
- * the classify-time verdict over the triple (carrier field wrapper, {@code @service} producer return
+ * <p>These arms are the typed reject variants of the classify-time verdict over the triple (carrier field wrapper, {@code @service} producer return
  * shape, payload data-field wrapper). Each arm carries the <em>disagreeing axes</em> as typed
  * {@link Arity} values and the offending field/payload coordinate, not a reason string
  * composed at the detection site ({@code DmlPayloadScan.Reject(String)} is the debt this deliberately

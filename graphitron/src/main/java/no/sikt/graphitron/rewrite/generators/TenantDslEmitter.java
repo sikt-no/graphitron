@@ -241,8 +241,7 @@ final class TenantDslEmitter {
      * Yields the byte-identical {@code graphitronContext(env).getDslContext(env)} in
      * single-tenant builds. {@link TenantBinding.ArgumentBound} throws: an expression cannot
      * carry the bound-slot reads, so a divining coordinate reaching one of these sites is a
-     * generation-time failure rather than an unrouted connection. The root service sites, which
-     * can divine, go through {@link #serviceDslExpression} instead.
+     * generation-time failure rather than an unrouted connection.
      */
     static CodeBlock dslExpression(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
         if (!routes(ctx)) {
@@ -260,8 +259,8 @@ final class TenantDslEmitter {
             case TenantBinding.ArgumentBound ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "ArgumentBound reached an expression-only DSL site that cannot emit the "
-                    + "bound-slot reads; route it through TenantDslEmitter.resolve, or through "
-                    + "handDownOnly plus serviceDslExpression, with the field carrier.");
+                    + "bound-slot reads; route it through TenantDslEmitter.resolve with the field "
+                    + "carrier.");
             // Unreachable by design: the classifier rejects @tenantFanOut on @service
             // fields, so this arm firing is a graphitron bug, not an unrouted connection.
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
@@ -275,61 +274,10 @@ final class TenantDslEmitter {
         };
     }
 
-    /**
-     * The {@code DSLContext} source a root {@code @service} site hands
-     * {@code ServiceMethodCallEmitter.emit}, which declares {@code dsl} itself: the site pastes
-     * {@code handDown}'s declaration (the {@code _divinedTenant} local for a divining field, empty
-     * otherwise) ahead of the call, and this expression reads that local when it was declared,
-     * else it is {@link #dslExpression}'s arm-forked source ({@code dslDefault} for
-     * {@link TenantBinding.Untenanted.DefaultSource}, the handed-down read for
-     * {@link TenantBinding.Inherited}).
-     *
-     * @param handDown the {@link #handDownOnly} resolution the site already pasted
-     */
-    static CodeBlock serviceDslExpression(TypeFetcherEmissionContext ctx, OutputField field,
-                                          Resolution handDown, String outputPackage) {
-        return handDown.handsDownTenant()
-            ? CodeBlock.of("$T.dslFor(env, $L)", ownedConnectionsClass(outputPackage), TENANT_KEY_LOCAL)
-            : dslExpression(ctx, field.name(), outputPackage);
-    }
-
     /** The localContext-divined acquisition expression the inherited family splices in. */
     private static CodeBlock inheritedReadExpression(ClassName ownedConnections) {
         return CodeBlock.of("$T.dslFor(env, $T.divinedTenant($T.tenantIn(env.getLocalContext())))",
             ownedConnections, ownedConnections, connectionKeyOf(ownedConnections));
-    }
-
-    /**
-     * Hand-down-only resolution for fetchers whose routed {@code dsl} is declared elsewhere: thin
-     * delegating fetchers whose SQL lives in a companion rows method, and the root
-     * {@code @service} sites, where {@code ServiceMethodCallEmitter.emit} declares {@code dsl}
-     * from {@link #serviceDslExpression}. When the field is {@link TenantBinding.ArgumentBound} in
-     * a multi-tenant build, yields just the divined-key local so the fetcher's success return can
-     * hand the key down the subtree; every other case yields an empty declaration. A companion
-     * re-divines from the same {@code env}, so the two reads agree by construction. {@code site}
-     * says what the fetcher does with a request whose slots name no tenant.
-     */
-    static Resolution handDownOnly(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage,
-                                   EmptyAnswerSite site) {
-        if (!routes(ctx)) {
-            return new Resolution(CodeBlock.of(""));
-        }
-        TenantBinding binding = requireBinding(ctx, field.name());
-        var none = new Resolution(CodeBlock.of(""));
-        return switch (binding) {
-            case TenantBinding.ArgumentBound bound -> new Resolution(
-                divinedKeyDeclaration(ctx, field.name(), bound, ownedConnectionsClass(outputPackage), site),
-                divinedHandDown(ownedConnectionsClass(outputPackage)));
-            // A fanned field hands tenants down per element (each unioned row's DataFetcherResult
-            // carries its own localContext), never as one divined-key local; the fanned-fetcher
-            // emission owns that stamping.
-            case TenantBinding.FanOut ignored -> none;
-            case TenantBinding.Inherited ignored -> none;
-            case TenantBinding.NodeIdBound ignored -> none;
-            case TenantBinding.EntityRepBound ignored -> none;
-            case TenantBinding.Untenanted ignored -> none;
-            case TenantBinding.ParentRowBound ignored -> throw parentRowUnreachable(ctx, field.name());
-        };
     }
 
     /**

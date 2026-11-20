@@ -6,13 +6,10 @@ import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
 import no.sikt.graphitron.model.test.CorpusExpectations;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
-import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OutputField;
-import no.sikt.graphitron.rewrite.model.QueryField;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -116,16 +113,6 @@ public final class ExemptionRegistry {
         + "classifier does not mint the leaf until the rejection sites lift.");
 
     /**
-     * The walk answers every {@code @service} field with {@link GraphitronField.StoreOwnedField},
-     * the store owning it whole, so no schema-reachable path mints a service leaf or the service
-     * call member any more; the leaves stay declared until the walk's service arms are deleted.
-     */
-    private static final Exemption SERVICE_STORE_OWNED = new Exemption.Unimplemented(
-        "deleting the walk's service leaves and their arms",
-        "Every @service field classifies to StoreOwnedField, so the classifier mints neither the "
-        + "service leaves nor the ServiceCall member.");
-
-    /**
      * The live ground shared by the Count / Facet rows: a synthesised connection type's
      * {@code totalCount} and {@code facets} fields are not classified coordinates in the fact
      * base at all (the connection-synthesis relation mints the types, but their fields never
@@ -146,17 +133,7 @@ public final class ExemptionRegistry {
      * {@link #ENUM_NO_CASE_REQUIRED}.
      */
     public static final Map<Class<?>, Exemption> CORPUS_NO_CASE_REQUIRED = Map.ofEntries(
-        Map.entry(ChildField.ErrorsField.class, ERRORS_FIELD_PENDING),
-        Map.entry(QueryField.QueryServiceTableField.class, SERVICE_STORE_OWNED),
-        Map.entry(QueryField.QueryServiceRecordField.class, SERVICE_STORE_OWNED),
-        Map.entry(QueryField.QueryServicePolymorphicField.class, SERVICE_STORE_OWNED),
-        Map.entry(QueryField.QueryServiceTableInterfaceField.class, SERVICE_STORE_OWNED),
-        Map.entry(MutationField.MutationServiceTableField.class, SERVICE_STORE_OWNED),
-        Map.entry(MutationField.MutationServiceRecordField.class, SERVICE_STORE_OWNED),
-        Map.entry(MutationField.MutationServicePolymorphicField.class, SERVICE_STORE_OWNED),
-        Map.entry(MutationField.MutationServiceTableInterfaceField.class, SERVICE_STORE_OWNED),
-        Map.entry(ChildField.ServiceTableField.class, SERVICE_STORE_OWNED),
-        Map.entry(ChildField.ServiceRecordField.class, SERVICE_STORE_OWNED));
+        Map.entry(ChildField.ErrorsField.class, ERRORS_FIELD_PENDING));
 
     /**
      * Input-field leaves without a {@code GraphitronSchemaBuilderTest} enum classification case.
@@ -167,8 +144,8 @@ public final class ExemptionRegistry {
 
     /**
      * {@link OperationMember} leaf arms no declared-and-agreeing {@code operations:} corpus row
-     * reaches: the five modeled-but-unpopulated arms, the retired UPSERT and the service call the
-     * store now owns, each with its blocker story. An arm leaves this map the moment a fixture
+     * reaches: the five modeled-but-unpopulated arms and the retired UPSERT, each with its blocker
+     * story. An arm leaves this map the moment a fixture
      * declares-and-agrees on it (the ratchet); an unreached arm not listed here fails the
      * completeness check.
      */
@@ -195,17 +172,14 @@ public final class ExemptionRegistry {
             "condition-matched DELETE",
             "The condition-matched write verbs are declared ahead of implementation; the "
             + "validator-mirror-gaps item owns the per-arm verdicts."),
-        OperationMember.Write.Upsert.class, UPSERT_RETIRED,
-        OperationMember.ServiceCall.class, SERVICE_STORE_OWNED);
+        OperationMember.Write.Upsert.class, UPSERT_RETIRED);
 
     /**
      * Concrete {@link ChildField} leaves the corpus source-shape walk (top-level coordinates
      * plus the ridden {@code NestingField.nestedFields()} / {@code PivotSpec.slots()} lists)
-     * does not observe: the service leaves, which no schema-reachable path mints.
+     * does not observe. Empty: the walk observes every one.
      */
-    public static final Map<Class<?>, Exemption> NOT_CORPUS_COVERED = Map.of(
-        ChildField.ServiceTableField.class, SERVICE_STORE_OWNED,
-        ChildField.ServiceRecordField.class, SERVICE_STORE_OWNED);
+    public static final Map<Class<?>, Exemption> NOT_CORPUS_COVERED = Map.of();
 
     // ===== Domain and covered-set derivations =====
 

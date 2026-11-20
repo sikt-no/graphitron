@@ -266,7 +266,7 @@ through the recursion; when a condition is found, `rewrapForNested`
 replaces each `ParamSource.Arg` param's extraction with
 `NestedInputField(outerArgName, prefix + [fieldName])`.
 
-At code-gen time, `ArgCallEmitter.buildArgExtraction` turns that into a
+At code-gen time, the condition glue (`ConditionGlueRenderer`) turns that into a
 null-safe nested `instanceof Map<?, ?>` ternary chain that traverses from
 the top-level argument Map down to the leaf value. The chain short-circuits
 to `null` at any level whose value is absent or is not a Map, so a

@@ -35,8 +35,7 @@ class LauncherMembershipTest {
     // chain, discriminated interface, keyed lookup), the four batched child shapes (plain
     // split, split lookup at list-per-key cardinality, split pivot, discriminated interface at
     // list cardinality), and all four reentry-carrying DML return arms. The Boolean DELETE is
-    // the deliberate non-member witness: present in the model, no row. The two service
-    // families are not here: the store emits every @service, so the walk mints neither.
+    // the deliberate non-member witness: present in the model, no row.
     private static final String SDL = """
         interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
           contentId: Int! @field(name: "CONTENT_ID")
@@ -138,15 +137,11 @@ class LauncherMembershipTest {
         for (var row : relation.rows()) {
             observedSources.add(row.source().getClass());
         }
-        // The two service arms are minted for no field: the store emits every @service.
         assertThat(observedSources)
             .as("every declared LaunchSource arm is produced over the fixture; a new arm must"
                 + " extend the fixture (or enumerate itself here with a prose reason)")
             .containsExactlyInAnyOrderElementsOf(
-                GeneratorCoverageTest.sealedLeaves(LaunchSource.class).stream()
-                    .filter(arm -> arm != LaunchSource.ServiceCall.class
-                        && arm != LaunchSource.ServiceTableLift.class)
-                    .toList());
+                GeneratorCoverageTest.sealedLeaves(LaunchSource.class));
     }
 
     /**

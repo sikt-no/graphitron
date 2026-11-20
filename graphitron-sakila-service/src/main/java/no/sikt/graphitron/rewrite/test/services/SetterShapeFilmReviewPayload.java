@@ -6,7 +6,7 @@ import java.util.List;
  * Mutable-bean sibling of {@link FilmReviewPayload}. Same SDL field set
  * ({@code reviewId}, {@code errors}) but no all-fields constructor: a public no-arg constructor
  * and a Java-bean setter and getter per field, the shape a Graphitron 9 payload keeps. Graphitron
- * never constructs it: the {@code MutationServiceRecordField} fetcher returns an {@code Outcome},
+ * never constructs it: the mutation fetcher returns an {@code Outcome},
  * the service's instance on success and the claimed errors on a throw. Its own
  * {@link #getErrors()} is never read; the payload's {@code errors} field reads the
  * {@code Outcome}.

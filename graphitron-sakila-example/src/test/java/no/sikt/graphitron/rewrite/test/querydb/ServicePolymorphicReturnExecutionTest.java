@@ -86,7 +86,7 @@ class ServicePolymorphicReturnExecutionTest {
     @Test
     void searchManyMutation_dispatchesBothBranchesByRecordClass() {
         // The headline shape: a @service MUTATION returning a multitable interface. Same
-        // record-class dispatch as the query arm, but pins the MutationServicePolymorphicField
+        // record-class dispatch as the query arm, but pins the polymorphic @service mutation's
         // emit + registration + runtime path end-to-end.
         String expectedFilmTitle = SEEDED_FILM_1_TITLE;
         String expectedActorFirstName = SEEDED_ACTOR_1_FIRST_NAME;

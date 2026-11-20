@@ -44,23 +44,23 @@ class UnifiedEmissionPinsTest {
     @Test
     void fetcherEmitter_unifiedDispatch() throws IOException {
         // Every DataFetcher MethodSpec emit site in the generators package routes through
-        // DataLoaderFetcherEmitter.build. Current sites (3): TypeFetcherGenerator's
-        // buildServiceDataFetcher and buildBatchedDataFetcher (the former
-        // buildSplitQueryDataFetcher / buildRecordBasedDataFetcher pair was merged onto the one
-        // source-shape-gated builder; generated output stayed byte-identical), plus
-        // buildPivotBatchedDataFetcher (the @pivot specialisation: empty prelude, Record value,
-        // no NULL-key short-circuit).
+        // DataLoaderFetcherEmitter.build. Current sites (2): TypeFetcherGenerator's
+        // buildBatchedDataFetcher (the former buildSplitQueryDataFetcher /
+        // buildRecordBasedDataFetcher pair was merged onto the one source-shape-gated builder;
+        // generated output stayed byte-identical), plus buildPivotBatchedDataFetcher (the @pivot
+        // specialisation: empty prelude, Record value, no NULL-key short-circuit). The child
+        // service builder left with the walk's service leaves.
         long unifiedCalls = countAcrossGenerators(
             Pattern.compile("\\bDataLoaderFetcherEmitter\\.build\\b"),
             "DataLoaderFetcherEmitter.java");
         assertThat(unifiedCalls)
             .as("Every R38 DataFetcher emit site outside DataLoaderFetcherEmitter itself routes "
-                + "through DataLoaderFetcherEmitter.build. The three sites — "
-                + "buildServiceDataFetcher, buildBatchedDataFetcher, and "
-                + "buildPivotBatchedDataFetcher — are the current enumeration. A handcrafted "
+                + "through DataLoaderFetcherEmitter.build. The two sites, "
+                + "buildBatchedDataFetcher and buildPivotBatchedDataFetcher, "
+                + "are the current enumeration. A handcrafted "
                 + "bypass replaces one call here with inline "
                 + "DataFetcher MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(3);
+            .isEqualTo(2);
     }
 
     @Test
@@ -69,16 +69,15 @@ class UnifiedEmissionPinsTest {
         // launcher) body now renders through RootLauncherRenderer.render over a launcher
         // command row. This pin is the skeleton pin's successor with a live failure mode
         // (asserting zero RowsMethodSkeleton calls after its deletion could never fail again):
-        // it counts the render call sites in the generators package. Current sites (7), all in
+        // it counts the render call sites in the generators package. Current sites (6), all in
         // TypeFetcherGenerator: the two root arms (table and interface; the lookup fold merged
         // the keyed-lookup root onto the table arm, and the routine fold merged the
         // routine-sourced root there too, the fork living in the launcher row's source arm),
-        // the four child arms (batched table with the keyed-lookup fork inside, batched pivot,
-        // service table lift, service record delegate), the DML reentry companion's one
-        // shared write-arm call (emitReentry; the projected and discriminated arms converge on
-        // it, so the fold added one site, not two), and the root @service table return's one
-        // shared call (emitServiceReentryLift; the query and mutation twins converge on it the
-        // same way). A handcrafted bypass replaces one call
+        // the three child arms (batched table with the keyed-lookup fork inside, batched pivot,
+        // batched discriminated interface), and the DML reentry companion's one shared
+        // write-arm call (emitReentry; the projected and discriminated arms converge on it, so
+        // the fold added one site, not two). The service arms left with the walk's service
+        // leaves. A handcrafted bypass replaces one call
         // with inline MethodSpec construction and drops the count; a legitimately new launcher
         // family raises it, and touching this number is the review point.
         long renderSites = countAcrossGenerators(
@@ -88,7 +87,7 @@ class UnifiedEmissionPinsTest {
             .as("Every launcher emit site in generators/ routes through "
                 + "RootLauncherRenderer.render; a count move in either direction is a "
                 + "deliberate edit here")
-            .isEqualTo(9);
+            .isEqualTo(6);
     }
 
     @Test

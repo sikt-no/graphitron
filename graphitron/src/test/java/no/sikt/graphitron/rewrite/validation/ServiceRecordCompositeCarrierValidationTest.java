@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * disagreement through {@code RecordBindingResolver}'s per-type fold
  * ({@code RecordBindingMultiProducer}); the unresolvable {@code @field}-mapped child through the
  * record-backed accessor-resolution rejection; and the re-levelled cardinality mismatch through the
- * producing {@code @service} field's {@code checkServiceReturnMatchesPayload}.
+ * producing {@code @service} field's return check.
  */
 @PipelineTier
 class ServiceRecordCompositeCarrierValidationTest {

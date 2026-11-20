@@ -4,7 +4,6 @@ import graphql.language.SourceLocation;
 import com.palantir.javapoet.ClassName;
 
 import java.util.List;
-import java.util.Optional;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
@@ -21,7 +20,6 @@ public sealed interface ChildField extends OutputField
             ChildField.BatchedInterfaceField, ChildField.BatchedUnionField,
             ChildField.NestingField,
             ChildField.PivotSpecField, ChildField.PivotSlotField,
-            ChildField.ServiceRecordField,
             ChildField.RecordReadField,
             ChildField.RecordCompositeField,
             ChildField.ComputedField,
@@ -65,11 +63,6 @@ public sealed interface ChildField extends OutputField
 
             case TableInterfaceField ignored -> SourceShape.Table;
             case BatchedTableInterfaceField ignored -> SourceShape.Table;
-            // Neither service leaf is parent-kind-pure: both are minted on a @table parent and on a
-            // class-backed one, so the stored key source is what carries the projection. Its arms
-            // are cut on exactly this seam, which makes the derivation total.
-            case ServiceTableField f -> f.keySource().sourceShape();
-            case ServiceRecordField f -> f.keySource().sourceShape();
             case ComputedField ignored -> SourceShape.Table;
             case NestingField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
@@ -108,10 +101,8 @@ public sealed interface ChildField extends OutputField
             case BatchedTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case BatchedTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
-            case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case RecordReadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
             // Composite carrier data field: the element is a record-backed result type
             // (not a scalar Field, not a @table), distinguishing this leaf from RecordReadField.
@@ -178,8 +169,8 @@ public sealed interface ChildField extends OutputField
 
     /**
      * The single data field on an {@code @service} source-record carrier: an ID-typed scalar
-     * encoding the producer record's node-key column(s). The parent classifies as
-     * {@code MutationField.MutationServiceRecordField}; the {@code @service} method returns the
+     * encoding the producer record's node-key column(s). The parent is a root {@code @service}
+     * mutation returning a non-table payload; the {@code @service} method returns the
      * typed jOOQ {@code XRecord} (single) or {@code List<XRecord>} (bulk) verbatim, optionally
      * wrapped in the typed {@code Outcome} when the payload carries an errors field. The fetcher
      * reads the key column(s) straight off the in-memory record(s) and runs them through
@@ -394,8 +385,7 @@ public sealed interface ChildField extends OutputField
      */
     sealed interface TableTargetField extends ChildField, SqlGeneratingField
         permits ChildField.TableField, ChildField.BatchedTableField,
-                ChildField.TableInterfaceField, ChildField.BatchedTableInterfaceField,
-                ChildField.ServiceTableField {
+                ChildField.TableInterfaceField, ChildField.BatchedTableInterfaceField {
 
         ReturnTypeRef.TableBoundReturnType returnType();
         List<JoinStep> joinPath();
@@ -1179,185 +1169,6 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * A child field backed by a developer-provided service method ({@code @service}), where the
-     * return type is annotated with {@code @table} (source → table-mapped target).
-     *
-     * <p>Implements {@link TableTargetField} for structural uniformity. The service method replaces
-     * direct SQL generation; {@link #filters()}, {@link #orderBy()}, and {@link #pagination()}
-     * typically carry empty/None values unless additional filter conditions are present.
-     *
-     * <p>Parameter binding (including context arguments) is fully encoded in
-     * {@link MethodRef#params()} via {@link ParamSource}.
-     *
-     * @param sourceKey derived from the service method's {@link MethodRef.Param.Sourced}
-     *     parameter, non-null: a child {@code @service} whose method declares no such parameter is
-     *     rejected at classify time, so the leaf is never constructed without a key.
-     * @param keySource where the emitted fetcher binds the record the key columns are read off. The
-     *     component {@link ChildField#sourceShape()} derives this leaf's answer from: the leaf is
-     *     minted on both a {@code @table} and a class-backed parent, so leaf identity cannot carry
-     *     that fact.
-     * @param loaderRegistration paired with {@code sourceKey}; carries the DataLoader container
-     *     (positional list vs mapped set) and dispatch (load vs loadMany) axes the service
-     *     return type projects onto.
-     */
-    record ServiceTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        List<JoinStep> joinPath,
-        List<WhereFilter> filters,
-        OrderBySpec orderBy,
-        PaginationSpec pagination,
-        MethodRef method,
-        SourceKey sourceKey,
-        ServiceKeySource keySource,
-        LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel.Mapped> errorChannel
-    ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
-        public ServiceTableField {
-            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
-            java.util.Objects.requireNonNull(keySource, "keySource");
-        }
-        /** Structurally none: the classifier routes {@code @lookupKey} only onto table-read leaves. */
-        @Override public LookupResolution lookup() {
-            return LookupResolution.None.INSTANCE;
-        }
-        /**
-         * Although the service method returns the typed {@code XRecord} (or
-         * {@code List<XRecord>}) per the service-producer-strict-return contract, the typed
-         * record IS-A jOOQ {@code Record} and the @table-bound child datafetchers read columns
-         * by name through the generic {@code Record} interface. The consumer-level identity is
-         * therefore {@code Record(table)}, agreeing with the SQL-emit table-bound producers
-         * ({@link TableField}, {@link BatchedTableField}, etc.) so a {@code @table}-bound SDL
-         * type reached by both a service and an SQL-emit producer does not surface as a
-         * spurious conflict.
-         */
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
-    }
-
-    /**
-     * A child field backed by a developer-provided service method ({@code @service}), where the
-     * return type is NOT table-mapped (source → record/scalar target).
-     *
-     * <p>Parameter binding (including context arguments) is fully encoded in
-     * {@link MethodRef#params()} via {@link ParamSource}.
-     *
-     * @param sourceKey derived from the service method's {@link MethodRef.Param.Sourced}
-     *     parameter, non-null: a child {@code @service} whose method declares no such parameter is
-     *     rejected at classify time, so the leaf is never constructed without a key.
-     * @param keySource where the emitted fetcher binds the record the key columns are read off. The
-     *     component {@link ChildField#sourceShape()} derives this leaf's answer from; see the
-     *     sibling {@link ServiceTableField}.
-     * @param loaderRegistration paired with {@code sourceKey}; carries the DataLoader container
-     *     (positional list vs mapped set) and dispatch (load vs loadMany) axes the service
-     *     return type projects onto.
-     */
-    record ServiceRecordField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef returnType,
-        List<JoinStep> joinPath,
-        MethodRef method,
-        SourceKey sourceKey,
-        ServiceKeySource keySource,
-        LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel.Mapped> errorChannel
-    ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
-        public ServiceRecordField {
-            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
-            java.util.Objects.requireNonNull(keySource, "keySource");
-        }
-
-        /**
-         * The per-key Java element type this field's loader resolves to (the {@code V} before
-         * any list-cardinality wrapping), derived from {@link #returnType()}. Used by the
-         * Generator to type {@code DataLoader<K, V>}.
-         *
-         * <p>Defers to {@link RowsMethodShape#strictPerKeyType} for the schema-determined
-         * answer. When that returns {@code null} (a non-built-in scalar leaf: an enum, or an
-         * unregistered custom scalar) the per-key {@code V} is peeled off the reflected outer
-         * return type on {@link MethodRef#returnType()} via
-         * {@link RowsMethodShape#perKeyFromOuter}, so the rows method's declared type is the
-         * flat {@code Map<K, V>} matching the service contract rather than a doubly-nested
-         * {@code Map<K, Map<K, V>>}. Falls back to the whole reflected type only when the shape
-         * isn't peelable, which {@code ServiceDirectiveResolver.validateChildServiceReturnType}
-         * rejects at classify time.
-         */
-        public com.palantir.javapoet.TypeName elementType() {
-            var grounded = groundedElementType();
-            return grounded != null ? grounded : method().returnType();
-        }
-
-        /**
-         * The per-key {@code V} where something grounds it, and {@code null} where nothing does.
-         * One derivation, two null policies: {@link #elementType()} falls back to the whole
-         * reflected type so a missed shape validation surfaces as the same request-time failure
-         * as before, while {@link #domainReturnType()} answers
-         * {@link DomainReturnType.NoClaim} rather than claiming a class no child fetcher sees.
-         */
-        private com.palantir.javapoet.TypeName groundedElementType() {
-            com.palantir.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
-            if (strict != null) return strict;
-            // Non-built-in scalar leaf: the service method already declares the outer
-            // Map<K, V> / List<V>, so peel V off it; handing back the whole reflected type
-            // would let outerRowsReturnType wrap it once more into a Map<K, Map<K, V>> that
-            // does not compile. Other null-perKey returns (a backing-less ResultReturnType)
-            // ground nothing.
-            if (returnType() instanceof ReturnTypeRef.ScalarReturnType) {
-                // loaderRegistration().container() is the field-level projection of the service
-                // method's Sourced param container (FieldBuilder.buildServiceLoaderRegistration
-                // stores sourced.container() verbatim), the same axis
-                // ServiceDirectiveResolver.validateChildServiceReturnType peels with, so emitter
-                // and validator can't disagree on isMapped.
-                boolean isMapped = loaderRegistration() != null
-                    && loaderRegistration().container() == LoaderRegistration.Container.MAPPED_SET;
-                return RowsMethodShape.perKeyFromOuter(method().returnType(), returnType(), isMapped);
-            }
-            return null;
-        }
-        /**
-         * The per-key element the emitted {@code DataLoader<K, V>} resolves to, not the rows
-         * method's outer return: a batched leaf's {@code Map<K, V>} never reaches
-         * {@code env.getSource()} (the loader resolves it to one {@code V} per key), so a claim
-         * peeled off the reflected outer would name a class no child fetcher ever sees.
-         *
-         * <p>Derived from {@link #returnType()} rather than from the reflected return, the same
-         * way {@link #elementType()} derives the {@code V} the loader is typed with, so the claim
-         * and the loader cannot disagree about what {@code V} is:
-         * <ul>
-         *   <li>{@link ReturnTypeRef.ResultReturnType}:
-         *       {@link DomainReturnType#claimForResultReturn}, whose grounded-class branch is
-         *       exactly {@link RowsMethodShape#strictPerKeyType}'s answer for this arm.</li>
-         *   <li>{@link ReturnTypeRef.ScalarReturnType}: the per-key element as
-         *       {@link #elementType()} derives it, and {@link DomainReturnType.NoClaim} where
-         *       neither the schema nor the reflected outer grounds one. The arm is not a synonym
-         *       for "SDL scalar": a type that classified as a nesting or connection type falls
-         *       through to it and is an SDL Object type the conflict reduction does group, which
-         *       is why this derives a real element rather than answering no-claim wholesale.</li>
-         * </ul>
-         */
-        @Override public DomainReturnType domainReturnType() {
-            return switch (returnType()) {
-                case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
-                case ReturnTypeRef.ScalarReturnType ignored -> {
-                    var element = groundedElementType();
-                    yield element == null
-                        ? new DomainReturnType.NoClaim()
-                        : new DomainReturnType.Plain(element);
-                }
-                // A @table-typed return routes to the ServiceTableField sibling and a polymorphic
-                // one is deferred at classify, so neither arm reaches this leaf.
-                case ReturnTypeRef.TableBoundReturnType ignored -> new DomainReturnType.NoClaim();
-                case ReturnTypeRef.PolymorphicReturnType ignored -> new DomainReturnType.NoClaim();
-            };
-        }
-    }
-
-    /**
      * A value read off a record-backed parent's in-memory source object: the scalar / enum /
      * non-table-object field on a {@code @service} or DML payload carrier, DTO, or
      * {@code @error} type. The read mechanism lives on the sealed {@link #locator()}; read
@@ -1418,7 +1229,7 @@ public sealed interface ChildField extends OutputField
          * <ul>
          *   <li>{@link ReturnTypeRef.ResultReturnType}:
          *       {@link DomainReturnType#claimForResultReturn}, following the consumer-level
-         *       identity precedent {@link ServiceTableField#domainReturnType()} sets. Derived from
+         *       identity precedent {@link TableField#domainReturnType()} sets. Derived from
          *       the leaf's return type rather than from the reflected accessor handle, so a
          *       covariant accessor declaration or a raw generic return cannot mint a false
          *       conflict; the two are held equal upstream, where
@@ -1474,7 +1285,7 @@ public sealed interface ChildField extends OutputField
      * per-element composite class, there being no single table to name. Carries no
      * {@code SourceKey} / {@code LoaderRegistration} (a passthrough, not a batched load) and no
      * {@code MethodRef} (the producing {@code @service} call is on the parent mutation field,
-     * not on this data field, distinguishing it from {@link ServiceRecordField}).
+     * not on this data field, distinguishing it from a child {@code @service} field).
      *
      * <p>{@code returnType} is the data field's element result type
      * ({@link ReturnTypeRef.ResultReturnType}), carrying the arrival cardinality on its
@@ -1582,8 +1393,7 @@ public sealed interface ChildField extends OutputField
          * The list this field hands down is heterogeneous: one developer exception class per
          * mapped {@code @error} type, chosen at run time. No single class names what arrives, so
          * the honest answer is {@link DomainReturnType.NoClaim}. What the children of those
-         * types can read is enforced elsewhere, by {@code HandlerAccessorCheck}, which holds
-         * every handler's source class to the same declared field set.
+         * types can read is not this leaf's claim to make.
          */
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.NoClaim();

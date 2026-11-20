@@ -7,9 +7,7 @@ import java.util.Set;
 
 /**
  * One row of the launcher command relation: the named {@code rows<Field>}-shaped unit owning
- * one coordinate's whole payload production as data — a query composition for the SQL-composing
- * source arms, a delegated service invocation (plus, for the table arm, its re-projection) for
- * the {@code @service} arms.
+ * one coordinate's whole payload production as data, a query composition.
  * The relation is keyed by {@link #coordinate}; the fetcher entry point owns connection
  * acquisition and invocation strategy, calls the launcher with the resolved {@code DSLContext},
  * and has nothing else left to say, so root and child stop building the same query two ways.
@@ -145,27 +143,6 @@ public record LauncherCommand(
                     + " a connection");
             }
         }
-        // The service arms and the LoaderDelegated result pin each other in both directions:
-        // the service payload derives wholly from the source and delivery axes, so the result
-        // slot is typed vacuity read at no site, and no other source may claim it. Never
-        // Fanned (the @tenantFanOut ladder rejects the @service pair at classify time). The
-        // Connection cell has no child-level classifier mirror (only the root @service
-        // rejection exists); a child @service declared @asConnection classifies today with the
-        // Connection wrapper riding only the loader's valueIsList fact, a recorded mirror gap
-        // beside the batched lookup's two.
-        boolean serviceSource = source instanceof LaunchSource.ServiceCall
-            || source instanceof LaunchSource.ServiceTableLift;
-        if (serviceSource != result instanceof ResultShape.LoaderDelegated) {
-            throw new IllegalArgumentException(
-                "the service arms and the LoaderDelegated result imply each other; got "
-                + source.getClass().getSimpleName() + " with "
-                + result.getClass().getSimpleName());
-        }
-        if (serviceSource && !(tenancy instanceof TenantStrategy.Single)) {
-            throw new IllegalArgumentException(
-                "a service-delegating launcher runs single-tenant (the fan-out ladder rejects"
-                + " @tenantFanOut with @service); got " + tenancy.getClass().getSimpleName());
-        }
         // The batched pivot runs single-tenant and answers one record per key: the fan-out
         // ladder's non-list rung (no.sikt.graphitron.rewrite.TenantBindingIndex) rejects
         // @tenantFanOut on a non-list field and a @pivot field is single by classification,
@@ -198,8 +175,8 @@ public record LauncherCommand(
                     + " connection return on @lookupKey fields");
             }
         }
-        // The reentry arms and the ReturningKeyed delivery imply each other in both directions
-        // (the service/LoaderDelegated precedent): the keys parameter only makes sense against
+        // The reentry arms and the ReturningKeyed delivery imply each other in both directions:
+        // the keys parameter only makes sense against
         // a key-restricted source, and no other delivery can hand captured RETURNING keys in.
         boolean reentrySource = source instanceof LaunchSource.Reentry;
         if (reentrySource != invocation instanceof Invocation.ReturningKeyed) {
@@ -217,10 +194,8 @@ public record LauncherCommand(
                     "a reentry companion runs single-tenant (the fan-out ladder rejects"
                     + " @tenantFanOut on mutations); got " + tenancy.getClass().getSimpleName());
             }
-            // Never a connection (no paginating mutation payload exists) and never
-            // LoaderDelegated (that shape is the service arms' biconditional partner).
-            if (result instanceof ResultShape.Connection
-                || result instanceof ResultShape.LoaderDelegated) {
+            // Never a connection (no paginating mutation payload exists).
+            if (result instanceof ResultShape.Connection) {
                 throw new IllegalArgumentException(
                     "a reentry companion answers the written records themselves; got "
                     + result.getClass().getSimpleName());

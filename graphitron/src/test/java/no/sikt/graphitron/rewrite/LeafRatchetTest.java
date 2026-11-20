@@ -38,8 +38,10 @@ class LeafRatchetTest {
      * 11 to 10 (2026-08-03): QueryRoutineTableField folded onto QueryTableField plus the
      * {@code RoutineResolution} source axis; routine-sourced-ness became a source component
      * (the child side's joinPath precedent), closing the read-family dissolution.
+     * 10 to 6 (2026-11-20): the four root {@code @service} query leaves deleted; the store owns
+     * a {@code @service} field whole, so the walk never minted them after the flip.
      */
-    private static final int QUERY_FIELD_LEAVES = 10;
+    private static final int QUERY_FIELD_LEAVES = 6;
 
     /**
      * Installed at 15 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
@@ -54,8 +56,10 @@ class LeafRatchetTest {
      * the same {@code OperationMember.Write.RoutineWrite}). The count-preserving fold was
      * rejected because it would give one leaf two targets, making
      * {@code leaf = f(source, delivery, target)} untrue as a function.
+     * 9 to 5 (2026-11-20): the four root {@code @service} mutation leaves deleted, as the query
+     * pin's.
      */
-    private static final int MUTATION_FIELD_LEAVES = 9;
+    private static final int MUTATION_FIELD_LEAVES = 5;
 
     /**
      * Installed at 24 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
@@ -74,8 +78,9 @@ class LeafRatchetTest {
      * 24 to 23 (2026-10-30): SameRowTableField retired. A same-table child with no
      * {@code @reference} is rejected, and the parent's own row is the primary-key
      * {@code @reference}, an ordinary TableField over the identity join.
+     * 23 to 21 (2026-11-20): the two child {@code @service} leaves deleted, as the query pin's.
      */
-    private static final int CHILD_FIELD_LEAVES = 23;
+    private static final int CHILD_FIELD_LEAVES = 21;
 
     /**
      * Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline).

@@ -600,7 +600,6 @@ public final class PlanCompileGraph {
                                 .forEach(term -> precise(owner, term.filter().method().owner())));
                         }
                     }
-                    case ResultShape.LoaderDelegated ignored -> { }
                     case ResultShape.RecordList list -> addOrderingEdges(owner, list.ordering());
                     case ResultShape.Connection connection -> {
                         addOrderingEdges(owner, connection.ordering());
@@ -619,9 +618,7 @@ public final class PlanCompileGraph {
         }
 
         /**
-         * The source arms' projection refs, total over {@link LaunchSource}. The service
-         * {@code MethodRef} is external (the developer's class, already compiled), so the pure
-         * delegation arm contributes no edge.
+         * The source arms' projection refs, total over {@link LaunchSource}.
          */
         private void addSourceEdges(UnitRef owner, LaunchSource source) {
             switch (source) {
@@ -632,8 +629,6 @@ public final class PlanCompileGraph {
                     precise(owner, lookup.projection());
                     precise(owner, lookup.inputRows().owner());
                 }
-                case LaunchSource.ServiceCall ignored -> { }
-                case LaunchSource.ServiceTableLift lift -> precise(owner, lift.projection());
                 case LaunchSource.PivotAggregate pivot -> precise(owner, pivot.projection());
                 case LaunchSource.KeyedLookup keyed -> {
                     precise(owner, keyed.projection());

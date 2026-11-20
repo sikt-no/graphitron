@@ -29,8 +29,7 @@ class ServiceRootFetcherPipelineTest {
  * A root {@code @service} field with a {@code [Film!]!} return type accepts a
      * developer method that returns {@code java.util.List<FilmRecord>} as well as the
      * historical {@code org.jooq.Result<FilmRecord>}. Pipeline-tier positive witness for
-     * the looser pair check in
-     * {@code ServiceDirectiveResolver.validateRootListTableBoundReturnPair}.
+     * the looser pair check on a root list table-bound return.
      */
     @Test
     void serviceWithListOfRecordReturn_isAccepted() {

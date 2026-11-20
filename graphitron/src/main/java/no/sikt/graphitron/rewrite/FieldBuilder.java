@@ -34,8 +34,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.ValueLocator;
-import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
-import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
@@ -50,7 +48,6 @@ import no.sikt.graphitron.rewrite.model.ErrorArmAnswer;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
 import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
-import no.sikt.graphitron.rewrite.model.OutcomeType;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
@@ -82,7 +79,6 @@ import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.RoutineResolution;
-import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.LengthCheck;
 import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
@@ -99,8 +95,6 @@ import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
-import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.model.jooq.TableRef;
@@ -132,7 +126,6 @@ import java.util.stream.Collectors;
 import static java.util.Objects.requireNonNull;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARGMAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
@@ -161,7 +154,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SPLIT_QUERY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TENANT_FAN_OUT;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
-import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
@@ -203,7 +195,6 @@ class FieldBuilder {
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
-    private final ServiceDirectiveResolver serviceResolver;
     private final RoutineDirectiveResolver routineResolver;
     private final ExternalFieldDirectiveResolver externalFieldResolver;
     private final LookupKeyDirectiveResolver lookupKeyResolver;
@@ -226,7 +217,6 @@ class FieldBuilder {
         this.ctx = ctx;
         this.svc = svc;
         this.enumMappingResolver = new EnumMappingResolver(ctx);
-        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, new InputBeanResolver(ctx));
         this.routineResolver = new RoutineDirectiveResolver(ctx, this);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver();
@@ -289,49 +279,6 @@ class FieldBuilder {
     }
 
     // ===== Shared resolution helpers =====
-
-    /**
-     * The first {@link MethodRef.Param.Sourced} parameter of a child {@code @service} method's
-     * resolved signature, which every child coordinate has:
-     * {@link ServiceDirectiveResolver}'s classify phase rejects a child whose method declares no
-     * {@code Sources} parameter, so the batch key is guaranteed here rather than deferred to the
-     * validator. The throw names the rejecting phase; reaching it means that rejection has gone
-     * missing, not that the author wrote something new.
-     */
-    private static MethodRef.Param.Sourced requireSourced(MethodRef method, String parentTypeName,
-            String fieldName) {
-        return method.params().stream()
-            .filter(MethodRef.Param.Sourced.class::isInstance)
-            .map(MethodRef.Param.Sourced.class::cast)
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException(
-                "child @service field '" + parentTypeName + "." + fieldName + "' resolved with no"
-                + " Sources parameter — ServiceDirectiveResolver's classify phase rejects that"
-                + " coordinate before it reaches a leaf"));
-    }
-
-    /**
-     * Builds a service-backed field's {@link SourceKey} from the resolved {@code @service}
-     * method's {@code Sources} parameter: the {@code (columns, wrap)} pair read directly off
-     * the signature fact.
-     */
-    private static SourceKey buildServiceSourceKey(MethodRef.Param.Sourced sourced) {
-        return new SourceKey(sourced.columns(), sourced.wrap());
-    }
-
-    /**
-     * Builds the {@link LoaderRegistration} for a service-backed child field. Dispatch is
-     * always {@link LoaderRegistration.Dispatch#LOAD_ONE} on the service path (the
-     * loadMany / accessor-many shape is record-parent-only); container reads directly off
-     * {@code sourced}; {@code valueIsList} follows the field's wrapper.
-     */
-    private static LoaderRegistration buildServiceLoaderRegistration(
-            MethodRef.Param.Sourced sourced, ReturnTypeRef rt) {
-        return new LoaderRegistration(
-            rt.wrapper().isList(),
-            sourced.container(),
-            LoaderRegistration.Dispatch.LOAD_ONE);
-    }
 
     /**
      * Outcome of {@link #resolveTableFieldComponents}. Two terminal arms the caller exhausts
@@ -1477,7 +1424,7 @@ class FieldBuilder {
      *
      * <p>A {@code NestedInputField} (a filter delivered through an input object rather than as a
      * top-level argument) is branch-safe exactly when its {@code leaf} transform is. The call-site
-     * emitter's {@code NestedInputField} arm ({@code ArgCallEmitter.buildArgExtraction}) emits a
+     * emitter's {@code NestedInputField} arm emits a
      * self-contained {@code env.getArgument(outer) instanceof Map<?, ?> ...} traversal, so
      * {@link CallSiteExtraction.Direct}, {@link CallSiteExtraction.JooqConvert}, and
      * {@code NodeIdDecodeKeys} leaves are all admitted through the recursion. The
@@ -4790,81 +4737,6 @@ class FieldBuilder {
     // ===== Carrier classifier: ErrorChannel resolution =====
 
     /**
-     * Result of resolving an {@code @service} outcome field's channel onto the typed
-     * {@code Outcome} wrapper transport: no errors field, a {@link ErrorChannel.Mapped} channel,
-     * or a rejection carrying the <em>typed</em> {@link ErrorChannelWalkerError} (preserved into {@code UnclassifiedField} so the
-     * LSP projector keeps its wire {@code code}, the way {@code buildServiceField} already preserves
-     * {@code ServiceMethodCallError}).
-     */
-    private sealed interface ServiceOutcomeResult {
-        record NoChannel() implements ServiceOutcomeResult {}
-        record Channel(ErrorChannel.Mapped channel) implements ServiceOutcomeResult {}
-        record Reject(Rejection.AuthorError rejection) implements ServiceOutcomeResult {}
-    }
-
-    /**
-     * Resolves the {@link ErrorChannel.Mapped} carrier for an {@code @service} outcome field.
-     * Finds the payload's
-     * single errors field (reusing {@link BuildContext#detectErrorsFieldShape}), enforces the
-     * error-arm invariant on its data fields ({@link #nonNullableSuccessProjection}: nullable or
-     * a non-null plain list, else
-     * {@link ErrorChannelWalkerError.NonNullableSuccessProjectionField}), then runs the
-     * {@link no.sikt.graphitron.rewrite.walker.ErrorChannelWalker} over the classified
-     * {@link OutcomeType} to run the channel-level rules + accessor coverage and stamp the
-     * mappings-constant name. A payload with no errors field is not an outcome type ({@code NoChannel}).
-     */
-    private ServiceOutcomeResult resolveServiceOutcomeChannel(ReturnTypeRef returnType) {
-        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
-            return new ServiceOutcomeResult.NoChannel();
-        }
-        if (!(ctx.schema.getType(result.returnTypeName()) instanceof GraphQLObjectType payloadObj)) {
-            return new ServiceOutcomeResult.NoChannel();
-        }
-        List<ErrorType> mappedErrorTypes = null;
-        GraphQLFieldDefinition errorsFieldDef = null;
-        for (var f : payloadObj.getFieldDefinitions()) {
-            var detected = ctx.detectErrorsFieldShape(f);
-            if (detected != null) {
-                mappedErrorTypes = detected;
-                errorsFieldDef = f;
-                break;
-            }
-        }
-        if (mappedErrorTypes == null) {
-            return new ServiceOutcomeResult.NoChannel();
-        }
-        // The errors field's own nullability (it must be a nullable list) is enforced where the
-        // errors field is classified, in liftToErrorsField -> NonNullableErrorsField; a non-null
-        // errors field surfaces there as an UnclassifiedField on the errors field itself, so it is
-        // not re-checked here. This sibling check owns only the success-projection (data) field.
-        var nonNullable = nonNullableSuccessProjection(payloadObj, result.returnTypeName(), errorsFieldDef);
-        if (nonNullable != null) {
-            return new ServiceOutcomeResult.Reject(nonNullable);
-        }
-        // Registry-free look-ahead at the payload's data type; reproduces the
-        // ctx.types verdict (including a producer-bound carrier) without reading the in-progress registry.
-        if (!(typeBuilder.lookAheadVerdict(result.returnTypeName()) instanceof GraphitronType.ResultType backing)) {
-            return new ServiceOutcomeResult.NoChannel();
-        }
-        var errorsLocation = errorsFieldDef.getDefinition() != null
-            ? errorsFieldDef.getDefinition().getSourceLocation() : null;
-        var errorsField = new ChildField.ErrorsField(result.returnTypeName(), errorsFieldDef.getName(),
-            errorsLocation, mappedErrorTypes);
-        // successProjection is left empty here, not "no data fields": the walker reads only
-        // errorsField off the OutcomeType, and the error-arm invariant is already enforced
-        // inline above where the data fields' wrappers are derived.
-        var outcomeType = new OutcomeType(backing, errorsField, List.of());
-        var walkerResult = new no.sikt.graphitron.rewrite.walker.ErrorChannelWalker()
-            .walk(outcomeType, ctx.schema, ctx.codegenLoader(), this::errorFieldAccessorReturn);
-        return switch (walkerResult) {
-            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<ErrorChannel.Mapped> ok ->
-                new ServiceOutcomeResult.Channel(ok.carrier());
-            case no.sikt.graphitron.rewrite.model.WalkerResult.Err<ErrorChannel.Mapped> err ->
-                new ServiceOutcomeResult.Reject(err.errors().getFirst());
-        };
-    }
-
-    /**
      * The error-arm invariant of an outcome payload: every data field needs an
      * {@link ErrorArmAnswer} other than {@link ErrorArmAnswer#NONE}. On the {@code ErrorList} arm
      * (and on a {@code Success} whose value is {@code null}) a nullable data field answers
@@ -4913,9 +4785,8 @@ class FieldBuilder {
      * so no shadowing window exists.)
      */
     static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
-        // Rule 7 (multiple VALIDATION handlers). The single implementation lives in the walker's
-        // internal helper; this method delegates so the DML path shares one body with the
-        // ErrorChannelWalker.
+        // Rule 7 (multiple VALIDATION handlers). The single implementation lives in
+        // ChannelRuleChecks; this method delegates to it.
         return no.sikt.graphitron.rewrite.walker.internal.ChannelRuleChecks
             .checkMultiValidation(mappedErrorTypes);
     }
@@ -4946,297 +4817,6 @@ class FieldBuilder {
         // implementation as rule 7; see checkChannelLevelHandlerRules.
         return no.sikt.graphitron.rewrite.walker.internal.ChannelRuleChecks
             .checkDuplicateMatchCriteria(mappedErrorTypes);
-    }
-
-    /**
-     * The channel of a child {@code @service} field, resolved onto the {@code Outcome} wrapper as a
-     * root one's is ({@link #resolveServiceOutcomeChannel}), then {@link #checkDeclaredCheckedExceptions}
-     * against it, then {@code builder} with the channel. A child producer whose return has an
-     * errors field catches into it.
-     *
-     * <p>Sibling of {@link #buildServiceField}, which additionally holds the service's reflected
-     * return to the SDL payload type. A child {@code @service}'s return shape is pinned by the
-     * catalog's strict-return guarantee, so this helper omits that check.
-     */
-    private GraphitronField buildMethodBackedWithChannel(
-            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
-            String parentTypeName, String fieldName,
-            SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.Function<Optional<ErrorChannel.Mapped>, GraphitronField> builder) {
-        Optional<ErrorChannel.Mapped> channel;
-        switch (resolveServiceOutcomeChannel(returnType)) {
-            case ServiceOutcomeResult.NoChannel ignored -> channel = Optional.empty();
-            case ServiceOutcomeResult.Channel c -> channel = Optional.of(c.channel());
-            case ServiceOutcomeResult.Reject r -> {
-                return new UnclassifiedField(parentTypeName, fieldName, location, r.rejection());
-            }
-        }
-        if (channel.isPresent() && returnType.wrapper().isList()) {
-            return new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(
-                "@service field '" + fieldName + "' returns a list of '" + returnType.returnTypeName()
-                + "', which has an errors field: a child producer catches into one outcome, and a list"
-                + " would need one per element. Return a single payload"));
-        }
-        String reason = checkDeclaredCheckedExceptions(method, channel);
-        if (reason != null) {
-            return new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(reason));
-        }
-        return builder.apply(channel);
-    }
-
-    /**
-     * The channel of a service-backed root field: resolves the
-     * {@link ErrorChannel} (catch-arm dispatch recipe), runs the declared-checked-exception
-     * match check against the resolved channel, and verifies the service method's reflected
-     * return type matches the SDL payload type. Used by every root {@code @service} field
-     * variant on both sides; the {@link ErrorChannel.Mapped} component type on those records is
-     * the membership. A rejection on any of the three checks surfaces as
-     * {@code UnclassifiedField}.
-     *
-     * <p>The strict-return check runs only when the field resolves to a class-backed
-     * payload ({@code ResultReturnType} with a non-null {@code fqClassName}); other return
-     * shapes (table-bound, pojo-result, scalar) are screened upstream by
-     * {@code ServiceCatalog}'s decode and bind phases and {@code ServiceDirectiveResolver}.
-     */
-    private GraphitronField buildServiceField(
-            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
-            String parentTypeName, String fieldName,
-            SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.BiFunction<Optional<ErrorChannel.Mapped>, no.sikt.graphitron.rewrite.model.ServiceMethodCall, GraphitronField> builder) {
-        // @service outcome fields classify to ErrorChannel.Mapped via the ErrorChannelWalker
-        // (the Outcome wrapper transport). NoChannel when the payload carries no errors field.
-        Optional<ErrorChannel.Mapped> channel;
-        switch (resolveServiceOutcomeChannel(returnType)) {
-            case ServiceOutcomeResult.NoChannel ignored -> channel = Optional.empty();
-            case ServiceOutcomeResult.Channel c -> channel = Optional.of(c.channel());
-            case ServiceOutcomeResult.Reject r -> {
-                return new UnclassifiedField(parentTypeName, fieldName, location, r.rejection());
-            }
-        }
-        String exceptionsReason = checkDeclaredCheckedExceptions(method, channel);
-        if (exceptionsReason != null) {
-            return new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(exceptionsReason));
-        }
-        // The @service carrier shape verdict — the single authority for whether a list-returning
-        // carrier admits. It fires even when the payload's ResultReturnType.fqClassName is null
-        // (the silent-admit case, where producerBindLevel's NoBind left it unbound and the
-        // return-match gate below short-circuits), and its typed ProducerArrivalMismatch
-        // pre-empts the two misleading record-handoff rejections
-        // checkServiceReturnMatchesPayload would otherwise produce.
-        java.util.Optional<Arity> verdictProducerArrival;
-        switch (scanServiceCarrierShape(returnType, method, parentTypeName, fieldName)) {
-            case BuildContext.ServiceCarrierShape.Reject r ->
-                { return new UnclassifiedField(parentTypeName, fieldName, location, r.error()); }
-            case BuildContext.ServiceCarrierShape.Coherent c ->
-                verdictProducerArrival = java.util.Optional.of(c.producerArrival());
-            case BuildContext.ServiceCarrierShape.NotApplicable ignored ->
-                verdictProducerArrival = java.util.Optional.empty();
-        }
-        String returnTypeReason = checkServiceReturnMatchesPayload(returnType, method, verdictProducerArrival);
-        if (returnTypeReason != null) {
-            return new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(returnTypeReason));
-        }
-        // Project the resolved MethodRef.Service onto a ServiceMethodCall carrier.
-        var walkerResult = new no.sikt.graphitron.rewrite.walker.ServiceMethodCallWalker()
-            .walk(parentTypeName, fieldDef, (no.sikt.graphitron.rewrite.model.MethodRef.Service) method,
-                svc::resolveTableByRecordClassName);
-        return switch (walkerResult) {
-            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.ServiceMethodCall> ok ->
-                builder.apply(channel, ok.carrier());
-            case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.ServiceMethodCall> err ->
-                // Preserve the typed ServiceMethodCallError as the UnclassifiedField's
-                // rejection so the LSP Diagnostic projector can read its lspCode() and set the
-                // wire `code` field. Collapsing to Rejection.structural would erase the typed
-                // arm and lose the stable wire code that editor extensions key on.
-                new UnclassifiedField(parentTypeName, fieldName, location,
-                    err.errors().getFirst());
-        };
-    }
-
-    /**
-     * Strict-equality check on the service method's return type against the SDL payload type
-     * for class-backed payloads. Returns a rejection reason when the method's
-     * reflected return type does not equal the SDL payload type (or {@code List<Payload>} for
-     * list-cardinality fields); returns {@code null} otherwise.
-     *
-     * <p>Per-field wiring projects SDL fields off the parent's domain return, so a class-backed
-     * payload's success arm is a passthrough: the service method must return the SDL payload
-     * class directly. This check makes the constraint explicit at classify time rather than at
-     * runtime via a ClassCastException.
-     *
-     * <p>For a two-level record-composite carrier ({@link TypeBuilder.CarrierBinding.ClassBacked}),
-     * the payload's backing class names the per-element composite, and the method returns
-     * {@code List<composite>} (or {@code composite}) keyed on whether the producer must yield a
-     * collection. That cardinality is the {@code verdictProducerArrival} the shape verdict
-     * ({@link BuildContext.ServiceCarrierShape.Coherent#producerArrival()}) decided once at the
-     * carrier-arrival home; this check does only the producer <em>element-type</em> comparison.
-     * When there is no carrier verdict ({@code NotApplicable}: a plain class-backed
-     * {@code @service} payload that is not a producer-backed carrier) the arrival is the
-     * return's own SDL wrapper. A single-cardinality shape whose producer returns a {@code List}
-     * (or vice versa) is the cardinality near-miss, named here.
-     */
-    private String checkServiceReturnMatchesPayload(
-            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
-            java.util.Optional<Arity> verdictProducerArrival) {
-        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) return null;
-        if (result.fqClassName() == null) return null;
-        boolean isList = verdictProducerArrival
-            .map(arrival -> arrival == Arity.MANY)
-            .orElseGet(() -> returnType.wrapper().isList());
-        // Build the expected payload ClassName structurally, not via bestGuess over the
-        // binary fqClassName. A nested backing class has a `$`-qualified binary name
-        // (Outer$Nested); bestGuess splits only on `.` and would carry it as a single simple name,
-        // whereas method.returnType() is TypeName.get(genericReturnType) with the enclosing
-        // structure resolved (Outer.Nested). The two ClassNames would then never compare equal for
-        // a nested carrier even when the method returns exactly the payload type, spuriously
-        // rejecting it. fqClassName() is the classloader's binary-name contract, so Class.forName
-        // loads it; ClassName.get(Class) then walks the enclosing structure the same way
-        // method.returnType() does. Top-level classes are unchanged.
-        ClassName payloadClassName;
-        try {
-            payloadClassName = ClassName.get(
-                // nameability: exempt (payload class from a reflected service signature)
-                Class.forName(result.fqClassName(), false, ctx.codegenLoader()));
-        } catch (ClassNotFoundException e) {
-            payloadClassName = ClassName.bestGuess(result.fqClassName());
-        }
-        com.palantir.javapoet.TypeName sdlPayloadTypeName = isList
-            ? com.palantir.javapoet.ParameterizedTypeName.get(
-                ClassName.get("java.util", "List"), payloadClassName)
-            : payloadClassName;
-        if (method.returnType().equals(sdlPayloadTypeName)) return null;
-        return "@service method '" + method.className() + "." + method.methodName()
-            + "' must return '" + sdlPayloadTypeName + "' to match the field's "
-            + "declared payload type — got '" + method.returnType() + "'";
-    }
-
-    /**
-     * The single classify-time shape verdict for an {@code @service} carrier field, over the
-     * triple (carrier field wrapper, {@code @service} producer return shape, payload data-field
-     * wrapper). It is the sole authority for whether a <em>list-returning</em> carrier admits; a
-     * single carrier is always coherent and left to its existing classification.
-     *
-     * <p>Reads three axes, each from its one home: carrier arrival straight off the carrier field's
-     * SDL wrapper here; producer arrival from the typed fact decided once at the reflection
-     * boundary ({@link TypeBuilder#serviceCarrierProducerArrival}); data-field arrival from the
-     * canonical {@link BuildContext#scanStructuralServiceCarrierPayload} shape.
-     *
-     * <p>A list carrier rejects when the producer returns a single value
-     * ({@link ServiceCarrierShapeError.ProducerArrivalMismatch}: graphql-java cannot iterate a single
-     * value into the {@code [Payload]} list), or when the data field is itself a list
-     * ({@link ServiceCarrierShapeError.DataFieldArrivalConflict}: the flat producer list is consumed
-     * element-by-element into the carrier, so a single value reaches each payload and cannot
-     * populate a list data field, the per-element {@code ClassCastException}). That conflict
-     * fires for both a {@code @table}-element and a class-backed record-composite
-     * ({@code RecordElement}) data field, the two element kinds a list carrier admits; only an
-     * ID-element data field re-nests per element and stays coherent.
-     */
-    private BuildContext.ServiceCarrierShape scanServiceCarrierShape(
-            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
-            String parentTypeName, String fieldName) {
-        if (typeBuilder == null) return new BuildContext.ServiceCarrierShape.NotApplicable();
-        String payloadSdl = returnType.returnTypeName();
-        if (payloadSdl == null) return new BuildContext.ServiceCarrierShape.NotApplicable();
-        // Only a producer-backed carrier gets a verdict; a non-carrier @service return falls through
-        // to its existing classification untouched.
-        if (typeBuilder.carrierBinding(payloadSdl) instanceof TypeBuilder.CarrierBinding.NotACarrier) {
-            return new BuildContext.ServiceCarrierShape.NotApplicable();
-        }
-        // Carrier arrival: the one home is the carrier field's own SDL wrapper.
-        Arity carrierArrival = returnType.wrapper().isList()
-            ? Arity.MANY : Arity.ONE;
-        // The cardinality the SDL shape requires the producer's return to have — carried on Coherent so
-        // the downstream return-type match reads this one fact instead of re-deriving it. A collection
-        // is required when the carrier is a list ([Payload], one composite per element) or when a
-        // class-backed record-composite data field is itself a list (a single carrier whose data field
-        // projects the whole producer list).
-        Arity requiredProducerArrival =
-            carrierArrival == Arity.MANY || recordCompositeDataFieldIsList(payloadSdl)
-                ? Arity.MANY : Arity.ONE;
-        // A single carrier is always coherent: the producer's return (single value or collection)
-        // is the single payload's source and the data field consumes it.
-        if (carrierArrival == Arity.ONE) {
-            return new BuildContext.ServiceCarrierShape.Coherent(requiredProducerArrival);
-        }
-        // List carrier [Payload]: graphql-java iterates the producer's return into the list, so each
-        // element becomes one payload. Producer arrival must be a collection (MANY); an absent fact
-        // (no @service producer observed for this payload) reads as ONE and rejects, which is correct
-        // — a list carrier with no collection producer cannot be filled.
-        Arity producerArrival = typeBuilder
-            .serviceCarrierProducerArrival(parentTypeName, fieldName)
-            .orElse(Arity.ONE);
-        if (producerArrival == Arity.ONE) {
-            return new BuildContext.ServiceCarrierShape.Reject(
-                new ServiceCarrierShapeError.ProducerArrivalMismatch(
-                    payloadSdl, parentTypeName, fieldName, carrierArrival, producerArrival,
-                    method.className(), method.methodName()));
-        }
-        // Producer is a collection. A data field that is itself a list cannot be demultiplexed out of
-        // the flat producer list: the list is consumed element-by-element to build the [Payload]
-        // carrier, so a single value (one record for a @table element, one composite for a class-backed
-        // RecordElement) reaches each payload and cannot also populate a list data field — the
-        // @table element crashes on the per-element key-extraction cast to Iterable, the RecordElement
-        // on the source-passthrough cast of one composite to List<Composite> (FetcherEmitter's
-        // buildRecordCompositeFetcherValue). Filling it would need a producer returning List<List<…>>
-        // (one inner list per carrier element), which the single-level producer cannot provide. Both
-        // are the same conflict; only the ID element re-nests per element and stays coherent.
-        if (ctx.scanStructuralServiceCarrierPayload(payloadSdl)
-                instanceof BuildContext.DmlPayloadScan.Admit admit
-                && GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList
-                && (admit.element() instanceof BuildContext.DmlElementKind.Table
-                    || admit.element() instanceof BuildContext.DmlElementKind.RecordElement)) {
-            String dataFieldElementType =
-                ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(admit.dataField().getType())).getName();
-            return new BuildContext.ServiceCarrierShape.Reject(
-                new ServiceCarrierShapeError.DataFieldArrivalConflict(
-                    payloadSdl, parentTypeName, fieldName,
-                    admit.dataField().getName(), dataFieldElementType,
-                    carrierArrival, Arity.MANY));
-        }
-        return new BuildContext.ServiceCarrierShape.Coherent(requiredProducerArrival);
-    }
-
-    /**
-     * True when the payload is a class-backed record-composite carrier whose data field
-     * is itself a list ({@code Payload { results: [Result] }}). Under a <em>single</em> carrier this is
-     * the coherent shape whose single payload's list data field projects the whole producer list,
-     * so it requires the {@code @service} producer to return a collection; the carrier-arrival home uses
-     * this to compute {@code requiredProducerArrival} once, before the single-carrier early return.
-     * (Under a <em>list</em> carrier the same list data field is instead the
-     * {@link ServiceCarrierShapeError.DataFieldArrivalConflict} reject — one composite per payload
-     * element cannot fill a list — so this predicate never gates a list-carrier Coherent verdict.)
-     */
-    private boolean recordCompositeDataFieldIsList(String payloadSdl) {
-        return typeBuilder.carrierBinding(payloadSdl) instanceof TypeBuilder.CarrierBinding.ClassBacked
-            && ctx.scanStructuralServiceCarrierPayload(payloadSdl)
-                instanceof BuildContext.DmlPayloadScan.Admit admit
-            && admit.element() instanceof BuildContext.DmlElementKind.RecordElement
-            && GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList;
-    }
-
-    /**
-     * Declared-checked-exception match check. Returns a reason string when one or more
-     * non-exempt checked exceptions on the method's {@code throws} clause are not covered by
-     * any handler on the channel; returns {@code null} when every declared checked exception
-     * is either exempt or covered. The reason names the offending FQNs and points the schema
-     * author at the two fixes (declare an {@code @error} that covers the exception, or remove
-     * the {@code throws} clause). When the field has no channel, every non-exempt declared
-     * checked exception is unmatched.
-     */
-    // Instance method (not static) so it can read `ctx.codegenLoader()`; the two callers
-    // `buildMethodBackedWithChannel` and `buildServiceField` are on the same class and already hold `ctx`.
-    // The explicit-parameter sibling lives at `CheckedExceptionMatcher.unmatched`, which
-    // crosses a class boundary.
-    private String checkDeclaredCheckedExceptions(
-            no.sikt.graphitron.rewrite.model.MethodRef method, Optional<? extends ErrorChannel> channel) {
-        var unmatched = CheckedExceptionMatcher.unmatched(
-            method.declaredExceptions(), channel, ctx.codegenLoader());
-        if (unmatched.isEmpty()) return null;
-        return "method '" + method.className() + "." + method.methodName()
-            + "' declares checked exception(s) " + unmatched
-            + " with no covering @error handler on the field's payload"
-            + (channel.isEmpty() ? " (the field has no error channel)" : "")
-            + " — declare an @error type whose handler covers each, or remove the throws clause";
     }
 
     /**
@@ -5320,128 +4900,6 @@ class FieldBuilder {
             return new StructuralDmlErrorChannel.Present(new ErrorChannel.Mapped(errorTypes));
         }
         return new StructuralDmlErrorChannel.None();
-    }
-
-    /**
-     * Structural strict-return check for {@code @service} mutations whose payload
-     * has no resolved backing class on the SDL payload type. Inspects the
-     * payload SDL directly (single {@code @table}-typed data field) and compares the method's
-     * reflected return type against the expected {@code XRecord} ({@link Arity#ONE}) /
-     * {@code List<XRecord>} ({@link Arity#MANY}) shape.
-     *
-     * <p>The check is restricted to unbacked payloads because ClassBacked payloads have their
-     * own diagnostic path through {@link #buildServiceField}'s strict-equality
-     * check, which produces a diagnostic citing the SDL payload's reflected class (not the
-     * inner table's record class). The SettKvotesporsmal regression pinned this split:
-     * ClassBacked payloads route through {@code buildServiceField}'s "must return
-     * '&lt;PayloadClass&gt;'" reject; unbacked payloads route through this structural
-     * strict-return check.
-     *
-     * <p>Returns a non-null rejection string when the payload is unbacked, structurally a
-     * single-{@code @table}-data-field carrier, and the method's return type does not equal
-     * exactly {@code XRecord} or {@code List<XRecord>}; {@code null} otherwise. Non-carrier
-     * payloads (zero or multiple {@code @table}-typed data fields), ClassBacked payloads, and
-     * methods whose return matches the expected shape all short-circuit to {@code null}.
-     */
-    private String classifyServicePayloadProducer(
-            no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
-            no.sikt.graphitron.rewrite.model.MethodRef method) {
-        if (returnType.fqClassName() != null) return null;
-        return classifyServicePayloadProducerByName(returnType.returnTypeName(), method);
-    }
-
-    /**
-     * The carrier strict-return check keyed by SDL type name, so it runs whether the
-     * {@code @service} return resolved to a Result (a backed payload) or a Scalar (a carrier-shaped
-     * payload that did not bind because the producer return did not match). A carrier shape whose
-     * producer return does not equal {@code XRecord} / {@code List<XRecord>} never binds (RootService
-     * and ServiceEmitted both require the match), so it reaches the Scalar arm as a NestingType;
-     * this check rejects it with the expected-return diagnostic rather than silently admitting a
-     * mismatched producer.
-     */
-    private String classifyServicePayloadProducerByName(
-            String returnTypeName, no.sikt.graphitron.rewrite.model.MethodRef method) {
-        var shape = detectStructuralServicePayloadShape(returnTypeName);
-        if (shape == null) return null;
-        var target = shape.table();
-        var arrival = shape.arrival();
-        com.palantir.javapoet.TypeName expectedReturnType = arrival == Arity.ONE
-            ? CatalogRefs.recordClass(target)
-            : com.palantir.javapoet.ParameterizedTypeName.get(
-                ClassName.get(java.util.List.class), CatalogRefs.recordClass(target));
-        if (!expectedReturnType.equals(method.returnType())) {
-            return "method '" + method.methodName() + "' in class '" + method.className()
-                + "' must return '" + expectedReturnType + "' to match the field's declared return type"
-                + " — got '" + method.returnType() + "'";
-        }
-        return null;
-    }
-
-    /**
-     * Composes the rejection reason for an {@code @service} mutation whose carrier-shaped
-     * SDL-Object return type never registered (no reflection binding, no
-     * producer-backed carrier promotion). Classifying such a field would emit a type reference to
-     * a type the model dropped, producing an invalid assembled schema. The ID-element arm is the
-     * {@code fjernSakTagg}-family shape: {@code @nodeId}-from-record encoding is supported on
-     * {@code @service} carriers, so reaching this arm means the producer binding failed to
-     * ground (typically a record-class or cardinality mismatch against the
-     * {@code @nodeId(typeName:)} target's table); the reason restates the grounding contract.
-     */
-    private String orphanServiceCarrierReason(String payloadTypeName, String fieldName,
-            BuildContext.DmlPayloadScan.Admit admit) {
-        String base = "@service mutation field '" + fieldName + "' returns '" + payloadTypeName
-            + "', a carrier-shaped SDL Object type that did not classify; the type would be "
-            + "dropped from the schema and the field's type reference would dangle. ";
-        if (admit.element() instanceof BuildContext.DmlElementKind.IdElement) {
-            return base + "The payload's data field ('" + admit.dataField().getName()
-                + "') is an ID-element carrier, but no @service producer binding grounds it. "
-                + "An ID-element @service carrier requires @nodeId(typeName: T) on the data "
-                + "field, where T is a @node @table type whose jOOQ record class matches the "
-                + "service method's return (the record for a single ID, List<record> for a "
-                + "list) — the node id is then encoded straight off the returned record(s) "
-                + "with no re-fetch.";
-        }
-        return base + "The payload scans as a single-record carrier over data field '"
-            + admit.dataField().getName() + "', but no @service producer binding grounds it; "
-            + "check that the service method's return type matches the data field's "
-            + "record class and cardinality.";
-    }
-
-    /**
-     * Structural detection for an {@code @service}-carrier shape on an unbacked
-     * SDL payload. Mirrors {@code RecordBindingResolver.groundServicePayloadBinding}'s payload
-     * SDL walk: scans the payload object's field definitions, looks for exactly one
-     * {@code @table}-typed data field (the field's element type is a GraphQL Object carrying
-     * the {@code @table} directive, resolved through {@code ctx.types} as a TableBackedType),
-     * and returns the resolved table plus the cardinality derived from the data field's wrapper.
-     * Returns {@code null} for shapes the carrier mold doesn't admit (zero or multiple
-     * {@code @table}-typed fields, non-Object payload, unresolved inner table).
-     *
-     * <p>The detection is deliberately structural; the SettKvotesporsmal bug's mechanism (a
-     * forbidden-directives loop over the carrier shape) cannot fire from this site.
-     */
-    private record StructuralServicePayloadShape(TableRef table, Arity arrival) {}
-
-    private StructuralServicePayloadShape detectStructuralServicePayloadShape(String payloadSdlName) {
-        if (payloadSdlName == null) return null;
-        var payloadType = ctx.schema.getType(payloadSdlName);
-        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
-        GraphQLFieldDefinition dataField = null;
-        TableRef table = null;
-        Arity arrival = null;
-        for (var f : payloadObj.getFieldDefinitions()) {
-            String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            // Payload data field two hops below; table-backed fact from the pure
-            // TableIndex (a fixed point) removes the deep in-progress-registry read.
-            if (!(ctx.tables.forName(unwrappedFieldType).orElse(null) instanceof GraphitronType.TableBackedType tbt)) continue;
-            if (dataField != null) return null;
-            dataField = f;
-            table = tbt.table();
-            arrival = GraphQLTypeUtil.unwrapNonNull(f.getType()) instanceof GraphQLList
-                ? Arity.MANY : Arity.ONE;
-        }
-        if (dataField == null) return null;
-        return new StructuralServicePayloadShape(table, arrival);
     }
 
     /**
@@ -5671,77 +5129,9 @@ class FieldBuilder {
             Rejection.deferred("fields on '" + parentTypeName + "' (Subscription is not supported)"));
     }
 
-    /**
-     * Resolves the participant set for a multitable interface/union return type, used by the
-     * route (a) {@code @service}-polymorphic classify arms. Reads the same participant list that
-     * {@link QueryField.QueryInterfaceField} / {@link QueryField.QueryUnionField} carry, off the
-     * resolved {@link InterfaceType} / {@link UnionType} verdict. Returns an empty list when the
-     * name resolves to neither (defensive; the resolver only reaches a polymorphic arm for an
-     * interface/union return type).
-     */
-    private List<no.sikt.graphitron.rewrite.model.ParticipantRef> polymorphicParticipants(String typeName) {
-        var verdict = typeBuilder.lookAheadVerdict(typeName);
-        if (verdict instanceof InterfaceType it) return it.participants();
-        if (verdict instanceof UnionType ut) return ut.participants();
-        return List.of();
-    }
-
-    /**
-     * Route (a) supports a {@code @service} field returning a multitable <em>interface</em>
-     * only. A {@code @service} returning a union is permanently unsupported (union polymorphism is a
-     * generated-query-path capability; the service path never grew it), so reject it as an author
-     * error rather than emit record-class dispatch over union members.
-     */
-    private GraphitronField rejectServiceUnionReturn(String parentTypeName, String name,
-            SourceLocation location, GraphQLFieldDefinition fieldDef, String returnTypeName) {
-        return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-            "@service must return a multitable interface; returning a union ('" + returnTypeName
-            + "') is not supported"));
-    }
-
     private GraphitronField classifyQueryField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
-
-        // The query conflict detector runs in classifyField, before the chain interception,
-        // so @service @routine on a multi-node chain rejects instead of routing to the routine
-        // classifier. One detector site per position; no call here.
-
-        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            return switch (serviceResolver.resolve(parentTypeName, fieldDef,
-                    new ServiceDirectiveResolver.ParentContext.Root())) {
-                case ServiceDirectiveResolver.Resolved.Rejected r ->
-                    new UnclassifiedField(parentTypeName, name, location, r.rejection());
-                case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
-                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    // A @service returning a single-table discriminated interface
-                    // (TableInterfaceType) resolves through this table-bound arm (a TableInterfaceType
-                    // is a TableBackedType). Build the single-table service-interface variant carrying
-                    // the read-side discrimination data straight off the verdict, rather than deferring.
-                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType tit) {
-                        yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                            new QueryField.QueryServiceTableInterfaceField(parentTypeName, name, location, tb.returnType(),
-                                tit.discriminatorColumn(), knownDiscriminatorValues(tit), tit.participants(), smc, ch));
-                    }
-                    yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Result r ->
-                    buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), smc, ch));
-                case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
-                case ServiceDirectiveResolver.Resolved.Polymorphic p -> {
-                    if (typeBuilder.lookAheadVerdict(p.returnType().returnTypeName()) instanceof UnionType) {
-                        yield rejectServiceUnionReturn(parentTypeName, name, location, fieldDef, p.returnType().returnTypeName());
-                    }
-                    yield buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new QueryField.QueryServicePolymorphicField(parentTypeName, name, location, p.returnType(),
-                            polymorphicParticipants(p.returnType().returnTypeName()), smc, ch));
-                }
-            };
-        }
 
         // Relay-style node fetchers are recognised by signature, not by name. Any Query
         // field whose element type is the `Node` interface is a node fetcher: single
@@ -5878,93 +5268,6 @@ class FieldBuilder {
         // "both absent" fallback bury the actual cause.
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
             return classifyMutationRoutineCarrier(fieldDef, parentTypeName, name, location);
-        }
-
-        // A @service + @mutation combination is not intercepted here: both claims are rows in
-        // the store's authored claim views, whose grouping rule reports the conflict while this
-        // method classifies the field by arm order (@service first).
-        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            return switch (serviceResolver.resolve(parentTypeName, fieldDef,
-                    new ServiceDirectiveResolver.ParentContext.Root())) {
-                case ServiceDirectiveResolver.Resolved.Rejected r ->
-                    new UnclassifiedField(parentTypeName, name, location, r.rejection());
-                case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
-                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    // Single-table discriminated interface return on the @service mutation path,
-                    // the mutation twin of the query arm above.
-                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType tit) {
-                        yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                            new MutationField.MutationServiceTableInterfaceField(parentTypeName, name, location, tb.returnType(),
-                                tit.discriminatorColumn(), knownDiscriminatorValues(tit), tit.participants(), smc, ch));
-                    }
-                    yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Result r -> {
-                    // The @service-payload strict-return check detects the payload shape
-                    // directly from the payload SDL. The check fires only for unbacked payloads
-                    // (no resolved backing class); ClassBacked payloads route through the
-                    // strict-equality check inside buildServiceField, which produces the
-                    // payload-class diagnostic. This split is the SettKvotesporsmal bug's
-                    // structural fix: ClassBacked payloads get a diagnostic citing the payload
-                    // class, not the inner table's record class.
-                    String servicePayloadError = classifyServicePayloadProducer(r.returnType(), r.method());
-                    if (servicePayloadError != null) {
-                        yield new UnclassifiedField(parentTypeName, name, location,
-                            Rejection.structural(servicePayloadError));
-                    }
-                    yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), smc, ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Scalar s -> {
-                    // A carrier-shaped return that did not bind (the producer return did not
-                    // match XRecord / List<XRecord>) resolves to a Scalar over a NestingType;
-                    // reject it here so a mismatched producer is an author error, not a silent admit.
-                    String carrierError = classifyServicePayloadProducerByName(s.returnType().returnTypeName(), s.method());
-                    if (carrierError != null) {
-                        yield new UnclassifiedField(parentTypeName, name, location,
-                            Rejection.structural(carrierError));
-                    }
-                    // A carrier-shaped SDL-Object return reaching the Scalar
-                    // arm with no producer binding is an orphan carrier — the structural scan
-                    // recognizes it as a single-data-field carrier, but it neither bound (by producer
-                    // reflection) nor promoted as a producer-backed carrier, so the type is dropped
-                    // from the model and the field's emitted typeRef would dangle (graphql-java
-                    // assembly fails with "type X not found in schema"). This is an edge-decidable
-                    // orphan: the producing edge owns the rejection and produces UnclassifiedField
-                    // directly here. The orphan predicate is registry-free — it reads
-                    // {@code typeBuilder.carrierTableBinding}, the same scan + producer-binding fixed
-                    // point that registerProducerBackedCarrier registers from, never the in-progress
-                    // type registry. A carrier-shaped scan Admit with a null carrierTableBinding is
-                    // definitionally an orphan (Admit + a bound producer would have registered a
-                    // JooqTableRecordType at the producing edge before this field classified, so the
-                    // resolver would have yielded Result, not Scalar); evaluating the orphan verdict
-                    // without a ctx.types read keeps it order-independent.
-                    // Non-carrier orphan shapes (scan Reject / NotApplicable) may be rescued
-                    // by a later nesting / connection edge, so they are not edge-decidable; the
-                    // shape-agnostic backstop (GraphitronSchemaBuilder.rejectDanglingTypeReferences)
-                    // catches them after the walk. This arm runs first so recognized carriers get the
-                    // richer, shape-specific guidance.
-                    String payloadName = s.returnType().returnTypeName();
-                    if (ctx.schema.getType(payloadName) instanceof graphql.schema.GraphQLObjectType
-                            && typeBuilder.carrierBinding(payloadName) instanceof TypeBuilder.CarrierBinding.NotACarrier
-                            && ctx.scanStructuralServiceCarrierPayload(payloadName)
-                                instanceof BuildContext.DmlPayloadScan.Admit admit) {
-                        yield new UnclassifiedField(parentTypeName, name, location,
-                            Rejection.structural(orphanServiceCarrierReason(payloadName, name, admit)));
-                    }
-                    yield buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Polymorphic p -> {
-                    if (typeBuilder.lookAheadVerdict(p.returnType().returnTypeName()) instanceof UnionType) {
-                        yield rejectServiceUnionReturn(parentTypeName, name, location, fieldDef, p.returnType().returnTypeName());
-                    }
-                    yield buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new MutationField.MutationServicePolymorphicField(parentTypeName, name, location, p.returnType(),
-                            polymorphicParticipants(p.returnType().returnTypeName()), smc, ch));
-                }
-            };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
@@ -7021,11 +6324,8 @@ class FieldBuilder {
      * Whether the carrier payload type declares an {@code errors} field (structural match
      * via {@link BuildContext#detectErrorsFieldShape}). This is the condition under which a
      * carrier's producer routes through the typed {@code Outcome} wrapper (the mutation field's
-     * {@link ErrorChannel.Mapped} channel from {@link #resolveServiceOutcomeChannel} or
-     * {@link #detectStructuralDmlErrorChannel}); the data field uses it to record its
-     * {@link SourceEnvelope}. Mirrors the errors-field detection in
-     * {@code resolveServiceOutcomeChannel} so the consumer-side envelope and the producer-side
-     * channel agree on the same structural signal.
+     * {@link ErrorChannel.Mapped} channel from {@link #detectStructuralDmlErrorChannel}); the data
+     * field uses it to record its {@link SourceEnvelope}.
      */
     private boolean carrierPayloadHasErrorsField(String payloadTypeName) {
         if (!(ctx.schema.getType(payloadTypeName) instanceof GraphQLObjectType payloadObj)) {
@@ -7256,53 +6556,6 @@ class FieldBuilder {
             }
         }
 
-        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
-                new ServiceDirectiveResolver.ParentContext.RecordParent(parentResultType));
-            if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
-                return new UnclassifiedField(parentTypeName, name, location, r.rejection());
-            }
-            if (resolved instanceof ServiceDirectiveResolver.Resolved.ErrorsLifted e) {
-                return e.field();
-            }
-            var servicePath = ctx.parsePath(fieldDef, name, null, null);
-            if (servicePath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(servicePath.errorMessage()));
-            }
-            return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
-                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    var sourced = requireSourced(tb.method(), parentTypeName, name);
-                    yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
-                            servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), buildServiceSourceKey(sourced), tb.keySource(),
-                            buildServiceLoaderRegistration(sourced, tb.returnType()), ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Result r -> {
-                    var sourced = requireSourced(r.method(), parentTypeName, name);
-                    yield buildMethodBackedWithChannel(r.returnType(), r.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new ServiceRecordField(parentTypeName, name, location, r.returnType(),
-                            servicePath.elements(), r.method(), buildServiceSourceKey(sourced),
-                            r.keySource(), buildServiceLoaderRegistration(sourced, r.returnType()), ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Scalar s -> {
-                    var sourced = requireSourced(s.method(), parentTypeName, name);
-                    yield buildMethodBackedWithChannel(s.returnType(), s.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
-                            servicePath.elements(), s.method(), buildServiceSourceKey(sourced),
-                            s.keySource(), buildServiceLoaderRegistration(sourced, s.returnType()), ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
-                    throw new IllegalStateException(
-                        "child @service classified to a Polymorphic return — "
-                        + "ServiceDirectiveResolver's child-polymorphic classify arm defers this coordinate: field '"
-                        + parentTypeName + "." + name + "'");
-            };
-        }
-
         if (isScalarOrEnum(fieldDef)) {
             String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
                 ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
@@ -7467,41 +6720,6 @@ class FieldBuilder {
         } catch (ClassNotFoundException | LinkageError unreadable) {
             return Object.class;
         }
-    }
-
-    /**
-     * The sole key column a {@code @nodeId(typeName:)} read would encode from, or {@code null}
-     * where no encode applies: no directive, no written target, a target that resolves to no node
-     * type, or a key of more than one column.
-     *
-     * <p>The refusal-free form of {@link #resolveReadWireDirection}, for the two accessor-coverage
-     * checks. They ask only what type the read has to yield, and a coordinate whose target or arity
-     * is wrong is refused by its own classification, so restating that refusal as a missing
-     * accessor would report the same fault in the wrong vocabulary.
-     */
-    private ColumnRef readEncodeKeyColumn(GraphQLFieldDefinition fieldDef) {
-        if (!fieldDef.hasAppliedDirective(DIR_NODE_ID)) return null;
-        var typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
-        if (typeName.isEmpty()) return null;
-        if (!(resolveNodeIdTarget(typeName.get()) instanceof NodeIdTarget.Resolved resolved)) return null;
-        var keyColumns = resolved.nodeType().nodeKeyColumns();
-        return keyColumns.size() == 1 ? keyColumns.get(0) : null;
-    }
-
-    /**
-     * The Java type an {@code @error} type's declared field has to be readable as on a handler's
-     * source class. The field's own SDL type, except where an encode stands between the read and
-     * the wire: there the accessor yields the node key column and the {@code ID} the SDL declares
-     * is what graphitron produces from it. Supplied to {@code ErrorChannelWalker} as its
-     * {@link no.sikt.graphitron.rewrite.walker.ReflectTypeResolver} seam and read directly by
-     * {@link #checkErrorTypeSourceAccessors}, so the two accessor-coverage sites cannot disagree
-     * about what a {@code @nodeId} field's accessor must return.
-     */
-    private java.lang.reflect.Type errorFieldAccessorReturn(GraphQLFieldDefinition sdlField) {
-        var keyColumn = readEncodeKeyColumn(sdlField);
-        return keyColumn != null
-            ? keyColumnJavaType(keyColumn)
-            : mapGraphQLTypeToReflectType(sdlField.getType());
     }
 
     /**
@@ -8099,141 +7317,6 @@ class FieldBuilder {
     }
 
     /**
-     * A class-backed parent's answer to the batch key a child {@code @service} field's
-     * {@code Sources} element type names. Called from {@link ServiceDirectiveResolver}'s classify
-     * phase, which owns the coordinate verdict; this helper owns the reflection the answer needs.
-     *
-     * <p>The element type is the input, not a claim to be checked: it resolves through the catalog
-     * to a real table whose primary key is a real column tuple, and the question put to the parent
-     * has a determinate answer, "can you produce a record of that table?". Three producers qualify,
-     * and they are the class-backed {@link ServiceKeySource} arms:
-     *
-     * <ul>
-     *   <li>the parent's backing <em>is</em> a record of the key owner's table
-     *       ({@link ServiceKeySource.FromHeldRecord}), or</li>
-     *   <li>the parent's backing class exposes exactly one zero-arg accessor returning one
-     *       ({@link ServiceKeySource.FromAccessor}).</li>
-     * </ul>
-     *
-     * <p>This is not a reduction of {@link #collectAccessorMatches}: that helper enumerates by the
-     * child field's name and filters by the field's {@code @table} return, and neither anchor exists
-     * here (the field is named after what the service returns, and the return is often a scalar).
-     * Matching by field name would let a coincidentally-named accessor become the batch key, so the
-     * enumeration is name-free ({@link ClassAccessorResolver#enumerateZeroArg}) and the reduction is
-     * this method's own.
-     *
-     * <p>Resolution is per field, not per parent type: two {@code @service} children of the same DTO
-     * may legitimately key on different tables, and a parent able to produce both serves both.
-     */
-    ServiceDirectiveResolver.ParentKeyResolution resolveServiceKeySource(
-            String parentTypeName, GraphitronType.ResultType parentType,
-            ServiceCatalog.ServiceSignature signature, ServiceCatalog.SourcesShape shape) {
-        String site = "method '" + signature.methodName() + "' in class '" + signature.className() + "'";
-        if (!(shape.wrap() instanceof SourceKey.Wrap.TableRecord tr)) {
-            return keySourceRejection(site + " takes a Row/Record batch parameter, but type '"
-                + parentTypeName + "' is backed by a Java class rather than a table, so there is no"
-                + " projected row to read anonymous key columns off. Declare the batch key as a jOOQ"
-                + " record class instead: the element type names the table the batch keys on, and"
-                + " all three producer routes apply once it does");
-        }
-        TableRef keyOwner = svc.resolveTableByRecordClassName(tr.className()).orElse(null);
-        if (keyOwner == null) {
-            return keySourceRejection(site + " declares a batch key of '" + tr.className().simpleName()
-                + "', which is not a record class in the generated jOOQ catalog, so it names no table"
-                + " to key the batch on");
-        }
-        if (!keyOwner.hasPrimaryKey()) {
-            return keySourceRejection(site + " declares a batch key of '" + tr.className().simpleName()
-                + "', whose table '" + keyOwner.tableName() + "' has no primary key, so there is"
-                + " nothing to key the batch on. Name a record class whose table is keyed, or add a"
-                + " primary key to '" + keyOwner.tableName() + "'");
-        }
-        String parentFqClassName = switch (parentType) {
-            case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
-            case GraphitronType.PojoResultType prt -> prt.fqClassName();
-            // A generic jOOQ record carrier holds no typed class to read an accessor off, and a
-            // typed one that got here holds the wrong table.
-            case GraphitronType.JooqRecordCarrier _ -> null;
-        };
-        if (parentType instanceof GraphitronType.JooqTableRecordType jtr
-                && jtr.table() != null
-                && jtr.table().denotesSameTableAs(keyOwner)) {
-            return new ServiceDirectiveResolver.ParentKeyResolution.Available(
-                new ServiceKeySource.FromHeldRecord(keyOwner));
-        }
-        if (parentFqClassName == null) {
-            return cannotProduceKey(parentTypeName, site, tr, keyOwner, null);
-        }
-        Class<?> parentClass;
-        try {
-            // nameability: exempt (parent backing class from an already-classified type verdict)
-            parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return cannotProduceKey(parentTypeName, site, tr, keyOwner, parentFqClassName);
-        }
-        var singles = new ArrayList<java.lang.reflect.Method>();
-        var manys = new ArrayList<java.lang.reflect.Method>();
-        Class<?> elementClass = null;
-        for (var m : ClassAccessorResolver.enumerateZeroArg(parentClass)) {
-            ReturnAxis axis = classifyAccessorReturn(m.getGenericReturnType());
-            if (axis == null) continue;
-            var accessorTable = svc.resolveTableByRecordClass(axis.elementClass());
-            if (accessorTable.isEmpty() || !accessorTable.get().denotesSameTableAs(keyOwner)) continue;
-            if (axis.container() == ServiceCatalog.ContainerKind.SINGLE) {
-                singles.add(m);
-                elementClass = axis.elementClass();
-            } else {
-                manys.add(m);
-            }
-        }
-        if (singles.size() > 1) {
-            return keySourceRejection("type '" + parentTypeName + "' is backed by '"
-                + parentFqClassName + "', which exposes more than one zero-arg accessor returning a '"
-                + keyOwner.tableName() + "' record: ["
-                + singles.stream().map(java.lang.reflect.Method::getName).collect(Collectors.joining(", "))
-                + "]. " + site + " declares '" + tr.className().simpleName() + "' as its batch key, and"
-                + " which accessor produces it is ambiguous; leave exactly one, or key the batch on a"
-                + " different table");
-        }
-        if (singles.size() == 1) {
-            return new ServiceDirectiveResolver.ParentKeyResolution.Available(
-                new ServiceKeySource.FromAccessor(keyOwner, new AccessorRef(
-                    ClassName.get(parentClass), singles.get(0).getName(), ClassName.get(elementClass))));
-        }
-        if (!manys.isEmpty()) {
-            return keySourceRejection("type '" + parentTypeName + "' is backed by '"
-                + parentFqClassName + "', whose accessor '" + manys.get(0).getName()
-                + "' returns many '" + keyOwner.tableName() + "' records. A child @service batches one"
-                + " key per parent (its Map<Key, Value> return is keyed that way), so a list-valued"
-                + " accessor cannot supply the key; expose a single-record accessor, or key the batch"
-                + " on a table the parent produces one of");
-        }
-        return cannotProduceKey(parentTypeName, site, tr, keyOwner, parentFqClassName);
-    }
-
-    /**
-     * The no-producer rejection: the shape the author most often lands on, so it names every route
-     * out rather than only the one that failed. {@code backingClassName} is {@code null} when the
-     * parent carries no typed backing class at all.
-     */
-    private static ServiceDirectiveResolver.ParentKeyResolution cannotProduceKey(
-            String parentTypeName, String site, SourceKey.Wrap.TableRecord tr, TableRef keyOwner,
-            String backingClassName) {
-        return keySourceRejection(site + " declares a batch key of '" + tr.className().simpleName()
-            + "' (table '" + keyOwner.tableName() + "'), but type '" + parentTypeName + "'"
-            + (backingClassName == null
-                ? " carries no backing class that can produce one"
-                : "'s backing class '" + backingClassName + "' cannot produce one")
-            + ". Either be that record, or expose a zero-arg accessor returning '"
-            + tr.className().simpleName() + "' on that class");
-    }
-
-    private static ServiceDirectiveResolver.ParentKeyResolution keySourceRejection(String message) {
-        return new ServiceDirectiveResolver.ParentKeyResolution.Rejected(
-            Rejection.structural("service method could not be resolved — " + message));
-    }
-
-    /**
      * Classifies an interface- or union-typed child field on a class-backed parent. The
      * sole producer of {@link InterfaceField} / {@link UnionField} on the class-backed-parent
      * branch (the table-backed branch produces them in {@link #classifyObjectReturnChildField};
@@ -8523,58 +7606,6 @@ class FieldBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_PIVOT)) {
             return classifyPivotField(fieldDef, parentTypeName, tableType);
-        }
-
-        if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var parentTable = tableType.table();
-            var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
-                new ServiceDirectiveResolver.ParentContext.TableParent(parentTable));
-            if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
-                return new UnclassifiedField(parentTypeName, name, location, r.rejection());
-            }
-            if (resolved instanceof ServiceDirectiveResolver.Resolved.ErrorsLifted e) {
-                return e.field();
-            }
-            // Service reconnect path: starts from the service return type's table (not the parent).
-            var servicePath = ctx.parsePath(fieldDef, name, null, null);
-            if (servicePath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(servicePath.errorMessage()));
-            }
-            return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
-                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    var sourced = requireSourced(tb.method(), parentTypeName, name);
-                    yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
-                            servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), buildServiceSourceKey(sourced), tb.keySource(),
-                            buildServiceLoaderRegistration(sourced, tb.returnType()), ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Result r -> {
-                    var sourced = requireSourced(r.method(), parentTypeName, name);
-                    yield buildMethodBackedWithChannel(r.returnType(), r.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new ServiceRecordField(parentTypeName, name, location, r.returnType(),
-                            servicePath.elements(), r.method(), buildServiceSourceKey(sourced),
-                            r.keySource(), buildServiceLoaderRegistration(sourced, r.returnType()), ch));
-                }
-                case ServiceDirectiveResolver.Resolved.Scalar s -> {
-                    var sourced = requireSourced(s.method(), parentTypeName, name);
-                    yield buildMethodBackedWithChannel(s.returnType(), s.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
-                            servicePath.elements(), s.method(), buildServiceSourceKey(sourced),
-                            s.keySource(), buildServiceLoaderRegistration(sourced, s.returnType()), ch));
-                }
-                // Polymorphic returns are supported on ROOT @service fields only, and the
-                // resolver's classify phase defers every child coordinate before binding, so this
-                // arm is unreachable by construction.
-                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
-                    throw new IllegalStateException(
-                        "child @service classified to a Polymorphic return — "
-                        + "ServiceDirectiveResolver's child-polymorphic classify arm defers this coordinate: field '"
-                        + parentTypeName + "." + name + "'");
-            };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
@@ -9014,15 +8045,6 @@ class FieldBuilder {
         throw new IllegalStateException("parseExternalRef reached for @" + directiveName
             + "; its hosts are @service and @externalField, and the @condition parse goes through"
             + " BuildContext.readConditionDirective");
-    }
-
-    /**
-     * Returns the {@code contextArguments} list from the {@code @service} directive on
-     * {@code fieldDef}, or an empty list when the directive is absent or the argument
-     * is not set.
-     */
-    List<String> parseContextArguments(GraphQLFieldDefinition fieldDef, String directiveName) {
-        return argStringList(fieldDef, directiveName, ARG_CONTEXT_ARGUMENTS);
     }
 
     /**

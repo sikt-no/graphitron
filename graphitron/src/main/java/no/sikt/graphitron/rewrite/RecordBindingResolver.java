@@ -127,17 +127,6 @@ final class RecordBindingResolver {
     private final Map<String, TableRef> routineReturnMemo = new LinkedHashMap<>();
 
     /**
-     * The {@code @service} producer's arrival cardinality per carrier field, keyed by the field's
-     * {@code parentType.fieldName} coordinate, decided once at this reflection boundary (from
-     * {@link #isMultiCardinalityReturn}) and read by the classify-time shape verdict. Keyed by the
-     * field coordinate rather than the payload SDL type because two {@code @service} fields may
-     * return the same payload type with different producer arrivals. A separate axis from
-     * {@link ProducerBinding.ServiceEmitted#arrival()} (the payload's <em>data-field</em> arrival),
-     * so the two same-typed arrivals are never conflated on one accessor.
-     */
-    private final Map<String, Arity> serviceCarrierProducerArrivalMemo = new LinkedHashMap<>();
-
-    /**
      * Reason ledger: the gated accessor near-miss (if any) the walk hit while trying to ground a
      * child SDL type through a parent accessor. Keyed by the child SDL type; first gated near-miss
      * wins. Read by the classifier ({@link TypeBuilder}) only when the child type ends the walk
@@ -225,21 +214,6 @@ final class RecordBindingResolver {
         return Optional.ofNullable(routineReturnMemo.get(sdlTypeName));
     }
 
-    /**
-     * The {@code @service} producer's arrival cardinality for a carrier field, keyed by its
-     * {@code parentType.fieldName} coordinate (see {@link #carrierFieldKey}), or empty when the
-     * coordinate is not an {@code @service} field. Consumed by the classify-time shape verdict at
-     * the {@code @service} carrier seat ({@code FieldBuilder.scanServiceCarrierShape}).
-     */
-    Optional<Arity> resolveServiceCarrierProducerArrival(String parentType, String fieldName) {
-        return Optional.ofNullable(serviceCarrierProducerArrivalMemo.get(carrierFieldKey(parentType, fieldName)));
-    }
-
-    /** The {@code parentType.fieldName} key under which producer arrival is memoised. */
-    private static String carrierFieldKey(String parentType, String fieldName) {
-        return parentType + "." + fieldName;
-    }
-
     /** Multi-producer rejection for the SDL type, or empty when none. */
     Optional<Rejection.AuthorError.RecordBindingMultiProducer> rejection(String sdlTypeName) {
         return Optional.ofNullable(rejections.get(sdlTypeName));
@@ -323,14 +297,6 @@ final class RecordBindingResolver {
 
         String resultSdl = unwrappedTypeName(field.getType());
 
-        // Producer arrival, decided once here at the reflection boundary and carried as a typed
-        // fact; the classify-time shape verdict (FieldBuilder.scanServiceCarrierShape) reads this
-        // rather than re-deriving producer multi-ness from MethodRef.returnType(), which would
-        // have to replicate every container peel. Coordinate keying rationale is on
-        // serviceCarrierProducerArrivalMemo.
-        serviceCarrierProducerArrivalMemo.put(carrierFieldKey(parent.getName(), field.getName()),
-            producerIsMulti ? Arity.MANY : Arity.ONE);
-
         // ServiceEmitted observation for @service-carrier candidates (structural check; see
         // groundServicePayloadBinding). Independent of the main result-axis fold and the
         // RootService observation above; FieldBuilder.classifyChildFieldOnResultType reads it
@@ -409,8 +375,7 @@ final class RecordBindingResolver {
      *       accessor for the data field name). The element binds the data field's element SDL type
      *       (the intermediate result type), not the wrapper. The binding is grounded regardless of
      *       cardinality agreement; a single-vs-list mismatch between the data field and the producer
-     *       return is named precisely at the producing {@code @service} field
-     *       ({@code FieldBuilder.checkServiceReturnMatchesPayload}), not silently dropped here.</li>
+     *       return is named at the producing {@code @service} field, not silently dropped here.</li>
      *   <li>{@link NoBind}: the SDL return is {@code @table}-bound (keeps its {@code RootTable}
      *       grounding), or the wrapper cardinality does not match and the payload is not a
      *       record-composite carrier.</li>
@@ -440,7 +405,7 @@ final class RecordBindingResolver {
                     instanceof AccessorProbe.NoMatch) {
             // The reflected element feeds the data field, not the wrapper. Bind regardless of
             // cardinality agreement; a single-vs-list near-miss is named at the producing @service
-            // field (FieldBuilder.checkServiceReturnMatchesPayload) rather than left as a generic
+            // field rather than left as a generic
             // dangling-type-reference failure that hides the cardinality cause.
             return new ProducerBindLevel.BindsDataFieldElement(dataField);
         }

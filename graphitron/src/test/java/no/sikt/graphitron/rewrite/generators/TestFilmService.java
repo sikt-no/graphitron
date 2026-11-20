@@ -32,7 +32,7 @@ public class TestFilmService {
     /**
      * Mapped-container sibling of {@link #getFilms}: {@code Set} keys + {@code Map} return
      * classify the field's loader as {@code MAPPED_SET}. Used by the pipeline test to
-     * assert that a mapped {@code ServiceTableField} routes through the lift (rows method returns
+     * assert that a mapped table-bound child service routes through the lift (rows method returns
      * {@code Map<Row1<Integer>, List<Record>>} — the projected Record, not the developer-returned
      * {@code FilmRecord}).
      */
@@ -75,7 +75,7 @@ public class TestFilmService {
 
     /**
      * Fixture: typed-{@code TableRecord} source-shape sibling of {@link #getFilmsMapped}
-     * (a list-valued {@code ServiceTableField} rather than a scalar {@code ServiceRecordField}).
+     * (a list-valued table-bound child service rather than a scalar one).
      */
     public static Map<LanguageRecord, List<FilmRecord>> getFilmsMappedByRecord(Set<LanguageRecord> languageKeys) {
         throw new UnsupportedOperationException();
@@ -95,7 +95,7 @@ public class TestFilmService {
      * {@code List} where the mapped (Set-keyed) batch shape requires a {@code Map<K, V>}. The
      * non-built-in scalar leaf can no longer be named from the schema, so previously the validator
      * skipped this and the generated rows method miscompiled; now
-     * {@code ServiceDirectiveResolver.validateChildServiceReturnType} peels and finds the outer
+     * the child service return check peels and finds the outer
      * container unpeelable, rejecting at classify time.
      */
     public static List<String> getRatingWrongContainer(Set<Row1<Integer>> languageKeys) {

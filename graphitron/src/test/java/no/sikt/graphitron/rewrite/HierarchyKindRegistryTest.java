@@ -246,12 +246,6 @@ class HierarchyKindRegistryTest {
         // nested Write seal inherits this kind: the verb payloads it carries are trigger-fact
         // references the view realizes, not emit-grain mints.
         Map.entry(OperationMember.class, HierarchyKind.RESOLVED_VIEW),
-        // The @service call carrier held by the service-call member: its rows exist when the
-        // service directive resolves to a structured invocation or a reflected method, the same
-        // resolution provenance as MethodRef. Previously nested inside the retired summary
-        // seal's ServiceCall arm and outside the scan; homed top-level because the member row
-        // is the carrier's primary holder.
-        Map.entry(no.sikt.graphitron.rewrite.model.ServiceCallCarrier.class, HierarchyKind.RESOLVED_VIEW),
         // The delivery fact: batched-versus-inline arrival, read off the authored SDL markers
         // (the gathered delivery-marker relation), the parent's record handoff and the
         // polymorphic cardinality rule. Rows exist because the schema says so, not because a
@@ -289,12 +283,6 @@ class HierarchyKindRegistryTest {
         Map.entry(CallSiteCompaction.class, HierarchyKind.COMMAND),
         Map.entry(OrderBySpec.class, HierarchyKind.COMMAND),
         Map.entry(KeyLift.class, HierarchyKind.COMMAND),
-        // The batched child @service key source: its arms name the expression the emitted fetcher
-        // binds the key record from, which is what the extraction emitter switches on. Sibling of
-        // KeyLift in role (both are the emit-grain answer to "where does the key come from"), and it
-        // takes the same kind; the coordinate question it answers is resolver-internal and does not
-        // travel.
-        Map.entry(no.sikt.graphitron.rewrite.model.ServiceKeySource.class, HierarchyKind.COMMAND),
         Map.entry(LookupMapping.class, HierarchyKind.COMMAND),
         Map.entry(ServiceMethodCall.class, HierarchyKind.COMMAND),
         Map.entry(MappingEntry.class, HierarchyKind.COMMAND),

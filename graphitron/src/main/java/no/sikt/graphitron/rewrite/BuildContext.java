@@ -62,14 +62,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
-import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.grammar.DirectiveArgs;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.ColumnWriteBound;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 
@@ -776,47 +774,6 @@ class BuildContext {
     }
 
     /**
-     * The single classify-time verdict over an {@code @service} carrier's shape triple:
-     * (carrier field wrapper, {@code @service} producer return shape, payload data-field wrapper).
-     * In the style of {@link DmlPayloadScan}, but its {@link Reject} arm carries a typed
-     * {@link no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError} (with the disagreeing arrival
-     * axes and a stable LSP code) rather than a composed reason string.
-     *
-     * <p>Computed at the {@code @service} payload seat by {@code FieldBuilder.scanServiceCarrierShape},
-     * which folds the carrier arrival (read once from the carrier field's SDL wrapper), the producer
-     * arrival (the typed fact decided at the reflection boundary,
-     * {@link TypeBuilder#serviceCarrierProducerArrival}), and the data-field arrival (the canonical
-     * {@link #scanStructuralServiceCarrierPayload} shape). The verdict is the single authority on
-     * list-carrier admission.
-     *
-     * <ul>
-     *   <li>{@link Coherent}: a single carrier ({@code Payload}), or a list carrier
-     *       ({@code [Payload]}) whose producer returns a collection and whose {@code @table}-element
-     *       data field is single. It carries {@link Coherent#producerArrival() producerArrival},
-     *       the cardinality the SDL shape requires the {@code @service} producer to return, so the
-     *       downstream return-type match ({@code FieldBuilder.checkServiceReturnMatchesPayload}) reads
-     *       that one fact instead of re-deriving it from the carrier / data-field wrappers.</li>
-     *   <li>{@link Reject}: an incoherent list carrier; carries the typed
-     *       {@link no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError}.</li>
-     *   <li>{@link NotApplicable}: not a producer-backed carrier (the seat falls through to its
-     *       existing non-carrier classification).</li>
-     * </ul>
-     */
-    public sealed interface ServiceCarrierShape {
-        /**
-         * @param producerArrival the arrival the SDL shape requires the {@code @service}
-         *   producer's return to have ({@link no.sikt.graphitron.model.diagnostics.Arity#MANY}
-         *   for a list carrier {@code [Payload]}, or a single carrier whose data field is itself a
-         *   list; {@link no.sikt.graphitron.model.diagnostics.Arity#ONE} otherwise). Decided
-         *   once at the verdict and carried, so no downstream consumer re-derives carrier arrival from
-         *   the wrapper.
-         */
-        record Coherent(no.sikt.graphitron.model.diagnostics.Arity producerArrival) implements ServiceCarrierShape {}
-        record Reject(no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError error) implements ServiceCarrierShape {}
-        record NotApplicable() implements ServiceCarrierShape {}
-    }
-
-    /**
      * The answer to "would this payload classify as a DML carrier were it not for a
      * forbidden directive on its data field". Returned by {@link #diagnoseForbiddenCarrierDirective}
      * so the {@code @mutation} return-type diagnostic can name the offending field and directive
@@ -1186,9 +1143,8 @@ class BuildContext {
      * {@code List<ErrorType>} when the shape matches, {@code null} otherwise.
      *
      * <p>Mirrors the lift rules in {@code FieldBuilder.liftToErrorsField};
-     * {@code FieldBuilder.detectStructuralDmlErrorChannel} and
-     * {@code FieldBuilder.resolveServiceOutcomeChannel} consume it through the same port so the
-     * classifier paths agree on what counts as an errors-shaped field.
+     * {@code FieldBuilder.detectStructuralDmlErrorChannel} consumes it through the same port, so
+     * the classifier paths agree on what counts as an errors-shaped field.
      */
     List<GraphitronType.ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef) {
         var memberNames = errorsElementMembers(baseTypeName(fieldDef));
@@ -1348,19 +1304,6 @@ class BuildContext {
         /** The check did not run: no return table at this site, an empty path, or an earlier
          *  parse error short-circuited the terminal-target assertion. */
         record NotApplicable() implements TerminalTargetVerdict {}
-    }
-
-    /**
-     * Resolves a GraphQL type name to its expected jOOQ {@code TableRecord} class via the
-     * {@code @table} directive on the type. Returns empty when the type isn't in the schema,
-     * isn't {@code @table}-annotated, or the catalog can't resolve the table name.
-     *
-     * <p>Used by {@link ServiceDirectiveResolver}'s parent-table consistency check: a
-     * {@code @service} child whose SOURCES element type is a typed {@code TableRecord}
-     * subtype must match the parent's expected record class.
-     */
-    Optional<Class<?>> recordClassForTypeName(String typeName) {
-        return tableNameForTypeName(typeName).flatMap(catalog::findRecordClass);
     }
 
     /**

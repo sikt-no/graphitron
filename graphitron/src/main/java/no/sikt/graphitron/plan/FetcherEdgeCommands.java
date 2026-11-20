@@ -36,12 +36,8 @@ import java.util.List;
  *       selects live on the root's fetchers class too), plus the participant-filter glue
  *       classes, derived from the condition relation's rows for the coordinate, never by
  *       re-evaluating filter predicates.</li>
- *   <li><b>Discriminated children and service polymorphics</b>
- *       ({@link ChildField.TableInterfaceField},
- *       {@link QueryField.QueryServicePolymorphicField},
- *       {@link QueryField.QueryServiceTableInterfaceField},
- *       {@link MutationField.MutationServicePolymorphicField},
- *       {@link MutationField.MutationServiceTableInterfaceField}): their by-PK re-projections
+ *   <li><b>Discriminated children</b>
+ *       ({@link ChildField.TableInterfaceField}): their re-projections
  *       reference each table-bound participant's projection class. Joined-table participants
  *       contribute detail columns, not a projection call, so only the
  *       {@link ParticipantRef.TableBound} arm mints a target.</li>
@@ -60,10 +56,7 @@ import java.util.List;
  *       gap.</li>
  * </ul>
  *
- * <p>Deliberate non-members, by the emitted shape: the {@code @service} table passthroughs
- * ({@link QueryField.QueryServiceTableField}, {@link MutationField.MutationServiceTableField})
- * hand the developer's records straight through with no re-projection, so they reference no
- * generated unit; {@link ChildField.ErrorsField} and the {@code @error} type fetchers read the
+ * <p>Deliberate non-members, by the emitted shape: {@link ChildField.ErrorsField} and the {@code @error} type fetchers read the
  * routed {@code GraphQLError} payload and reference nothing generated; the read-side
  * {@code NodeIdEncoder} uses stay leaf-derived in the recompile-graph edge view (boundaries
  * decode and encode, so encode-ness is a boundary fact, not a row fact).
@@ -111,8 +104,7 @@ public final class FetcherEdgeCommands {
     /**
      * The root query family's membership-and-production switch, total with no default. The
      * migrated root SELECT kinds are launcher rows (their references ride the launcher
-     * relation's source, WHERE and result slots); the service passthroughs reference nothing
-     * generated (graphql-java traverses the returned records).
+     * relation's source, WHERE and result slots).
      */
     private static FetcherEdgeCommand rowOf(QueryField field, ConditionRelation conditions,
             GeneratedUnits units) {
@@ -133,14 +125,6 @@ public final class FetcherEdgeCommands {
                 targets -> targets.add(units.queryNodeFetcher()));
             case QueryField.QueryNodesField f -> row(f.parentTypeName(), f.name(), units,
                 targets -> targets.add(units.queryNodeFetcher()));
-            case QueryField.QueryServiceTableField ignored -> null;
-            case QueryField.QueryServiceRecordField ignored -> null;
-            case QueryField.QueryServicePolymorphicField f ->
-                row(f.parentTypeName(), f.name(), units,
-                    targets -> addParticipantTypeClasses(targets, f.participants(), units));
-            case QueryField.QueryServiceTableInterfaceField f ->
-                row(f.parentTypeName(), f.name(), units,
-                    targets -> addParticipantTypeClasses(targets, f.participants(), units));
         };
     }
 
@@ -148,8 +132,7 @@ public final class FetcherEdgeCommands {
      * The mutation family's membership-and-production switch, total with no default. The DML
      * writes' re-select projections ride their reentry launcher rows; the encode/decode
      * plumbing is the edge view's leaf-derived {@code NodeIdEncoder} concern; what remains here
-     * is the routine write's inline terminus projection, the service polymorphics' participant
-     * projections, and the condition-relation derivation for the write-side WHERE (empty today,
+     * is the routine write's inline terminus projection and the condition-relation derivation for the write-side WHERE (empty today,
      * see the class javadoc).
      */
     private static FetcherEdgeCommand rowOf(MutationField field, ConditionRelation conditions,
@@ -164,14 +147,6 @@ public final class FetcherEdgeCommands {
             // this row keeps only the condition-relation derivation, like the DML carriers.
             case MutationField.MutationRoutineWriteRecordField f ->
                 glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
-            case MutationField.MutationServiceTableField ignored -> null;
-            case MutationField.MutationServiceRecordField ignored -> null;
-            case MutationField.MutationServicePolymorphicField f ->
-                row(f.parentTypeName(), f.name(), units,
-                    targets -> addParticipantTypeClasses(targets, f.participants(), units));
-            case MutationField.MutationServiceTableInterfaceField f ->
-                row(f.parentTypeName(), f.name(), units,
-                    targets -> addParticipantTypeClasses(targets, f.participants(), units));
             case MutationField.MutationDmlRecordField f ->
                 glueOnlyRow(f.parentTypeName(), f.name(), conditions, units);
             case MutationField.MutationBulkDmlRecordField f ->
@@ -182,7 +157,7 @@ public final class FetcherEdgeCommands {
     /**
      * The child family's membership-and-production switch, total with no default: the
      * polymorphic and discriminated deliveries mint their participant-projection rows;
-     * everything else is outside by the fact (launcher rows for the batched, service and pivot
+     * everything else is outside by the fact (launcher rows for the batched and pivot
      * deliveries; the projection relation for the inline SQL children; parent-row or routed
      * reads for the rest).
      */
@@ -205,8 +180,6 @@ public final class FetcherEdgeCommands {
             case ChildField.BatchedTableInterfaceField ignored -> null;
             case ChildField.BatchedTableField ignored -> null;
             case ChildField.BatchedPivotField ignored -> null;
-            case ChildField.ServiceTableField ignored -> null;
-            case ChildField.ServiceRecordField ignored -> null;
             // Inline SQL children compose inside their hosting projection unit; the projection
             // relation carries the callee and glue references.
             case ChildField.TableField ignored -> null;

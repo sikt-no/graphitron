@@ -17,8 +17,7 @@ import org.jooq.Result;
  * the field's resolved return type (parameter-classification tests, return-type
  * mismatch negative cases). Methods returning specific jOOQ record classes
  * ({@link FilmRecord}, {@link LanguageRecord}, etc.) exercise the strict
- * service-return-type validation in {@code ServiceDirectiveResolver}'s classify phase
- * against its {@code computeExpectedServiceReturnType}: a {@code @service}
+ * service-return-type validation: a {@code @service}
  * field whose resolved return type is {@code @table}-bound (or a record-backed type
  * with a backing class) requires the developer's method to declare a matching
  * parameterized return type.
@@ -80,8 +79,7 @@ public class TestServiceStub {
     /**
      * Fixture: {@code @service} with one {@code Long userId} contextArgument; the
      * {@code userId} name shares with {@link #getRatingByUser} but the Java type is {@code Long},
-     * not {@code String} — exercises the ContextArgumentClassifier's ServiceField harvest
-     * disagreement path.
+     * not {@code String}: exercises the context-key type disagreement path.
      */
     public static String getRatingByUserLong(Long userId) { throw new UnsupportedOperationException(); }
 
@@ -506,8 +504,8 @@ public class TestServiceStub {
 
     /**
      * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.SakPayload}
-     * record. Used by tests that exercise the carrier classifier's {@code ErrorChannel}
-     * resolution on {@code MutationServiceRecordField} / {@code QueryServiceRecordField}.
+     * record. Used by tests that exercise {@code ErrorChannel} resolution on a root
+     * {@code @service} returning a record payload.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSak() {
         throw new UnsupportedOperationException();
@@ -584,8 +582,8 @@ public class TestServiceStub {
     // ===== child-@service strict-return-type fixtures =====
 
     /**
-     * Child {@code @service} fixture exercising the outer-shape rejection arm of
-     * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: a {@code @table}-bound
+     * Child {@code @service} fixture exercising the outer-shape rejection of a child service's
+     * return type: a {@code @table}-bound
      * child field returning {@code Language} (single) with a {@code List<Row1<Integer>>}
      * Sources param structurally requires {@code List<LanguageRecord>} per the rows-method
      * shape (where {@code V = CatalogRefs.recordClass(tb.table()) = LanguageRecord}). This stub

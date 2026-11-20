@@ -15,8 +15,8 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * summary column held one arm per coordinate, a coordinate carries a <em>set</em> of
  * member rows, each minted by its own trigger fact (a table-bound return mints {@link Select},
  * pagination args mint {@link Paginate}, {@code @condition} or filter inputs mint
- * {@link Condition}, {@code @orderBy} mints {@link OrderBy}, {@code @service} mints
- * {@link ServiceCall}, the reference fact mints {@link Join}, {@code @mutation} mints the
+ * {@link Condition}, {@code @orderBy} mints {@link OrderBy}, the reference fact mints
+ * {@link Join}, {@code @mutation} mints the
  * {@link Write} verb); the union is the set, so independent facts add rows instead of
  * multiplying summary arms. A record-read or nesting coordinate has an <em>empty</em> member
  * set: the DataFetcher's existence is the fact, and empty is a value, so there is deliberately
@@ -41,7 +41,7 @@ public sealed interface OperationMember {
      * the two stays 1:1.
      */
     enum Kind {
-        SELECT, JOIN, CONDITION, ORDER_BY, PAGINATE, LOOKUP, SERVICE_CALL,
+        SELECT, JOIN, CONDITION, ORDER_BY, PAGINATE, LOOKUP,
         NODE_RESOLVE, ENTITY_RESOLVE, COUNT, FACET, PIVOT, REENTRY, WRITE
     }
 
@@ -54,7 +54,6 @@ public sealed interface OperationMember {
             case OrderBy _, PolymorphicOrderBy _ -> Kind.ORDER_BY;
             case Paginate _ -> Kind.PAGINATE;
             case Lookup _ -> Kind.LOOKUP;
-            case ServiceCall _ -> Kind.SERVICE_CALL;
             case NodeResolve _ -> Kind.NODE_RESOLVE;
             case EntityResolve _ -> Kind.ENTITY_RESOLVE;
             case Count _ -> Kind.COUNT;
@@ -66,8 +65,7 @@ public sealed interface OperationMember {
     }
 
     /**
-     * Whether this member hands a domain record back mid-field (a {@code @service} invocation's
-     * return, a DML write's payload): the produced-record half of the re-fetch derivation
+     * Whether this member hands a domain record back mid-field (a DML write's payload): the produced-record half of the re-fetch derivation
      * {@link OutputField#requiresReFetch()} reads off the member set instead of enumerating
      * summary arms. Total over the seal, so a new member kind must answer rather than fall
      * through a default. {@link Write.RoutineWrite} answers {@code false}: its response is the
@@ -75,7 +73,6 @@ public sealed interface OperationMember {
      */
     default boolean producesRecord() {
         return switch (this) {
-            case ServiceCall _ -> true;
             case Write.Dml _ -> true;
             case Write.RoutineWrite _, Write.UpdateMatching _, Write.DeleteMatching _ -> false;
             case Select _, Join _, Condition _, OrderBy _, PolymorphicOrderBy _, Paginate _, Lookup _,
@@ -190,18 +187,6 @@ public sealed interface OperationMember {
     record Lookup(LookupMapping lookupMapping) implements OperationMember {
         public Lookup {
             Objects.requireNonNull(lookupMapping, "lookupMapping");
-        }
-    }
-
-    /**
-     * A developer {@code @service} invocation. Holds the two-shape call carrier
-     * ({@link ServiceCallCarrier}): root leaves carry the structured
-     * {@link ServiceMethodCall}, child leaves a reflected {@link MethodRef}; the difference
-     * tracks arrival position, not an operation-axis distinction.
-     */
-    record ServiceCall(ServiceCallCarrier call) implements OperationMember {
-        public ServiceCall {
-            Objects.requireNonNull(call, "call");
         }
     }
 

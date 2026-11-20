@@ -89,7 +89,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
-import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
@@ -190,15 +189,6 @@ class TypeBuilder {
             .<no.sikt.graphitron.rewrite.model.EmittedCarrierBinding>map(b -> b)
             .or(() -> bindings.resolveServiceEmitted(sdlTypeName).map(b -> b))
             .or(() -> bindings.resolveRoutineEmitted(sdlTypeName).map(b -> b));
-    }
-
-    /**
-     * The {@code @service} producer's arrival cardinality for a payload SDL type, decided once at
-     * the reflection boundary and read by the classify-time shape verdict at the {@code @service}
-     * carrier seat. Mirrors {@link #serviceEmittedBinding}.
-     */
-    java.util.Optional<no.sikt.graphitron.model.diagnostics.Arity> serviceCarrierProducerArrival(String parentType, String fieldName) {
-        return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceCarrierProducerArrival(parentType, fieldName);
     }
 
     /**
@@ -2255,8 +2245,7 @@ class TypeBuilder {
      * {@code Class.isInstance}, so a non-{@code Throwable} class would never match anything and
      * is almost certainly a typo.
      */
-    // Instance method (not static) so it can read ctx.codegenLoader(); the explicit-parameter
-    // sibling lives at CheckedExceptionMatcher.unmatched, which crosses a class boundary.
+    // Instance method (not static) so it can read ctx.codegenLoader().
     private String validateExceptionClass(String className, String handlerKind) {
         if (ctx.nameability().verdictFor(className)
                 instanceof ClasspathNameability.Verdict.Rejected rejected) {

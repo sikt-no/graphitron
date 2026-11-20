@@ -24,8 +24,8 @@ import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
  * Unit coverage for the {@code @service} decode and bind phases
  * ({@link ServiceCatalog#decodeServiceMethod}, {@link ServiceCatalog#reduceClaims},
  * {@link ServiceCatalog#bindServiceMethod}) plus {@link ServiceCatalog#reflectTableMethod}'s
- * {@code @condition} binding. Coordinate precedence runs between reduce and bind, in
- * {@link ServiceDirectiveResolver}, and is pinned at the pipeline tier instead.
+ * {@code @condition} binding. Coordinate precedence runs between reduce and bind, at the
+ * classifying caller, and is pinned at the pipeline tier instead.
  * Exercises the reflection path in isolation with synthetic
  * {@link TestServiceStub} / {@link TestConditionStub} methods; the classifier does not
  * read {@code BuildContext.schema} or {@code BuildContext.catalog}, so both may be
@@ -63,8 +63,8 @@ class ServiceCatalogTest {
     }
 
     /**
-     * Test-side composition of the three phases {@link ServiceDirectiveResolver} drives around
-     * its classify phase: {@link ServiceCatalog#decodeServiceMethod}, then
+     * Test-side composition of the three phases a classifying caller drives around its
+     * classify phase: {@link ServiceCatalog#decodeServiceMethod}, then
      * {@link ServiceCatalog#reduceClaims}, then {@link ServiceCatalog#bindServiceMethod}. The
      * catalog no longer offers a fused entry point, and deliberately so: coordinate precedence is
      * decided between reduce and bind, where the catalog cannot see it. What this helper drives is
@@ -215,9 +215,9 @@ class ServiceCatalogTest {
         assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
     }
 
-    // The DTO-shaped batch parameter at a child coordinate is answered by
-    // ServiceDirectiveResolver's classify phase, which owns the "this coordinate batches, and your
-    // DTO parameter cannot be its key" verdict. The root arm below stays here: it is binding's own
+    // The DTO-shaped batch parameter at a child coordinate is answered by the classifying
+    // caller, which owns the "this coordinate batches, and your DTO parameter cannot be its key"
+    // verdict. The root arm below stays here: it is binding's own
     // fallback.
 
     @Test

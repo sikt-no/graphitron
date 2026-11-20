@@ -49,10 +49,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * (i.e. {@link java.lang.reflect.Method#getExceptionTypes()}). Empty when the method has no
      * {@code throws} clause or when this {@link MethodRef} variant doesn't reflect a Java method
      * (e.g. {@code @condition} expressions). Populated by the catalog at reflection time
-     * ({@code ServiceCatalog.bindServiceMethod} / {@code reflectTableMethod}); consumed by
-     * {@code FieldBuilder.checkDeclaredCheckedExceptions} so a developer method that throws a
-     * checked exception with no covering {@code @error} handler is rejected at classify time
-     * rather than silently flowing through {@code ErrorRouter.redact} at runtime.
+     * ({@code ServiceCatalog.bindServiceMethod} / {@code reflectTableMethod}).
      */
     default List<String> declaredExceptions() { return List.of(); }
 
@@ -76,9 +73,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * {@link ParamSource.SourceTable}, {@link ParamSource.DslContext},
      * {@link ParamSource.Sources}).
      *
-     * <p>Used by generators to build the argument list for a method call via a single
-     * {@code buildArgExtraction(CallParam)} switch rather than an inline {@code ParamSource}
-     * switch in each generator.
+     * <p>Read by consumers that build a method call's argument list off one {@link CallParam}
+     * per parameter rather than an inline {@code ParamSource} switch each.
      */
     default List<CallParam> callParams() {
         return params().stream()
@@ -195,8 +191,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     }
 
     /**
-     * The static/instance fork on a {@link Service} variant. Sealed so the {@code serviceCallTarget}
-     * emitter can switch exhaustively; a hypothetical third arm (e.g. a {@code ServiceHolderFactory}
+     * The static/instance fork on a {@link Service} variant. Sealed so a call-target emitter can
+     * switch exhaustively; a hypothetical third arm (e.g. a {@code ServiceHolderFactory}
      * extension point) would be a compile error at every consumer rather than a silent fall-through.
      *
      * <p>{@link Static#needsDslLocal()} is pre-resolved at classify time inside

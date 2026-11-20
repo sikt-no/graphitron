@@ -152,7 +152,7 @@ class DomainReturnTypeCoverageTest {
     void mutationDmlRecordField_answersRecordArm() {
         // Validator's load-bearing assumption: DML mutation producer hands a sparse Record at
         // env.getSource(). This unit-tier pin is the canonical assertion for the domain-return-type
-        // conflict half against MutationServiceRecordField.
+        // conflict half against a service-produced payload record.
         var permit = mutationDmlPermitFixture();
         assertThat(permit.domainReturnType()).isInstanceOf(DomainReturnType.Record.class);
         assertThat(((DomainReturnType.Record) permit.domainReturnType()).table().tableName())

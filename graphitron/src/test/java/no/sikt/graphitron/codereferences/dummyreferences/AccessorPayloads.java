@@ -27,8 +27,7 @@ public final class AccessorPayloads {
      * field. Because it is nested in {@link AccessorPayloads}, its binary name is
      * {@code AccessorPayloads$NestedErrorsPayload}; the JLS-legal source form is
      * {@code AccessorPayloads.NestedErrorsPayload}. A child {@code @service} field returning this
-     * payload with an {@code @error}-union {@code errors} field classifies to a
-     * {@code ChildField.ServiceRecordField} that catches into its outcome, an
+     * payload with an {@code @error}-union {@code errors} field catches into its outcome, an
      * {@link no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped}.
      */
     public record NestedErrorsPayload(String data, List<Object> errors) {}

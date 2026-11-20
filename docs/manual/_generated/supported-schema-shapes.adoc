@@ -14,17 +14,9 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *MutationDmlRecordField*: A record-returning DML mutation: the schema field carries
 * *MutationRoutineWriteField*: A mutation field whose table chain starts with a database routine: the routine call
 * *MutationRoutineWriteRecordField*: A mutation field whose write is a hop-less `+@routine+` call and whose return is a
-* *MutationServicePolymorphicField*: A mutation field backed by a developer-provided service method that returns a multitable
-* *MutationServiceRecordField*: A mutation field backed by a developer-provided service method, returning a non-table type
-* *MutationServiceTableField*: A mutation field backed by a developer-provided service method, returning a table-mapped type
-* *MutationServiceTableInterfaceField*: The mutation analogue of `+QueryField.QueryServiceTableInterfaceField+`: a root
 * *QueryInterfaceField*: A root query field returning a multi-table `+GraphitronType.InterfaceType+`
 * *QueryNodeField*
 * *QueryNodesField*
-* *QueryServicePolymorphicField*: A root query field backed by a developer-provided service method that returns a multitable
-* *QueryServiceRecordField*: A root query field backed by a developer-provided service method, returning a non-table type
-* *QueryServiceTableField*: A root query field backed by a developer-provided service method, returning a table-mapped type
-* *QueryServiceTableInterfaceField*: A root `+@service+` field returning a single-table discriminated interface
 * *QueryTableField*: A root table read whose FROM starts at the return type's own table or a routine chain
 * *QueryTableInterfaceField*
 * *QueryUnionField*: A root query field returning a multi-table `+GraphitronType.UnionType+`
@@ -47,8 +39,6 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * _(not yet supported)_ *PivotSlotField*: One projection slot of a `+@pivot+` field's return type, carrying exactly one fact: its
 * *RecordCompositeField*: The single data field on an `+@service+` record-composite carrier payload. The
 * *RecordReadField*: A value read off a record-backed parent's in-memory source object: the scalar / enum /
-* *ServiceRecordField*: A child field backed by a developer-provided service method (`+@service+`), where the
-* *ServiceTableField*: A child field backed by a developer-provided service method (`+@service+`), where the
 * *SingleRecordIdField*: The single data field on an `+@service+` source-record carrier: an ID-typed scalar
 * *SingleRecordIdFieldFromReturning*: The single data field on a payload-returning DELETE carrier: an ID-typed scalar encoding
 * *TableField*

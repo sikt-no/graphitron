@@ -10,18 +10,11 @@ import java.util.List;
  *
  * <p>Returned by {@link NestedFilmReviewService#submit}, so the SDL {@code NestedFilmReviewPayload}
  * type binds as a class-backed {@code ResultReturnType} whose {@code fqClassName} carries the
- * {@code $}-qualified binary name, and the field classifies as a {@code MutationServiceRecordField}
- * with an {@code errors} field resolving an {@code ErrorChannel}. It is the compiling witness that two emit sites spell the
- * nested name as the JLS-legal {@code NestedFilmReviewPayloadHolder.Payload}, not the binary
- * {@code NestedFilmReviewPayloadHolder$Payload}:
- * <ul>
- *   <li>{@code TypeFetcherGenerator.computeMutationServiceRecordReturnType}, the mutation twin of
- *   the query-side {@code computeServiceRecordReturnType}, sources the fetcher return type from
- *   {@code ServiceMethodCall.javaReturnType()}.</li>
- *   <li>{@code FieldBuilder.resolveServiceOutcomeChannel}, the {@code @service} Outcome channel
- *   resolver, which reads the payload's backing class.</li>
- * </ul>
- * A regression to {@code ClassName.bestGuess} over the binary name at either site fails the
+ * {@code $}-qualified binary name, with an {@code errors} field. It is the compiling witness that
+ * the emitted fetcher spells the nested name as the JLS-legal
+ * {@code NestedFilmReviewPayloadHolder.Payload}, not the binary
+ * {@code NestedFilmReviewPayloadHolder$Payload}, both in its return type and in its
+ * {@code Outcome} channel. A regression to {@code ClassName.bestGuess} over the binary name fails the
  * {@code graphitron-sakila-example} compile gate on this fixture's generated output.
  *
  * <p>The payload carries no other field on purpose; see the {@link Payload} javadoc for why a

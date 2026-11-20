@@ -401,7 +401,7 @@ class ServiceCatalog {
      * Bind: the argMapping override typo guard, then extraction and {@link MethodRef.Param}
      * minting over the carried roles. Every rejection raised here is binding-level by
      * construction; coordinate-level and signature-fit verdicts have already been decided by
-     * {@link ServiceDirectiveResolver}'s classify phase and cannot be masked by a parameter
+     * the caller's classify phase and cannot be masked by a parameter
      * declared before the one they concern.
      *
      * <p>{@code batchKeyColumns} is the batch key the classify phase resolved: the key owner's

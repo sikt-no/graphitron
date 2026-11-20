@@ -1,18 +1,10 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.MappingEntry;
-import no.sikt.graphitron.rewrite.model.ServiceField;
-import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -111,68 +103,5 @@ class PolymorphicNodeIdSlotPipelineTest {
             .contains("occupantId")
             .contains("@service")
             .doesNotContain("is not @table-annotated");
-    }
-
-    // ===== Helpers =====
-
-    /** The polymorphic leaf on the one input-bean member of {@code Query.assignOccupant}. */
-    private static CallSiteExtraction.NodeIdDecodePolymorphicRecord beanLeaf(String sdl, boolean list) {
-        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "assignOccupant");
-        if (field instanceof GraphitronField.UnclassifiedField unclassified) {
-            throw new AssertionError("the schema did not build: " + unclassified.rejection().message());
-        }
-        var bean = ((ServiceField) field).serviceMethodCall().methodArgs().stream()
-            .filter(e -> e instanceof MappingEntry.FromArg fa && fa.shape() instanceof ValueShape.RecordInput)
-            .map(e -> (ValueShape.RecordInput) ((MappingEntry.FromArg) e).shape())
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("no record-input bean arg on Query.assignOccupant"));
-        ValueShape memberShape = bean.fields().getFirst().shape();
-        ValueShape elementShape = list ? ((ValueShape.ListOf) memberShape).elementShape() : memberShape;
-        return (CallSiteExtraction.NodeIdDecodePolymorphicRecord)
-            ((ValueShape.Scalar) elementShape).leafTransform();
-    }
-
-    /** The transform on the one argument-fed parameter of {@code Query.films}. */
-    private static CallSiteExtraction producerTransform(String sdl) {
-        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "films");
-        if (field instanceof GraphitronField.UnclassifiedField unclassified) {
-            throw new AssertionError("the schema did not build: " + unclassified.rejection().message());
-        }
-        var entries = ((ServiceField) field).serviceMethodCall().methodArgs();
-        assertThat(entries).singleElement().isInstanceOf(MappingEntry.FromArg.class);
-        var shape = ((MappingEntry.FromArg) entries.getFirst()).shape();
-        return ((ValueShape.Scalar) shape).leafTransform();
-    }
-
-    private static CallSiteExtraction.NodeIdDecodePolymorphicRecord producerLeaf(String sdl) {
-        return (CallSiteExtraction.NodeIdDecodePolymorphicRecord) producerTransform(sdl);
-    }
-
-    /** The rejection message of whichever of the two {@code @service} coordinates the SDL declares. */
-    private static String rejection(String sdl) {
-        var schema = TestSchemaHelper.buildSchema(sdl);
-        var field = schema.field("Query", "assignOccupant") != null
-                && !(schema.field("Query", "assignOccupant") instanceof ServiceField)
-            ? schema.field("Query", "assignOccupant")
-            : schema.field("Query", "films");
-        assertThat(field)
-            .as("a refused schema classifies the coordinate as unclassified")
-            .isInstanceOf(GraphitronField.UnclassifiedField.class);
-        return ((GraphitronField.UnclassifiedField) field).rejection().message();
-    }
-
-    private static TypeSpec findSpec(String className, String sdl) {
-        return TypeFetcherRenderTestSupport.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE)
-            .stream()
-            .filter(t -> t.name().equals(className))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Class not found: " + className));
-    }
-
-    private static MethodSpec method(TypeSpec spec, String name) {
-        return spec.methodSpecs().stream()
-            .filter(m -> m.name().equals(name))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Method not found: " + name + " on " + spec.name()));
     }
 }

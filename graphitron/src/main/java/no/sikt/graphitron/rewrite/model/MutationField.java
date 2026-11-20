@@ -23,9 +23,6 @@ import no.sikt.graphitron.model.jooq.TableRef;
 public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationRoutineWriteField,
             MutationField.MutationRoutineWriteRecordField,
-            MutationField.MutationServiceTableField,
-            MutationField.MutationServiceRecordField, MutationField.MutationServicePolymorphicField,
-            MutationField.MutationServiceTableInterfaceField,
             MutationField.MutationDmlRecordField,
             MutationField.MutationBulkDmlRecordField {
 
@@ -63,14 +60,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             // Routine carrier: the fetcher's value is the captured key record; step 2 belongs
             // to the payload's data field, exactly as on the DML record carriers below.
             case MutationRoutineWriteRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
-            case MutationServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
-            // Interface-only service-polymorphic return (union/table-interface rejected at classify).
-            case MutationServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
-            // Single-table service interface return: raw Record / List<Record> routed by the
-            // discriminated TypeResolver; Interface (not Table) keeps requiresReFetch() false so the
-            // re-fetch mirror agrees with the service fetcher's own by-PK re-projection.
-            case MutationServiceTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case MutationDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationBulkDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
         };
@@ -367,148 +356,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(targetTable);
-        }
-    }
-
-    /**
-     * A mutation field backed by a developer-provided service method, returning a table-mapped type.
-     *
-     * <p>Parameter binding (including context arguments) is fully encoded in
-     * {@link MethodRef#params()} via {@link ParamSource}.
-     *
-     * <p><b>Reentry realization.</b> Both value-level re-fetch and site-level reentry, exactly as
-     * {@link QueryField.QueryServiceTableField}: the returned records are key carriers, and the
-     * emitted fetcher lifts their primary keys and returns the reentry companion's re-selected
-     * rows. See that leaf's javadoc for the fact linkage. The service call stands where a DML
-     * write stands on the mutation family's other reentry caller, so this coordinate re-selects
-     * rows that must still exist: a service that deletes rows and hands the deleted records back
-     * has nothing to re-select, and its answer is the empty list (or null).
-     */
-    record MutationServiceTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel.Mapped> errorChannel
-    ) implements MutationField, ServiceField {
-        /**
-         * See {@link ChildField.ServiceTableField#domainReturnType()}: the typed {@code XRecord}
-         * is consumer-equivalent to a {@code Record(table)} via subtyping.
-         */
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
-    }
-
-    /**
-     * A mutation field backed by a developer-provided service method, returning a non-table type.
-     *
-     * <p>Parameter binding (including context arguments) is fully encoded in
-     * {@link MethodRef#params()} via {@link ParamSource}.
-     *
-     * <p>The success arm is a passthrough: the service method returns the SDL payload class (or
-     * scalar / pojo) directly, and per-field wiring projects SDL fields off the parent's domain
-     * return. This is where the non-table return differs from its table-bound sibling, whose
-     * records are key carriers re-selected from the catalog.
-     */
-    record MutationServiceRecordField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef returnType,
-        ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel.Mapped> errorChannel
-    ) implements MutationField, ServiceField {
-        /**
-         * Forks on {@link #returnType()} exactly as its structural twin
-         * {@link QueryField.QueryServiceRecordField#domainReturnType()} does; see that leaf for
-         * why the symmetry is the invariant rather than a coincidence.
-         *
-         * <ul>
-         *   <li>{@link ReturnTypeRef.ResultReturnType}:
-         *       {@link DomainReturnType#claimForResultReturn}. The carrier shape (a
-         *       {@code @service} mutation whose reflected return-element is the payload's single
-         *       {@code @table}-typed data field's record class) resolves a table and so puts a
-         *       typed {@code XRecord} verbatim at {@code env.getSource()}:
-         *       {@link DomainReturnType.TableRecord}, which is what the cross-arm conflict
-         *       against {@link MutationDmlRecordField} / {@link MutationBulkDmlRecordField}'s
-         *       {@link DomainReturnType.Record} arm reads. A class-backed, table-less payload
-         *       puts the payload object there and answers the backing-class claim.</li>
-         *   <li>{@link ReturnTypeRef.ScalarReturnType}: {@link DomainReturnType.Plain} over the
-         *       reflected peel, as the query twin.</li>
-         * </ul>
-         */
-        @Override public DomainReturnType domainReturnType() {
-            return switch (returnType) {
-                case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
-                case ReturnTypeRef.ScalarReturnType ignored ->
-                    new DomainReturnType.Plain(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
-                // A @table-typed return classifies as MutationServiceTableField and a polymorphic
-                // one as MutationServicePolymorphicField; neither arm reaches this leaf.
-                case ReturnTypeRef.TableBoundReturnType ignored -> new DomainReturnType.NoClaim();
-                case ReturnTypeRef.PolymorphicReturnType ignored -> new DomainReturnType.NoClaim();
-            };
-        }
-    }
-
-    /**
-     * A mutation field backed by a developer-provided service method that returns a multitable
-     * {@link GraphitronType.InterfaceType} over distinct-table participants (route (a)). The
-     * mutation analogue of {@link QueryField.QueryServicePolymorphicField}: the service hands back a
-     * PK-populated jOOQ {@code TableRecord} per branch, and the emitted fetcher dispatches on each
-     * returned record's runtime class against the participant set, tags {@code __typename}, and
-     * auto-fetches the selected columns by PK. Interface only, and a distinct-table interface:
-     * a union return is permanently unsupported (rejected at classify), and a single-table
-     * discriminated interface routes to the sibling {@link MutationServiceTableInterfaceField}
-     * leaf, not this one.
-     */
-    record MutationServicePolymorphicField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.PolymorphicReturnType returnType,
-        List<ParticipantRef> participants,
-        ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel.Mapped> errorChannel
-    ) implements MutationField, ServiceField {
-        public MutationServicePolymorphicField {
-            participants = List.copyOf(participants);
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.NoClaim();
-        }
-    }
-
-    /**
-     * The mutation analogue of {@link QueryField.QueryServiceTableInterfaceField}: a root
-     * {@code @service} mutation returning a single-table discriminated interface
-     * ({@code @table @discriminate}). Single-table sibling of {@link MutationServicePolymorphicField}
-     * (route (a)); the service hands back records of the one shared table, and the emitted fetcher
-     * collects their PKs, runs one by-PK SELECT projecting {@code __discriminator__} plus the
-     * participant field set and the discriminator-gated cross-table subselects, and lets the
-     * per-{@code TableInterfaceType} {@code TypeResolver} route each row off the live discriminator
-     * value (rather than route (a)'s runtime-class dispatch, which cannot distinguish same-table
-     * subtypes). Carries the read-side single-table discrimination data plus the service binding; the
-     * payload is a raw {@code Record} / {@code List<Record>}.
-     */
-    record MutationServiceTableInterfaceField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        ColumnRef discriminatorColumn,
-        List<String> knownDiscriminatorValues,
-        List<ParticipantRef> participants,
-        ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel.Mapped> errorChannel
-    ) implements MutationField, ServiceField {
-        public MutationServiceTableInterfaceField {
-            knownDiscriminatorValues = List.copyOf(knownDiscriminatorValues);
-            participants = List.copyOf(participants);
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.NoClaim();
         }
     }
 

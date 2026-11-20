@@ -9,7 +9,6 @@ import no.sikt.graphitron.rewrite.model.OperationMember.OrderBy;
 import no.sikt.graphitron.rewrite.model.OperationMember.Paginate;
 import no.sikt.graphitron.rewrite.model.OperationMember.Reentry;
 import no.sikt.graphitron.rewrite.model.OperationMember.Select;
-import no.sikt.graphitron.rewrite.model.OperationMember.ServiceCall;
 import no.sikt.graphitron.rewrite.model.OperationMember.Write;
 
 import java.util.ArrayList;
@@ -130,20 +129,6 @@ public final class OperationMembers {
             shape(Set.of(Kind.NODE_RESOLVE), Set.of())),
         Map.entry(QueryField.QueryNodesField.class,
             shape(Set.of(Kind.NODE_RESOLVE), Set.of())),
-        // Reentry is *required*, not optional, on the two table-bound service leaves: every
-        // instance has a bare table target and a record-producing service call, so every
-        // instance mints. (Contrast DmlTableField, whose encoded return arms mint none, which is
-        // what makes the slot honestly optional there.) The one wrapper that would break the
-        // "every instance" claim is unconstructible: ServiceDirectiveResolver rejects a
-        // Connection return on a root @service outright.
-        Map.entry(QueryField.QueryServiceTableField.class,
-            shape(Set.of(Kind.SERVICE_CALL, Kind.REENTRY), Set.of())),
-        Map.entry(QueryField.QueryServiceRecordField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
-        Map.entry(QueryField.QueryServicePolymorphicField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
-        Map.entry(QueryField.QueryServiceTableInterfaceField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
 
         // Mutation roots. The projected / discriminated direct-DML returns re-query at their
         // own site, so the direct-return leaf declares REENTRY optional. Read alone that
@@ -157,15 +142,6 @@ public final class OperationMembers {
             shape(Set.of(Kind.WRITE), Set.of())),
         Map.entry(MutationField.MutationRoutineWriteRecordField.class,
             shape(Set.of(Kind.WRITE), Set.of())),
-        // The mutation twin of the query service-table entry above; same reasoning.
-        Map.entry(MutationField.MutationServiceTableField.class,
-            shape(Set.of(Kind.SERVICE_CALL, Kind.REENTRY), Set.of())),
-        Map.entry(MutationField.MutationServiceRecordField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
-        Map.entry(MutationField.MutationServicePolymorphicField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
-        Map.entry(MutationField.MutationServiceTableInterfaceField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
         Map.entry(MutationField.MutationDmlRecordField.class,
             shape(Set.of(Kind.WRITE), Set.of())),
         Map.entry(MutationField.MutationBulkDmlRecordField.class,
@@ -202,10 +178,6 @@ public final class OperationMembers {
             shape(Set.of(Kind.PIVOT, Kind.JOIN), Set.of())),
         Map.entry(ChildField.PivotSlotField.class,
             shape(Set.of(), Set.of())),
-        Map.entry(ChildField.ServiceTableField.class,
-            shape(Set.of(Kind.SERVICE_CALL), BATCHED_TABLE_READ_OPTIONALS)),
-        Map.entry(ChildField.ServiceRecordField.class,
-            shape(Set.of(Kind.SERVICE_CALL), Set.of())),
         Map.entry(ChildField.RecordReadField.class,
             shape(Set.of(), Set.of())),
         Map.entry(ChildField.RecordCompositeField.class,
@@ -248,20 +220,12 @@ public final class OperationMembers {
             case QueryField.QueryUnionField f -> polymorphicRootRead(f);
             case QueryField.QueryNodeField _ -> List.of(new NodeResolve());
             case QueryField.QueryNodesField _ -> List.of(new NodeResolve());
-            case QueryField.QueryServiceTableField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            case QueryField.QueryServiceRecordField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            case QueryField.QueryServicePolymorphicField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            case QueryField.QueryServiceTableInterfaceField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
 
             // --- Mutation roots ---
             // The write payload is the leaf's carried component, by identity (DmlWriteField).
             case DmlWriteField f -> List.of(f.write());
             case MutationField.MutationRoutineWriteField _ -> List.of(new Write.RoutineWrite());
             case MutationField.MutationRoutineWriteRecordField _ -> List.of(new Write.RoutineWrite());
-            case MutationField.MutationServiceTableField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            case MutationField.MutationServiceRecordField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            case MutationField.MutationServicePolymorphicField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
-            case MutationField.MutationServiceTableInterfaceField f -> List.of(structuredServiceCall(f.serviceMethodCall()));
 
             // --- Child fields: catalog column projections ---
             case ChildField.ColumnBackedField _ -> List.of(new Select());
@@ -290,11 +254,6 @@ public final class OperationMembers {
             // --- Child fields: pivot. The member row is the leaf's carried component, by
             // identity (PivotSpecField), the DmlWriteField discipline. ---
             case ChildField.PivotSpecField f -> List.of(f.pivot(), new Join());
-
-            // --- Child fields: service calls (reflected carrier) ---
-            case ChildField.ServiceTableField f -> serviceTableRead(f);
-            case ChildField.ServiceRecordField f -> List.of(new ServiceCall(
-                new ServiceCallCarrier.ReflectedMethod(f.method())));
 
             // --- Child fields: record reads, regroups and pass-throughs: the empty set.
             // The DataFetcher's existence is the fact; empty is a value. ---
@@ -377,33 +336,6 @@ public final class OperationMembers {
         }
         field.ordering().ifPresent(ordering -> members.add(new OperationMember.PolymorphicOrderBy(ordering)));
         return members;
-    }
-
-    /**
-     * The child {@code @service} table read: the service call plus whatever of the leaf's
-     * table-read surface is populated (its filter, ordering, pagination and join slots exist
-     * and were silently outside the one-arm summary).
-     */
-    private static List<OperationMember> serviceTableRead(ChildField.ServiceTableField f) {
-        var members = new ArrayList<OperationMember>();
-        members.add(new ServiceCall(new ServiceCallCarrier.ReflectedMethod(f.method())));
-        if (!f.joinPath().isEmpty()) {
-            members.add(new Join());
-        }
-        if (!f.filters().isEmpty()) {
-            members.add(new Condition.OnReturnTable(f.returnType().table(), f.filters()));
-        }
-        if (!(f.orderBy() instanceof OrderBySpec.None)) {
-            members.add(new OrderBy(f.orderBy()));
-        }
-        if (f.pagination() != null) {
-            members.add(new Paginate(f.pagination()));
-        }
-        return members;
-    }
-
-    private static ServiceCall structuredServiceCall(ServiceMethodCall call) {
-        return new ServiceCall(new ServiceCallCarrier.StructuredCall(call));
     }
 
     /**

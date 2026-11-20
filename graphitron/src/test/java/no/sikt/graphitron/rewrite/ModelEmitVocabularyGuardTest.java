@@ -59,7 +59,6 @@ class ModelEmitVocabularyGuardTest {
         "ServiceMethodCall.java",
         "SourceKey.java",
         "TenantScopes.java",
-        "TypeNames.java",
         "ValueShape.java"
     );
 

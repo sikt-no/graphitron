@@ -27,7 +27,7 @@ import java.util.List;
 /**
  * Walker that produces a {@link ServiceMethodCall} carrier from an already-resolved
  * {@link MethodRef.Service}, the intermediate produced upstream by
- * {@code ServiceDirectiveResolver}/{@code ServiceCatalog}; this class translates that
+ * {@code ServiceCatalog}; this class translates that
  * shape and does no reflection of its own.
  *
  * <h3>Stage layout</h3>

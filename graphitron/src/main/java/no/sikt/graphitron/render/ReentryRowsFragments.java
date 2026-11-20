@@ -14,10 +14,8 @@ import java.util.List;
 
 /**
  * The reentry companion's body fragments: the follow-up SELECT run against keys the entry point
- * captured, rendered from the row's {@link LaunchSource.Reentry} arm. Two entry points capture
- * keys and call this companion, and the rendered body is the same for both: a mutation's write
- * captures them through {@code RETURNING}, and a root {@code @service} fetcher lifts them off the
- * records the developer's method returned. The companion resolves its correlation (the carried
+ * captured, rendered from the row's {@link LaunchSource.Reentry} arm. A mutation's write
+ * captures the keys through {@code RETURNING} and calls this companion. The companion resolves its correlation (the carried
  * {@link ParentCorrelation.OnLiftedSlots} fact) through one seam at two cardinalities: the list
  * arm renders the shared VALUES-join primitive (a {@code VALUES(idx, key...)} derived table
  * built through {@link ValuesJoinRowBuilder}, joined to the target over the correlation,
@@ -25,10 +23,9 @@ import java.util.List;
  * handed over); the single arm renders the legible degenerate, plain key equality,
  * with no VALUES table and no ORDER BY.
  *
- * <p>Deliberately no empty-input gate: each caller owns it. The write emitter has the no-match
+ * <p>Deliberately no empty-input gate: the caller owns it. The write emitter has the no-match
  * guard (a single-row write with no match short-circuits before the call; a list write's
- * empty-input contract short-circuits before the transaction), and the root {@code @service}
- * fetcher gates a null or empty service return before the call. So the companion is only ever
+ * empty-input contract short-circuits before the transaction). So the companion is only ever
  * called with captured keys, and adding a gate here would duplicate a contract another emission
  * already owns.
  */
@@ -82,9 +79,6 @@ public final class ReentryRowsFragments {
             case ResultShape.SingleRecord ignored -> RECORD;
             case ResultShape.Connection ignored -> throw new IllegalStateException(
                 "a reentry companion never paginates; the command constructor rejects the pair");
-            case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
-                "the LoaderDelegated result belongs to the service arms; the command"
-                + " constructor rejects the pair");
         };
     }
 

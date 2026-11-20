@@ -27,10 +27,8 @@ import java.util.List;
  * {@link #pathsInitializer(ServiceMethodCall.ValidationSubject, List, String)}), and
  * an {@code extensions} map carrying the violated constraint annotation's simple name under
  * {@code "constraint"}. Schema authors opt into client visibility of the constraint name by
- * declaring an {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type;
- * the per-handler source-class accessor check
- * ({@link no.sikt.graphitron.rewrite.walker.internal.HandlerAccessorCheck}) confirms at
- * classify time that {@code GraphQLError.getExtensions()} satisfies the read.
+ * declaring an {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type,
+ * which {@code GraphQLError.getExtensions()} satisfies.
  *
  * <p>A second public method, {@code sizeExceeded}, builds the same shape for the column-length
  * check a DML mutation runs before its statement. Both delegate to one private builder, so there

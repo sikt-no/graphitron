@@ -691,7 +691,7 @@ class GraphQLQueryTest {
     // are themselves selected. The City fixtures (cities_cityUppercase_* /
     // cities_cityLowercase_* below) remain the deliberate no-sibling parent.
     @Test
-    void films_titleLowercase_resolvesViaServiceRecordFieldDataLoader_row1Source() {
+    void films_titleLowercase_resolvesViaChildServiceDataLoader_row1Source() {
         // Identical wiring to titleUppercase but the developer-side method takes
         // Set<Row1<Integer>> (Wrap.Row source shape, vs Wrap.Record for the Record1 sibling)
         // and returns Map<Row1<Integer>, String>. Confirms the Row-keyed dispatch round-trips
@@ -709,7 +709,7 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void films_titleTitlecase_resolvesViaServiceRecordFieldDataLoader_tableRecordSource() {
+    void films_titleTitlecase_resolvesViaChildServiceDataLoader_tableRecordSource() {
         // Identical wiring to titleUppercase / titleLowercase but the developer-side method
         // takes Set<FilmRecord> (Wrap.TableRecord source shape) and returns
         // Map<FilmRecord, String>. Confirms the typed key round-trips through the DataLoader:
@@ -842,7 +842,7 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void films_titleUppercase_resolvesViaServiceRecordFieldDataLoader() {
+    void films_titleUppercase_resolvesViaChildServiceDataLoader() {
         // @service child field with a scalar return. The generator-emitted rows-method body
         // calls FilmService.titleUppercase via the parameterised ArgCallEmitter (Sources -> keys,
         // DslContext -> dsl local). Each key is one parent FILM_ID; the developer's method
@@ -992,7 +992,7 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void films_castMembers_referenceSubfieldResolvesViaServiceTableFieldLift() {
+    void films_castMembers_referenceSubfieldResolvesViaChildServiceLift() {
         // Lift-back execution-tier primary net. Film.castMembers is a list-cardinality child
         // @service (mapped container) returning film_actor rows; FilmActor.actor is a @reference
         // (correlated multiset, not a stored column). The lift re-projects each returned PK through
@@ -9934,8 +9934,8 @@ class GraphQLQueryTest {
     // ===== Mutation-side @error end-to-end =====
     //
     // Mirrors the query-side filmLookup tests on the mutation pillar. The submitFilmReview
-    // mutation classifies as MutationServiceRecordField (the same shape that the production
-    // BehandleSakPayload bug fired on) and shares buildServiceFetcherCommon with the query
+    // mutation is a root @service returning a record payload (the same shape that the production
+    // BehandleSakPayload bug fired on) and shares its fetcher shape with the query
     // side, but the dispatch arm is wired through MutationFetchers rather than QueryFetchers.
     // Pinning the codepath at execute-tier means a future regression in the mutation switch's
     // try/catch wrapper or the per-fetcher dispatch fork lands as a build failure rather than
@@ -10089,7 +10089,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void createFilmsWithActors_errorArm_rendersResultsNull() {
-        // filmId -1 throws IllegalArgumentException; the MutationServiceRecordField try/catch ships
+        // filmId -1 throws IllegalArgumentException; the mutation fetcher's try/catch ships
         // Outcome.ErrorList. The `results` passthrough narrows Outcome.Success, sees the ErrorList arm,
         // and returns null (data: null); the sibling errors field reads ErrorList.errors().
         Map<String, Object> data = execute("""

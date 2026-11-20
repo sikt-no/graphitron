@@ -2,11 +2,11 @@ package no.sikt.graphitron.rewrite.test.services;
 
 /**
  * Fixture: mutation-side {@code @error} end-to-end. The {@code submit} method drives the
- * {@code MutationServiceRecordField} emit path that broke in production (a
+ * root {@code @service} mutation emit path that broke in production (a
  * {@code @service}-backed mutation returning a {@code @record} payload with an {@code errors}
  * slot) through compile-spec and execute-spec, mirroring the query-side
  * {@link FilmLookupService} but on the mutation pillar so any future regression in
- * {@code MutationServiceRecordField}'s try/catch wrapper or its {@code Outcome} error arm
+ * the mutation fetcher's try/catch wrapper or its {@code Outcome} error arm
  * lands as a build failure rather than a production schema break.
  *
  * <p>Three branches by input:
@@ -242,7 +242,7 @@ public final class FilmReviewService {
 
     /**
      * Fixture: identical branching to {@link #submit} but returns the setter-shape sibling
-     * payload class. Drives the {@code MutationServiceRecordField} emit through the
+     * payload class. Drives the mutation fetcher's emit through the
      * mutable-bean construction shape (no-arg ctor + setters) end-to-end through the execution
      * tier.
      */
@@ -264,7 +264,7 @@ public final class FilmReviewService {
 
     /**
      * Fixture: identical branching to {@link #submitSetterShape} but returns the
-     * {@code @field(name:)}-renamed setter-shape payload. Drives the {@code MutationServiceRecordField}
+     * {@code @field(name:)}-renamed setter-shape payload. Drives the mutation fetcher's
      * emit through the mutable-bean construction shape whose setter names are resolved from
      * {@code @field(name:)} rather than the SDL field names, end-to-end through the execution tier.
      */

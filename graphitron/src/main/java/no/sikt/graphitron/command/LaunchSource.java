@@ -14,9 +14,7 @@ import java.util.Objects;
  * How a launcher's rows are sourced and projected: for the SQL-composing arms, the FROM
  * clause's origin and the select list's derivation, one axis because the two co-vary (a routine
  * chain's projection targets the terminus alias, never a declared table local; the discriminated
- * arm has no single projection unit at all); for the {@code @service} arms, the developer
- * method whose invocation IS the sourcing ({@link ServiceCall} delegates outright,
- * {@link ServiceTableLift} re-projects the returned records). Absorbing both facts into the arm
+ * arm has no single projection unit at all). Absorbing both facts into the arm
  * keeps the illegal cells unrepresentable and spares the command a table slot whose meaning
  * would change per arm. The {@link Reentry} arms source rows from the mutation's captured
  * {@code RETURNING} keys: the write already happened, and the launcher re-selects the payload
@@ -186,44 +184,6 @@ public sealed interface LaunchSource {
     }
 
     /**
-     * A {@code @service} record child: the rows method delegates outright to the developer's
-     * method, whose declared return type IS the rows method's return type (the classifier
-     * acceptance enforces strict equality with the loader-container wrap, so the borrowed
-     * {@link #method} carries the shape and no derivation runs here). Whether a {@code dsl}
-     * local exists at all derives from the borrowed
-     * {@code method().callShape()} (the one arm where the rendered method may bind no
-     * {@code DSLContext}); the call expression itself is shell-composed argument assembly
-     * handed to the renderer as a fragment, the dsl declaration's carve-out. The rendered body
-     * deliberately has no empty-keys gate: adding one to a service rows method would change
-     * behaviour (the developer method owns the empty batch).
-     */
-    record ServiceCall(no.sikt.graphitron.rewrite.model.MethodRef.Service method)
-            implements LaunchSource {
-        public ServiceCall {
-            Objects.requireNonNull(method, "method");
-        }
-    }
-
-    /**
-     * A {@code @service} table child: the developer's method produces real table records; the
-     * rows method lifts them back by re-projecting each returned record's primary key by
-     * identity through {@link #projection}'s {@code $project} over an {@code (idx, seq, pk...)}
-     * VALUES join against {@link #table}, so multiset sub-fields resolve off the projected row
-     * where the verbatim service return carried only stored columns. The {@code seq} ordering
-     * (each parent bucket keeps the service's flatten order) and the {@code dsl} local are
-     * arm-entailed: the lift always SELECTs. Like {@link ServiceCall}, the call expression is
-     * the shell's fragment and the body has no empty-keys gate.
-     */
-    record ServiceTableLift(no.sikt.graphitron.rewrite.model.MethodRef.Service method,
-            TableRef table, UnitRef projection) implements LaunchSource {
-        public ServiceTableLift {
-            Objects.requireNonNull(method, "method");
-            Objects.requireNonNull(table, "table");
-            Objects.requireNonNull(projection, "projection");
-        }
-    }
-
-    /**
      * A batched {@code @pivot} child: the parent-input VALUES table LEFT JOINs the attribute
      * {@link #pivotTable} over {@link #correlation}'s FK slots, and the batch collapses to one
      * aggregate row per key under {@code GROUP BY} on the idx column. Both are source-entailed,
@@ -274,10 +234,9 @@ public sealed interface LaunchSource {
      * The reentry capability shared by the keyed companions: the launcher's FROM anchors on the
      * {@link #table} the caller captured keys for, restricted to exactly those keys by
      * {@link #correlation}'s lifted slots (single: key equality; list: an {@code (idx, keys...)}
-     * VALUES join, input-ordered by {@code idx}). Both callers derive their key list from the
+     * VALUES join, input-ordered by {@code idx}). The caller derives its key list from the
      * same correlation the companion's parameter type reads (the write emitter its
-     * {@code RETURNING} columns, the root {@code @service} fetcher the columns it lifts off the
-     * returned records), so the keys handed across the generated call boundary are
+     * {@code RETURNING} columns), so the keys handed across the generated call boundary are
      * assignment-compatible by construction, not by javadoc agreement.
      */
     sealed interface Reentry extends LaunchSource permits ProjectedReentry, DiscriminatedReentry {
@@ -289,10 +248,9 @@ public sealed interface LaunchSource {
     /**
      * A projected companion: the returned type is one table-backed object, re-selected through
      * the {@link #projection} unit's {@code $project} over the key restriction. The table is the
-     * correlation's own target (the keys are the payload table's own key for this arm, whether
-     * the write returned them or the fetcher lifted them off a service's records), so no second
-     * slot restates it. Deliberately no empty-input gate: the caller owns it (the write emitter's
-     * no-match guard; the root {@code @service} fetcher's null-or-empty gate), and the companion
+     * correlation's own target (the keys are the payload table's own key for this arm, as the
+     * write returned them), so no second slot restates it. Deliberately no empty-input gate: the
+     * caller owns it (the write emitter's no-match guard), and the companion
      * is only called with captured keys.
      */
     record ProjectedReentry(UnitRef projection,

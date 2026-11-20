@@ -20,7 +20,7 @@ import java.util.List;
  * record-backed accessor path off the composite's {@code filmRecord()} / {@code actorRecords()}.
  *
  * <p>A {@code filmId} of {@code -1} throws {@link IllegalArgumentException}, mapped by the payload's
- * {@code @error} channel: the {@code MutationServiceRecordField} try/catch ships
+ * {@code @error} channel: the mutation fetcher's try/catch ships
  * {@code Outcome.ErrorList}, so the data field renders {@code null} and the errors field is populated.
  */
 public final class FilmsWithActorsService {

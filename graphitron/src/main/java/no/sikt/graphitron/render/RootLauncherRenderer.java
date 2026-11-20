@@ -88,20 +88,6 @@ public final class RootLauncherRenderer {
     }
 
     /**
-     * The service overload: {@code serviceCall} is the composed
-     * {@code <target>.<method>(<args>)} expression, the second and last shell argument-assembly
-     * fragment beside the {@code dsl} declaration (the call's argument extraction rides the
-     * emission context's per-class helper naming, which the command must not hold). Ignored by
-     * every non-service row.
-     */
-    public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections, CodeBlock batchedDslDeclaration,
-            CodeBlock serviceCall, ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
-        return render(row, carrierDsl, connections, batchedDslDeclaration, serviceCall, CodeBlock.of(""),
-            argHelpers, keyHost);
-    }
-
-    /**
      * The fan-out overload: {@code fanOutNarrowing} is the trailing argument list
      * ({@code , <read>, <read>}) that hands the scatter carrier the values of the row's
      * {@link TenantStrategy.Fanned#narrowing} slots, rendered by the shell because a decoded
@@ -111,8 +97,7 @@ public final class RootLauncherRenderer {
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
             no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections, CodeBlock batchedDslDeclaration,
-            CodeBlock serviceCall, CodeBlock fanOutNarrowing,
-            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
+            CodeBlock fanOutNarrowing, ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
         if (row.tenancy() instanceof TenantStrategy.Fanned fanned
                 && fanned.narrowing().isEmpty() != fanOutNarrowing.isEmpty()) {
             throw new IllegalStateException("Graphitron generator bug (tenant fan-out): the launcher"
@@ -165,9 +150,6 @@ public final class RootLauncherRenderer {
                                 connectionBody(anchor.projection(), row, connection,
                                     ConnectionConstruction.of(connections, row), tableLocal, tableLocal,
                                     carrierDsl));
-                            case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
-                                "the LoaderDelegated result belongs to the service arms; the"
-                                + " command constructor rejects the pair before rendering");
                         }
                     }
                     case TenantStrategy.Fanned fanned ->
@@ -187,10 +169,6 @@ public final class RootLauncherRenderer {
                     fanOutNarrowing, carrierDsl, connections, argHelpers));
             case LaunchSource.PivotAggregate pivot ->
                 builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration, argHelpers));
-            case LaunchSource.ServiceCall sc ->
-                builder.addCode(ServiceRowsFragments.delegateBody(sc, batchedDslDeclaration, serviceCall));
-            case LaunchSource.ServiceTableLift lift ->
-                builder.addCode(ServiceRowsFragments.liftBody(row, lift, batchedDslDeclaration, serviceCall));
             case LaunchSource.KeyedLookup lookup -> {
                 String tableLocal = TableLocal.name(lookup.table());
                 builder.addCode(TableLocal.declare(lookup.table()));
@@ -229,9 +207,6 @@ public final class RootLauncherRenderer {
                         discriminatedConnectionBody(disc, connection,
                             ConnectionConstruction.of(connections, row), tableLocal, carrierDsl,
                             TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
-                    case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
-                        "the LoaderDelegated result belongs to the service arms; the"
-                        + " command constructor rejects the pair before rendering");
                 }
             }
         }
@@ -247,10 +222,6 @@ public final class RootLauncherRenderer {
      * cannot disagree.
      */
     public static TypeName valueTypeOf(LauncherCommand row, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
-        if (row.source() instanceof LaunchSource.ServiceCall
-                || row.source() instanceof LaunchSource.ServiceTableLift) {
-            return ServiceRowsFragments.valueTypeOf(row);
-        }
         // Total over the delivery axis, so a new arm is a compile error at this view too.
         return switch (row.invocation()) {
             case Invocation.Batched ignored -> BatchedRowsFragments.valueTypeOf(row, connections);
@@ -271,9 +242,6 @@ public final class RootLauncherRenderer {
                     case ResultShape.Connection connection ->
                         ConnectionConstruction.classOf(className(connection.helper()),
                             ConnectionConstruction.of(connections, row));
-                    case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
-                        "the LoaderDelegated result belongs to the service arms, whose value type"
-                        + " derives in ServiceRowsFragments; the command constructor rejects the pair");
                 };
             }
         };
@@ -727,9 +695,6 @@ public final class RootLauncherRenderer {
             case ResultShape.Connection connection -> code.add(
                 connectionBody(chain.projection(), row, connection, ConnectionConstruction.of(connections, row),
                     fromLocal, terminal, carrierDsl));
-            case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
-                "the LoaderDelegated result belongs to the service arms; the"
-                + " command constructor rejects the pair before rendering");
         }
         return code.build();
     }

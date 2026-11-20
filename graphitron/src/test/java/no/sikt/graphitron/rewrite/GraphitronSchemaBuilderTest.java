@@ -20,8 +20,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
-import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
@@ -2648,11 +2646,6 @@ class GraphitronSchemaBuilderTest {
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
-
-        // The bare `@service + @table return -> ServiceTableField` verdict lives in the
-        // spec-by-example corpus (Film.language in the `service` corpus document). This
-        // enum keeps the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the
-        // @reference origin-defaulting cases).
 
         // The `@table parent + record-backed child type` shape is the mixed-source reach: the child
         // type is projected as a NestingField off the @table parent and also read through its
@@ -6361,10 +6354,6 @@ class GraphitronSchemaBuilderTest {
         // `table-interface` example, Query.anyNamed in the `interface` example, Query.search in
         // the `union` example).
 
-        // The bare `root @service into a non-table record-backed type -> QueryServiceRecordField`
-        // verdict lives in the spec-by-example corpus (`query-service-record` corpus
-        // document, Query.filmDetails).
-
         // The bare DML write-then-project verdicts live in the spec-by-example corpus: INSERT ->
         // DmlTableField (`dml` example, createFilm) and UPDATE ->
         // DmlTableField (`mutation-roots` example, updateFilm). This enum keeps the
@@ -6443,11 +6432,6 @@ class GraphitronSchemaBuilderTest {
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
-
-        // The bare @service-mutation verdicts live in the spec-by-example corpus
-        // (`mutation-roots` example: externalMutation -> MutationServiceTableField re-queries the
-        // catalog; externalRecord -> MutationServiceRecordField materializes the record). This
-        // enum keeps the slot-asserting carrier cases below.
 
         // The bare single-record DML payload verdict lives in the spec-by-example corpus
         // (`mutation-roots` example, createFilmPayload: an INSERT returning a plain object carrier

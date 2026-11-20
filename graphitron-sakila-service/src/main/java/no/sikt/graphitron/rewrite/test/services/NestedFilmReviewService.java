@@ -4,9 +4,7 @@ package no.sikt.graphitron.rewrite.test.services;
  * Compilation-tier fixture: the nested-payload counterpart of {@link FilmReviewService#submit}.
  * A mutation {@code @service} returning a <em>nested</em> record payload
  * ({@link NestedFilmReviewPayloadHolder.Payload}) that also carries an {@code @error} channel, so a
- * single fixture reaches both remaining in-hand {@code bestGuess} sites this pass fixes:
- * {@code TypeFetcherGenerator.computeMutationServiceRecordReturnType} (the mutation-service-record
- * fetcher return type) and the {@code @service} Outcome channel resolution.
+ * single fixture reaches both the fetcher return type and the {@code @service} Outcome channel.
  *
  * <p>Reuses {@link FilmReviewBadRatingException} / {@link FilmReviewMissingFilmException} so
  * the {@code errors} slot resolves against the existing {@code FilmReviewError} union without new

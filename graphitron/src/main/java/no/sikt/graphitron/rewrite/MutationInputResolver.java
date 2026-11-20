@@ -337,8 +337,7 @@ final class MutationInputResolver {
             case ReturnTypeRef.ResultReturnType r -> {
                 // DML accepts a class-backed carrier return; this validator screens only the
                 // wrapper shape. Payload-shape rejections surface from per-child classification
-                // (FieldBuilder.buildServiceField on @service mutations; the @mutation
-                // classifier's element / table-equality checks on DML).
+                // (the @mutation classifier's element / table-equality checks).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of record-backed payloads) is not yet supported; "

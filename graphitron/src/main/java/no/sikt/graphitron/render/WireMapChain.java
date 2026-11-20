@@ -22,7 +22,7 @@ import java.util.Map;
  * converging the two would be a change to what is emitted rather than to where it is spelled.
  *
  * <p>A list-aware variant of this same descent lives at
- * {@code ArgCallEmitter.walkSegments}: it lifts a list-shaped segment into a
+ * {@code ServiceMethodCallEmitter.walkSegments}: it lifts a list-shaped segment into a
  * {@code stream().map(...)} and numbers its bindings off one shared counter, so it is a superset of
  * this shape rather than a copy of it and folding this one into it would renumber every binding
  * both call sites here emit. Named so a reader who finds one finds the family.

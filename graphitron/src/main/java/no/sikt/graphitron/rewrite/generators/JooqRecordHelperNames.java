@@ -141,15 +141,6 @@ final class JooqRecordHelperNames {
         return "create" + stem(jr) + "List";
     }
 
-    /**
-     * The one-line legibility javadoc for a contended helper (e.g. {@code "Binds ADDRESS, DISTRICT,
-     * DATO_FRA."}), or {@code null} for an uncontended helper. Always {@code null} for the default
-     * resolver.
-     */
-    String javadocFor(CallSiteExtraction.JooqRecord jr) {
-        return populated ? javadocs.get(jr) : null;
-    }
-
     /** The distinct shapes to emit one {@code create<Record>} / {@code create<Record>List} pair for. */
     List<CallSiteExtraction.JooqRecord> distinctShapes() {
         return distinctShapes;

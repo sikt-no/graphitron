@@ -29,9 +29,7 @@ import java.util.Objects;
  * launcher membership predicate joins the verdict with the coordinate's member rows.
  *
  * <p>The production mirrors the trigger disjunction the model binds
- * ({@link DeliveryFact.Trigger}), in classifier-agreement order: a {@code @service} trigger
- * claims the delivery (the call is the delivery, owned by the serviceCall member, so the
- * coordinate reads {@link DeliveryFact.Inline}); a list-valued polymorphic target with a
+ * ({@link DeliveryFact.Trigger}), in classifier-agreement order: a list-valued polymorphic target with a
  * table-bound participant splits by fan-in; a record-handing parent splits a table-bound
  * child; the authored markers split what they are read on (the marker union on a plain
  * table-backed child, the {@code @splitQuery} half on the {@code @pivot} and {@code @routine}
@@ -88,11 +86,6 @@ public record DeliveryFactRelation(Map<FieldCoordinates, DeliveryFact> byCoordin
             return DeliveryFact.Inline.INSTANCE;
         }
         var fieldDef = fieldDefinitionOf(preRewriteSchema, leaf);
-        // The service call is the delivery, owned by the serviceCall member (the same
-        // slot-claiming rule the member production applies to the projection slot).
-        if (fieldDef != null && facts.service().rowFor(fieldDef).isPresent()) {
-            return DeliveryFact.Inline.INSTANCE;
-        }
         TargetShape shape = leaf.target().shape();
         TargetShape unwrapped = shape instanceof TargetShape.Connection c ? c.inner() : shape;
         boolean listOrConnection = shape instanceof TargetShape.Connection

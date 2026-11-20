@@ -229,9 +229,7 @@ public sealed interface ParentSourceBinding {
      * enforces consumption); the inline reads arm-switch through
      * {@code FetcherEmitter.bind}'s fork onto the same producer; the three
      * {@link no.sikt.graphitron.rewrite.model.SourceEnvelope}-carrying leaves answer the same
-     * question through their classify-time envelope, this binding's leaf-level twin. The child
-     * {@code @service} leaves' frames are emitted from the store, whose frame reads the key off the
-     * outcome's value where the parent is one and answers the field's error arm otherwise.
+     * question through their classify-time envelope, this binding's leaf-level twin.
      *
      * <p>The degenerate connection arm of {@link ChildField.InterfaceField} /
      * {@link ChildField.UnionField} (the all-unbound participant set) routes to the root-shaped
@@ -249,9 +247,7 @@ public sealed interface ParentSourceBinding {
         ChildField.NestingField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
-        ChildField.RecordCompositeField.class,
-        ChildField.ServiceTableField.class,
-        ChildField.ServiceRecordField.class);
+        ChildField.RecordCompositeField.class);
 
     /**
      * Leaves whose fetcher reads no parent backing object: root fetchers (the source is the
@@ -266,10 +262,6 @@ public sealed interface ParentSourceBinding {
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
         QueryField.QueryTableField.class,
-        QueryField.QueryServiceTableField.class,
-        QueryField.QueryServiceRecordField.class,
-        QueryField.QueryServicePolymorphicField.class,
-        QueryField.QueryServiceTableInterfaceField.class,
         QueryField.QueryTableInterfaceField.class,
         QueryField.QueryInterfaceField.class,
         QueryField.QueryUnionField.class,
@@ -278,10 +270,6 @@ public sealed interface ParentSourceBinding {
         MutationField.MutationRoutineWriteRecordField.class,
         MutationField.MutationDmlRecordField.class,
         MutationField.MutationBulkDmlRecordField.class,
-        MutationField.MutationServiceTableField.class,
-        MutationField.MutationServiceRecordField.class,
-        MutationField.MutationServicePolymorphicField.class,
-        MutationField.MutationServiceTableInterfaceField.class,
         ChildField.ErrorsField.class,
         InputField.ColumnBackedField.class,
         InputField.ColumnBackedReferenceField.class,

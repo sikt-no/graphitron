@@ -18,11 +18,8 @@ import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.model.jooq.TableRef;
-import no.sikt.graphitron.rewrite.model.WalkerResult;
-import no.sikt.graphitron.rewrite.walker.ServiceMethodCallWalker;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,8 +57,6 @@ public final class TestFixtures {
 
     /**
      * Builds a {@link MethodRef.Service} with the given {@link MethodRef.CallShape} explicit.
-     * Tests that exercise the static/instance fork directly (e.g. {@code MethodRefCallShapeTest})
-     * route through this overload.
      */
     public static MethodRef.Service serviceMethodRef(String className, String methodName, TypeName returnType,
                                                       List<MethodRef.Param> params, MethodRef.CallShape callShape) {
@@ -103,35 +98,6 @@ public final class TestFixtures {
                                                               List<MethodRef.Param> params) {
         return new MethodRef.Service(className, methodName, returnType, params, List.of(),
             new MethodRef.CallShape.InstanceWithDslHolder());
-    }
-
-    /**
-     * Stubs a {@link ServiceMethodCall} from a {@link MethodRef.Service} via the production
-     * walker, for tests building the root sync {@code @service} permits. When the walker rejects
-     * (multi-DSL invariant violation, etc.), tests should construct the carrier manually instead.
-     * The service field is a stub {@code Query.<methodName>} with no SDL arguments, so a method
-     * binding an argument needs the {@link #stubServiceCall(MethodRef.Service, List)} overload: the
-     * walker fails on a binding into an argument the field does not declare.
-     */
-    public static ServiceMethodCall stubServiceCall(MethodRef.Service method) {
-        return stubServiceCall(method, List.of());
-    }
-
-    /**
-     * {@link #stubServiceCall(MethodRef.Service)} on a stub field declaring {@code arguments}, which
-     * the walker reads each argument binding's declared type off.
-     */
-    public static ServiceMethodCall stubServiceCall(MethodRef.Service method,
-                                                    List<graphql.schema.GraphQLArgument> arguments) {
-        var stubField = graphql.schema.GraphQLFieldDefinition.newFieldDefinition()
-            .name(method.methodName()).type(graphql.Scalars.GraphQLString).arguments(arguments).build();
-        var result = new ServiceMethodCallWalker().walk("Query", stubField, method);
-        if (result instanceof WalkerResult.Ok<ServiceMethodCall> ok) {
-            return ok.carrier();
-        }
-        throw new IllegalStateException(
-            "Test fixture's MethodRef.Service did not translate to a ServiceMethodCall — "
-            + "construct the carrier manually for cases that exercise walker rejections.");
     }
 
     /**
@@ -265,17 +231,6 @@ public final class TestFixtures {
             boolean isMany) {
         return new SourceKey(hubTable.primaryKeyColumns(),
             polymorphicAccessorParentLift(accessor, isMany).wrap());
-    }
-
-    /**
-     * Service-backed {@link SourceKey}: the {@code (columns, wrap)} pair read off the
-     * {@code @service} method's {@code Sources} signature fact. Mirrors
-     * {@code FieldBuilder.buildServiceSourceKey}. (No lift: service fields never reach the
-     * record-parent key extraction.)
-     */
-    public static SourceKey serviceSourceKey(SourceKey.Wrap wrap,
-                                              List<ColumnRef> parentKeyColumns) {
-        return new SourceKey(parentKeyColumns, wrap);
     }
 
     /**
@@ -432,16 +387,6 @@ public final class TestFixtures {
 
     public static ReturnTypeRef.TableBoundReturnType tableBoundFilm(FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType("Film", filmTable(), wrapper);
-    }
-
-    /**
-     * {@link #tableBoundFilm} over the PK-bearing {@code film}. The shape the keyed re-projection
-     * needs: a table-bound {@code @service} return is re-selected by the returned record's
-     * primary key, so a key-less {@link #filmTable()} is not a constructible return there (the
-     * classifier rejects it, and the correlation refuses an empty column tuple).
-     */
-    public static ReturnTypeRef.TableBoundReturnType tableBoundFilmWithPk(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", filmTableWithPk(), wrapper);
     }
 
     public static ReturnTypeRef.TableBoundReturnType tableBound(String typeName, TableRef table, FieldWrapper wrapper) {

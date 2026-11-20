@@ -9,7 +9,6 @@ import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMember.Kind;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OutputField;
-import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -210,13 +209,12 @@ class OperationMemberMintPinTest {
 
     /**
      * The reentry-launcher agreement: over the corpus's reentry-capable coordinates (the DML
-     * table returns and the two table-bound root {@code @service} returns, the two callers of
-     * the reentry companion), the minted reentry member's coordinate set equals the launcher
+     * table returns, the caller of the reentry companion), the minted reentry member's coordinate set equals the launcher
      * relation's reentry-sourced row set. Since the back-half membership re-source the launcher
      * side reads the reentry member itself, so the two sides are no longer independent
      * predicates; what this pins now is the verdict-to-payload seam (the launch verdict against
      * the {@code DmlReturnExpression} payload dispatch, whose encoded arms throw on membership
-     * drift, and the root service dispatch beside it), kept as a regression guard on the
+     * drift), kept as a regression guard on the
      * one-fact claim.
      */
     @Test
@@ -243,9 +241,7 @@ class OperationMemberMintPinTest {
                 }
             }
             for (var leaf : flatOutputLeaves(schema)) {
-                if (!(leaf instanceof MutationField.DmlTableField
-                        || leaf instanceof QueryField.QueryServiceTableField
-                        || leaf instanceof MutationField.MutationServiceTableField)) {
+                if (!(leaf instanceof MutationField.DmlTableField)) {
                     continue;
                 }
                 reentryCapableCoordinates++;

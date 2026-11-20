@@ -96,16 +96,12 @@ class FetcherEdgeRelationTest {
             case QueryField.QueryUnionField ignored -> true;
             case QueryField.QueryNodeField ignored -> true;
             case QueryField.QueryNodesField ignored -> true;
-            case QueryField.QueryServicePolymorphicField ignored -> true;
-            case QueryField.QueryServiceTableInterfaceField ignored -> true;
             case ChildField.InterfaceField ignored -> true;
             case ChildField.UnionField ignored -> true;
             case ChildField.BatchedInterfaceField ignored -> true;
             case ChildField.BatchedUnionField ignored -> true;
             case ChildField.TableInterfaceField ignored -> true;
             case MutationField.MutationRoutineWriteField ignored -> true;
-            case MutationField.MutationServicePolymorphicField ignored -> true;
-            case MutationField.MutationServiceTableInterfaceField ignored -> true;
             // Condition-derived families: a member exactly when the coordinate has a condition
             // row (see the producer's javadoc; empty today).
             case MutationField.DmlTableField dml -> hasConditionRow(dml.parentTypeName(), dml.name());

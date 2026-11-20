@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * {@code ServiceRecordField} Phase A fixture: child {@code @service} method with a non-table
+ * Fixture: child {@code @service} method with a non-table
  * scalar return type.
  *
  * <p>The signature uses {@code Record1<Integer>} (mapped) keys rather than

@@ -38,8 +38,8 @@ import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
- * Resolves {@code @routine} on a field into a sealed {@link Resolved} the caller switches on, the
- * database-routine sibling of {@link ServiceDirectiveResolver}. Day-one resolves the
+ * Resolves {@code @routine} on a field into a sealed {@link Resolved} the caller switches on.
+ * Day-one resolves the
  * table-valued read function:
  *
  * <ul>

@@ -415,9 +415,9 @@ final class InputBeanResolver {
 
     /**
      * Folds the gathered plain leaves into one {@link CallSiteExtraction.ColumnBinding} per written
-     * column, through the {@link ColumnOverlap#groupByColumn} the mutation write paths and
-     * {@code JooqRecordInstantiationEmitter} already read, so the classifier's admission decision and
-     * the emitter's overlap dispatch consume one grouping by construction.
+     * column, through the {@link ColumnOverlap#groupByColumn} the mutation write paths already
+     * read, so the classifier's admission decision and the emitters' overlap dispatch consume one
+     * grouping by construction.
      *
      * <p>Per column: a single plain leaf passes through as a single-read-path binding. Several plain
      * leaves are a declared alias group when all but at most one carry {@code @deprecated} (the

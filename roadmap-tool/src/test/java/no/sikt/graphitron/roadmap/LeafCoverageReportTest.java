@@ -49,7 +49,7 @@ class LeafCoverageReportTest {
             "MutationField", """
                 package model;
                 public sealed interface MutationField extends RootField
-                    permits MutationField.DmlTableField, MutationField.MutationServiceTableField {
+                    permits MutationField.DmlTableField, MutationField.MutationRoutineWriteField {
 
                     sealed interface DmlTableField extends MutationField
                         permits MutationField.MutationInsertTableField,
@@ -57,7 +57,7 @@ class LeafCoverageReportTest {
 
                     record MutationInsertTableField(String name) implements DmlTableField {}
                     record MutationDeleteTableField(String name) implements DmlTableField {}
-                    record MutationServiceTableField(String name) implements MutationField {}
+                    record MutationRoutineWriteField(String name) implements MutationField {}
                 }
                 """);
 
@@ -68,7 +68,7 @@ class LeafCoverageReportTest {
             .contains(
                 "MutationField.MutationInsertTableField",
                 "MutationField.MutationDeleteTableField",
-                "MutationField.MutationServiceTableField");
+                "MutationField.MutationRoutineWriteField");
         // No FQN should use the sealed parent (DmlTableField) as the prefix — that mismatches
         // the trace and breaks the JOIN.
         assertThat(leaves).extracting(LeafCoverageReport.Leaf::fqn)

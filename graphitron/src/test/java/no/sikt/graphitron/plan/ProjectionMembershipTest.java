@@ -166,11 +166,8 @@ class ProjectionMembershipTest {
                 + " field (needs an authored @externalField method), the polymorphic child shapes"
                 + " (both delivery halves of the interface/union pair, and both halves of the"
                 + " single-table discriminated pair), whose gated correlation-key arms are"
-                + " pinned per-shape by CorrelationKeyArmPipelineTest, and the two service"
-                + " leaves, which the walk no longer mints")
+                + " pinned per-shape by CorrelationKeyArmPipelineTest")
             .containsExactlyInAnyOrder(
-                ChildField.ServiceTableField.class,
-                ChildField.ServiceRecordField.class,
                 ChildField.ComputedField.class,
                 ChildField.TableInterfaceField.class,
                 ChildField.BatchedTableInterfaceField.class,

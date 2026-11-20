@@ -5,9 +5,8 @@ import java.util.stream.Collectors;
 
 /**
  * Sealed sub-family of {@link Rejection.AuthorError} for the error-channel domain: errors raised
- * by the {@code ErrorChannelWalker} that resolves an outcome type's errors-field channel onto
- * {@code ErrorChannel.Mapped}, and by the {@code OutcomeType} classification that produces the
- * walker's input. Each typed arm carries the structural data its diagnostic message and LSP
+ * while an outcome type's errors-field channel resolves onto {@code ErrorChannel.Mapped}, and by
+ * the outcome-type classification that precedes it. Each typed arm carries the structural data its diagnostic message and LSP
  * {@code relatedInformation} need; downstream tooling switches on the arm rather than parsing
  * prose.
  *
@@ -15,9 +14,9 @@ import java.util.stream.Collectors;
  * {@code graphitron.error-channel.} namespace. The wire strings are literals next to each arm, not
  * derived from the Java identifier, mirroring the {@link ServiceMethodCallError} wire convention.
  *
- * <p>Classification-raised and walker-raised arms share one family because they share one SDL
+ * <p>Classification-raised and channel-raised arms share one family because they share one SDL
  * surface (the outcome type and its errors field) and one LSP namespace; each arm's javadoc names
- * its raiser. {@code OutcomeType} construction stays the single producer of the structural arms
+ * its raiser. The outcome-type classification stays the single producer of the structural arms
  * because {@code BuildContext.detectErrorsFieldShape} already centralises errors-field detection.
  * This is its own sibling sub-seal of {@link Rejection.AuthorError} rather than arms under the
  * flat {@link Rejection.AuthorError.Structural}, keeping {@code AuthorError}'s permits list
@@ -40,7 +39,7 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
-     * Raised by the {@code OutcomeType} classification: a type carries more than one errors field.
+     * Raised by the outcome-type classification: a type carries more than one errors field.
      * The binary {@code Outcome} witness has one error slot, so a type with two errors fields has
      * no well-defined fork.
      */
@@ -58,7 +57,7 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
-     * Raised by the {@code OutcomeType} classification: a success-projection (data) field has no
+     * Raised by the outcome-type classification: a success-projection (data) field has no
      * value to answer on the error arm. On that arm a nullable data field answers {@code null} and
      * a non-null plain list answers {@code []}; a non-null single value or connection has no empty
      * value, and a {@code null} would bubble up and drop the errors field. Data fields must be
@@ -79,7 +78,7 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
-     * Raised by the {@code OutcomeType} classification: the errors field carries a non-null
+     * Raised by the outcome-type classification: the errors field carries a non-null
      * list type ({@code [X!]!}). The mirror of {@link NonNullableSuccessProjectionField}: the
      * success arm resolves the errors field to {@code null} (there are no errors), so a non-null
      * errors field would raise {@code NonNullableFieldWasNullError} and drop the sibling data field

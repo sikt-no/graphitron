@@ -6,7 +6,7 @@ import org.jooq.DSLContext;
 /**
  * Fixture for an instance-method {@code @service} class with a
  * {@code public (DSLContext)} constructor. Drives the instance-service-holder-shape contract
- * end-to-end at the compile tier — a regression in {@code TypeFetcherGenerator#serviceCallTarget}
+ * end-to-end at the compile tier: a regression in the emitted call target
  * that mistakenly emitted the static {@code SampleInstanceService.titleByFilmId(...)} call shape
  * (against this instance method) would surface as a {@code javac} rejection on the generated
  * source, not as a body-string mismatch in a unit test.

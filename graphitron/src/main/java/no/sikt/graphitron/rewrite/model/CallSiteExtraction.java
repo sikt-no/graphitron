@@ -634,12 +634,9 @@ public sealed interface CallSiteExtraction
      *
      * <p>Produced only by {@code InputBeanResolver}, which fully resolves every {@code JooqRecord}:
      * a non-null {@code table}, resolved {@code ColumnRef}s on every binding, and a fully-resolved
-     * (possibly empty) {@code keyDecodes} list. Consumed by {@code JooqRecordInstantiationEmitter}
-     * (the {@code create<Record>} / {@code create<Record>List} helper pair, reached from either the
-     * root-coordinate {@code ServiceMethodCallEmitter} via
-     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput} or the child-coordinate
-     * {@code ArgCallEmitter} directly), and registered into the helper queue by
-     * {@code TypeFetcherGenerator}'s dual walk. It is a top-level {@code param.extraction()}, never an
+     * (possibly empty) {@code keyDecodes} list. Named by {@code ServiceMethodCallEmitter}'s
+     * {@code create<Record>} / {@code create<Record>List} call through
+     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}. It is a top-level {@code param.extraction()}, never an
      * {@link InputBean} field leaf, so the bean-field-leaf switch
      * ({@code InputBeanInstantiationEmitter.perFieldValueExpr}) treats it as
      * unreachable-by-construction.

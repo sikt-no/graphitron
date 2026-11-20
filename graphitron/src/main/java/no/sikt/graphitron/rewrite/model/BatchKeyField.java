@@ -7,8 +7,7 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>Implemented by all field variants that are DataLoader-backed:
  * {@link ChildField.BatchedTableField}, lookup-keyed or not (both
- * source shapes), {@link ChildField.BatchedPivotField},
- * {@link ChildField.ServiceTableField}, {@link ChildField.ServiceRecordField}, the
+ * source shapes), {@link ChildField.BatchedPivotField}, the
  * batched polymorphic pair {@link ChildField.BatchedInterfaceField} /
  * {@link ChildField.BatchedUnionField}, and the discriminated interface child's batched half
  * {@link ChildField.BatchedTableInterfaceField}. The "all" is enforced as a biconditional by the

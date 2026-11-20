@@ -11,7 +11,6 @@ import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.KeyLift;
-import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.model.jooq.TableRef;
 
@@ -94,8 +93,7 @@ class GeneratorUtils {
     /**
      * The {@code env.getSource()} source binding for the table-parent key-extraction defaults
      * ({@link #buildKeyExtraction(SourceKey, TableRef)},
-     * {@link #buildKeyExtractionWithNullCheck(SourceKey, TableRef)}) and the two
-     * environment-reading {@link ServiceKeySource} arms. Deliberately <em>not</em> a default on
+     * {@link #buildKeyExtractionWithNullCheck(SourceKey, TableRef)}). Deliberately <em>not</em> a default on
      * {@link #buildRecordParentKeyExtraction}: a record-parent read must state its source
      * expression, which callers obtain from a {@link ParentSourceBinding} so the narrowing
      * prelude and the source expression cannot be minted apart.
@@ -561,46 +559,6 @@ class GeneratorUtils {
                 }
                 yield out.build();
             }
-        };
-    }
-
-    /**
-     * The batched child {@code @service} path's key read: one home for all four
-     * {@link ServiceKeySource} arms, each of which is the shared wrap-driven
-     * {@link #buildKeyExtraction} against a different source binding.
-     *
-     * <p>The two {@code env.getSource()} arms differ only in what the parent is (a projected table
-     * row versus a held typed record), which the emitted expression does not see: both read through
-     * the generic {@code Record} interface, and {@code Record.get(Tables.X.COL)} answers the same
-     * either way. They stay separate arms because {@code ChildField.sourceShape()} derives off the
-     * same seam.
-     *
-     * <p>The accessor arm binds the returned record into a local first and guards it. An accessor
-     * returning a record may legitimately return {@code null} (a nullable to-one that resolved to no
-     * row), and the extraction below it reads columns off that record unconditionally, so without the
-     * guard the emitted fetcher would NPE at request time rather than resolve the field to null. The
-     * short-circuit is {@code completedFuture(null)}, assignable to the fetcher's declared
-     * {@code CompletableFuture<DataFetcherResult<V>>} at every service seat. It sits inside the key
-     * extraction, not in the pre-registration prelude, so a throwing developer accessor routes
-     * through the same disposition as the rest of the synchronous key read instead of escaping
-     * {@code DataFetcher.get()} unrouted.
-     */
-    static CodeBlock buildServiceKeyExtraction(SourceKey sourceKey, ServiceKeySource keySource) {
-        return switch (keySource) {
-            case ServiceKeySource.FromTableRow row ->
-                buildKeyExtraction(sourceKey, row.keyOwner(), SOURCE_FROM_ENV);
-            case ServiceKeySource.FromHeldRecord held ->
-                buildKeyExtraction(sourceKey, held.keyOwner(), SOURCE_FROM_ENV);
-            case ServiceKeySource.FromAccessor acc -> CodeBlock.builder()
-                .addStatement("$T keyRecord = (($T) env.getSource()).$L()",
-                    acc.accessor().elementClass(), acc.accessor().parentBackingClass(),
-                    acc.accessor().methodName())
-                .beginControlFlow("if (keyRecord == null)")
-                .addStatement("return $T.completedFuture(null)",
-                    ClassName.get("java.util.concurrent", "CompletableFuture"))
-                .endControlFlow()
-                .add(buildKeyExtraction(sourceKey, acc.keyOwner(), CodeBlock.of("keyRecord")))
-                .build();
         };
     }
 }

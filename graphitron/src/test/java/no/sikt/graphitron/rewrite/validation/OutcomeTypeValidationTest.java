@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * build time with the typed {@code ErrorChannelWalkerError.MultipleErrorsFields} arm.
  *
  * <p>Unlike the rule 7 / rule 8 / accessor-coverage rejections (raised by the
- * {@code ErrorChannelWalker} per outcome field and surfaced as {@code UnclassifiedField}; see
+ * error-channel resolution per outcome field and surfaced as {@code UnclassifiedField}; see
  * {@code ErrorChannelClassificationTest}), this is a whole-schema validator pass over the classified
  * model independent of transport, so it is driven through {@code validate(schema)} here rather than
  * per-field classification.

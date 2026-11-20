@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The target term reads at classified-target-<em>type</em> granularity where the shape alone
  * would blur real distinctions: the pivot projection (a context-free nesting type filled by a
- * correlated aggregate) and a {@code @service} result record are both record-shaped targets,
+ * correlated aggregate) and a payload record are both record-shaped targets,
  * but their target types classify differently, so the triples stay distinct without smuggling
  * an operation term back in.
  *
@@ -55,15 +55,7 @@ class LeafReconstructionKeyTest {
         Map.entry(QueryField.QueryInterfaceField.class,
             triple("participant tables", "root", "multi-table interface")),
         Map.entry(QueryField.QueryUnionField.class,
-            triple("participant tables", "root", "union")),
-        Map.entry(QueryField.QueryServiceTableField.class,
-            triple("service call", "root", "table")),
-        Map.entry(QueryField.QueryServiceRecordField.class,
-            triple("service call", "root", "result record")),
-        Map.entry(QueryField.QueryServicePolymorphicField.class,
-            triple("service call", "root", "multi-table interface")),
-        Map.entry(QueryField.QueryServiceTableInterfaceField.class,
-            triple("service call", "root", "single-table discriminated interface")));
+            triple("participant tables", "root", "union")));
 
     /** Mutation roots: placement is the mutation root; write-ness derives from placement. */
     private static final Map<Class<?>, String> MUTATION_TRIPLES = Map.ofEntries(
@@ -73,14 +65,6 @@ class LeafReconstructionKeyTest {
             triple("routine chain", "root", "table (post-commit terminus)")),
         Map.entry(MutationField.MutationRoutineWriteRecordField.class,
             triple("routine call", "root", "payload record")),
-        Map.entry(MutationField.MutationServiceTableField.class,
-            triple("service call", "root", "table")),
-        Map.entry(MutationField.MutationServiceRecordField.class,
-            triple("service call", "root", "result record")),
-        Map.entry(MutationField.MutationServicePolymorphicField.class,
-            triple("service call", "root", "multi-table interface")),
-        Map.entry(MutationField.MutationServiceTableInterfaceField.class,
-            triple("service call", "root", "single-table discriminated interface")),
         Map.entry(MutationField.MutationDmlRecordField.class,
             triple("table input arg (the carried write arm)", "root", "payload record")),
         Map.entry(MutationField.MutationBulkDmlRecordField.class,
@@ -118,10 +102,6 @@ class LeafReconstructionKeyTest {
             triple("attribute table (single FK hop)", "batched", "pivot projection (context-free nesting type)")),
         Map.entry(ChildField.PivotSlotField.class,
             triple("pivot record, read by name", "inline", "projection slot")),
-        Map.entry(ChildField.ServiceTableField.class,
-            triple("service call", "batched", "table")),
-        Map.entry(ChildField.ServiceRecordField.class,
-            triple("service call", "batched", "result record")),
         Map.entry(ChildField.RecordReadField.class,
             triple("parent record property", "inline", "value")),
         Map.entry(ChildField.RecordCompositeField.class,

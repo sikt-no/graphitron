@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
-import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
@@ -469,17 +468,14 @@ public class GraphitronSchemaValidator {
             List<ValidationError> errors) {
         // Reentry implementedness guard: a leaf that derives site-level reentry
         // (emitsKeyedReQuery) without being one of the shapes the reentry emit handles
-        // (the DataLoader-backed BatchKeyField leaves, the projected/discriminated
-        // DmlTableField arms, and the two table-bound root @service leaves, whose fetcher lifts
-        // the returned records' keys and calls the same companion) must fail at validate time,
+        // (the DataLoader-backed BatchKeyField leaves and the projected/discriminated
+        // DmlTableField arms) must fail at validate time,
         // not reach the generator. No current leaf can fire this (the sealed hierarchy admits no
         // such combination); preserving that state is the guard's job.
         if (field instanceof no.sikt.graphitron.rewrite.model.OutputField out
                 && out.emitsKeyedReQuery()
                 && !(field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField)
-                && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField)
-                && !(field instanceof no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField)
-                && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField)) {
+                && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField)) {
             var memberKinds = schema
                 .operationMembersOf(graphql.schema.FieldCoordinates.coordinates(
                     out.parentTypeName(), out.name()))
@@ -491,8 +487,8 @@ public class GraphitronSchemaValidator {
                 Rejection.invalidSchema("Field '" + out.qualifiedName() + "': site-level reentry "
                     + "(a reentry member among " + memberKinds + " x target " + out.target()
                     + ") on " + out.getClass().getSimpleName() + ", which carries no reentry emit — "
-                    + "the keyed re-query is emitted only for DataLoader-backed leaves, "
-                    + "projected/discriminated DML arms, and table-bound root @service returns"),
+                    + "the keyed re-query is emitted only for DataLoader-backed leaves and "
+                    + "projected/discriminated DML arms"),
                 out.location()));
         }
         // An array-typed column used as a DataLoader batch key (@splitQuery / SourceKey key
@@ -520,17 +516,9 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryTableInterfaceField f -> validateQueryTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField f     -> validateQueryInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField f         -> validateQueryUnionField(f, errors);
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField f       -> validateQueryServiceTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField f      -> validateQueryServiceRecordField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryServicePolymorphicField f -> validateQueryServicePolymorphicField(f, errors);
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableInterfaceField f -> validateQueryServiceTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField f            -> validateDmlTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteField f    -> {} // RoutineDirectiveResolver pins routine resolution + arg binding at classify time; RoutineChain's compact constructor and the leaf's own pins (hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor verdict) carry the structural shape
             case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteRecordField f -> {} // Narrow ResultReturnType + Mapped channel + the compact ctor's two-statements pins (pairs non-empty, name-matched, target side == target PK) carry the structural shape; the classify-time rejections (scan rejects, the D7 non-null data field, the unmatched-PK keying, the fourth-cell directive conflict) surface as UnclassifiedField through validateUnclassifiedField, per the validator-mirrors-classifier rule
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField f -> validateMutationServicePolymorphicField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableInterfaceField f -> validateMutationServiceTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField f       -> {} // Narrow ResultReturnType + the write arm's typed payloads pin the structural shape; admission-time checks (table-equality, PK-or-UK partition) live in the @mutation classifier and the walkers
             case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // Same structural pinning as MutationDmlRecordField plus the list-input + Upsert-rejecting invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the walkers
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField f       -> validateColumnBackedField(f, types, nestedAnchor, errors);
@@ -547,8 +535,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, schema, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField f          -> validatePivotSpec(f, schema, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField f          -> {} // readName-only leaf; every pivot admission check fires at classify time (PivotError via UnclassifiedField), and the consuming leaf's validatePivotSpec walks the slots
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // Narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // Narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
             case no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField f    -> {} // Narrow ResultReturnType + non-null fqClassName / envelope compact-constructor invariants pin the structural shape; the near-miss rejections (mismatched producer, a @field child neither @table-backed nor a resolvable composite accessor, the re-leveled cardinality mismatch) fire at classify time as UnclassifiedField (RecordBindingMultiProducer / accessor-mismatch / the composite-carrier cardinality reject), surfaced via validateUnclassifiedField
@@ -884,8 +870,7 @@ public class GraphitronSchemaValidator {
         // participants of a *plain* multitable interface/union backed by the same table share a
         // recordClass, so record-class dispatch (route (a)) and the stage-1 __typename UNION-ALL
         // (query path) cannot tell them apart — with or without a @discriminator. Reject at
-        // build time rather than misdispatch (validator mirrors classifier invariants); one shared
-        // site guards both the @service-return fetcher and the query path.
+        // build time rather than misdispatch (validator mirrors classifier invariants).
         var byRecordClass = new java.util.LinkedHashMap<com.palantir.javapoet.ClassName,
             List<no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound>>();
         for (var tb : tableBound) {
@@ -1024,106 +1009,6 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
     }
-    private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        // Unresolved service method is caught by the builder (UnclassifiedField).
-        validateRootServiceTableReturn(field, field.returnType(),
-            field.errorChannel().isPresent(), errors);
-    }
-
-    /**
-     * The three guards a table-bound root {@code @service} return owes, stated once for the
-     * query leaf and its mutation twin. All three mirror an invariant the emit relies on rather
-     * than being the primary diagnostic (the house pattern), and the first is
-     * classifier-guaranteed outright, so the field normally arrives here as
-     * {@code UnclassifiedField} instead:
-     *
-     * <ul>
-     *   <li><b>A keyed return table.</b> The coordinate re-selects the requested fields from the
-     *       returned table keyed on each returned record's primary key, so a key-less table
-     *       leaves the emitter nothing to key on. The root twin of the clause in
-     *       {@link #validateServiceTableField}; primary diagnostic in
-     *       {@link ServiceDirectiveResolver}'s STRICT_ROOT classify arm.</li>
-     *   <li><b>Key arity.</b> The list arm's companion joins a {@code VALUES (idx, key...)}
-     *       derived table whose typed row tops out at jOOQ's {@code Row22}, so the key is capped
-     *       at 21 columns. The root sibling of {@code validateDmlReentryKeyArity}, and what
-     *       keeps {@code ReentryRowsFragments}' claim true that the row builder's own throw is
-     *       only a backstop for objects built outside the pipeline.</li>
-     *   <li><b>No error channel.</b> Structurally empty today, and the guard exists to keep it
-     *       that way: {@code FieldBuilder.resolveServiceOutcomeChannel} answers no-channel for
-     *       anything but a class-backed {@code ResultReturnType}, and a {@code @table}-bound
-     *       return is not one, so the lift emit carries no channel arms. The child arm's mirror in
-     *       {@link #validateServiceTableField} pins the same premise at its coordinate; if
-     *       channel resolution ever widens to table-bound payloads, the first schema exercising
-     *       it fails here rather than inheriting an arm shape never designed for a channel.</li>
-     * </ul>
-     */
-    private void validateRootServiceTableReturn(
-            no.sikt.graphitron.rewrite.model.OutputField field,
-            ReturnTypeRef.TableBoundReturnType returnType,
-            boolean hasErrorChannel, List<ValidationError> errors) {
-        TableRef returnTable = returnType.table();
-        if (!returnTable.hasPrimaryKey()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': @service on a "
-                    + "table-bound return type requires the returned table '"
-                    + returnTable.tableName() + "' to have a primary key for the keyed "
-                    + "re-projection of the returned records"),
-                field.location()
-            ));
-            return;
-        }
-        int keyArity = returnTable.primaryKeyColumns().size();
-        if (returnType.wrapper().isList() && keyArity > 21) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': a list-returning "
-                    + "@service on a @table type re-fetches the returned rows through a keyed "
-                    + "re-query whose key is table '" + returnTable.tableName() + "'s primary "
-                    + "key; " + keyArity + " key columns exceeds jOOQ's typed Row22 cap (key + "
-                    + "idx must fit in Row<N+1>). Use a narrower primary key, or drop @table "
-                    + "from the return type to keep reading the columns off the returned record"),
-                field.location()
-            ));
-        }
-        if (hasErrorChannel) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': a root @service "
-                    + "field with a @table-bound return carrying an error channel is not "
-                    + "supported — the keyed re-projection emit inlines its channel arms on the "
-                    + "single-channel premise; widening channel resolution to table-bound "
-                    + "payloads requires designing that arm first"),
-                field.location()
-            ));
-        }
-    }
-    private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        // Unresolved service method and return-type mismatches are caught by the builder (UnclassifiedField).
-    }
-    private void validateQueryServicePolymorphicField(no.sikt.graphitron.rewrite.model.QueryField.QueryServicePolymorphicField field, List<ValidationError> errors) {
-        // Route (a): the @service-return arm shares the multitable participant invariants with
-        // the query interface/union path (PK presence, uniform PK arity, and the same-table
-        // discriminability floor), so the build error fires from the @service-return arm too.
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
-    }
-    private void validateQueryServiceTableInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableInterfaceField field, List<ValidationError> errors) {
-        // Mirror the read-side single-table floor (validateQueryTableInterfaceField), NOT the
-        // multi-table one: validateMultiTableParticipants enforces the same-table *rejection*
-        // floor, and single-table is precisely the shape that floor steers authors toward, so
-        // applying it here would reject the valid case. The single-table invariants (single-hop
-        // FK per cross-table participant field, PK-bearing shared table, resolvable discriminator
-        // column, and its literals when the column's value domain is closed) are enforced upstream
-        // in TypeBuilder, which demotes the interface to UnclassifiedType rather than producing a
-        // TableInterfaceType at all; the variant reuses tit.participants() verbatim, so they are
-        // inherited rather than re-mirrored here.
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-    }
-    private void validateMutationServiceTableInterfaceField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableInterfaceField field, List<ValidationError> errors) {
-        // Mutation twin of validateQueryServiceTableInterfaceField; same single-table floor.
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-    }
     private void validateDmlTableField(no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field, List<ValidationError> errors) {
         validateDmlReentryKeyArity(field, errors);
     }
@@ -1161,20 +1046,6 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-    }
-    private void validateMutationServiceTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField field, List<ValidationError> errors) {
-        // Unresolved service method is caught by the builder (UnclassifiedField).
-        validateRootServiceTableReturn(field, field.returnType(),
-            field.errorChannel().isPresent(), errors);
-    }
-    private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {
-        // Unresolved service method and return-type mismatches are caught by the builder (UnclassifiedField).
-    }
-    private void validateMutationServicePolymorphicField(no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField field, List<ValidationError> errors) {
-        // Route (a): mutation analogue of validateQueryServicePolymorphicField; same shared
-        // multitable participant invariants, including the same-table discriminability floor.
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
     }
     /**
      * {@code nestedAnchor} non-null means the leaf sits under a {@link ChildField.NestingField},
@@ -1858,118 +1729,6 @@ public class GraphitronSchemaValidator {
         }
         return ((JoinStep.HasTargetTable) joinPath.get(joinPath.size() - 1)).targetTable();
     }
-
-    private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-
-        // Enforces the channel-less premise on the service reentry path (DML reentry has its
-        // own channel transport and fetcher family): the service reentry fetcher inlines the
-        // channel catch / early-return arms into the Fetcher with no independent seam, on the
-        // premise that reentry @service fields are channel-less. The slot is provably empty
-        // today (resolveServiceOutcomeChannel guards on ResultReturnType; this return is table-bound),
-        // so the inlined arm shape cannot vary within the family. If channel resolution ever
-        // widens to table-bound payloads, the first schema exercising it fails here, at the
-        // build boundary, instead of inheriting an inlined arm shape never designed for a
-        // channel.
-        if (field.emitsKeyedReQuery() && field.errorChannel().isPresent()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': a reentry @service field "
-                    + "carrying an error channel is not supported — the reentry fetcher inlines its "
-                    + "channel arms on the single-channel premise; widening "
-                    + "channel resolution to table-bound payloads requires designing that arm first"),
-                field.location()
-            ));
-        }
-
-        var smr = field.method();
-
-        // A table-bound service field requires at least one Sources parameter for DataLoader
-        // batching. Classifier-guaranteed since the child @service coordinate rejects a Sources-less
-        // signature outright; this is the mirror, not the primary diagnostic.
-        boolean hasSources = smr.params().stream().anyMatch(p -> p instanceof MethodRef.Param.Sourced);
-        if (!hasSources) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.structural("Field '" + field.qualifiedName() + "': @service on a table-bound return type requires a Sources parameter for DataLoader batching"),
-                field.location()
-            ));
-            return;
-        }
-
-        // The lift re-projects the service result by joining the returned table on its own primary
-        // key (identity re-projection); a PK-less returned table gives the emitter no key to extract.
-        // Mirrors the key-owner-PK invariant below: a classifier guarantee the lifted emitter relies
-        // on, not a transient stopgap.
-        TableRef returnTable = field.returnType().table();
-        if (!returnTable.hasPrimaryKey()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.structural("Field '" + field.qualifiedName() + "': @service on a table-bound return type requires the returned table '" + returnTable.tableName() + "' to have a primary key for identity re-projection"),
-                field.location()
-            ));
-        }
-
-        validateServiceBatchKey(field, field.keySource(), field.sourceKey(), errors);
-    }
-
-    private void validateServiceRecordField(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        if (!field.joinPath().isEmpty()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.deferred("Field '" + field.qualifiedName() + "': @service with a @reference path "
-                    + "(condition-join lift form) is not yet supported"),
-                field.location()));
-            return;
-        }
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-
-        // The sibling's Sources-required check, which this leaf never carried. It is the leaf the
-        // Result and Scalar classify arms mint on both parent kinds, so it is the one that most needs
-        // the mirror; classifier-guaranteed, like the table-bound copy.
-        if (field.method().params().stream().noneMatch(p -> p instanceof MethodRef.Param.Sourced)) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': a child @service field "
-                    + "requires a Sources parameter for DataLoader batching"),
-                field.location()));
-            return;
-        }
-        validateServiceBatchKey(field, field.keySource(), field.sourceKey(), errors);
-    }
-
-    /**
-     * The batched child {@code @service} invariant, stated once for both service leaves: a
-     * {@code Sources} parameter exists, and its columns are the key owner's primary key.
-     *
-     * <p>Every clause mirrors a {@link ServiceDirectiveResolver} classify-time rejection rather than
-     * being the primary diagnostic (the house pattern: the validator mirrors classifier invariants).
-     * The key owner is the parent's own table only when the parent carries {@code @table}; on a
-     * class-backed parent it is the table the {@code Sources} element type names, which is why this
-     * reads the leaf's stored key source rather than looking the parent type up.
-     */
-    private void validateServiceBatchKey(GraphitronField field,
-            no.sikt.graphitron.rewrite.model.ServiceKeySource keySource,
-            no.sikt.graphitron.rewrite.model.SourceKey sourceKey, List<ValidationError> errors) {
-        TableRef keyOwner = keySource.keyOwner();
-        if (!keyOwner.hasPrimaryKey()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': @service batches on table '"
-                    + keyOwner.tableName() + "', which has no primary key, so there is nothing to key "
-                    + "the batch on"),
-                field.location()));
-            return;
-        }
-        if (!sourceKey.columns().equals(keyOwner.primaryKeyColumns())) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': @service batch key columns "
-                    + "do not match the primary key of the table they are read through ('"
-                    + keyOwner.tableName() + "')"),
-                field.location()));
-        }
-    }
     /**
      * The record-read leaf's cross-axis gating rule: each {@link ValueLocator} arm is only
      * admissible under the parent source-object shape whose cast the emitter's corresponding
@@ -2096,7 +1855,7 @@ public class GraphitronSchemaValidator {
      * Mirror-the-classifier check for the single-errors-field invariant on outcome types.
      * The binary {@code Outcome} witness ({@code Success | ErrorList}) has one error slot, so a type
      * carrying two {@link ChildField.ErrorsField} children has no well-defined success/error fork.
-     * This is the validator face of the {@code OutcomeType} classification's
+     * This is the validator face of the outcome-type classification's
      * {@link no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.MultipleErrorsFields} rejection;
      * it runs over the classified model so a mis-shaped type fails the build rather than reaching
      * the walker.

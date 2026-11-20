@@ -390,8 +390,7 @@ public final class ServiceMethodCallEmitter {
      * segment, including the leaf segment if it lifts. The emitter strips that many wraps to
      * find the innermost element type, then applies the leaf transform's cast against either
      * the stripped element type (non-list leaf) or its single-{@code List<>} re-wrap (list-typed
-     * leaf). Mirrors {@code ArgCallEmitter#buildListAwarePathExtraction}, the sibling site
-     * serving the condition / externalField call sites.
+     * leaf).
      */
     private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path,
             FetchersHelperNames helperNames, CompositeDecodeHelperRegistry nodeIdDecodes) {

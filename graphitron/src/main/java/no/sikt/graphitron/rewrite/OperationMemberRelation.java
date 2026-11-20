@@ -12,7 +12,6 @@ import no.sikt.graphitron.rewrite.model.DmlWriteField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
-import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
@@ -21,8 +20,6 @@ import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParticipantFilterField;
 import no.sikt.graphitron.rewrite.model.PolymorphicOrderingField;
 import no.sikt.graphitron.rewrite.model.RootField;
-import no.sikt.graphitron.rewrite.model.ServiceCallCarrier;
-import no.sikt.graphitron.rewrite.model.ServiceField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.TargetShape;
@@ -47,7 +44,7 @@ import java.util.Set;
  * <p>The production is split into two halves with different disciplines:
  * <ul>
  *   <li>{@link #memberKindsOf} decides <b>membership</b> from facts alone: the gathered trigger
- *       slots ({@code @service}, {@code @mutation}, the routine chain, the pagination facts
+ *       slots ({@code @mutation}, the routine chain, the pagination facts
  *       flowing through the carried window), the target / source shape facts, the type-registry
  *       verdicts, and capability reads ({@link SqlGeneratingField}, {@link LookupResolution},
  *       {@link ParticipantFilterField}, {@link PolymorphicOrderingField}). It contains no switch
@@ -139,7 +136,7 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
      * of the operation model: a table-bound return mints select, the reference fact mints join,
      * the resolved filter surface mints condition rows, an authored or fallback ordering mints
      * orderBy, the carried pagination window mints paginate, the lookup mapping mints lookup,
-     * {@code @service} mints serviceCall, {@code @mutation} (or the routine chain on the
+     * {@code @mutation} (or the routine chain on the
      * mutation root) mints the write, the Node signature mints nodeResolve, {@code @pivot}
      * mints pivot, and the received-or-produced record on a bare table target mints the
      * reentry re-select.
@@ -153,15 +150,12 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         boolean onMutationRoot = isRoot && preRewriteSchema.getMutationType() != null
             && leaf.parentTypeName().equals(preRewriteSchema.getMutationType().getName());
 
-        // The service and write triggers additionally read the leaf's carrier capability: on a
+        // The write trigger additionally reads the leaf's carrier capability: on a
         // claim-conflicted coordinate (reported by the store-backed authored-claim detection)
         // the leaf classifies by arm order, so the losing directive's trigger fact still exists
         // while the leaf carries no payload for it, and its kind must not fire. On every
         // conflict-free schema the capability read is a tautology: the walk either followed the
         // trigger or tombstoned the coordinate out of this mint's domain.
-        boolean serviceCapable = leaf instanceof ServiceField || leaf instanceof MethodBackedField;
-        boolean serviceTrigger = fieldDef != null && facts.service().rowFor(fieldDef).isPresent()
-            && serviceCapable;
         boolean writeCapable = leaf instanceof DmlWriteField
             || leaf instanceof MutationField.MutationRoutineWriteField
             || leaf instanceof MutationField.MutationRoutineWriteRecordField;
@@ -171,18 +165,13 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         boolean routineWrite = onMutationRoot && fieldDef != null && writeCapable
             && fieldDef.hasAppliedDirective(BuildContext.DIR_ROUTINE);
         boolean writeTrigger = writeRow.isPresent() || routineWrite;
-        // The node signature resolves ids only where nothing is written: a @service on the field
-        // takes it over, its method being what the field runs.
-        boolean nodeTrigger = !serviceTrigger && isRoot && !onMutationRoot && fieldDef != null
+        boolean nodeTrigger = isRoot && !onMutationRoot && fieldDef != null
             && "Node".equals(baseTypeName(fieldDef))
             && types.get("Node") instanceof GraphitronType.InterfaceType;
         boolean pivotTrigger = fieldDef != null && fieldDef.hasAppliedDirective(BuildContext.DIR_PIVOT);
 
         if (writeTrigger) {
             kinds.add(OperationMember.Kind.WRITE);
-        }
-        if (serviceTrigger) {
-            kinds.add(OperationMember.Kind.SERVICE_CALL);
         }
         if (nodeTrigger) {
             kinds.add(OperationMember.Kind.NODE_RESOLVE);
@@ -194,10 +183,7 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
 
         TargetShape shape = leaf.target().shape();
         TargetShape unwrapped = shape instanceof TargetShape.Connection c ? c.inner() : shape;
-        boolean primaryClaimsProjection = writeTrigger || nodeTrigger || pivotTrigger
-            // A serviceCall claims the projection slot too: the service produces the value and
-            // any table surface on the coordinate is the re-select, not a select contribution.
-            || serviceTrigger;
+        boolean primaryClaimsProjection = writeTrigger || nodeTrigger || pivotTrigger;
         if (!primaryClaimsProjection) {
             boolean tableBoundTarget = switch (unwrapped) {
                 // A table-shaped target reads the catalog when its return type resolves to a
@@ -247,7 +233,7 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
 
         boolean bareTableTarget = shape instanceof TargetShape.Table;
         boolean receivedRecord = leaf instanceof ChildField cf && cf.sourceShape() == SourceShape.Record;
-        boolean producedRecord = serviceTrigger || writeRow.isPresent();
+        boolean producedRecord = writeRow.isPresent();
         if (bareTableTarget && (receivedRecord || producedRecord)) {
             kinds.add(OperationMember.Kind.REENTRY);
         }
@@ -279,17 +265,6 @@ public record OperationMemberRelation(Map<FieldCoordinates, List<OperationMember
         var members = new ArrayList<OperationMember>();
         if (kinds.contains(OperationMember.Kind.WRITE)) {
             members.add(writePayloadOf(leaf));
-        }
-        if (kinds.contains(OperationMember.Kind.SERVICE_CALL)) {
-            members.add(switch (leaf) {
-                case ServiceField sf ->
-                    new OperationMember.ServiceCall(new ServiceCallCarrier.StructuredCall(sf.serviceMethodCall()));
-                case MethodBackedField mbf ->
-                    new OperationMember.ServiceCall(new ServiceCallCarrier.ReflectedMethod(mbf.method()));
-                default -> throw new IllegalStateException(
-                    "serviceCall membership on a leaf with no call carrier capability: "
-                    + leaf.getClass().getSimpleName());
-            });
         }
         if (kinds.contains(OperationMember.Kind.NODE_RESOLVE)) {
             members.add(new OperationMember.NodeResolve());
