@@ -7,7 +7,7 @@ priority: 2
 theme: nodeid
 depends-on: []
 created: 2026-11-03
-last-updated: 2026-11-19
+last-updated: 2026-11-20
 ---
 
 # An invalid id to a Node-returning lookup returns null with no error
@@ -61,6 +61,12 @@ but matches nothing this subgraph has yields `null`. "Not well formed" means the
 a node id at all; "matches nothing" covers a well-formed id whose row is absent. This item delivers
 the first half, since the second already holds today.
 
+Ruled by Filip on 2026-11-20: inside `nodes(ids:)` a malformed id fails its own position, not the
+field. That position is `null` with the client error at its path, and the other ids are answered. It
+is how GraphQL itself treats an error in a list: the failing element is `null`, the error's path
+carries the element's index, and the `null` travels further up only where the schema declares the
+element or the field non-null.
+
 ## Where the line falls
 
 The node lookup can only judge an id against the nodes this subgraph serves by id: the node types it
@@ -90,7 +96,8 @@ the client error at that position's path (`["nodes", 1]`), and the other ids res
 declares the elements non-null (`[Node!]`), graphql-java carries that `null` up to the field, so the
 schema's own nullability decides how far one bad id reaches, not the generator. `node(id:)` has one
 id, so its error is the field's. Both hold alike in a build with a tenant column and in one without.
-The grain inside `nodes` is not part of the 2026-11-04 ruling and awaits one (see the open questions).
+That grain is the 2026-11-20 ruling above, and
+`docs/architecture/reference/code-generation-triggers.adoc` states it beside the node id lookup rule.
 
 A later rule reads as if it covered the third row. The polymorphic lookup rule in
 `docs/architecture/reference/code-generation-triggers.adoc` (the source-lift section: "An id naming no
@@ -298,7 +305,9 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
 * Consumer-shaped field: the sakila example has no `Node`-returning root under another name, so add
   one (`internalNode(id: ID): Node`, the shape of the `relay-node` corpus example) to the example
   schema and assert it errors on a malformed id too. That is the kreg report as a test. Its argument
-  is named `id`, which is the name the node fetcher reads.
+  is named `id`: a node fetcher decodes the argument named `id`, or `ids` for a list, which the store
+  states in `graphitron_occurrence_producer_node`, and a Node-returning root field with neither is
+  refused (`NODE_FETCHER_WITHOUT_ID`).
 * The node query, pipeline tier, beside `NodeIdEncoderQueryTest` and over the same fact document
   (`scenarios/synthesized-node-type-id`, which carries a `@node(resolvable: false)` stub): every node
   served by id draws a row with its type id and key columns in key order, and the stub draws none.
@@ -323,7 +332,7 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
   node and every `@nodeId` site, stubs included, and "served by id" is a fact about the node lookup's
   population alone.
 * Fail the whole `nodes` field on one malformed id, as one bad element in a `@nodeId` list filter fails
-  its field. Not chosen: a filter's value is one set, a `nodes` answer is positional; in the
+  its field. Rejected by the 2026-11-20 ruling: a filter's value is one set, a `nodes` answer is positional; in the
   multi-tenant shape the throw would come from a DataLoader batch function and take down whichever ids
   happened to share the batch; and on a `[Node]!` field it nulls the field's parent, which on `Query`
   is the whole response.
@@ -333,10 +342,6 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
 
 ## Open questions for the user
 
-* Inside `nodes`, does a malformed id fail its own position or the whole field? Not covered by the
-  2026-11-04 ruling. Recommendation: its own position, as written above. Say if you want the whole
-  field; the plan then throws from `getNodes` before any slot loads and the `nodes` tests assert a
-  nullified field.
 * Does the 2026-11-14 polymorphic lookup rule ("an id naming no participant is malformed for the
   field") cover a root field returning `Node`? Read literally it makes the third row of the table an
   error, against the 2026-11-04 ruling and the federation caution. Recommendation: the node lookup is
