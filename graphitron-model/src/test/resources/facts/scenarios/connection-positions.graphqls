@@ -47,3 +47,15 @@ extend schema @expectEquals(relation: "graphitron_producer", where: "type_name I
   type_name,       field_name, kind
   FilmsConnection, totalCount, COUNT
   """)
+
+extend schema @expectEquals(relation: "graphitron_connection", rows: """
+  type_name,        edge_type_name
+  ActorsConnection, ActorsEdge
+  FilmsConnection,  FilmsEdge
+  """)
+
+extend schema @expectEquals(relation: "graphitron_edge", rows: """
+  type_name,  item_type_name
+  ActorsEdge, Actor
+  FilmsEdge,  Film
+  """)

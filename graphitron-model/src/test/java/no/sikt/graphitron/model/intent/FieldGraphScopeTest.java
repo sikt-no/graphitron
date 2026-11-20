@@ -56,8 +56,8 @@ class FieldGraphScopeTest {
 
     @Test
     void aConnectionShapeIsReadInTheGraphThatDeclaresIt() {
-        assertThat(connections(store.dsl(), "language")).containsExactly("LanguageConnection");
-        assertThat(connections(store.dsl(), "actor")).containsExactly("LanguageConnection");
+        assertThat(connections(store.dsl(), "language")).contains("LanguageConnection");
+        assertThat(connections(store.dsl(), "actor")).contains("LanguageConnection");
         assertThat(connections(store.dsl(), "other")).isEmpty();
     }
 

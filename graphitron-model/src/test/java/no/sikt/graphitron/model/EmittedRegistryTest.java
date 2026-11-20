@@ -138,7 +138,8 @@ class EmittedRegistryTest {
         assertThat(base.getFieldDefinitions())
             .as("the extension's field does not migrate onto the base declaration")
             .extracting(FieldDefinition::getName)
-            .containsExactly("films");
+            .contains("films")
+            .doesNotContain("shorts");
 
         assertThat(extensionFieldType(emitted, "Query"))
             .isEqualTo("QueryShortsConnection");

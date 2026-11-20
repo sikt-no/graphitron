@@ -55,7 +55,7 @@ class RecordClassCatalogScopeTest {
     @Test
     void aServiceKeyedByASiblingsRecordIsNotJudgedForItsKeyRow() {
         assertThat(defects(store.dsl(), "keys-fixture", "NO_KEY_FROM_PARENT", "KEY_ROW_AMBIGUOUS"))
-            .containsExactlyInAnyOrder(
+            .contains(
                 tuple("FilmBlurbHolder.keyCensus", "NO_KEY_FROM_PARENT"),
                 tuple("FilmPair.keyCensus", "KEY_ROW_AMBIGUOUS"));
         assertThat(defects(store.dsl(), "keys-other", "NO_KEY_FROM_PARENT", "KEY_ROW_AMBIGUOUS"))

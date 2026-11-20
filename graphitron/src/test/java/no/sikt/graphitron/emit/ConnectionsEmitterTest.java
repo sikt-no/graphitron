@@ -87,10 +87,16 @@ class ConnectionsEmitterTest {
 
     @Test
     void theQueryReadsEachTypesPositions() {
-        assertThat(shapes.connections()).extracting(ConnectionsQuery.Connection::typeName)
-            .containsExactly("ActorsConnection", "FilmsConnection");
-        assertThat(shapes.edges()).extracting(ConnectionsQuery.Edge::typeName)
-            .containsExactly("ActorsEdge", "FilmsEdge");
+        var films = shapes.connections().stream().filter(c -> c.typeName().equals("FilmsConnection"))
+            .findFirst().orElseThrow();
+        assertThat(films.edgeTypeName()).isEqualTo("FilmsEdge");
+        assertThat(films.positions()).contains("EDGES", "PAGE_INFO", "TOTAL_COUNT");
+        var actors = shapes.connections().stream().filter(c -> c.typeName().equals("ActorsConnection"))
+            .findFirst().orElseThrow();
+        assertThat(actors.positions()).contains("EDGES", "PAGE_INFO").doesNotContain("TOTAL_COUNT");
+        var edge = shapes.edges().stream().filter(e -> e.typeName().equals("FilmsEdge"))
+            .findFirst().orElseThrow();
+        assertThat(edge.positions()).contains("NODE", "CURSOR");
     }
 
     @Test

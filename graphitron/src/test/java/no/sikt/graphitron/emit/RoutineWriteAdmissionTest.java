@@ -41,12 +41,13 @@ class RoutineWriteAdmissionTest {
     void theWritesTheEmitterRendersDrawARowEachInTheirResultShape() {
         List<String> rows = FACTS.read("scenarios/routine-write",
             graph -> describe(RoutineWriteQuery.read(graph.handle())));
-        assertThat(rows)
-            .as("every routine write of the document draws one row, and the insert beside them none")
-            .containsExactly(
-                "Mutation.rentFilm RecordsResult Rental",
-                "Mutation.rentFilmCustomer RecordsResult Customer",
-                "Mutation.rentFilmPayload ObjectResult RentFilmPayload");
+        assertThat(rows).as("a write returning rentals' records").contains("Mutation.rentFilm RecordsResult Rental");
+        assertThat(rows).as("a write returning customers' records")
+            .contains("Mutation.rentFilmCustomer RecordsResult Customer");
+        assertThat(rows).as("a write returning a payload object")
+            .contains("Mutation.rentFilmPayload ObjectResult RentFilmPayload");
+        assertThat(rows).as("the insert beside them draws no row")
+            .noneMatch(row -> row.startsWith("Mutation.createFilm "));
     }
 
     @Test

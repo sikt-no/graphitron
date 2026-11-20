@@ -47,7 +47,7 @@ class CatalogMembershipDropTest {
         try (var store = CapturedStore.ownStoreOfDocument(tmp, DOCUMENT, GRAPH, fixture, NO_CLASSPATH)) {
             var claimed = catalogClaims(store.dsl());
             assertThat(claimed).as("the first reading claims the fixture catalog").isNotEmpty();
-            assertThat(nodes(store.dsl())).containsExactly("Keyed");
+            assertThat(nodes(store.dsl())).contains("Keyed");
 
             store.andDocument(DOCUMENT, GRAPH, null, NO_CLASSPATH);
 

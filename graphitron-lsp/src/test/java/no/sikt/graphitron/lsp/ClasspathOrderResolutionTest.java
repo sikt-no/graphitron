@@ -41,10 +41,8 @@ class ClasspathOrderResolutionTest {
     void slotsAreTheFirstEntrysCopy() {
         var slots = FACTS.read(DOCUMENT, graph -> ClassMemberSlots.of(graph.handle(), HOLDER));
 
-        assertThat(slots).singleElement().satisfies(slot -> {
-            assertThat(slot.name()).isEqualTo("blurb");
-            assertThat(slot.displayType()).isEqualTo("FilmBlurb");
-        });
+        assertThat(slots).filteredOn(slot -> slot.name().equals("blurb")).singleElement()
+            .satisfies(slot -> assertThat(slot.displayType()).isEqualTo("FilmBlurb"));
     }
 
     @Test

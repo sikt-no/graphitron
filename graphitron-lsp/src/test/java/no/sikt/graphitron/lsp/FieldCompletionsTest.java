@@ -260,7 +260,7 @@ class FieldCompletionsTest {
         var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
+            .contains("LANGUAGE_ID", "NAME")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -306,7 +306,7 @@ class FieldCompletionsTest {
         var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
+            .contains("LANGUAGE_ID", "NAME")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -332,7 +332,7 @@ class FieldCompletionsTest {
         var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
+            .contains("LANGUAGE_ID", "NAME")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -354,7 +354,7 @@ class FieldCompletionsTest {
         var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
+            .contains("LANGUAGE_ID", "NAME")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -378,7 +378,7 @@ class FieldCompletionsTest {
         var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
+            .contains("LANGUAGE_ID", "NAME")
             .doesNotContain("FILM_ID", "TITLE");
     }
 

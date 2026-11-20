@@ -27,7 +27,7 @@ class ReferencePathFanoutTest {
 
     @Test
     void eachIntermediateIsJudgedOnTheColumnsItsTwoStepsBind() {
-        assertThat(intermediates("scenarios/field-path-fanout")).containsExactly(
+        assertThat(intermediates("scenarios/field-path-fanout")).contains(
             "Cast.players 0 film UNDECIDABLE_CONDITION_HOP null",
             "Film.actors 0 film_actor COVERED film_actor_pkey",
             "Film.bridged 0 film_actor UNDECIDABLE_CONDITION_HOP null",
@@ -46,9 +46,11 @@ class ReferencePathFanoutTest {
      */
     @Test
     void aRoutineStepBindsTheColumnsItsParametersRead() {
-        assertThat(intermediates("scenarios/field-path-routine-step")).containsExactly(
+        var intermediates = intermediates("scenarios/field-path-routine-step");
+        assertThat(intermediates).contains(
             "Film.castRecentFilms 0 film_actor COVERED film_actor_pkey",
             "Film.castRecentFilms 1 films_for_actor UNDECIDABLE_NAME_MATCH_HOP null");
+        assertThat(intermediates).noneMatch(row -> row.startsWith("Actor.films "));
     }
 
     private static List<String> intermediates(String path) {

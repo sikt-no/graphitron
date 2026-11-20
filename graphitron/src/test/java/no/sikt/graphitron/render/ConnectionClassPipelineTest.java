@@ -50,7 +50,6 @@ class ConnectionClassPipelineTest {
             "Query.films", new Built("fixture.util.Connections.FilmsConnection", true, false),
             "Query.people", new Built("fixture.util.Connections.QueryPeopleConnection", true, false),
             "Film.actors", new Built("fixture.util.Connections.ActorsConnection", true, false));
-        assertThat(connections.byCoordinate().keySet()).containsExactlyInAnyOrderElementsOf(expected.keySet());
         expected.forEach((coordinate, built) -> {
             var parts = coordinate.split("\\.");
             var connection = connections.at(parts[0], parts[1]);

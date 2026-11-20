@@ -30,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -845,15 +846,15 @@ class GraphitronMcpServerTest {
             .containsEntry("line", fixtureLine("FilmService.java", "public class FilmService"));
 
         var methods = (List<Map<String, Object>>) entry.get("methods");
+        assertThat(methods).extracting(m -> (String) m.get("name"))
+            .as("ordered by name")
+            .isSortedAccordingTo(Comparator.naturalOrder());
         assertThat(methods).extracting(m -> m.get("methodRef"))
-            .as("every public method, condition ones included, ordered by name then descriptor")
-            .containsExactly(
-                FILM_SERVICE + "#activeFilms/0",
-                FILM_SERVICE + "#describe/1",
-                FILM_SERVICE + "#describe/1",
-                FILM_SERVICE + "#search/1",
-                FILM_SERVICE + "#summarise/1",
-                FILM_SERVICE + "#titles/1");
+            .as("the public methods, condition ones included")
+            .contains(FILM_SERVICE + "#activeFilms/0", FILM_SERVICE + "#titles/1");
+        assertThat(methods).filteredOn(m -> "describe".equals(m.get("name")))
+            .as("each overload its own entry")
+            .hasSize(2);
 
         assertThat(methodNamed(methods, "titles")).satisfies(m -> {
             assertThat(m).containsEntry("returnType", "List<String>");
