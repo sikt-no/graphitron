@@ -3,8 +3,10 @@
 # which is an input object, beside a list of the column's class, each element a tenant, which passes;
 # $tenant written where nothing routes by it yet, a @condition; a call handed a connection, re-reading
 # film rows and naming no tenant; one whose only tenant value may be left out; @tenant beside
-# @nodeId, beside the node id alone, whose decoded film_id routes the call; and @tenant read by a
-# child @service and by a query field, beside it read by a root @service, which binds it.
+# @nodeId, beside the node id alone, whose decoded film_id routes the call; @tenant read by a
+# child @service and by a query field, beside it read by a root @service, which binds it; and a node
+# id of a union over film and film_actor, each holding film_id at its own key position, which names
+# no one tenant.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
@@ -13,6 +15,9 @@ type Film @table(name: "film") @node {
   rated(org: Int @tenant): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
 }
+
+type FilmActor @table(name: "film_actor") @node { actorId: Int @field(name: "actor_id") }
+union FilmThing = Film | FilmActor
 
 # Handed film's records with no connection, under a type no table binds: the records are read as
 # handed, nothing re-reads a tenant's rows, and the call needs no tenant. The same service handed a
@@ -49,6 +54,16 @@ type Query {
   titlesMarked(ids: [Int!]! @tenant): [FilmTitles!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmsByIds"})
+  # filmMarked with the union's id beside it: one slot reads one node's key, and either member's id
+  # may arrive, so the call is refused whatever else names its tenant.
+  filmMarkedBesideThing(id: Int! @tenant, thing: ID! @nodeId(typeName: "FilmThing")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id"})
+  # The union's id handed to a service that is given no connection and re-reads no rows: the call
+  # needs no tenant, so the id routes nothing and the call runs on the empty tenant part.
+  thingAssigned(occupant: ID! @nodeId(typeName: "FilmThing")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+      method: "assignOccupantByArgument"})
   filmsMarked(filmId: Int @tenant @field(name: "film_id")): [Film!]!
   titlesOnConnection(ids: [Int!]!): [FilmTitles!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
@@ -66,6 +81,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   UNROUTED_SERVICE_CALL,        Query.filmUnrouted,
   UNROUTED_SERVICE_CALL,        Query.filmTwice,
   UNROUTED_SERVICE_CALL,        Query.titlesOnConnection,
+  UNROUTED_SERVICE_CALL,        Query.filmMarkedBesideThing,
   TENANT_SLOTS_OPTIONAL_ONLY,   Query.filmOptional,
   TENANT_NAMED_TWICE,           Query.filmTwice,              Query.filmTwice(id:)
   TENANT_VALUE_TYPE_DISAGREES,  Query.filmMistyped,           java.lang.String where the tenant column is java.lang.Integer
@@ -94,4 +110,16 @@ extend schema @assertEmpty(relation: "graphitron_occurrence_binding_tenant",
 extend schema @assertContains(relation: "graphitron_occurrence_binding_tenant", rows: """
   coordinate,            origin
   Query.filmMarked(id:), DIRECTIVE
+  """)
+
+# The union's id is a slot per member, film_id at position 0 of film's key and 1 of film_actor's, so
+# the call beside it is refused where filmMarked alone is routed; the call needing no tenant draws no
+# defect.
+extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot",
+    where: "coordinate LIKE '%(thing:)' OR coordinate LIKE '%(occupant:)'", rows: """
+  call_coordinate,             kind,        coordinate,                          key_position
+  Query.filmMarkedBesideThing, NODE_ID_KEY, Query.filmMarkedBesideThing(thing:), 0
+  Query.filmMarkedBesideThing, NODE_ID_KEY, Query.filmMarkedBesideThing(thing:), 1
+  Query.thingAssigned,         NODE_ID_KEY, Query.thingAssigned(occupant:),      0
+  Query.thingAssigned,         NODE_ID_KEY, Query.thingAssigned(occupant:),      1
   """)
