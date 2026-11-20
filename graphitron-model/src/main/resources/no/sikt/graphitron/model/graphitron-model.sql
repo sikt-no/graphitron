@@ -22939,8 +22939,9 @@ UNION ALL
 -- container, an array, a primitive or void, at a field whose type is bound to a table: the records it
 -- hands back are lifted by their table's key off the class they arrive as, and such a result states
 -- none, so nothing says which records a lift would read. Under an object, too, a Map or a List in the
--- keys' order naming no value class at a scalar or enum field: the batch hands each key's answer to
--- the field as the class it states, and it states none. An answer the batch cannot read at all is
+-- keys' order naming no value class at an enum field or a scalar of no known class, raw, a type
+-- variable or Object, which the peel leaves at the container itself or at Object: the batch hands
+-- each key's answer to the field as the class it states, and it states none. An answer the batch cannot read at all is
 -- SERVICE_BATCH_SHAPE_UNSUPPORTED's. An outcome and a connection are not checked here, as below. The
 -- detail is the declared result type.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
@@ -22955,14 +22956,20 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
   JOIN code_method m
     ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
    AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
- WHERE p.kind = 'SERVICE' AND COALESCE(r.shape, '') <> 'CONNECTION' AND m.result_element_class IS NULL
-   AND (EXISTS (SELECT 1 FROM graphitron_type_backing b
-                 WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
-                   AND b.declared_via = 'BOUND_TABLE')
+ WHERE p.kind = 'SERVICE' AND COALESCE(r.shape, '') <> 'CONNECTION'
+   AND (m.result_element_class IS NULL
+        AND EXISTS (SELECT 1 FROM graphitron_type_backing b
+                     WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
+                       AND b.declared_via = 'BOUND_TABLE')
         OR p.start = 'CHILD' AND m.result_erased_class IN ('java.util.Map', 'java.util.List', 'org.jooq.Result')
+           AND COALESCE(m.result_element_class, m.result_erased_class)
+               IN (m.result_erased_class, 'java.lang.Object')
            AND EXISTS (SELECT 1 FROM graphitron_type t
                         WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type
-                          AND t.kind IN ('SCALAR', 'ENUM')))
+                          AND t.kind IN ('SCALAR', 'ENUM'))
+           -- A scalar whose class is known compares its class below, which refuses these too.
+           AND NOT EXISTS (SELECT 1 FROM graphitron_scalar_class sc
+                            WHERE sc.graph_name = f.graph_name AND sc.type_name = f.named_type))
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
                     WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
                       AND po.field_name = f.field_name)
@@ -23024,7 +23031,9 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
 UNION ALL
 -- A @service under an object answering a Map keyed by another class than the records or rows its
 -- source parameter collects, at the field: the batch looks each parent's answer up by the key it
--- handed in, and a key of another class finds none. The detail is the declared result type.
+-- handed in, and a key of another class finds none. Only where the parameter collects keys, a table's
+-- record or a jOOQ Record or Row of the key columns; one collecting anything else is
+-- SERVICE_SOURCES_NOT_KEYS's. The detail is the declared result type.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'SERVICE_RETURN_MISMATCH', m.result_type, 'occurrence-producers'
   FROM graphitron_occurrence_producer p
@@ -23042,6 +23051,8 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
  WHERE p.kind = 'SERVICE' AND p.start = 'CHILD' AND m.result_erased_class = 'java.util.Map'
    AND m.result_first_argument_class <> mp.element_class
+   AND (REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
+        OR EXISTS (SELECT 1 FROM sql_table st WHERE st.record_class_fqn = mp.element_class))
 UNION ALL
 -- A @service answering many into one payload whose data field holds one object, at the field: the
 -- payload's object passes through to that field, as its OBJECT data field states, and the field's

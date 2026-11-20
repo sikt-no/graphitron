@@ -5,7 +5,12 @@
 # their scalar's class; records under one payload with no table are lifted into it; one value under a
 # list field at a root, Query.oneAsFilms, is LIST_OVER_ONE_VALUE's, pinned in list-over-one-value. A
 # jOOQ record of no table is no table's record, and a list of objects under a payload holding one has
-# no one object for it.
+# no one object for it. Under Film an enum is answered the same way, the jOOQ enum per key from a Map,
+# in the keys' order from a List, or a list of them per key for a list field, and at the root the
+# enum itself; a Map naming no value class, raw or a type variable, hands the field nothing, and one
+# keyed by another class than the film records handed in finds no parent's answer.
+
+enum Rating { G PG PG_13 R NC_17 }
 
 type Film @table(name: "film") {
   title: String
@@ -26,6 +31,12 @@ type Film @table(name: "film") {
   "A child answer per key that is a jOOQ record of no table, where the field is a language record."
   languageAsPlainRecord: Language @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languageAsPlainRecord"})
+  rating: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingByFilm"})
+  ratingInOrder: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingInOrder"})
+  ratings: [Rating!] @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingsByFilm"})
+  ratingRaw: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingRaw"})
+  ratingGeneric: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingGeneric"})
+  ratingByFilmId: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "ratingByFilmId"})
 }
 
 type FilmsPayload {
@@ -59,6 +70,7 @@ type Query {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
   oneFilmIntoIds: FilmIdsPayload @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "oneAsFilms"})
+  topRating: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EnumReturnShapeService", method: "topRating"})
 }
 
 # A result naming no class once its containers are peeled, a type variable, a raw list or an array,
@@ -115,4 +127,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   SERVICE_RETURN_MISMATCH, Film.languagesAsOne,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>>"
   SERVICE_RETURN_MISMATCH, Film.languageAsPlainRecord,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, org.jooq.Record>"
   SERVICE_RETURN_MISMATCH, Query.filmsWithActorsIntoOne, java.util.List<no.sikt.graphitron.rewrite.test.services.FilmWithActors>
+  SERVICE_RETURN_MISMATCH, Film.ratingRaw,            java.util.Map
+  SERVICE_RETURN_MISMATCH, Film.ratingGeneric,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, T>"
+  SERVICE_RETURN_MISMATCH, Film.ratingByFilmId,"java.util.Map<java.lang.Integer, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating>"
   """)
