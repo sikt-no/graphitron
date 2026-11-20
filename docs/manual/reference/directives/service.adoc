@@ -189,7 +189,8 @@ on the tenant `input.org` names. It fills no parameter. The value is read as
 xref:tenant.adoc[`@tenant`] reads it, with the same type and same-tenant rules, and `$tenant` is the
 preferred form: `@tenant` on the value says the same, and is due for removal. Naming one call's tenant by both, on
 different values, is refused as `TENANT_NAMED_TWICE`; `$tenant` on any directive but `@service` is
-refused as `TENANT_SITE_UNSUPPORTED`.
+refused as `TENANT_SITE_UNSUPPORTED`, and anywhere in a build without `<tenantColumn>` as
+`TENANT_ROUTES_NOTHING`.
 
 A dot opens the thing at that position, and what it opens into depends on what the thing is. An input
 object opens into its fields, which is the case below. An `ID` carrying

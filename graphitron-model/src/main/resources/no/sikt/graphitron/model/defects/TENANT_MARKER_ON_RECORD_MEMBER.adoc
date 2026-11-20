@@ -1,0 +1,5 @@
+Reported at the `@tenant` or the `$tenant` entry, the detail naming the table the record is a row of.
+
+An input object a service takes as a jOOQ record is built column by column: each field writes a column of the record's table. A value marked as the tenant there would still only write a column. The record already names its tenant: the field bound to the tenant column with `@field(name:)` routes the call, and a marker beside it says nothing that binding does not.
+
+*Next step.* Remove `@tenant`, or the `$tenant` pair, and bind the field to the tenant column with `@field(name:)`. See xref:directives/tenant.adoc[`@tenant`].

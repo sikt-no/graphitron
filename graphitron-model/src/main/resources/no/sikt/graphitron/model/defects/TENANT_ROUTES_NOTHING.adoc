@@ -1,0 +1,5 @@
+Reported at the `@tenant` or the `$tenant` entry. Where the call's result is a global table's, the detail names that table.
+
+A tenant decides which database a call runs on, and only where something routes by it. In a build with no `<tenantColumn>` nothing does: every call runs on the one connection. A root `@service` whose result is a `@table` type on a table with no tenant column re-reads those rows on the default source, whatever its arguments name. Either way the value you marked would choose nothing.
+
+*Next step.* Remove `@tenant`, or the `$tenant` pair. If the build is meant to route by tenant, configure `<tenantColumn>`; if the call is meant to run on a tenant's database, return a type whose table carries the tenant column. See xref:directives/tenant.adoc[`@tenant`].

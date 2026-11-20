@@ -35,13 +35,12 @@ The value is read as the client sent it, so its GraphQL type must arrive as your
 
 The build rejects the marker where it decides nothing, naming each field that reaches it:
 
-* in a build without `<tenantColumn>`;
+* in a build without `<tenantColumn>`, where nothing routes by a tenant (`TENANT_ROUTES_NOTHING`);
+* on a root service whose result is a global `@table` type, which runs on the default source whatever its arguments name (`TENANT_ROUTES_NOTHING`, the detail naming the table);
 * anywhere the field it reaches is not a root `@service` (`TENANT_SITE_UNSUPPORTED`, the code `$tenant` draws written anywhere but a root `@service`'s `argMapping`): a query field binds the tenant through `@field(name:)` on the tenant column, and a child service inherits its parent's tenant;
-* on a field bound into a jOOQ record (bind it to the tenant column with `@field(name:)` instead);
-* beside xref:nodeId.adoc[`@nodeId`], since the id already carries its tenant;
-* on a field that is not a scalar;
-* on a service whose result is a global `@table` type, which runs on the default source;
-* on a value whose type is not the tenant key's.
+* on a field of an input object the service takes as a jOOQ record (`TENANT_MARKER_ON_RECORD_MEMBER`): the field bound to the tenant column with `@field(name:)` already names the call's tenant from the record, so remove the marker;
+* beside xref:nodeId.adoc[`@nodeId`], since the id already carries its tenant (`TENANT_MARKER_BESIDE_NODE_ID`);
+* on a field whose type is an input object, or a scalar not arriving as the tenant key's type (`TENANT_VALUE_TYPE_DISAGREES`).
 
 == `$tenant` says the same
 
@@ -50,7 +49,9 @@ see xref:service.adoc#arg-mapping[`@service`]. Where both are written for one ca
 same value: a `$tenant` pair and a `@tenant` on another argument or input field are refused as
 `TENANT_NAMED_TWICE`, since nothing says which tenant the call runs on. A value whose GraphQL type
 does not arrive as the tenant key's Java type is refused as `TENANT_VALUE_TYPE_DISAGREES`, whichever
-way it is named.
+way it is named. The other rejections above hold for a `$tenant` pair as they do for the marker: a pair
+landing on a field of a jOOQ record is refused as `TENANT_MARKER_ON_RECORD_MEMBER`, and one where
+nothing routes by a tenant as `TENANT_ROUTES_NOTHING`.
 
 See xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping] for the other ways a service names its tenant.
 

@@ -1,5 +1,5 @@
-Reported at the `$tenant` entry or the `@tenant`, the detail naming the value's class and the tenant column's.
+Reported at the `$tenant` entry or the `@tenant`, the detail naming the value's class and the tenant column's. An input object marked as the tenant is refused the same way, its value a map no tenant key is; the detail names the input object.
 
 The tenant is handed to your connection source as the client sent it, with no conversion or normalisation, so the value's GraphQL type must arrive as the tenant key's Java type.
 
-*Next step.* Change the value's type to a scalar that arrives as the tenant column's class: `String` or `ID` for a `String` key, `Int` for an `Integer` key, or a custom scalar whose Java type is the key's. See xref:directives/tenant.adoc[`@tenant`].
+*Next step.* Mark the scalar field inside the input object instead, or change the value's type to a scalar that arrives as the tenant column's class: `String` or `ID` for a `String` key, `Int` for an `Integer` key, or a custom scalar whose Java type is the key's. See xref:directives/tenant.adoc[`@tenant`].

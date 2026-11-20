@@ -1,0 +1,52 @@
+# A tenant named on a field of an input object a service takes as a jOOQ record, under a build whose
+# tenant column is film_id: @tenant on the record's film_id field, and a $tenant pair landing on it.
+# A record field writes a column, and the field bound to film_id already names the call's tenant from
+# the record, so either marker says nothing. The same record with no marker is routed by that field
+# and draws nothing.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+input FilmMarkedIn {
+  filmId: Int! @field(name: "film_id") @tenant
+  title: String @field(name: "title")
+}
+input FilmIn {
+  filmId: Int! @field(name: "film_id")
+  title: String @field(name: "title")
+}
+
+type Query {
+  modifyMarked(in: [FilmMarkedIn!]!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyFilmRecords"})
+  modifyPaired(in: [FilmIn!]!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyFilmRecords", argMapping: "in: in, $tenant: in.filmId"})
+  modify(in: [FilmIn!]!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyFilmRecords"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'TENANT%' OR code = 'UNROUTED_SERVICE_CALL'", rows: """
+  code,                           coordinate,          detail
+  TENANT_MARKER_ON_RECORD_MEMBER, FilmMarkedIn.filmId, film
+  TENANT_MARKER_ON_RECORD_MEMBER, Query.modifyPaired,  film
+  """)
+
+# Each call reads its tenant from the record's film_id field; a marked one also from the marker.
+extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows: """
+  call_coordinate,    kind,          coordinate
+  Query.modifyMarked, AUTHORED,      Query.modifyMarked(in.filmId:)
+  Query.modifyMarked, RECORD_COLUMN, Query.modifyMarked(in.filmId:)
+  Query.modifyPaired, AUTHORED,      Query.modifyPaired(in.filmId:)
+  Query.modifyPaired, RECORD_COLUMN, Query.modifyPaired(in.filmId:)
+  Query.modify,       RECORD_COLUMN, Query.modify(in.filmId:)
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
+  coordinate,         outcome
+  Query.modifyMarked, ROUTED
+  Query.modifyPaired, ROUTED
+  Query.modify,       ROUTED
+  """)

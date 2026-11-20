@@ -9035,6 +9035,8 @@ SELECT DISTINCT p.graph_name, p.source_name, p.source_line, p.source_column, 'TE
    AND s.source_line = p.source_line AND s.source_column = p.source_column
  WHERE p.target_kind = 'TENANT'
    AND NOT (s.directive_name = 'service' AND s.owner = 'service' AND s.kind = 'ROOT')
+   -- With no tenant column nothing routes by it anywhere, which TENANT_ROUTES_NOTHING says.
+   AND EXISTS (SELECT 1 FROM store_graph_tenant_column t WHERE t.graph_name = p.graph_name)
 UNION ALL
 -- Each string one of whose entries a rule above refuses, once per code; the entries are
 -- graphitron_argmapping_pair_entry_defect_pair_rule's rows, written under it.
@@ -19817,23 +19819,20 @@ SELECT a.graph_name, a.source_name, a.source_line, a.source_column, 'TENANT_NAME
    AND d.coordinate <> a.coordinate
  GROUP BY a.graph_name, a.source_name, a.source_line, a.source_column
 UNION ALL
--- A value read as the tenant whose scalar arrives as another class than the tenant column's, at what
--- the author wrote. The detail names both classes.
+-- A value read as the tenant whose scalar arrives as another class than the tenant column's, or which
+-- is an input object, whose value is a map no tenant key is, at what the author wrote. The detail names
+-- both classes, or the input object and the column's class.
 SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_VALUE_TYPE_DISAGREES',
        MIN(x.value_class || ' where the tenant column is ' || x.tenant_class), 'occurrence-tenants'
   FROM (SELECT b.graph_name, COALESCE(a.source_name, d.source_name) AS source_name,
                COALESCE(a.source_line, d.source_line) AS source_line,
                COALESCE(a.source_column, d.source_column) AS source_column,
-               sc.java_class AS value_class,
+               CASE WHEN it.type_kind = 'INPUT_OBJECT' THEN 'the input object ' || it.type_name
+                    ELSE it.java_class END AS value_class,
                k.binding_type AS tenant_class
           FROM graphitron_occurrence_binding_tenant b
-          JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
-          LEFT JOIN graphitron_argument ga
-            ON o.kind = 'FIELD_ARGUMENT' AND ga.graph_name = o.graph_name AND ga.coordinate = o.element_coordinate
-          LEFT JOIN graphitron_field gf
-            ON o.kind = 'INPUT_FIELD' AND gf.graph_name = o.graph_name AND gf.coordinate = o.element_coordinate
-          LEFT JOIN graphitron_scalar_class sc
-            ON sc.graph_name = o.graph_name AND sc.type_name = COALESCE(ga.named_type, gf.named_type)
+          JOIN graphitron_occurrence_input_type it
+            ON it.graph_name = b.graph_name AND it.coordinate = b.coordinate
           -- The tenant key's type, off the graph's tenant column; where those disagree the
           -- configuration is at fault, which is not this rule's to say.
           JOIN (SELECT tc.graph_name, MIN(sc2.binding_type) AS binding_type
@@ -19851,7 +19850,8 @@ SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_VALU
             ON b.origin = 'DIRECTIVE' AND d.graph_name = b.graph_name AND d.coordinate = b.coordinate
            AND d.call_coordinate = b.call_coordinate AND d.call = b.call
          WHERE b.key_position IS NULL) x
--- A scalar whose class is unknown is not judged here; its own rule says so.
+-- A scalar whose class is unknown is not judged here, its own rule says so; nor is an enum, whose
+-- class is its binding's.
  WHERE x.value_class <> x.tenant_class AND x.source_name IS NOT NULL
  GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column
 UNION ALL
@@ -19872,6 +19872,8 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'TENANT_
                       AND op.start = 'ROOT'
                     WHERE c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate
                       AND c.call_kind = 'SERVICE')
+   -- With no tenant column nothing routes by it anywhere, which TENANT_ROUTES_NOTHING says.
+   AND EXISTS (SELECT 1 FROM store_graph_tenant_column t WHERE t.graph_name = da.graph_name)
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
 -- An argument or input field written both @tenant and @nodeId, at the @tenant: the decoded id already
@@ -19883,6 +19885,31 @@ SELECT t.graph_name, t.source_name, t.source_line, t.source_column, 'TENANT_MARK
    AND EXISTS (SELECT 1 FROM graphql_directive_application n
                 WHERE n.graph_name = t.graph_name AND n.coordinate = t.coordinate
                   AND n.directive_name = 'nodeId')
+UNION ALL
+-- A value read as the tenant that fills a member of a jOOQ record, at what the author wrote: a record
+-- field writes its table's column, and the member bound to the tenant column with @field(name:)
+-- already names the call's tenant as a record column slot. The detail is the record's table.
+SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_MARKER_ON_RECORD_MEMBER',
+       MIN(x.record_table), 'occurrence-tenants'
+  FROM (SELECT b.graph_name, COALESCE(a.source_name, d.source_name) AS source_name,
+               COALESCE(a.source_line, d.source_line) AS source_line,
+               COALESCE(a.source_column, d.source_column) AS source_column, bc.record_table
+          FROM graphitron_occurrence_binding_tenant b
+          JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+          JOIN graphitron_occurrence_built_class bc
+            ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate
+           AND bc.record_table IS NOT NULL
+          -- With no tenant column nothing routes by it anywhere, which TENANT_ROUTES_NOTHING says.
+          JOIN store_graph_tenant_column t ON t.graph_name = b.graph_name
+          LEFT JOIN argmapping a
+            ON b.origin = 'ARGMAPPING' AND a.graph_name = b.graph_name AND a.coordinate = b.coordinate
+           AND a.call_coordinate = b.call_coordinate AND a.call = b.call
+          LEFT JOIN directive d
+            ON b.origin = 'DIRECTIVE' AND d.graph_name = b.graph_name AND d.coordinate = b.coordinate
+           AND d.call_coordinate = b.call_coordinate AND d.call = b.call
+         WHERE o.kind = 'INPUT_FIELD') x
+ WHERE x.source_name IS NOT NULL
+ GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column
 UNION ALL
 -- An argument of a @service field nothing takes, at the argument: a service composes with no filter,
 -- so an argument nothing takes, itself or anything under it (graphitron_occurrence_taken), has
@@ -23300,7 +23327,52 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
                     WHERE c.graph_name = p.graph_name AND c.coordinate = p.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application fo
                     WHERE fo.graph_name = f.graph_name AND fo.coordinate = f.coordinate
-                      AND fo.directive_name = 'tenantFanOut');
+                      AND fo.directive_name = 'tenantFanOut')
+UNION ALL
+-- A tenant an author named for a root call whose result is a global table's, at the @tenant or the
+-- $tenant pair: a global table's rows are read on the key with an empty tenant part, there being no
+-- default tenant (Alf, 2026-11-17), whatever the call's arguments name, so nothing routes by the
+-- value. The detail is the global table.
+SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, 'TENANT_ROUTES_NOTHING',
+       pr.table_name, 'occurrence-routes'
+  FROM graphitron_occurrence_tenant_slot_authored sa
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = sa.graph_name AND p.coordinate = sa.call_coordinate AND p.start = 'ROOT'
+  JOIN graphitron_occurrence_connection oc
+    ON oc.graph_name = p.graph_name AND oc.coordinate = p.coordinate AND oc.outcome = 'UNSCOPED'
+  JOIN graphitron_occurrence_producer_result pr
+    ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate AND pr.table_name IS NOT NULL
+  JOIN (SELECT l.graph_name, l.landing_coordinate AS coordinate, l.call_coordinate, pa.source_name,
+               pa.source_line, pa.source_column
+          FROM graphitron_argmapping_landing l
+          JOIN graphitron_argmapping_pair pa
+            ON pa.graph_name = l.graph_name AND pa.coordinate = l.coordinate
+           AND pa.directive_name = l.directive_name AND pa.ordinal = l.ordinal AND pa.owner = l.owner
+           AND pa.target_kind = l.target_kind AND pa.target_name = l.target_name
+         WHERE l.target_kind = 'TENANT'
+        UNION ALL
+        SELECT o.graph_name, o.coordinate, o.field_coordinate, da.source_name, da.source_line,
+               da.source_column
+          FROM graphql_directive_application da
+          JOIN graphitron_occurrence o
+            ON o.graph_name = da.graph_name AND o.element_coordinate = da.coordinate
+           AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+         WHERE da.directive_name = 'tenant') m
+    ON m.graph_name = sa.graph_name AND m.coordinate = sa.coordinate
+   AND m.call_coordinate = sa.call_coordinate
+UNION ALL
+-- A tenant named in a build with no tenant column, at the @tenant or the $tenant pair: no call is
+-- routed by a tenant there, so the value decides nothing.
+SELECT DISTINCT n.graph_name, n.source_name, n.source_line, n.source_column, 'TENANT_ROUTES_NOTHING',
+       CAST(NULL AS VARCHAR), 'occurrence-routes'
+  FROM (SELECT da.graph_name, da.source_name, da.source_line, da.source_column
+          FROM graphql_directive_application da
+         WHERE da.directive_name = 'tenant'
+        UNION ALL
+        SELECT pe.graph_name, pe.source_name, pe.source_line, pe.source_column
+          FROM graphitron_ast_argmapping_pair_entry pe
+         WHERE pe.target_kind = 'TENANT') n
+ WHERE NOT EXISTS (SELECT 1 FROM store_graph_tenant_column t WHERE t.graph_name = n.graph_name);
 COMMENT ON VIEW graphitron_occurrence_route_entry_defect_rule IS 'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.';
 
 -- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
@@ -31259,7 +31331,11 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('TENANT_NAMED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_NAMED_TWICE',
    'A call''s tenant is named twice, by a $tenant pair and by @tenant on another argument or input field, so nothing says which it runs on: name it once.'),
   ('TENANT_VALUE_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_VALUE_TYPE_DISAGREES',
-   'A value named as a call''s tenant arrives as another class than the tenant column''s, and a tenant is read as it was sent, with no conversion: declare it a scalar arriving as the column''s class, String or ID for a String key, Int for an Integer key.'),
+   'A value named as a call''s tenant arrives as another class than the tenant column''s, or is an input object, and a tenant is read as it was sent, with no conversion: declare it a scalar arriving as the column''s class, String or ID for a String key, Int for an Integer key.'),
+  ('TENANT_ROUTES_NOTHING', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_ROUTES_NOTHING',
+   'A tenant is named, by @tenant or a $tenant pair, where nothing routes by it: in a build with no <tenantColumn>, or for a root call whose result is a global table''s, which runs on the default source whatever its arguments name: remove the marker or the pair.'),
+  ('TENANT_MARKER_ON_RECORD_MEMBER', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_MARKER_ON_RECORD_MEMBER',
+   'A value named as a call''s tenant, by @tenant or a $tenant pair, fills a member of an input object built into a jOOQ record, where a field writes its table''s column: remove the marker or the pair, and bind the field to the tenant column with @field(name:), which names the call''s tenant from the record.'),
   ('TENANT_MARKER_BESIDE_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_MARKER_BESIDE_NODE_ID',
    'An argument or input field is written both @tenant and @nodeId, and the node id''s decoded key already names its tenant, so the marker says nothing: remove @tenant.'),
   ('TENANT_FAN_OUT_NESTED_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_NESTED_UNSUPPORTED',

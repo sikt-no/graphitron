@@ -1,0 +1,42 @@
+# A tenant named for a root @service whose result is a global table's, under a build whose tenant
+# column is film_id: language has no film_id, so its rows are read on the key with an empty tenant
+# part whatever the call names, by @tenant or by a $tenant pair. The same marker on a call returning
+# film's rows routes it and draws nothing.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Language @table(name: "language") { name: String }
+type Film @table(name: "film") { title: String }
+
+type Query {
+  languagesMarked(org: Int! @tenant): [Language!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+      method: "languagesAsFilms"})
+  languagesPaired(org: Int!): [Language!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+      method: "languagesAsFilms", argMapping: "$tenant: org"})
+  filmMarked(id: Int! @tenant): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'TENANT%' OR code = 'UNROUTED_SERVICE_CALL'", rows: """
+  code,                  coordinate,                  detail
+  TENANT_ROUTES_NOTHING, Query.languagesMarked(org:), language
+  TENANT_ROUTES_NOTHING, Query.languagesPaired,       language
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows: """
+  call_coordinate,       kind,     coordinate
+  Query.languagesMarked, AUTHORED, Query.languagesMarked(org:)
+  Query.languagesPaired, AUTHORED, Query.languagesPaired(org:)
+  Query.filmMarked,      AUTHORED, Query.filmMarked(id:)
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
+  coordinate,            outcome
+  Query.languagesMarked, UNSCOPED
+  Query.languagesPaired, UNSCOPED
+  Query.filmMarked,      ROUTED
+  """)

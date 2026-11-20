@@ -1,5 +1,6 @@
 # A call's tenant named twice, by a $tenant pair and by @tenant on another argument; a value named as
-# the tenant whose scalar arrives as another class than the tenant column's, film_id an Integer;
+# the tenant whose scalar arrives as another class than the tenant column's, film_id an Integer, or
+# which is an input object, beside a list of the column's class, each element a tenant, which passes;
 # $tenant written where nothing routes by it yet, a @condition; a call handed a connection, re-reading
 # film rows and naming no tenant; one whose only tenant value may be left out; @tenant beside
 # @nodeId, beside the node id alone, whose decoded film_id routes the call; and @tenant read by a
@@ -17,6 +18,8 @@ type Film @table(name: "film") @node {
 # handed, nothing re-reads a tenant's rows, and the call needs no tenant. The same service handed a
 # connection, titlesOnConnection, is unrouted: its own SQL is opaque, and no mark says it is global.
 type FilmTitles { title: String }
+
+input FilmWhere { filmId: Int! }
 
 type Query {
   filmTwice(id: Int! @tenant, org: Int!): Film
@@ -40,6 +43,12 @@ type Query {
   filmMarked(id: Int! @tenant): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById", argMapping: "id: id"})
+  filmWhereMarked(id: Int!, where: FilmWhere! @tenant): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id"})
+  titlesMarked(ids: [Int!]! @tenant): [FilmTitles!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
   filmsMarked(filmId: Int @tenant @field(name: "film_id")): [Film!]!
   titlesOnConnection(ids: [Int!]!): [FilmTitles!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
@@ -60,6 +69,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   TENANT_SLOTS_OPTIONAL_ONLY,   Query.filmOptional,
   TENANT_NAMED_TWICE,           Query.filmTwice,              Query.filmTwice(id:)
   TENANT_VALUE_TYPE_DISAGREES,  Query.filmMistyped,           java.lang.String where the tenant column is java.lang.Integer
+  TENANT_VALUE_TYPE_DISAGREES,  Query.filmWhereMarked(where:), the input object FilmWhere where the tenant column is java.lang.Integer
   TENANT_SITE_UNSUPPORTED,      Query.filmsOnCondition,       condition
   TENANT_MARKER_BESIDE_NODE_ID, Query.filmByMarkedNodeId(id:),
   TENANT_SITE_UNSUPPORTED,      Film.rated(org:),             Film.rated
