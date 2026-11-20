@@ -1,19 +1,43 @@
-# A @service under Film whose source parameter collects FilmKey, a class of the author's own rather
-# than film records or rows of its key columns: nothing says how to put a parent's key into one. The
-# same field taking film records draws nothing.
+# A child @service whose source parameter collects something no parent's key can be put into: FilmKey,
+# a class of the author's own rather than film records or rows of its key columns; a bare record of
+# no arity; and an element left unbounded, whose detail is the collection. Under a table's row and
+# under a parent holding an object alike. The same fields taking film records draw nothing.
 
 type Film @table(name: "film") {
   title: String
   byOwnKey: String @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "titlesByFilmKey"})
+  bareRecord: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byBareRecord"})
+  anyKey: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byAnyKey"})
   byRecord: String @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "titleByFilm"})
 }
 
-type Query { films: [Film!]! }
+type FilmKeySummary {
+  label: String
+  byOwnKey: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "titlesByFilmKey"})
+  bareRecord: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byBareRecord"})
+  anyKey: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byAnyKey"})
+}
+
+type Query {
+  films: [Film!]!
+  summaries: [FilmKeySummary!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
+}
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
-    where: "code = 'SERVICE_SOURCES_NOT_KEYS'", rows: """
-  code,                     coordinate,    detail
-  SERVICE_SOURCES_NOT_KEYS, Film.byOwnKey, no.sikt.graphitron.rewrite.test.services.ParameterShapeService$FilmKey
+    where: "type_name IN ('Film', 'FilmKeySummary')", rows: """
+  code,                     coordinate,                detail
+  SERVICE_SOURCES_NOT_KEYS, Film.byOwnKey,             no.sikt.graphitron.rewrite.test.services.ParameterShapeService$FilmKey
+  SERVICE_SOURCES_NOT_KEYS, Film.bareRecord,           org.jooq.Record
+  SERVICE_SOURCES_NOT_KEYS, Film.anyKey,               java.util.Set
+  SERVICE_SOURCES_NOT_KEYS, FilmKeySummary.byOwnKey,   no.sikt.graphitron.rewrite.test.services.ParameterShapeService$FilmKey
+  SERVICE_SOURCES_NOT_KEYS, FilmKeySummary.bareRecord, org.jooq.Record
+  SERVICE_SOURCES_NOT_KEYS, FilmKeySummary.anyKey,     java.util.Set
   """)

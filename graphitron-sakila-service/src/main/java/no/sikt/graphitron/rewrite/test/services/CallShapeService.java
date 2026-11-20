@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.DSLContext;
+import org.jooq.Record;
 import org.jooq.Record1;
 import org.jooq.Row1;
 
@@ -14,7 +15,8 @@ import java.util.Set;
  * Service methods in every shape a call takes: at a root a static method and one that throws a
  * checked exception; under an object the batch's keys taken as the frame's records, as rows, as the
  * parent table's records and as a list in the batch's order, answered as a map by key or a list. The
- * call emitter's tests run these bodies, so they answer without a database.
+ * call emitter's tests run these bodies, so they answer without a database. Two take keys no table
+ * names, a bare record of no arity and an element left unbounded, which the store refuses.
  */
 public final class CallShapeService {
 
@@ -50,5 +52,17 @@ public final class CallShapeService {
 
     public static List<String> inOrder(List<Record1<Integer>> keys) {
         return keys.stream().map(k -> "at " + k.value1()).toList();
+    }
+
+    public static Map<Record, String> byBareRecord(Set<Record> keys) {
+        var out = new HashMap<Record, String>();
+        keys.forEach(k -> out.put(k, "record"));
+        return out;
+    }
+
+    public static Map<Object, String> byAnyKey(Set<?> keys) {
+        var out = new HashMap<Object, String>();
+        keys.forEach(k -> out.put(k, "key"));
+        return out;
     }
 }

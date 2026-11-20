@@ -1,5 +1,5 @@
-Reported at the field, the detail naming the class the source parameter collects.
+Reported at the field, the detail naming the class the source parameter collects, or the collection where its element is left unbounded (`Set<?>`, a raw `Set`).
 
-A `@service` under an object is called once per request with the keys of every parent the request touched, and graphitron builds those keys itself. It builds them as the parent table's jOOQ records, or as `Row<N>` or `Record<N>` of its key columns. A class of your own has no rule for putting a key into it.
+A `@service` under an object is called once per request with the keys of every parent the request touched, and graphitron builds those keys itself. It builds them as the parent table's jOOQ records, or as `Row<N>` or `Record<N>` of its key columns. A class of your own, a bare `Record` of no arity, or an element left unbounded has no rule for putting a key into it.
 
 *Next step.* Take the parent table's records, or `Row<N>` or `Record<N>` of its key columns, and convert inside the method. See the xref:directives/service.adoc#constraints[`@service` constraints].

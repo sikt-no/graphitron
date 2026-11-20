@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.SourceShape;
@@ -20,8 +19,9 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  *
  * <p>Two producers qualify, and they are the class-backed {@link ServiceKeySource} arms: the
  * parent's backing <em>is</em> the declared record, or it exposes exactly one zero-arg accessor
- * returning one. Everything else is a rejection naming both routes, and each rejection has
- * its own fixture below rather than being asserted as a bare "unclassified".
+ * returning one. Everything else is refused in the store, each refusal pinned by a fact document:
+ * defects/no-key-from-parent, key-row, many-keys-into-one, service-key-off-object,
+ * service-sources-not-keys and unbatched-child-service.
  *
  * <p>No arm asserts a {@code KeyLift}: these leaves carry none. The {@code @service} path's wrap is
  * authored by the signature rather than derived from a lift, and asserting a lift alongside the
@@ -50,14 +50,6 @@ class ServiceRecordParentBatchKeyTest {
                 parent: Parent @service(service: {className: "%s", method: "%s"})
             }
             """.formatted(parentFields, DUMMY, producer);
-    }
-
-    private static String reasonOf(GraphitronSchema schema, String type, String field) {
-        var f = schema.field(type, field);
-        assertThat(f)
-            .as("field '%s.%s' must be rejected", type, field)
-            .isInstanceOf(UnclassifiedField.class);
-        return ((UnclassifiedField) f).reason();
     }
 
     // ===== The two class-backed producers =====
@@ -167,140 +159,5 @@ class ServiceRecordParentBatchKeyTest {
             .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.type(ServiceKeySource.FromTableRow.class))
             .satisfies(row -> assertThat(row.keyOwner().tableName()).isEqualTo("language"));
         assertThat(srf.sourceShape()).isEqualTo(SourceShape.Table);
-    }
-
-    // ===== The rejections =====
-
-    /** No producer: the backing class has no accessor returning the declared record. */
-    @Test
-    void classBackedParentThatCannotProduceTheKey_isRejectedNamingEveryRoute() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
-                title: String
-                rank: Int @service(service: {className: "%s", method: "getRankMappedByRecord"})
-            """.formatted(SVC)));
-
-        assertThat(reasonOf(schema, "Parent", "rank"))
-            .contains("LanguageRecord", "language", "cannot produce one")
-            .contains("expose a zero-arg accessor");
-    }
-
-    /**
-     * More than one accessor returning the declared record: which one produces the key is ambiguous.
-     */
-    @Test
-    void classBackedParentWithTwoMatchingAccessors_isRejectedNamingBoth() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeTwoLanguageAccessors", """
-                rank: Int @service(service: {className: "%s", method: "getRankMappedByRecord"})
-            """.formatted(SVC)));
-
-        assertThat(reasonOf(schema, "Parent", "rank"))
-            .contains("more than one zero-arg accessor")
-            .contains("fallback", "primary")
-            .contains("ambiguous")
-            .contains("leave exactly one");
-    }
-
-    /**
-     * A list-valued accessor fans one parent out to many keys, which the service contract's
-     * {@code Map<Key, Value>} return cannot express. Rejected by name and left to a follow-up that
-     * designs the fan-in, rather than silently keying on the first element.
-     */
-    @Test
-    void classBackedParentWithListAccessor_isRejectedByName() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeManyLanguages", """
-                rank: Int @service(service: {className: "%s", method: "getRankMappedByRecord"})
-            """.formatted(SVC)));
-
-        assertThat(reasonOf(schema, "Parent", "rank"))
-            .contains("returns many", "language")
-            .contains("one key per parent");
-    }
-
-    /**
-     * A key owner with no primary key is newly reachable: decoupling the key owner from the parent is
-     * exactly what makes it so, and the arm has to reject rather than crash the classifier out of
-     * {@code MethodRef.Param.Sourced}'s non-empty-columns invariant. {@code film_list} is the tree's
-     * PK-less table, and the diagnostic names the element type the author wrote.
-     */
-    @Test
-    void keyOwnerTableWithoutPrimaryKey_isRejectedNamingTheElementType() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeFilmListKeyed", """
-                rank: Int @service(service: {className: "%s", method: "getFilmListRankByRecord"})
-            """.formatted(SVC)));
-
-        assertThat(reasonOf(schema, "Parent", "rank"))
-            .contains("FilmListRecord", "film_list", "no primary key");
-    }
-
-    /**
-     * An anonymous key wrap names no table, so a class-backed parent has nothing to read the columns
-     * through. Once a record class is declared all three producer routes apply, so the diagnostic
-     * asks for the record class and promises nothing beyond it.
-     */
-    @Test
-    void anonymousKeyWrapOnClassBackedParent_isRejectedAskingForARecordClass() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
-                rank: Int @service(service: {className: "%s", method: "getRankMapped"})
-            """.formatted(SVC)));
-
-        assertThat(reasonOf(schema, "Parent", "rank"))
-            .contains("Row/Record batch parameter")
-            .contains("Declare the batch key as a jOOQ record class")
-            .contains("all three producer routes apply");
-    }
-
-    // ===== The Sources-less child, on both parent kinds =====
-
-    /**
-     * A child {@code @service} with no {@code Sources} parameter has no batch key, and the tree had
-     * already decided that is an error rather than a shape: the table-bound leaf's validator rejected
-     * it and the launcher threw on the record-shaped one. The rejection now lands at classify time on
-     * both parent kinds, which is what makes both key components non-null by construction.
-     */
-    @Test
-    void sourcesLessChildOnTableParent_isRejectedNamingTheMissingParameter() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Language @table(name: "language") {
-                name: String @field(name: "name")
-                rank(filter: String): Int @service(service: {className: "%s", method: "getConstantRank"})
-            }
-            type Query { language: Language }
-            """.formatted(SVC));
-
-        assertThat(reasonOf(schema, "Language", "rank"))
-            .contains("declares no Sources parameter")
-            .contains("resolves through a DataLoader")
-            .contains("per-parent service call is not emitted");
-    }
-
-    /**
-     * The record-parent twin, which is also the pin for the return-type-regime flip's residue: this
-     * coordinate used to be under the root's strict return-type comparison, and the flip to the
-     * batched-child regime would otherwise have left it with no return-type validation at all.
-     */
-    @Test
-    void sourcesLessChildOnClassBackedParent_isRejectedNamingTheMissingParameter() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
-                rank(filter: String): Int @service(service: {className: "%s", method: "getConstantRank"})
-            """.formatted(SVC)));
-
-        assertThat(reasonOf(schema, "Parent", "rank"))
-            .contains("declares no Sources parameter");
-    }
-
-    /**
-     * The over-fire guard on the other side: a table-bound return with no {@code Sources} parameter is
-     * rejected too. It used to classify on a class-backed parent and fail validation on a
-     * {@code @table} one, so "no key needed here" was never a live reading; both now say the same
-     * thing at the same phase.
-     */
-    @Test
-    void sourcesLessTableBoundChildOnClassBackedParent_isRejectedToo() {
-        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
-                language(filter: String): Language @service(service: {className: "%s", method: "getLanguageByFilter"})
-            """.formatted(SVC)));
-
-        assertThat(reasonOf(schema, "Parent", "language"))
-            .contains("declares no Sources parameter");
     }
 }

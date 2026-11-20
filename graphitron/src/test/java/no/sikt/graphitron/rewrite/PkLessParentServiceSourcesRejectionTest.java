@@ -71,34 +71,6 @@ class PkLessParentServiceSourcesRejectionTest {
             .doesNotContain("no primary key");
     }
 
-    /**
-     * Separation guard. The two rejections are about different things and must not collapse into
-     * one: a PK-less parent hosting a no-SOURCES {@code @service} is rejected for the missing batch
-     * parameter, not for the parent's missing primary key. A child {@code @service} always batches
-     * (the emitter has no per-parent service call), so the missing parameter is the author's first
-     * move; telling them to add a primary key to a table their signature never asked to key on would
-     * send them somewhere that does not end anywhere.
-     */
-    @Test
-    void noSourcesChildOnPkLessParent_isRejectedForTheMissingParameter() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type FilmList @table(name: "film_list") {
-                title: String @field(name: "title")
-                rank(filter: String): Int @service(
-                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getConstantRank"}
-                )
-            }
-            type Query { filmList: FilmList }
-            """);
-
-        var field = schema.field("FilmList", "rank");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .as("the missing batch parameter is the verdict, not the parent's missing primary key")
-            .contains("declares no Sources parameter")
-            .doesNotContain("no primary key");
-    }
-
     @Test
     void sourcesBatchParam_onParentWithPrimaryKey_classifies() {
         // Control: the same shape on a keyed parent is the ordinary supported case.

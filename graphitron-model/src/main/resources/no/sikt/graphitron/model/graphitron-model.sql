@@ -14761,8 +14761,14 @@ SELECT s.graph_name, s.coordinate, s.call, s.method_source_name, s.method_class_
                       AND k.directive_name = 'service' AND k.owner = 'service'
                       AND k.parameter_name = p.parameter_name AND k.written_once)
    AND (p.role IN ('DSL_CONTEXT', 'CONFIGURATION') OR a.coordinate IS NOT NULL
-        -- A child producer's call has a source, whose keys fill a collection.
-        OR (p.delivery = 'MANY'
+        -- A child producer's call has a source, whose keys fill a collection: one delivering many, or
+        -- a collection whose element is left unbounded or raw, which the capture delivers as the
+        -- collection itself, a container delivering many, and SERVICE_SOURCES_NOT_KEYS then refuses
+        -- for what it is rather than as a call with no source.
+        OR ((p.delivery = 'MANY'
+             OR p.delivery = 'DIRECT'
+                AND EXISTS (SELECT 1 FROM code_delivery_container dc
+                             WHERE dc.container_class = p.element_class AND dc.multiplies))
             AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer pp
                          WHERE pp.graph_name = s.graph_name AND pp.coordinate = s.coordinate
                            AND s.call = 'producer' AND pp.start = 'CHILD')))
@@ -22190,8 +22196,9 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'UNION')
 UNION ALL
 -- A child @service whose source parameter collects a class that is neither a jOOQ table record nor
--- a jOOQ row or record of the key columns, at the field: nothing says how to put a parent's key into
--- one, so there is no batch to hand it. The detail is the class.
+-- a jOOQ row or record of the key columns, or leaves its element unbounded, at the field: nothing says
+-- how to put a parent's key into one, so there is no batch to hand it. The detail is the class, the
+-- collection itself where its element is unbounded.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'SERVICE_SOURCES_NOT_KEYS', mp.element_class, 'occurrence-producers'
   FROM graphitron_occurrence_producer p
@@ -22206,7 +22213,8 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
  WHERE p.kind = 'SERVICE' AND p.start = 'CHILD' AND mp.element_class IS NOT NULL
    -- Keys in no container delivering many are the batch shape's.
-   AND mp.erased_class IN ('java.util.Set', 'java.util.List', 'java.util.Collection', 'org.jooq.Result')
+   AND EXISTS (SELECT 1 FROM code_delivery_container dc
+                WHERE dc.container_class = mp.erased_class AND dc.multiplies)
    AND NOT REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
    AND NOT EXISTS (SELECT 1 FROM graphitron_call_parameter_table kt
                     WHERE kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
@@ -31042,7 +31050,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('SERVICE_KEY_OFF_OBJECT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_KEY_OFF_OBJECT_UNSUPPORTED',
    'A @service under a parent holding an object rather than a table''s row takes its keys as jOOQ rows or records of the key columns, which are not read off a member of the object yet: take the keys as the table''s own records, which the member returning them hands over, or give the parent type a @table.'),
   ('SERVICE_SOURCES_NOT_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_SOURCES_NOT_KEYS',
-   'A @service under an object takes its parents'' keys as a class that is neither a jOOQ table record nor a jOOQ row or record of the key columns, and nothing says how to put a key into one: take the parent table''s records, or Row<N> or Record<N> of its key columns.'),
+   'A @service under an object takes its parents'' keys as a class that is neither a jOOQ table record nor a jOOQ row or record of the key columns, or as a collection whose element is unbounded, and nothing says how to put a key into one: take the parent table''s records, or Row<N> or Record<N> of its key columns.'),
   ('INPUT_CYCLE_EXPANDED', 'error', 'GRAPHITRON', 'GRAPHITRON_INPUT_CYCLE_EXPANDED',
    'An input object is reached again inside itself where a call builds its value into a class or a filter compares it, and its nesting has no last level, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
   ('ENUM_CONSTANT_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ENUM_CONSTANT_MISSING',
