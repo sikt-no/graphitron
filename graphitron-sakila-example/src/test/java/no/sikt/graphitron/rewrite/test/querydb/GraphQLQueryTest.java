@@ -10305,6 +10305,48 @@ class GraphQLQueryTest {
         only.containsEntry("message", "film 999 not found");
     }
 
+    // serviceFilmTitleByIdWithErrors hands the same FilmRecord into an outcome payload whose data
+    // field is a child @service: its frame reads the key off the outcome's value on the success arm
+    // and answers null on the error arm, rather than casting the Outcome to a record.
+
+    @Test
+    void serviceFilmTitleByIdWithErrors_validId_childServiceReadsKeyOffOutcomeValue() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmTitleByIdWithErrors(id: 1) {
+                    titleUppercase
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmTitleByIdWithErrors", as(MAP));
+        payload.containsEntry("errors", null);
+        payload.containsEntry("titleUppercase", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmTitleByIdWithErrors_missingFilm_childServiceAnswersNull() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmTitleByIdWithErrors(id: 999) {
+                    titleUppercase
+                    errors {
+                        __typename
+                        ... on FilmReviewMissingFilm { message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmTitleByIdWithErrors", as(MAP));
+        payload.containsEntry("titleUppercase", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewMissingFilm");
+        only.containsEntry("message", "film 999 not found");
+    }
+
     // ===== @service list-data-field source-record carrier end-to-end =====
     //
     // serviceFilmsByIdsWithErrors returns List<FilmRecord> into { films: [Film!], errors: [...] }

@@ -18,7 +18,8 @@ import java.util.function.Function;
  * body, hands the value back, and routes what the body throws: claimed into the producer's outcome
  * where it has one, surfaced or redacted otherwise. Under an object it batches: the parent's key is
  * read off the parent's row, and one mapped loader per path collects the keys and runs the body once
- * over all of them.
+ * over all of them. A parent that is a producer's outcome is read through its value, its error arm
+ * answering what nothing produced answers without loading.
  *
  * <pre>{@code
  * public static CompletableFuture<DataFetcherResult<String>> titleUppercase(DataFetchingEnvironment env) {
@@ -301,19 +302,34 @@ public final class FrameEmitter {
             // routed by the one handler below.
             .addStatement("$T<$T> loaded", FUTURE, valueType)
             .beginControlFlow("try");
+        var source = CodeBlock.of("env.getSource()");
+        if (row.parentOutcome()) {
+            // The parent is the outcome its producer handed back: the key is read off its value, and
+            // its error arm, or a value of nothing, answers what nothing produced answers.
+            source = CodeBlock.of("parent");
+            method.addStatement("$T parent = env.getSource()", Object.class)
+                .beginControlFlow("if (parent instanceof $T<?> outcome)", runtime.outcome())
+                .beginControlFlow("if (!(outcome instanceof $T.Success<?> success) || success.value() == null)",
+                    runtime.outcome())
+                .addStatement("return $T.completedFuture($T.<$T>newResult().data($L).build())", FUTURE, RESULT,
+                    declared, errorArmAnswer(row))
+                .endControlFlow()
+                .addStatement("parent = success.value()")
+                .endControlFlow();
+        }
         if (row.accessor().isPresent()) {
             // The key is the record the parent's member hands back; a parent handing back none has
             // no key, and its field is null.
             var accessor = row.accessor().get();
             var recordClass = ClassName.bestGuess(accessor.recordClassName());
-            method.addStatement("$T keyRecord = (($T) env.getSource()).$L()", recordClass,
-                    ClassName.bestGuess(accessor.parentClassName()), accessor.methodName())
+            method.addStatement("$T keyRecord = (($T) $L).$L()", recordClass,
+                    ClassName.bestGuess(accessor.parentClassName()), source, accessor.methodName())
                 .beginControlFlow("if (keyRecord == null)")
                 .addStatement("return $T.completedFuture(null)", FUTURE)
                 .endControlFlow()
                 .addStatement("loaded = loader.load(keyRecord.into($L), env)", keyColumns);
         } else {
-            method.addStatement("loaded = loader.load((($T) env.getSource()).into($L), env)", RECORD, keyColumns);
+            method.addStatement("loaded = loader.load((($T) $L).into($L), env)", RECORD, source, keyColumns);
         }
         return method
             .nextControlFlow("catch ($T thrown)", Exception.class)
@@ -331,6 +347,17 @@ public final class FrameEmitter {
                 .unindent()
                 .build())
             .build();
+    }
+
+    /**
+     * What a child under an outcome answers where the outcome holds no value: nothing was produced,
+     * so null, or the empty list for a non-null list, which null would bubble past to the outcome's
+     * errors. A field catching into its own outcome answers null there, its outcome being no list.
+     */
+    private static CodeBlock errorArmAnswer(FrameQuery.Row row) {
+        return row.nonNullList() && row.outcome().isEmpty()
+            ? CodeBlock.of("$T.of()", LIST)
+            : CodeBlock.of("null");
     }
 
     /** What the fetcher hands back: the value, or the value as its outcome's success. */

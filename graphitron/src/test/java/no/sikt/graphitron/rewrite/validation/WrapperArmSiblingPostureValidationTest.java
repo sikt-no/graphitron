@@ -18,7 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * request; the rule rejects the combination at build time instead. The sibling invariant on the
  * {@code PropertyDataFetcher} registration-escape family stays with
  * {@code validateOutcomeChildArmSwitch} ({@code OutcomeTypeValidationTest}); this rule covers
- * graphitron's own non-arm-switching emit paths.
+ * graphitron's own non-arm-switching emit paths. A child {@code @service} is not one of them: its
+ * frame reads the key off the {@code Outcome}'s value.
  */
 @UnitTier
 class WrapperArmSiblingPostureValidationTest {
@@ -36,10 +37,10 @@ class WrapperArmSiblingPostureValidationTest {
         """;
 
     @Test
-    void serviceChildBesideWrapperArmErrorsField_isRejected() {
-        // A child @service field's key source reads env.getSource() without unwrapping the
-        // Outcome wrapper, so beside a WrapperArm errors field it is a request-time
-        // ClassCastException; the posture rule turns it into a build-time rejection.
+    void serviceChildBesideWrapperArmErrorsField_isNotRejected() {
+        // A child @service field's frame is emitted from the store, which reads its key off the
+        // Outcome's value where the parent is one and answers the field's error arm otherwise, so
+        // beside a WrapperArm errors field it is accepted.
         var schema = TestSchemaHelper.buildSchema(ERROR_TYPES + """
             type Film @table(name: "film") { title: String }
             type Aggregated {
@@ -54,7 +55,7 @@ class WrapperArmSiblingPostureValidationTest {
             """);
 
         // Preconditions keeping the pairing non-vacuous: the data field classifies as the child
-        // @service leaf (third posture bucket) and the errors field rides the WrapperArm transport.
+        // @service leaf and the errors field rides the WrapperArm transport.
         assertThat(schema.field("Aggregated", "filmsViaService"))
             .isInstanceOf(ChildField.ServiceTableField.class);
         var errorsField = (ChildField.ErrorsField) schema.field("Aggregated", "errors");
@@ -62,10 +63,6 @@ class WrapperArmSiblingPostureValidationTest {
 
         assertThat(validate(schema))
             .extracting(ValidationError::message)
-            .anySatisfy(m -> assertThat(m)
-                .contains("Aggregated.filmsViaService")
-                .contains("ServiceTableField")
-                .contains("cannot sit beside the errors field")
-                .contains("ClassCastException"));
+            .noneMatch(m -> m.contains("cannot sit beside the errors field"));
     }
 }

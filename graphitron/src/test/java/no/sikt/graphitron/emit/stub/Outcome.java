@@ -12,6 +12,10 @@ public interface Outcome<T> {
             this.value = value;
         }
 
+        public T value() {
+            return value;
+        }
+
         @Override
         public String toString() {
             return "Success(" + value + ")";

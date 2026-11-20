@@ -5222,6 +5222,17 @@ type FilmCarrierWithErrorsPayload {
     errors: [FilmReviewError]
 }
 
+# A child @service under an outcome payload: the producer hands back a bare FilmRecord into the
+# outcome, and titleUppercase takes its keys off the outcome's value, the film record. On the error
+# arm (id 999) the child answers null beside the typed error.
+type FilmTitleWithErrorsPayload {
+    titleUppercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "titleUppercaseOfRecords"
+    })
+    errors: [FilmReviewError]
+}
+
 # R275 reopened-scope execution-tier fixture: a @service list-data-field source-record carrier —
 # the opptak leggTilTagger -> LeggTilTaggerPayload { saker: [Sak!], errors } shape. The @service
 # producer returns List<FilmRecord>; the payload pairs the list data field with an errors union,
@@ -6105,6 +6116,14 @@ type Mutation {
     # id 999 throws the mapped @error (ErrorList arm -> film null, typed error); any other id
     # resolves the film off Outcome.Success.value() and errors null on the success arm.
     serviceFilmByIdWithErrors(id: Int!): FilmCarrierWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "filmById"
+        })
+
+    # The same producer into a payload whose data field is a child @service keyed off the outcome's
+    # value: id 999 throws the mapped @error (ErrorList arm -> titleUppercase null, typed error).
+    serviceFilmTitleByIdWithErrors(id: Int!): FilmTitleWithErrorsPayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
             method: "filmById"

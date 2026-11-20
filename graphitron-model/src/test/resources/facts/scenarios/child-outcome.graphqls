@@ -1,6 +1,8 @@
 # A child @service catching into its outcome: the service's throw a handler claims is the outcome's
 # errors, and any other throw is redacted. A root service hands back an outcome the same way, with no
-# parent to take keys off. Generated for graphitron's ChildOutcomeExecutionTest.
+# parent to take keys off. A child service under a root's outcome takes its keys off the outcome's
+# value, the film record the root service handed back. Generated for graphitron's
+# ChildOutcomeExecutionTest.
 
 type Query {
   "Every film."
@@ -8,6 +10,18 @@ type Query {
   "A film looked up by its key, or why it was not found."
   filmLookup(id: Int!): FilmLookupPayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+  "A film's record looked up by its key, or why it was not found."
+  filmRecordLookup(id: Int!): FilmRecordOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService", method: "filmById"})
+}
+
+"A film's record, or why there is none."
+type FilmRecordOutcome {
+  "The film's title upper-cased, keyed on the film record the outcome holds."
+  titleUppercase: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercaseOfRecords"})
+  "Why there is no film."
+  errors: [VerdictFailure]
 }
 
 "A film's title, or why there is none."
@@ -52,12 +66,16 @@ union VerdictFailure = VerdictRefused
 extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
   type_name,          field_name, container_name
   FilmLookupPayload,  errors,     VerdictFailure
+  FilmRecordOutcome,  errors,     VerdictFailure
   FilmVerdictOutcome, errors,     VerdictFailure
   """)
 
-# The child service is a producer handing back an outcome, as the root one does.
+# The child service is a producer handing back an outcome, as the root one does. FilmRecordOutcome
+# being one is what makes the service under it read its keys off the outcome's value.
 extend schema @expectEquals(relation: "graphitron_producer_outcome", rows: """
-  type_name, field_name, kind,    outcome_type_name,  errors_field_name
-  Film,      verdict,    SERVICE, FilmVerdictOutcome, errors
-  Query,     filmLookup, SERVICE, FilmLookupPayload,  errors
+  type_name, field_name,       kind,    outcome_type_name,  errors_field_name
+  Film,      verdict,          SERVICE, FilmVerdictOutcome, errors
+  Query,     filmLookup,       SERVICE, FilmLookupPayload,  errors
+  Query,     filmRecordLookup, SERVICE, FilmRecordOutcome,  errors
   """)
+

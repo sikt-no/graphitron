@@ -21,8 +21,11 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The frame emitter's query: every producing occurrence's frame, what a fetcher does around its
@@ -37,6 +40,11 @@ import static org.jooq.impl.DSL.select;
  * no table the parent holds an object, and the key is its fill's: the records of the table the
  * call's source parameter collects, read off the parent where it is such a record, or off what the
  * one member of its class returning one hands back. A producer with no fill has no frame here.
+ *
+ * <p>Where the declaring type is a producer's outcome, the parent is that outcome and not what it
+ * holds: the key is read off the outcome's value, and on its error arm, or where the value is
+ * nothing, the field answers what nothing produced answers, null, or the empty list for a non-null
+ * list.
  */
 public final class FrameQuery {
 
@@ -84,10 +92,14 @@ public final class FrameQuery {
      * One frame: the producing occurrence, the type declaring its field, its outcome if any, and
      * under an object the parent's table it takes its key off; at a root there is none. A parent row
      * is a row of the table the declaring type binds, which its projection selects; otherwise the
-     * parent holds an object the key is read off.
+     * parent holds an object the key is read off. {@code parentOutcome} says the declaring type is a
+     * producer's outcome, so the parent is the outcome and the key is read off its value, and
+     * {@code nonNullList} that the field is a non-null list, which answers the empty list where the
+     * outcome holds no value.
      */
     public record Row(String coordinate, String declaringType, Optional<Outcome> outcome,
-                      Optional<ParentTable> parent, Optional<Accessor> accessor, boolean parentRow) {
+                      Optional<ParentTable> parent, Optional<Accessor> accessor, boolean parentRow,
+                      boolean parentOutcome, boolean nonNullList) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(declaringType, "declaringType");
@@ -112,11 +124,16 @@ public final class FrameQuery {
         var ka = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
+        var pc = GRAPHITRON_PRODUCER_OUTCOME.as("pc");
+        // The declaring type is a producer's outcome: the parent is the outcome holding the value.
+        var parentOutcome = field(exists(selectOne().from(pc)
+            .where(pc.GRAPH_NAME.eq(f.GRAPH_NAME), pc.OUTCOME_TYPE_NAME.eq(f.TYPE_NAME))));
         return store.dsl()
             .select(p.COORDINATE, f.TYPE_NAME, p.START, po.OUTCOME_TYPE_NAME, po.ERRORS_FIELD_NAME,
                 t.TABLE_NAME, s.TABLES_CLASS_FQN, t.JOOQ_NAME,
                 key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME),
-                ka.SLOT_CLASS_NAME, ka.SLOT_METHOD_NAME, t.RECORD_CLASS_FQN, tt.TYPE_NAME)
+                ka.SLOT_CLASS_NAME, ka.SLOT_METHOD_NAME, t.RECORD_CLASS_FQN, tt.TYPE_NAME,
+                parentOutcome, field(f.NON_NULL.eq(true).and(f.IS_LIST.eq(true))))
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
@@ -144,7 +161,7 @@ public final class FrameQuery {
                     ? Optional.empty()
                     : Optional.of(new ParentTable(rec.value6(), rec.value7(), rec.value8(), rec.value9())),
                 Optional.ofNullable(rec.value10()).map(cls -> new Accessor(cls, rec.value11(), rec.value12())),
-                rec.value13() != null));
+                rec.value13() != null, Boolean.TRUE.equals(rec.value14()), Boolean.TRUE.equals(rec.value15())));
     }
 
     /** The table's primary key, in key order. */

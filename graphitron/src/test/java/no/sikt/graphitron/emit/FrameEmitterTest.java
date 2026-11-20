@@ -39,7 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * answers and routes what it throws, into the outcome's error list where the outcome claims it;
  * under an object the frame reads each parent's key off its row, or off the record the parent's member
  * hands back where the parent holds a plain object, and runs the body once for the batch, each parent
- * getting its own key's value and a parent whose member hands back nothing a null.
+ * getting its own key's value and a parent whose member hands back nothing a null. Under an outcome
+ * the key is read off the outcome's value, and its error arm answers null without loading.
  *
  * <p>The body, the jOOQ context and the error runtime are the stubs in
  * {@link no.sikt.graphitron.emit.stub}, standing in for the generated ones; the batching runs through
@@ -73,6 +74,7 @@ class FrameEmitterTest {
         var outcome = frame(outcomes, "Query.filmLookup");
         var child = frame(keyed, "Film.titleUppercase");
         var throughAccessor = frame(keyed, "Query.filmKeySummaries.keyCensus");
+        var underOutcome = frame(outcomes, "Query.filmRecordLookup.titleUppercase");
         var host = TypeSpec.classBuilder("Fetchers").addModifiers(Modifier.PUBLIC)
             .addMethod(FrameEmitter.render(plain, "count", TypeName.get(Integer.class), BODY, "count", RUNTIME))
             .addMethod(FrameEmitter.render(plain, "failing", TypeName.get(Integer.class), BODY, "fail", RUNTIME))
@@ -80,6 +82,8 @@ class FrameEmitterTest {
             .addMethod(FrameEmitter.render(outcome, "refused", TypeName.get(String.class), BODY, "refuse", RUNTIME))
             .addMethod(FrameEmitter.render(child, "upper", TypeName.get(String.class), BODY, "upper", RUNTIME))
             .addMethod(FrameEmitter.render(throughAccessor, "summaryUpper", TypeName.get(String.class), BODY, "upper",
+                RUNTIME))
+            .addMethod(FrameEmitter.render(underOutcome, "outcomeUpper", TypeName.get(String.class), BODY, "upper",
                 RUNTIME))
             .build();
         var dir = java.nio.file.Files.createTempDirectory("frame");
@@ -171,6 +175,37 @@ class FrameEmitterTest {
         assertThat(futures.get(0).get().getData()).isEqualTo("film 3");
         assertThat(futures.get(1).get()).isNull();
         assertThat(futures.get(2).get().getData()).isEqualTo("film 1");
+        assertThat(Body.batches).isEqualTo(1);
+    }
+
+    @Test
+    void onlyAChildUnderAnOutcomeReadsItsParentAsOne() {
+        var outcomes = FACTS.read("scenarios/child-outcome", graph -> FrameQuery.read(graph.handle()));
+        var keyed = FACTS.read("scenarios/field-key-row", graph -> FrameQuery.read(graph.handle()));
+        assertThat(frame(outcomes, "Query.filmRecordLookup.titleUppercase").parentOutcome()).isTrue();
+        assertThat(frame(outcomes, "Film.verdict").parentOutcome()).isFalse();
+        assertThat(frame(keyed, "Query.serviceFilmById.census").parentOutcome()).isFalse();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void underAnOutcomeTheKeyIsReadOffItsValueAndItsErrorArmAnswersNull() throws Exception {
+        var registry = new DataLoaderRegistry();
+        Body.batches = 0;
+        var film = new FilmRecord();
+        film.set(Tables.FILM.FILM_ID, 4);
+        var success = (CompletableFuture<DataFetcherResult<String>>) fetchers.get("outcomeUpper")
+            .invoke(null, env(new Outcome.Success<>(film), registry, "/filmRecordLookup/titleUppercase"));
+        var failed = (CompletableFuture<DataFetcherResult<String>>) fetchers.get("outcomeUpper")
+            .invoke(null, env(new Outcome.ErrorList<FilmRecord>(List.of(new IllegalStateException("missing"))),
+                registry, "/filmRecordLookup/titleUppercase"));
+        var nothing = (CompletableFuture<DataFetcherResult<String>>) fetchers.get("outcomeUpper")
+            .invoke(null, env(new Outcome.Success<FilmRecord>(null), registry, "/filmRecordLookup/titleUppercase"));
+        registry.dispatchAll();
+        assertThat(success.get().getData()).isEqualTo("film 4");
+        assertThat(failed.get().getData()).isNull();
+        assertThat(failed.get().getErrors()).isEmpty();
+        assertThat(nothing.get().getData()).isNull();
         assertThat(Body.batches).isEqualTo(1);
     }
 }

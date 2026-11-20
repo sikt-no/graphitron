@@ -37,6 +37,30 @@ public final class FilmService {
     private FilmService() {}
 
     /**
+     * {@link #titleUppercase} keyed on the film records a parent holding one hands over, as a child
+     * {@code @service} under an object reads its keys: each film's title upper-cased.
+     *
+     * <p>The records carry the primary key and nothing else, as {@link #titleTitlecase} describes,
+     * whatever the parent holds, so the titles are fetched by key through the injected
+     * {@code DSLContext}.
+     */
+    public static Map<FilmRecord, String> titleUppercaseOfRecords(Set<FilmRecord> films, DSLContext dsl) {
+        List<Integer> ids = films.stream().map(FilmRecord::getFilmId).toList();
+        Map<Integer, String> titleById = dsl
+            .select(Film.FILM.FILM_ID, Film.FILM.TITLE)
+            .from(Film.FILM)
+            .where(Film.FILM.FILM_ID.in(ids))
+            .fetchMap(Film.FILM.FILM_ID, Film.FILM.TITLE);
+
+        Map<FilmRecord, String> result = new LinkedHashMap<>();
+        for (FilmRecord film : films) {
+            String title = titleById.get(film.getFilmId());
+            result.put(film, title != null ? title.toUpperCase() : null);
+        }
+        return result;
+    }
+
+    /**
      * Looks up the {@code title} column for each requested film id and returns a map keyed by
      * the {@code Record1<Integer>} the framework supplies, with values uppercased.
      *

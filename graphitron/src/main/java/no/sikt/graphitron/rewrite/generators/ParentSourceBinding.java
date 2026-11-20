@@ -229,7 +229,9 @@ public sealed interface ParentSourceBinding {
      * enforces consumption); the inline reads arm-switch through
      * {@code FetcherEmitter.bind}'s fork onto the same producer; the three
      * {@link no.sikt.graphitron.rewrite.model.SourceEnvelope}-carrying leaves answer the same
-     * question through their classify-time envelope, this binding's leaf-level twin.
+     * question through their classify-time envelope, this binding's leaf-level twin. The child
+     * {@code @service} leaves' frames are emitted from the store, whose frame reads the key off the
+     * outcome's value where the parent is one and answers the field's error arm otherwise.
      *
      * <p>The degenerate connection arm of {@link ChildField.InterfaceField} /
      * {@link ChildField.UnionField} (the all-unbound participant set) routes to the root-shaped
@@ -247,7 +249,9 @@ public sealed interface ParentSourceBinding {
         ChildField.NestingField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
-        ChildField.RecordCompositeField.class);
+        ChildField.RecordCompositeField.class,
+        ChildField.ServiceTableField.class,
+        ChildField.ServiceRecordField.class);
 
     /**
      * Leaves whose fetcher reads no parent backing object: root fetchers (the source is the
@@ -287,10 +291,8 @@ public sealed interface ParentSourceBinding {
      * therefore cannot appear beside a {@code WrapperArm} errors field. Most are
      * inventory-absent under a class-backed payload by classifier construction (the
      * table-projection family needs a SELECT-projected parent, so
-     * {@code FieldBuilder.classifyChildFieldOnResultType} never mints them); the child
-     * {@code @service} leaves are mintable on record parents but read {@code env.getSource()}
-     * unconditionally, so
-     * {@code GraphitronSchemaValidator.validateWrapperArmSiblingPosture} turns the combination
+     * {@code FieldBuilder.classifyChildFieldOnResultType} never mints them), and
+     * {@code GraphitronSchemaValidator.validateWrapperArmSiblingPosture} turns any combination
      * into a build-time rejection rather than a request-time {@code ClassCastException}.
      * {@link GraphitronField.UnclassifiedField} belongs here for completeness; the
      * {@code PropertyDataFetcher} registration-escape family it heads is rejected by the
@@ -306,7 +308,5 @@ public sealed interface ParentSourceBinding {
         ChildField.BatchedPivotField.class,
         ChildField.PivotSlotField.class,
         ChildField.ComputedField.class,
-        ChildField.ServiceTableField.class,
-        ChildField.ServiceRecordField.class,
         GraphitronField.UnclassifiedField.class);
 }
