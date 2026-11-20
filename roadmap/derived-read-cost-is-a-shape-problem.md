@@ -80,21 +80,20 @@ utdanningsregisteret generate again. Additive, flip, subtract; the critical path
 
 ```text
 The walk's read path is gone
-├── The projection units are rendered from the store
-│   ├── A projection unit is emitted from the store, censused
-│   ├── The filter conditions are emitted from the store, claimed by C
-│   │   └── An argument binds the call parameter it supplies
-│   ├── The root query fetchers are emitted from the store
-│   ├── A child read inline is emitted from the store, claimed by E
-│   │   ├── A sort key's path is resolved at its occurrence
-│   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
-│   │   └── A single child is looked up by its keys, claimed by E
-│   ├── A narrowed inline list is emitted from the store
-│   ├── A nesting field's leaves state how they're read
-│   ├── A leaf a filter compares is stated once, claimed by C
-│   ├── What an occurrence takes is a binding, claimed by C
-│   └── Every list states its order or is refused
-└── A field on a type handed over both as a row and as an object is judged on the object arm
+└── The projection units are rendered from the store
+    ├── A projection unit is emitted from the store, censused
+    ├── The filter conditions are emitted from the store, claimed by C
+    │   └── An argument binds the call parameter it supplies
+    ├── The root query fetchers are emitted from the store
+    ├── A child read inline is emitted from the store, claimed by E
+    │   ├── A sort key's path is resolved at its occurrence
+    │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
+    │   └── A single child is looked up by its keys, claimed by E
+    ├── A narrowed inline list is emitted from the store
+    ├── A nesting field's leaves state how they're read
+    ├── A leaf a filter compares is stated once, claimed by C
+    ├── What an occurrence takes is a binding, claimed by C
+    └── Every list states its order or is refused
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1181,7 +1180,6 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **A field on a type handed over both as a row and as an object is judged on the object arm** `open`: the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then.
 * **A $context pair on @condition fills its parameter** `blocked` on "The filter conditions are emitted from the store, claimed by C": the walk's `@condition` parse (`ArgMappingSigil.scan` at `Site.CONDITION`, read by `BuildContext.readConditionDirective`) rejects every `$context` pair, its errors on a condition are not silenced, and where `ConditionEmitter` defers the walk emits the condition with a context argument read by parameter name, so a pair keyed apart from its parameter has no walk equivalent. Once the walk stops judging and emitting conditions the node is one commit of two store changes. First, in `graphitron_occurrence_condition_parameter_rule` the `CONTEXT_KEY` rule's `NOT EXISTS paired` passes over a pair bound to `$context.%`, and its "no element has its name" condition holds only for `contextArguments` keys (`graphitron_call_context_key.origin` `CONTEXT_ARGUMENTS`), a written pair outranking an element of its name as `$session` does; `paired` keeps the pair, so the element and by-type rules stay off that parameter. Second, `CONTEXT_SITE_UNSUPPORTED`, in both rules that raise it, exempts `directive_name` `condition` with `owner` `condition` beside `@service`, a reference step's condition staying refused; its statement and the manual follow. `ConditionEmitter` already emits a `CONTEXT_KEY` fill.
 * **A stub node at a root @service is routed by its key, or refused, as Alf rules** `open`, off the
   critical path. A stub node type whose key holds the tenant column mints a tenant slot at a root

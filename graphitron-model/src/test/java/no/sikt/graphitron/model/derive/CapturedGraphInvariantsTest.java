@@ -31,6 +31,11 @@ import java.util.function.Function;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_DEFINITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
@@ -61,6 +66,7 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.max;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.selectOne;
@@ -355,6 +361,43 @@ class CapturedGraphInvariantsTest {
         assertThat(decoded[0]).as("the documents declare fields, so this pins something").isPositive();
         assertThat(decoded[1]).as("the documents declare arguments, so this pins something").isPositive();
         assertThat(disagreeing).as("fields and arguments whose decode contradicts type_sdl").isEmpty();
+    }
+
+    /**
+     * Where a field's type holds one shape, every occurrence of the field reads as the field does:
+     * {@code graphitron_occurrence_reader} states at each occurrence the read {@code graphitron_reader}
+     * states for its field, an occurrence of a field with no read having none either. A type held
+     * both as a row and as an object has no field-keyed read, so its occurrences are not compared.
+     */
+    @Test
+    @DisplayName("an occurrence of a field on a type of one shape reads as its field does")
+    void anOccurrenceReadsAsItsFieldWhereTheTypeHoldsOneShape() {
+        var o = GRAPHITRON_OCCURRENCE;
+        var f = GRAPHITRON_FIELD;
+        var rd = GRAPHITRON_READER;
+        var at = GRAPHITRON_OCCURRENCE_READER;
+        var row = GRAPHITRON_RESULT.as("row_result");
+        var object = GRAPHITRON_RESULT.as("object_result");
+        var disagreeing = new ArrayList<String>();
+        int[] read = {0};
+        eachGraph((dsl, graph) -> {
+            read[0] += dsl.fetchCount(at, at.GRAPH_NAME.eq(graph));
+            dsl.select(o.COORDINATE, rd.READS, at.READS).from(o)
+                .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+                .leftJoin(rd).on(rd.GRAPH_NAME.eq(f.GRAPH_NAME), rd.TYPE_NAME.eq(f.TYPE_NAME),
+                    rd.FIELD_NAME.eq(f.FIELD_NAME))
+                .leftJoin(at).on(at.GRAPH_NAME.eq(o.GRAPH_NAME), at.COORDINATE.eq(o.COORDINATE))
+                .where(o.GRAPH_NAME.eq(graph), o.KIND.eq("FIELD"), rd.READS.isDistinctFrom(at.READS),
+                    notExists(selectOne().from(row).where(row.GRAPH_NAME.eq(f.GRAPH_NAME),
+                        row.TYPE_NAME.eq(f.TYPE_NAME), row.SHAPE.eq("ROW")))
+                        .or(notExists(selectOne().from(object).where(object.GRAPH_NAME.eq(f.GRAPH_NAME),
+                            object.TYPE_NAME.eq(f.TYPE_NAME), object.SHAPE.eq("OBJECT")))))
+                .fetch()
+                .forEach(r -> disagreeing.add(graph + " " + r.intoList()));
+        });
+        assertThat(read[0]).as("the documents read fields at occurrences, so this pins something").isPositive();
+        assertThat(disagreeing).as("occurrences reading otherwise than their field: coordinate, field's, occurrence's")
+            .isEmpty();
     }
 
     /** A type's declaration sites number densely from zero, its extensions after its definition. */

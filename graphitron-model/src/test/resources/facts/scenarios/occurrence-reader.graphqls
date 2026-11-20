@@ -1,0 +1,33 @@
+# How a field is read where it is reached, off what its parent holds there. FilmBlurb is nested in a
+# film row through Film.blurb and handed over as an object by FilmBlurbHolderService, so the type is
+# held both ways and graphitron_reader, one read per field, states none for its description. Each
+# occurrence is read one way: a COLUMN of film's row under Film.blurb, an ACCESSOR on the FilmBlurb
+# record under Query.filmBlurbHolder.blurb. Film.title, on a type held only as a row, reads at its
+# occurrence as graphitron_reader states for its field.
+
+type Film @table(name: "film") {
+  title: String
+  blurb: FilmBlurb
+}
+
+type FilmBlurb { description: String }
+
+type FilmBlurbHolder { blurb: FilmBlurb }
+
+type Query {
+  films: [Film]
+  filmBlurbHolder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_reader", where: """
+  coordinate IN ('Film.title', 'Film.blurb.description', 'Query.filmBlurbHolder.blurb.description')
+  """, rows: """
+  coordinate,                              reads
+  Film.blurb.description,                  COLUMN
+  Film.title,                              COLUMN
+  Query.filmBlurbHolder.blurb.description, ACCESSOR
+  """)
+
+# The near miss: the field-keyed reader states no read for a field of a type held both ways.
+extend schema @assertEmpty(relation: "graphitron_reader", where: "type_name = 'FilmBlurb'")

@@ -11,8 +11,13 @@
 # other class's get or is getter. FilmKeySummary is a record with no component named missing, and
 # FilmTitleView answers title through a bare title() and note through a public field, neither read,
 # so missing, title and note are MEMBER_UNRESOLVED; its filmId reads getFilmId and draws nothing.
+# FilmBlurb is nested in a film row and handed over as an object by FilmBlurbHolderService, and is
+# judged on the object: its description is a column and a component, so it draws nothing, but title
+# is a column only, so it is MEMBER_UNRESOLVED however the row reads it.
 
-type Film @table(name: "film") { title: String }
+type Film @table(name: "film") { title: String, blurb: FilmBlurb }
+type FilmBlurb { description: String, title: String }
+type FilmBlurbHolder { blurb: FilmBlurb }
 type FilmLookupPayload { title: String, film: Film }
 type FilmKeySummary { label: String, film: Film, missing: String }
 type FilmTitleView { filmId: Int, title: String, note: String }
@@ -34,6 +39,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "titleView"})
   holder(input: String): Holder
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ComputingService", method: "compute"})
+  blurbHolder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
   schemaBEvents: SchemaBEventsPayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MultiSchemaEventsPayloadService", method: "schemaBEvents"})
 }
@@ -52,6 +59,7 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'MEMBER_UNRESOLVED'", rows: """
   code,              coordinate,             detail
+  MEMBER_UNRESOLVED, FilmBlurb.title,        no.sikt.graphitron.rewrite.test.services.FilmBlurb
   MEMBER_UNRESOLVED, FilmKeySummary.missing, no.sikt.graphitron.rewrite.test.services.FilmKeySummary
   MEMBER_UNRESOLVED, FilmTitleView.note,     no.sikt.graphitron.rewrite.test.services.FilmTitleView
   MEMBER_UNRESOLVED, FilmTitleView.title,    no.sikt.graphitron.rewrite.test.services.FilmTitleView

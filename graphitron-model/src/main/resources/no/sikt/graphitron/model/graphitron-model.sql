@@ -11354,6 +11354,77 @@ COMMENT ON COLUMN graphitron_occurrence_source_object.touched_at IS 'the reading
 COMMENT ON COLUMN graphitron_occurrence_source_object.class_source_ref IS 'the classpath entry half of the class''s code_class key, nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
 COMMENT ON COLUMN graphitron_occurrence_source_object.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
 
+-- How a field is read at one of its occurrences: graphitron_reader's read, stated where the shape its
+-- parent holds is known. A type of one shape reads alike at every occurrence; a type held both as a
+-- ROW and as an OBJECT reads at each occurrence as its source is.
+CREATE TABLE graphitron_occurrence_reader (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  reads      VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (reads IN ('COLUMN', 'EXPRESSION', 'NESTED', 'ACCESSOR'))
+);
+COMMENT ON TABLE graphitron_occurrence_reader IS 'A field occurrence that reads from what its parent holds there, and how: one row per occurrence. For example Film.blurb.description reads a COLUMN of film''s row, and Query.filmBlurbHolder.blurb.description reads the FilmBlurb its parent hands over through an ACCESSOR.';
+COMMENT ON COLUMN graphitron_occurrence_reader.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_reader.coordinate IS 'the field occurrence that reads, at its nested coordinate; with the graph, the key and a reference into graphitron_occurrence, so the read goes with its occurrence';
+COMMENT ON COLUMN graphitron_occurrence_reader.reads IS 'how it reads, in graphitron_reader''s vocabulary: under a ROW, COLUMN, a column of the row, EXPRESSION, an @externalField projected into its statement, or NESTED, a row nested in it, for an object target; under an OBJECT, ACCESSOR. The shape is the type''s where it holds one and the occurrence''s source''s where it holds both, a TABLE source a ROW and an OBJECT source an OBJECT';
+COMMENT ON COLUMN graphitron_occurrence_reader.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- graphitron_reader_rule's arms at the occurrence, the shape it reads from taken where the occurrence
+-- is: a type holding one shape holds it at every occurrence, so an occurrence reads as
+-- graphitron_reader states for its field, the rule's invariant; a type held both ways holds at each
+-- occurrence what its source is, and an occurrence of it with no source reads nothing yet. A producer,
+-- or a field claiming a producer's kind, fetches rather than reads, as the reader rule leaves it out.
+CREATE VIEW graphitron_occurrence_reader_rule (graph_name, coordinate, reads) AS
+SELECT o.graph_name, o.coordinate,
+       CASE
+         WHEN r.shape = 'OBJECT' THEN 'ACCESSOR'
+         WHEN EXISTS (SELECT 1 FROM graphitron_directive_application d
+                       WHERE d.graph_name = f.graph_name AND d.coordinate = f.coordinate
+                         AND d.directive_name = 'externalField') THEN 'EXPRESSION'
+         WHEN tt.kind IN ('SCALAR', 'ENUM') THEN 'COLUMN'
+         ELSE 'NESTED'
+       END
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_result r ON r.graph_name = f.graph_name AND r.type_name = f.type_name
+  LEFT JOIN graphitron_occurrence_source s
+    ON s.graph_name = o.graph_name AND s.coordinate = o.coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  LEFT JOIN graphitron_type tt
+    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE o.kind = 'FIELD'
+   AND (NOT EXISTS (SELECT 1 FROM graphitron_result r2
+                     WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
+                       AND r2.shape <> r.shape)
+        OR r.shape = CASE s.kind WHEN 'TABLE' THEN 'ROW' WHEN 'OBJECT' THEN 'OBJECT' END)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer p
+                    WHERE p.graph_name = f.graph_name AND p.type_name = f.type_name
+                      AND p.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_claim c
+                     JOIN graphitron_claim_kind ck ON ck.kind = c.kind AND ck.family = 'PRODUCER'
+                    WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate)
+   -- A union or interface under a row with no table-bound participant reads nothing off the row, as
+   -- graphitron_reader_rule says.
+   AND NOT (r.shape = 'ROW' AND tt.kind IN ('INTERFACE', 'UNION')
+            AND NOT EXISTS (SELECT 1 FROM graphitron_type_member m
+                              JOIN graphitron_tabletype b
+                                ON b.graph_name = m.graph_name AND b.type_name = m.member_type_name
+                             WHERE m.graph_name = tt.graph_name AND m.container_name = tt.type_name)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_type_member m
+                              JOIN graphitron_directive_application d
+                                ON d.graph_name = m.graph_name AND d.coordinate = m.member_type_name
+                               AND d.directive_name = 'table'
+                             WHERE m.graph_name = tt.graph_name AND m.container_name = tt.type_name));
+COMMENT ON VIEW graphitron_occurrence_reader_rule IS 'One row the occurrence reader rule computes, in the shape graphitron_occurrence_reader stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_reader, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_reader_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_reader.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_reader_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_reader.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_reader_rule.reads IS 'the reads of a row of this rule, which the stage writes into graphitron_occurrence_reader.reads';
+
 CREATE TABLE graphitron_path_need (
   graph_name      VARCHAR   NOT NULL,
   coordinate      VARCHAR   NOT NULL,
@@ -27545,7 +27616,14 @@ UNION ALL
 -- no read slot of that name. A record offers its components and any other class its get and is
 -- getters, so a bare accessor or a public field is no member. Only fields the parent's object is
 -- read for: an errors field is filled by the error channel, a field with arguments may read a getter
--- taking them, which the slots do not hold, and a jOOQ record or tuple is read through the Record API.
+-- taking them, which the slots do not hold, and a jOOQ type, a tuple or any class that is a jOOQ
+-- record (code_graph_class.is_jooq_record, a generated record of any catalog among them) is read
+-- through the Record API, never by its getters. Only a class the graph knows is no record is judged:
+-- one whose chain leaves what the graph reads is CLASS_SUPERTYPE_NOT_READ's where a producer hands
+-- it over, and judging its getters here would be a guess. Whether the object is read is the occurrence's own read, so
+-- a type also handed over as a row is judged on its object however the row reads the field; the
+-- fetcher serving that mix reads a jOOQ record as the row. A row beside an object of no class is the
+-- result shapes' to judge rather than a member's.
 -- A declaration reached at several occurrences is one site, reported once, the detail the class.
 -- Reported at the @field where one is written, since that is the name to fix, and at the field
 -- otherwise.
@@ -27555,9 +27633,8 @@ SELECT n.graph_name, COALESCE(da.source_name, gf.source_name),
   FROM graphitron_path_need_object n
   JOIN graphitron_occurrence o ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_reader rd
-    ON rd.graph_name = f.graph_name AND rd.type_name = f.type_name AND rd.field_name = f.field_name
-   AND rd.reads = 'ACCESSOR'
+  JOIN graphitron_occurrence_reader rd
+    ON rd.graph_name = o.graph_name AND rd.coordinate = o.coordinate AND rd.reads = 'ACCESSOR'
   JOIN code_graph_class gs ON gs.graph_name = n.graph_name AND gs.class_name = n.start_class
   JOIN graphql_field_element fe
     ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
@@ -27581,8 +27658,14 @@ SELECT n.graph_name, COALESCE(da.source_name, gf.source_name),
                       AND a.field_name = f.field_name)
    AND NOT EXISTS (SELECT 1 FROM code_jooq_class j WHERE j.class_name = n.start_class)
    AND NOT EXISTS (SELECT 1 FROM code_tuple_class t WHERE t.class_name = n.start_class)
+   AND gs.is_jooq_record = FALSE
    -- A name starting with $ that is no sigil is FIELD_NAME_SIGIL_UNKNOWN's, raised at federation-vocabulary.
    AND NOT (f.bound_name LIKE '$%' AND f.bound_name <> '$errors')
+   AND NOT (EXISTS (SELECT 1 FROM graphitron_result rr
+                     WHERE rr.graph_name = f.graph_name AND rr.type_name = f.type_name
+                       AND rr.shape = 'ROW')
+            AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                             WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name))
  GROUP BY n.graph_name, COALESCE(da.source_name, gf.source_name),
           COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
 UNION ALL
@@ -30261,6 +30344,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depth-defects', 'graphitron_occurrence_list_element_defect'),
   ('occurrence-depths', 'graphitron_join_path'),
   ('occurrence-depths', 'graphitron_occurrence_lift'),
+  ('occurrence-depths', 'graphitron_occurrence_reader'),
   ('occurrence-depths', 'graphitron_join_path_claimed'),
   ('occurrence-depths', 'graphitron_join_path_step'),
   ('occurrence-depths', 'graphitron_join_path_step_column'),
@@ -30536,6 +30620,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-depths', 'graphitron_join_path_step_to_one', 'graphitron_join_path_step_to_one_rule'),
   ('occurrence-depths', 'graphitron_occurrence_lift', 'graphitron_occurrence_lift_rule'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate', 'graphitron_occurrence_producer_lift_candidate_rule'),
+  ('occurrence-depths', 'graphitron_occurrence_reader', 'graphitron_occurrence_reader_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source', 'graphitron_occurrence_source_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_copy_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_path_rule'),
@@ -32549,6 +32634,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_lift_rule', 'graph-occurrence', 'graphitron',
    'One row the lift rule computes, in the shape graphitron_occurrence_lift stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_lift, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_reader', 'graph-occurrence', 'graphitron',
+   'A field occurrence that reads from what its parent holds there, and how: one row per occurrence.',
+   'For example Film.blurb.description reads a COLUMN of film''s row, and Query.filmBlurbHolder.blurb.description reads the FilmBlurb its parent hands over through an ACCESSOR.',
+   'graphitron_reader states one read per field and none for a field of a type held both as a ROW and as an OBJECT, though each occurrence of it is read one way: off the row where a table-bound parent nests it, off the object where a producer hands it over. Stated per occurrence, the shape read from is the type''s where it holds one, so every occurrence reads as graphitron_reader states for its field and the two agree wherever both have a row, and the occurrence''s source where it holds both, a TABLE source a ROW and an OBJECT source an OBJECT; an occurrence of such a type with no source reads nothing yet. The vocabulary and the arms deciding it are graphitron_reader''s, a producer and a field claiming a producer''s kind left out. Owned by occurrence-depths and written after its last depth, since the source, which the field-keyed reader lacks, is complete only then. A reader asking how a member is read where it is reached joins it on the coordinate.'),
+  ('graphitron_occurrence_reader_rule', 'graph-occurrence', 'graphitron',
+   'One row the occurrence reader rule computes, in the shape graphitron_occurrence_reader stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_reader, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_join_path', 'path-need', 'graphitron',
    'The table a join path reaches: one row per path of kind JOIN.',

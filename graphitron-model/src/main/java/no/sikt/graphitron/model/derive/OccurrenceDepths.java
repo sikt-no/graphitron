@@ -7,6 +7,8 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIFT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READER_RULE;
 import static org.jooq.impl.DSL.max;
 
 /**
@@ -27,6 +29,9 @@ import static org.jooq.impl.DSL.max;
  * next depth begins; the paths no claim covers, an empty one where the need starts on its landing and
  * an inferred one over the one foreign key; and the claimed needs walked into their steps, each to its
  * written or inherited path or to a stop, {@link Steps} writing the defects of the walk as it takes it.
+ *
+ * <p>After the last depth: which producers lift their records, off every depth's paths, and how each
+ * field occurrence reads what its parent holds there, off every depth's sources.
  */
 public final class OccurrenceDepths {
 
@@ -58,6 +63,11 @@ public final class OccurrenceDepths {
         OccurrenceProducers.refresh(dsl, lift, GRAPHITRON_OCCURRENCE_LIFT_RULE, graph, null, touchedAt,
             org.jooq.impl.DSL.noCondition());
         dsl.deleteFrom(lift).where(lift.GRAPH_NAME.eq(graph), lift.TOUCHED_AT.ne(touchedAt)).execute();
+        // How each field occurrence reads, once every depth's sources are stated.
+        var reader = GRAPHITRON_OCCURRENCE_READER;
+        OccurrenceProducers.refresh(dsl, reader, GRAPHITRON_OCCURRENCE_READER_RULE, graph, null, touchedAt,
+            org.jooq.impl.DSL.noCondition());
+        dsl.deleteFrom(reader).where(reader.GRAPH_NAME.eq(graph), reader.TOUCHED_AT.ne(touchedAt)).execute();
     }
 
     /** Sweeps the stage's relations for the occurrences at {@code depth}, or for all where it is null. */
