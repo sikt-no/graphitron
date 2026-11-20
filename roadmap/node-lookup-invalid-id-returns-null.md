@@ -67,6 +67,10 @@ is how GraphQL itself treats an error in a list: the failing element is `null`, 
 carries the element's index, and the `null` travels further up only where the schema declares the
 element or the field non-null.
 
+Ruled by Filip on 2026-11-20: a well-formed id whose type id is not one this subgraph serves answers
+`null`, confirming the 2026-11-04 ruling against the later polymorphic lookup rule (see "Where the
+line falls").
+
 ## Where the line falls
 
 The node lookup can only judge an id against the nodes this subgraph serves by id: the node types it
@@ -102,10 +106,11 @@ That grain is the 2026-11-20 ruling above, and
 A later rule reads as if it covered the third row. The polymorphic lookup rule in
 `docs/architecture/reference/code-generation-triggers.adoc` (the source-lift section: "An id naming no
 participant is malformed for the field, a client error", Alf, 2026-11-14) is about a node id argument
-on a field returning a union or an interface, which a root field returning `Node` also is. This item
-keeps the third row `null` on the 2026-11-04 ruling, which was given for this field and carries the
-federation caution, and that page gains a sentence saying where the node lookup departs from the rule
-(see the open questions).
+on a field returning a union or an interface, which a root field returning `Node` also is. Filip
+ruled on 2026-11-20 that the node lookup is the exception: the third row stays `null`, as the
+2026-11-04 ruling has it. A subgraph only knows its own type ids, so it cannot tell another subgraph's
+type from a mistyped or invented one, and every miss answers alike. That page states the exception
+beside the rule.
 
 The `_entities` path must not change: federation expects a null slot for a bad representation, and
 `FederationEntitiesDispatchTest` pins it (`entities_garbageNodeId_yieldsNullSlot`,
@@ -217,9 +222,9 @@ The change:
   * the two closing bullets, "the same mismatch returns `null`" and "`null` on the lookups".
 
   `docs/manual/reference/directives/node.adoc` (the federation stubs section) gains a clause saying a
-  stub's id on `node` answers `null`, well formed or not. `docs/architecture/reference/code-generation-triggers.adoc`
-  gains the sentence beside the polymorphic lookup rule described above. No roadmap vocabulary in any
-  of it.
+  stub's id on `node` answers `null`, well formed or not.
+  `docs/architecture/reference/code-generation-triggers.adoc` already states both 2026-11-20 rulings
+  beside the polymorphic lookup rule and needs no change. No roadmap vocabulary in any of it.
 
 The id is decoded twice on its way to a row: once in the node fetcher to judge it, and once in the
 entity dispatch's own decode of `{__typename, id}`. That is the price of leaving the loads where they
@@ -336,18 +341,18 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
   multi-tenant shape the throw would come from a DataLoader batch function and take down whichever ids
   happened to share the batch; and on a `[Node]!` field it nulls the field's parent, which on `Query`
   is the whole response.
+* Answer a type id that is not ours with a client error, as the polymorphic lookup rule does for an
+  id naming no participant. Rejected by the 2026-11-20 ruling: a gateway asking every subgraph for one
+  id would get an error from each subgraph that does not own it.
+* Answer `null` only for a type declared here as a `@node(resolvable: false)` stub, and a client error
+  for any other unknown type id. Not chosen: it helps a gateway only if every subgraph declares a stub
+  for every node type in the whole graph.
 * Give `Query.node` an error only for the undecodable case and keep `null` for a wrong-shaped key of a
   served node. Rejected: it contradicts the ruling (the id cannot be read as a node id of its own type)
   and would leave the sakila `Customer:abc` case silent.
 
 ## Open questions for the user
 
-* Does the 2026-11-14 polymorphic lookup rule ("an id naming no participant is malformed for the
-  field") cover a root field returning `Node`? Read literally it makes the third row of the table an
-  error, against the 2026-11-04 ruling and the federation caution. Recommendation: the node lookup is
-  the stated exception, since it asks whether an id resolves here at all, and
-  `code-generation-triggers.adoc` says so beside the rule. This needs Alf or Filip to confirm, and the
-  confirmation enters that page the day it is given.
 * Does this item take the node query and the type-id map out of R876's claimed node, as the sequencing
   section recommends, or wait for C to land it? To be agreed with C's session before Ready.
 * Does the federation gateway call `node(id:)` on subgraphs that do not own the id's type, and with what
