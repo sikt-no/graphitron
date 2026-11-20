@@ -235,7 +235,7 @@ are, and it is transitional (next section).
 R876's node "`Query.node` and `_entities` each read their own query" (claimed by C, open) gives the
 node fetcher its own unit, read from a node query: its own type-id map, loads and tenant routing. Its
 child "`Query.node` renders its own unit from a node query" is blocked on "The dispatch's read
-emitters render from a plain keyed read", and lists `typenameForTypeId` among what it removes. The
+emitters render from a plain keyed read". The
 separation is ruled (`docs/architecture/explanation/fact-model.adoc`, "Federation knows keys, not
 `Node.id`", 2026-11-12): node resolution and entity resolution are separate lookups with a query each.
 
@@ -245,19 +245,16 @@ node query and its map, `typenameForTypeId` goes, and the loads and tenant routi
 dispatch for R876 to move. Building the judgement on `EntityFetcherDispatch` instead would add new code
 to a method R876 deletes and tie it to the entity side's decode, against the ruling.
 
-What each order means:
+This item lands first and takes the node query from R876 (Filip, 2026-11-20): it is a live
+priority-2 defect and R876's child is blocked. R876's blocked child records the split: the node query,
+the type-id map and the removal of `typenameForTypeId` are this item's, and its own loads and tenant
+routing start from this item's node query without writing a second one. When R876 then gives the node
+fetcher loads that take key columns, the judging method's `decodeColumns` result becomes the key it
+loads by, and the second decode goes.
 
-* **This item first** (recommended: it is a live priority-2 defect and R876's child is blocked). The
-  implementing change also edits R876's body: the blocked child's list drops `typenameForTypeId` and
-  names the node query as existing, and the parent node records that the node query now feeds the map.
-  When R876 then gives the node fetcher loads that take key columns, the judging method's
-  `decodeColumns` result becomes the key it loads by, and the second decode goes.
-* **R876's child first.** The node fetcher already has its own map and decode; this item is then the
-  refusal on that decode and the slot handling in `nodes`, with no node query to add and nothing to
-  remove from the entity dispatch. Re-read this section at pickup.
-
-Either way the claim on that node is C's, so the bite is agreed with C's session before work starts
-(see the open questions).
+At pickup, re-read R876's node: if its child has landed regardless, the node fetcher already has its
+own map and decode, and this item is then the refusal on that decode and the slot handling in `nodes`,
+with no node query to add and nothing to remove from the entity dispatch.
 
 ## Retired vocabulary
 
@@ -353,8 +350,6 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
 
 ## Open questions for the user
 
-* Does this item take the node query and the type-id map out of R876's claimed node, as the sequencing
-  section recommends, or wait for C to land it? To be agreed with C's session before Ready.
 * Does the federation gateway call `node(id:)` on subgraphs that do not own the id's type, and with what
   id? Not verified. The spec is safe either way (a foreign type id is `null`), but if the gateway sends
   an id scheme graphitron cannot peel (not `<typeId>:` base64) to every subgraph, those would now be
