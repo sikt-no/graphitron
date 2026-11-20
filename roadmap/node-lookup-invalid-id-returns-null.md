@@ -161,15 +161,40 @@ it.
 
 The change:
 
-* **A node query** (new, in `no.sikt.graphitron.emit` beside `NodeIdEncoderQuery`): one row per node
-  this subgraph serves by id, with its type name, its wire type id, the `Tables` class and field its
-  table is reached through, and its key columns in key order. That is `NodeIdEncoderQuery.Node`'s
-  shape over a narrower population: `graphitron_node` rows that are `resolvable` and whose `id` binds
-  `NODE_ID` at the type's table, the predicate `EntityKeyQuery.read` states as `servedById`. State the
-  predicate once and have both queries use it, so the node fetcher's map and the entity dispatch's node
-  id alternative cannot disagree while both exist. No stored relation is added: this is a filter and a
-  join over facts the store already holds, and stating "served by id" as a fact of its own is the node
-  query's business under R876 (see the sequencing section).
+* **"Served by id" becomes a stored fact** (new, in `graphitron-model.sql`):
+  `graphitron_node_served_by_id`, one row per node type this subgraph fetches by its id, which is a
+  `graphitron_node` row that is `resolvable` and whose own `id` binds `NODE_ID` at the type's table.
+  That is the predicate `EntityKeyQuery.read` evaluates today as its local condition `servedById`. It
+  moves into the model because this item gives it a second reader: a fact two uses need is a relation
+  both read, each with its own query, and neither a condition they share nor one each repeats
+  (`docs/architecture/explanation/fact-model.adoc`, "One base, many views"). What the relation owes,
+  per `docs/architecture/explanation/modeling-discipline.adoc`:
+  * It is derived from facts the store holds, so it is written in the anchoring phase from a rule
+    view, `graphitron_node_served_by_id_rule`, the way `graphitron_occurrence_producer_node` is
+    written from `graphitron_occurrence_producer_node_rule`. Its stage is its own anchor stage in
+    `GraphitronAssemblyCapture`, after the stages that write the occurrence bindings it reads, where
+    `EntityKeyAlternatives` already runs for the same reason. It is not a stage of the entity keys:
+    node resolution is not a federation key. Confirm which stage writes a node's `id` binding before
+    placing it; reads go upstream only.
+  * It is a table at `graphitron_node`'s grain, keyed by graph and type, and not a column on
+    `graphitron_node`, whose stage runs before the bindings exist. It references `graphitron_node`
+    and the `id`'s row in `graphitron_occurrence_binding`, cascading on both, so a node that stops
+    being a node, or whose `id` stops carrying a node id, stops being served.
+  * Its owner and grain are declared in `meta_relation` (`MetaDeclarationGateTest` refuses it
+    otherwise), and its stage marks what it wrote with the reading's time and sweeps the rest.
+  * The rule is today's predicate exactly, so no population changes when the readers move onto it.
+  * `graphitron_node.resolvable`'s column comment says the column is whether this subgraph fetches
+    the node by its id. That is the new relation's fact; the comment is corrected to what the column
+    holds, the resolvability the author wrote, and names the relation for the other.
+* **`EntityKeyQuery.read`** reads the relation in the two places it evaluates `servedById` today, the
+  node it attaches to a type and the entity disjunct, in its own statement. Its rows do not change,
+  which `EntityKeyQueryTest` and the `_entities` execution tests hold.
+* **A node query** (new, in `no.sikt.graphitron.emit` beside `NodeIdEncoderQuery`): one row per row of
+  `graphitron_node_served_by_id`, with its type name, its wire type id, the `Tables` class and field
+  its table is reached through, and its key columns in key order. That is `NodeIdEncoderQuery.Node`'s
+  shape over a narrower population, in a record and a statement of its own that share nothing with
+  `EntityKeyQuery` or `NodeIdEncoderQuery` but the `ColumnRef` a key column is read as. It carries
+  nothing a load needs beyond that; R876 widens it when the node fetcher gets loads of its own.
 * **`QueryNodeFetcherClassGenerator`** takes the node query's rows (`GraphQLRewriteGenerator`'s
   `QUERY_NODE_FETCHER` arm reads them, as its `NODE_ID_ENCODER` arm reads `NodeIdEncoderQuery`) and
   emits, in both shapes, one private method that judges an id, replacing the `peekTypeId` plus
@@ -186,6 +211,9 @@ The change:
   The shape is the one `NodeIdDecodeEmitter.dispatched` already emits for a `@nodeId` argument over
   several node types: peek, branch per type id, decode. It differs only in its last arm, where a type
   id naming none of them is `null` here and an error there. The emitted code compiles at Java 17.
+  The method names the generated `GraphitronClientException` and `NodeIdEncoder`; the
+  `QUERY_NODE_FETCHER` arm of `PlanCompileGraph` already states the edge to the encoder, and any edge
+  the fetcher newly needs is added there and nowhere else.
 * **`node`, both shapes.** The judging method throws and the existing routes surface it: without a
   tenant column `getNode` already turns a throw into a failed future, which the fetcher's
   `asyncWrapTail` routes; with one, the throw leaves `getNode` and the fetcher's `noChannelCatchArm`
@@ -235,7 +263,9 @@ The change:
   `docs/manual/reference/directives/node.adoc` (the federation stubs section) gains a clause saying a
   stub's id on `node` answers `null`, well formed or not.
   `docs/architecture/reference/code-generation-triggers.adoc` already states both 2026-11-20 rulings
-  beside the polymorphic lookup rule and needs no change. No roadmap vocabulary in any of it.
+  beside the polymorphic lookup rule. Its "a node this subgraph serves by id" gains the name of the
+  relation that states it, `graphitron_node_served_by_id`, so the term the rule turns on is defined
+  where every reader of the store can see it. No roadmap vocabulary in any of it.
 
 The id is decoded twice on its way to a row: once in the node fetcher to judge it, and once in the
 entity dispatch's own decode of `{__typename, id}`. That is the price of leaving the loads where they
@@ -253,7 +283,10 @@ separation is ruled (`docs/architecture/explanation/fact-model.adoc`, "Federatio
 This item takes the half of that child the blocker does not hold back. The blocker is about loads; the
 type-id map and the judgement of an id need only the node query. So here the node fetcher gets the
 node query and its map, `typenameForTypeId` goes, and the loads and tenant routing stay on the entity
-dispatch for R876 to move. Building the judgement on `EntityFetcherDispatch` instead would add new code
+dispatch for R876 to move. Until R876 moves them the node query and `EntityKeyQuery` both need to
+know which nodes are served by id, which is why that fact is stored here and not left for R876 to
+state: R876's child inherits a relation, and when it removes `EntityKeyQuery`'s prepended alternative
+and resolvable-node disjunct, the node query is the relation's one remaining reader. Building the judgement on `EntityFetcherDispatch` instead would add new code
 to a method R876 deletes and tie it to the entity side's decode, against the ruling.
 
 This item lands first and takes the node query from R876 (Filip, 2026-11-20): it is a live
@@ -265,11 +298,15 @@ loads by, and the second decode goes.
 
 At pickup, re-read R876's node: if its child has landed regardless, the node fetcher already has its
 own map and decode, and this item is then the refusal on that decode and the slot handling in `nodes`,
-with no node query to add and nothing to remove from the entity dispatch.
+with no node query to add and nothing to remove from the entity dispatch. The relation is then
+needed only if `EntityKeyQuery` still evaluates the predicate beside the node query; where the node
+query is its one reader, the predicate stays in that query.
 
 ## Retired vocabulary
 
 * `typenameForTypeId` (the method emitted on `EntityFetcherDispatch`)
+* `servedById` (the local condition in `EntityKeyQuery.read`, replaced by a read of
+  `graphitron_node_served_by_id`)
 * `EntityFetcherDispatchClassGenerator.TYPENAME_FOR_TYPE_ID_METHOD` and `buildTypenameForTypeIdMethod`
 * "`NullOnMismatch` contract" as a description of `Query.node` and `Query.nodes` (it stays true of
   `_entities`)
@@ -322,17 +359,39 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
   is named `id`: a node fetcher decodes the argument named `id`, or `ids` for a list, which the store
   states in `graphitron_occurrence_producer_node`, and a Node-returning root field with neither is
   refused (`NODE_FETCHER_WITHOUT_ID`).
-* The node query, pipeline tier, beside `NodeIdEncoderQueryTest` and over the same fact document
-  (`scenarios/synthesized-node-type-id`, which carries a `@node(resolvable: false)` stub): every node
-  served by id draws a row with its type id and key columns in key order, and the stub draws none.
-  `docs/architecture/how-to/testing.adoc`, "What a test is built out of", says how such a test reads
-  a fact document.
+* The relation, as a fact document's own claim: an `@expectEquals` over
+  `graphitron_node_served_by_id` in a document that holds a node served by id, a
+  `@node(resolvable: false)` stub and a resolvable node whose `id` carries `@field`. The first draws
+  a row and the other two are the near misses that draw none; the `@field` node is the case
+  `graphitron_node.resolvable` alone would get wrong, so it is what pins the rule.
+  `scenarios/synthesized-node-type-id` already holds the first two. Add the third there only if its
+  existing claim over `graphitron_synthesized_node_type_id` still states what that document is for
+  with the extra node in it; otherwise the claim gets a document of its own.
+  `docs/architecture/how-to/testing.adoc`, "What a test is built out of", says where a fact document
+  goes and how a test reads one.
+* The node query, pipeline tier, beside `NodeIdEncoderQueryTest` and over that document: each row
+  carries its node's type id and its key columns in key order. The population is the relation's and
+  is claimed there, so this test asserts what a row holds and not which nodes draw one.
+* `EntityKeyQueryTest` stays green unchanged: the entity query's rows are the same read off the
+  relation as off its own condition.
 * The `relay-node` corpus example stays as is; classification does not change.
 * Verification build per the repo rule; the example module compiling the emitted fetcher at Java 17
   covers the new emitted method.
 
 ## Other solutions we've considered
 
+* Have the node query and `EntityKeyQuery` share the `servedById` condition, stated once. Rejected:
+  `fact-model.adoc` ("One base, many views") rules out a jOOQ condition two uses of the store share
+  so that they cannot disagree, since it hides in Java a fact the model is missing.
+* Have the node query write the predicate in its own statement and leave `EntityKeyQuery`'s as it
+  is, adding no relation. The smaller change, not chosen: for as long as both exist, two readers
+  each evaluate one predicate, which is the case the same page moves into the model, and nothing
+  written grants an exception for a reader R876 is due to delete. It is the right plan only with a
+  ruling from Alf or Filip that two statements of one predicate may stand until R876 lands.
+* Derive the relation from `graphitron_occurrence_node_id`, requiring the `id`'s node type to be
+  the type itself, in place of the binding's kind. Not chosen here: it is narrower than today's
+  predicate for an `id` written `@nodeId(typeName:)` naming another node over the same table, and
+  this item moves the entity side onto the relation on the promise that its rows do not change.
 * Throw from the entity dispatch's decode, where `decodeColumns` answers `null`
   (`HandleMethodBody.emitDecode`). Rejected: that decode is shared with `_entities`, where federation
   wants a null slot, and it would turn gateway entity resolution into errors.
@@ -402,6 +461,21 @@ over as written.
    pins that population; or "served by id" is stored now, with what a stored relation owes, and both
    queries read it; or Alf or Filip rule that the condition may be shared until R876 lands, the
    ruling entered on that page and cited here.
+
+   *Author's note (session_01FY5UvvNdo22LAot3QmZgG7, 2026-11-20).* The second: "served by id" is
+   stored now, as `graphitron_node_served_by_id`, and `EntityKeyQuery` and the node query each read
+   it in a statement of their own. The node query bullet is replaced by three (the relation and
+   what it owes, `EntityKeyQuery`'s move onto it, the node query), the sequencing section says why
+   the fact is stored here and not in R876, the tests claim the population in a fact document, and
+   the shared condition and the two-statements plan are under "Other solutions we've considered".
+   The first option was not taken because, without a ruling, it leaves two readers evaluating one
+   predicate, which the same page moves into the model; the third was not sought. `principles-architect`
+   was consulted on the fork and read the pages the same way. From its advice: the relation is a
+   table at `graphitron_node`'s grain and not a column, the `resolvable` column comment is
+   corrected, the population is claimed in a fact document, the reference page names the relation,
+   and the plan-tier edge is stated (all taken); deriving from `graphitron_occurrence_node_id` with
+   the node type pinned to the type itself was not taken, for the reason given under "Other
+   solutions we've considered".
 
 2. **The first open question sets a precondition for this gate that is not met, and says more than
    the body does (question 1, viability).** It recommends to "confirm against kreg's gateway before
