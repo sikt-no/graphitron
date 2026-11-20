@@ -1229,6 +1229,12 @@ static method needs no holder.
   domain-type disagreement. Whether it is refused, or served with each class judged by
   `MEMBER_UNRESOLVED` on its own, is Alf's to say; the store states that verdict at the type, with a
   fact document and a near miss.
+* **A pom `<outbox>` payload mapping that does not parse fails the configuration check** `open`, off
+  the critical path. `StoreEntries.outbox` decodes the payload mapping the way the SDL's argMapping
+  is decoded, and a string the parser refuses writes no entries and stays verbatim on
+  `store_graph_outbox`, so the payload's keys are dropped without a word. A configuration string has
+  no SDL position to hang a stored defect on, so it fails the build where the configuration is read,
+  as an unknown id in `<disabledRules>` does in `LintConfig`, the message saying what the parse said.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
 * **A list field over an accessor returning one record is refused in the store** `open`, off the
