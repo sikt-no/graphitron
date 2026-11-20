@@ -366,3 +366,44 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
   recommend noting it in the release notes as a bug fix, not a breaking change.
 
 Provenance: found by the kreg Graphitron 10 port session (kreg branch `worktree-kreg-g10` at `0d9997fd39`), replaying recorded Graphitron 9 requests against 10.0.0-RC46, RC47 and a trunk snapshot (`claude/graphitron-rewrite` at `06d71b62b`), 2026-11-03; identical on all three.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, revisions requested (session_01FY5UvvNdo22LAot3QmZgG7, 2026-11-20)
+
+Question 1 passes on communication: the goal reads on its own (a malformed node id to `node`,
+`nodes` or any root field returning `Node` becomes the client error every `@nodeId` site gives, in
+`nodes` at the id's own position, while a well-formed id of no row or of a type not served here stays
+`null`), and every symbol, test, relation, fixture and doc passage the spec names exists as named.
+One viability point under it is left open by the spec's own wording (finding 2). Question 2 fails on
+one bullet (finding 1); the rest of the plan extends shapes already in the tree and could be handed
+over as written.
+
+1. **The node query shares `servedById` with `EntityKeyQuery`, which `fact-model.adoc` rules out
+   (question 2).** The node query bullet says to "state the predicate once and have both queries use
+   it, so the node fetcher's map and the entity dispatch's node id alternative cannot disagree while
+   both exist", and that no stored relation is added. `docs/architecture/explanation/fact-model.adoc`,
+   "One base, many views", says each use of the store owns its own query; that no two share a jOOQ
+   condition or a select helper stated once so that two readers cannot disagree; that a fact two uses
+   need moves into the model as a relation both read; and that no gate sees a shared helper, so the
+   rule is held in review. The spec asks for the shared condition, for the very reason the page
+   names, and cites neither the page nor a ruling lifting it for the window until R876 states the
+   fact. Any one of these satisfies it, and choosing among them is the author's or a ruling's, not
+   this round's: the node query writes its own statement of its population, and its pipeline test
+   pins that population; or "served by id" is stored now, with what a stored relation owes, and both
+   queries read it; or Alf or Filip rule that the condition may be shared until R876 lands, the
+   ruling entered on that page and cited here.
+
+2. **The first open question sets a precondition for this gate that is not met, and says more than
+   the body does (question 1, viability).** It recommends to "confirm against kreg's gateway before
+   Ready" and says the answer "decides whether the undecodable row needs a carve-out". No
+   confirmation is recorded. "Where the line falls" says the unverified fact affects "how often the
+   third row is hit, not where the line falls", which holds only for ids graphitron minted: the case
+   the question adds, a gateway handing every subgraph an id of a scheme graphitron cannot peel,
+   lands in the first row and becomes an error, which is the line. Satisfied by the confirmation, or
+   by a ruling that the item goes ahead without it, the body and the question then saying one thing,
+   including where the check happens if not before Ready.
+
+Not blocking. The other three open questions each carry a recommendation the body already follows,
+so they do not hold the gate. `assertFieldNullified` is private to `GraphQLQueryTest`, so the error
+cases in the three other test classes need a helper of their own or a shared one.
