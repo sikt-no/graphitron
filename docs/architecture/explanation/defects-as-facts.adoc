@@ -199,6 +199,19 @@ FS-plattform's record landings writing one, and a record nothing lands in is `NO
 `occurrence-builds`, whose rule view already reports the build's defects, rather than to a stage of
 their own: the stage is cheap, and one rule view per stage reads simplest.
 
+The whole-key ruling reaches a `@condition` parameter as it does a `@service` one (Alf, 2026-11-14;
+Filip, 2026-11-20, for a list of ids). A parameter bound to the whole of a `@nodeId` slot at a
+`@condition`, by its name or by an `argMapping` entry that stops on the slot, takes the node's record
+or a tuple of its key, in a `List` for a list of ids. A key column's own value is a projection there
+too, asked for by naming the column, and off a list of ids it is the `List` of that column across
+them. The refusal of a whole-slot parameter of the column's type ships when the walk no longer
+renders conditions and not before: until then the walk defers an input-field `@condition` projecting
+its own key column, so refusing the whole key earlier leaves that site no shape that generates. The
+walk's condition glue meanwhile hands a one-column key's value to such a parameter, and the
+`@condition` reference page describes what it does. That is the state of the code and not a second
+rule: nothing new is built on it, and a refusal whose message changes before the flip names the
+projection as its remedy.
+
 That fact is `graphitron_argmapping_landing.receives`, and it covers a payload key as well as a
 parameter (Alf, 2026-11-13). An `@outbox` payload key carries what the API's clients see, so a path
 ending on a node id there hands over the encoded id whole, through an input object or not and
