@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
@@ -43,7 +44,6 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
-import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
@@ -320,8 +320,8 @@ public final class RoutineWriteQuery {
          * {@code graphConnections} and lift out of {@code graphLifts}, the rest dropped. Every row has
          * a frame: a routine write is a root occurrence, which {@link FrameQuery} frames by
          * construction, so a row with none is drift between the two queries. Every records result has
-         * a lift, {@link LiftQuery} admitting the paths this query does, so one with none is drift
-         * too.
+         * a lift, both this query and {@link LiftQuery} reading {@code graphitron_occurrence_lift}, so
+         * one with none is a defect in one of them.
          */
         public Rows framed(List<FrameQuery.Row> graphFrames, Map<String, ConnectionQuery.Row> graphConnections,
                            List<LiftQuery.Row> graphLifts) {
@@ -442,8 +442,8 @@ public final class RoutineWriteQuery {
      */
     private record Occurrence(String typeName, String fieldName, String returnTypeName,
                               boolean listReturn, String shape, Call call, Table liftTable,
-                              boolean landsOnLift, boolean landsOnRoutineResult, Table anchor,
-                              boolean everyStepPaired, List<RawReRead> reReads, boolean nodeIdChild) {
+                              boolean lifted, boolean landsOnRoutineResult, Table anchor,
+                              List<RawReRead> reReads, boolean nodeIdChild) {
 
         /** Records of one table: the shape lifted along the field's own join path. */
         boolean records() {
@@ -457,13 +457,12 @@ public final class RoutineWriteQuery {
     }
 
     /**
-     * A records result whose join path lands on the lift table, takes a first step out of the
-     * routine's result, and states the column pairs every step joins on. A step stating none is a
-     * routine node or a join by method alone, neither of which the lift can take. A path taking no
-     * step at all has no anchor to capture a key of, and draws no row.
+     * A records result the store states lifted ({@code graphitron_occurrence_lift}): its path lands on
+     * the lift table, takes a first step out of the routine's result and joins every step by column
+     * pairs, which {@link LiftQuery} reads the same row for.
      */
     private static boolean admittedAsRecords(Occurrence o) {
-        return o.records() && o.landsOnLift() && o.anchor() != null && o.everyStepPaired();
+        return o.records() && o.lifted();
     }
 
     /**
@@ -527,14 +526,11 @@ public final class RoutineWriteQuery {
         var first = GRAPHITRON_JOIN_PATH_STEP.as("anchor_step");
         var at = SQL_TABLE.as("anchor_table");
         var anchorSchema = SQL_SCHEMA.as("anchor_schema");
-        var step = GRAPHITRON_JOIN_PATH_STEP.as("any_step");
-        var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
         var child = GRAPHITRON_OCCURRENCE.as("encoding_child");
         var b = GRAPHITRON_OCCURRENCE_BINDING;
-        Field<Boolean> landsOnLift = field(exists(selectOne().from(jp)
-            .where(jp.GRAPH_NAME.eq(p.GRAPH_NAME), jp.COORDINATE.eq(p.COORDINATE),
-                jp.TARGET_TYPE.eq(ft.TARGET_TYPE_NAME), jp.TARGET_SOURCE_NAME.eq(res.TABLE_SOURCE_NAME),
-                jp.TARGET_SCHEMA.eq(res.TABLE_SCHEMA), jp.TARGET_TABLE.eq(res.TABLE_NAME))));
+        var lift = GRAPHITRON_OCCURRENCE_LIFT;
+        Field<Boolean> lifted = field(exists(selectOne().from(lift)
+            .where(lift.GRAPH_NAME.eq(p.GRAPH_NAME), lift.COORDINATE.eq(p.COORDINATE))));
         Field<Boolean> landsOnRoutineResult = field(exists(selectOne().from(jp)
             .where(jp.GRAPH_NAME.eq(p.GRAPH_NAME), jp.COORDINATE.eq(p.COORDINATE),
                 jp.TARGET_TYPE.eq(ft.TARGET_TYPE_NAME), jp.TARGET_SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME),
@@ -544,13 +540,6 @@ public final class RoutineWriteQuery {
                 b.KIND.eq("NODE_ID"))
             .where(child.GRAPH_NAME.eq(p.GRAPH_NAME), child.PARENT_COORDINATE.eq(p.COORDINATE),
                 child.KIND.eq("FIELD"))));
-        // Every step of the field's path states the column pairs it joins on.
-        Field<Boolean> everyStepPaired = field(notExists(selectOne().from(step)
-            .where(step.GRAPH_NAME.eq(p.GRAPH_NAME), step.COORDINATE.eq(p.COORDINATE),
-                step.TARGET_TYPE.eq(ft.TARGET_TYPE_NAME))
-            .and(notExists(selectOne().from(sc).where(sc.GRAPH_NAME.eq(step.GRAPH_NAME),
-                sc.COORDINATE.eq(step.COORDINATE), sc.TARGET_TYPE.eq(step.TARGET_TYPE),
-                sc.POSITION.eq(step.POSITION))))));
         var arguments = arguments(called, pr);
         var reReads = reReads(p.GRAPH_NAME, p.COORDINATE, pr);
         return store.dsl()
@@ -559,8 +548,8 @@ public final class RoutineWriteQuery {
                 rt.TABLE_NAME, rt.JOOQ_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN,
                 arguments,
                 lt.TABLE_NAME, lt.JOOQ_NAME, lt.CLASS_FQN, ls.TABLES_CLASS_FQN,
-                landsOnLift, landsOnRoutineResult,
-                at.TABLE_NAME, at.JOOQ_NAME, at.CLASS_FQN, anchorSchema.TABLES_CLASS_FQN, everyStepPaired,
+                lifted, landsOnRoutineResult,
+                at.TABLE_NAME, at.JOOQ_NAME, at.CLASS_FQN, anchorSchema.TABLES_CLASS_FQN,
                 reReads, nodeIdChild)
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
@@ -599,10 +588,10 @@ public final class RoutineWriteQuery {
                     r.get(arguments)),
                 r.get(lt.TABLE_NAME) == null ? null : new Table(r.get(lt.TABLE_NAME),
                     r.get(lt.JOOQ_NAME), r.get(lt.CLASS_FQN), r.get(ls.TABLES_CLASS_FQN)),
-                Boolean.TRUE.equals(r.get(landsOnLift)), Boolean.TRUE.equals(r.get(landsOnRoutineResult)),
+                Boolean.TRUE.equals(r.get(lifted)), Boolean.TRUE.equals(r.get(landsOnRoutineResult)),
                 r.get(at.TABLE_NAME) == null ? null : new Table(r.get(at.TABLE_NAME), r.get(at.JOOQ_NAME),
                     r.get(at.CLASS_FQN), r.get(anchorSchema.TABLES_CLASS_FQN)),
-                Boolean.TRUE.equals(r.get(everyStepPaired)), r.get(reReads),
+                r.get(reReads),
                 Boolean.TRUE.equals(r.get(nodeIdChild))));
     }
 

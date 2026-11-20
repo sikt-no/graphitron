@@ -4,6 +4,8 @@ import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIFT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIFT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static org.jooq.impl.DSL.max;
 
@@ -51,6 +53,11 @@ public final class OccurrenceDepths {
         }
         // Rows of an occurrence no depth reached; the cascade from the occurrences usually took them.
         sweep(dsl, graph, null, touchedAt);
+        // Which producers lift their records, once every depth's paths are stated.
+        var lift = GRAPHITRON_OCCURRENCE_LIFT;
+        OccurrenceProducers.refresh(dsl, lift, GRAPHITRON_OCCURRENCE_LIFT_RULE, graph, null, touchedAt,
+            org.jooq.impl.DSL.noCondition());
+        dsl.deleteFrom(lift).where(lift.GRAPH_NAME.eq(graph), lift.TOUCHED_AT.ne(touchedAt)).execute();
     }
 
     /** Sweeps the stage's relations for the occurrences at {@code depth}, or for all where it is null. */

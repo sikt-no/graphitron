@@ -95,6 +95,22 @@ extend schema @assertContains(relation: "graphitron_occurrence_producer_result",
   Mutation.filmsByIds,    RECORD_LIST,   film,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   """)
 
+# Which producers lift, and from which table: each service whose field's type is bound to its
+# records' table, at a root or under an object, from Query and Mutation alike. The payload's data
+# field, the scalar and the records under a type no table binds lift nothing.
+extend schema @expectEquals(relation: "graphitron_occurrence_lift", rows: """
+  coordinate,             shape,         anchor_table
+  Film.castMembers,       RECORD_LIST,   film_actor
+  Film.languageByService, SINGLE_RECORD, language
+  Mutation.filmById,      SINGLE_RECORD, film
+  Mutation.filmsByIds,    RECORD_LIST,   film
+  Query.filmActorsByIds,  RECORD_LIST,   film_actor
+  Query.filmById,         SINGLE_RECORD, film
+  Query.filmsAsIterable,  RECORD_LIST,   film
+  Query.filmsAsSet,       RECORD_LIST,   film
+  Query.filmsByIds,       RECORD_LIST,   film
+  """)
+
 # A Set or an Iterable of records is served as a List is: the call is made, and nothing is refused at
 # the fields or at the payload's data field.
 extend schema @assertContains(relation: "graphitron_occurrence_call_method", rows: """

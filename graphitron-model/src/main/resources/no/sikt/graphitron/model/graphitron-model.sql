@@ -22119,12 +22119,93 @@ COMMENT ON COLUMN graphitron_occurrence_producer_result.graph_name IS 'the ownin
 COMMENT ON COLUMN graphitron_occurrence_producer_result.coordinate IS 'the producing occurrence, the whole key: one result per producer';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.shape IS 'SINGLE_RECORD, RECORD_LIST, CONNECTION, OBJECT or SCALAR: a connection''s count, stated by the connection model, is a SCALAR and its facets an OBJECT';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name IS 'the class its values are instances of: a record class, or the element class a @service method declares; NULL for a scalar, a connection, records of no single table and a payload graphitron builds';
-COMMENT ON COLUMN graphitron_occurrence_producer_result.table_source_name IS 'the lift: for records, the catalog entry of the table they are rows of, with the schema and the name a sql_table key; NULL for records of several tables or of none named';
+COMMENT ON COLUMN graphitron_occurrence_producer_result.table_source_name IS 'for records, the catalog entry of the table they are rows of, with the schema and the name a sql_table key; NULL for records of several tables or of none named. Whether they are lifted, re-read by their keys, is graphitron_occurrence_lift''s';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_name IS 'that table, where the producer''s children''s source starts';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_source_ref IS 'the classpath entry half of the class''s code_class key, the first of the graph''s own entries by name where two declare it, so a reader joins the class''s members on their key; nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
+
+-- Records a producer hands back that are lifted: re-read by their keys from one anchor table onto the
+-- field's table-bound type. A service's records lift where the field's type is bound to their table,
+-- the anchor that table; a root routine write's along the field's path when the path lands on the
+-- records' table and every step joins by column pairs, the anchor the table its first step leaves the
+-- routine's result for. The emitter's lift, the routine write's admission and every other reader read
+-- this rather than deciding it. A polymorphic service's lift is per participant, a plain join of
+-- stored facts its reader states.
+CREATE VIEW graphitron_occurrence_lift_rule
+  (graph_name, coordinate, shape, anchor_source_name, anchor_schema, anchor_table) AS
+SELECT p.graph_name, p.coordinate, r.shape, r.table_source_name, r.table_schema, r.table_name
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r
+    ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+   AND tt.table_source_name = r.table_source_name AND tt.table_schema = r.table_schema
+   AND tt.table_name = r.table_name
+ WHERE p.kind = 'SERVICE' AND r.shape IN ('SINGLE_RECORD', 'RECORD_LIST')
+UNION ALL
+SELECT p.graph_name, p.coordinate, r.shape, s.to_source_name, s.to_schema, s.to_table
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r
+    ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_join_path jp
+    ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+   AND jp.target_type = ft.target_type_name AND jp.target_source_name = r.table_source_name
+   AND jp.target_schema = r.table_schema AND jp.target_table = r.table_name
+  JOIN graphitron_join_path_step s
+    ON s.graph_name = jp.graph_name AND s.coordinate = jp.coordinate
+   AND s.target_type = jp.target_type AND s.position = 0
+ WHERE p.kind = 'ROUTINE' AND p.start = 'ROOT' AND r.shape IN ('SINGLE_RECORD', 'RECORD_LIST')
+   -- Every step joins by column pairs; a @routine step or a condition method alone the lift cannot take.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step a
+                    WHERE a.graph_name = s.graph_name AND a.coordinate = s.coordinate
+                      AND a.target_type = s.target_type
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column c
+                                       WHERE c.graph_name = a.graph_name AND c.coordinate = a.coordinate
+                                         AND c.target_type = a.target_type AND c.position = a.position));
+COMMENT ON VIEW graphitron_occurrence_lift_rule IS 'One row the lift rule computes, in the shape graphitron_occurrence_lift stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_lift, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_lift_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_lift.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_lift_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_lift.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_lift_rule.shape IS 'the shape of a row of this rule, which the stage writes into graphitron_occurrence_lift.shape';
+-- COMMENT ON COLUMN graphitron_occurrence_lift_rule.anchor_source_name IS 'the anchor_source_name of a row of this rule, which the stage writes into graphitron_occurrence_lift.anchor_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_lift_rule.anchor_schema IS 'the anchor_schema of a row of this rule, which the stage writes into graphitron_occurrence_lift.anchor_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_lift_rule.anchor_table IS 'the anchor_table of a row of this rule, which the stage writes into graphitron_occurrence_lift.anchor_table';
+
+CREATE TABLE graphitron_occurrence_lift (
+  graph_name         VARCHAR   NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  shape              VARCHAR   NOT NULL,
+  anchor_source_name VARCHAR   NOT NULL,
+  anchor_schema      VARCHAR   NOT NULL,
+  anchor_table       VARCHAR   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  -- The producer's result, a records one.
+  FOREIGN KEY (graph_name, coordinate, shape)
+    REFERENCES graphitron_occurrence_producer_result (graph_name, coordinate, shape) ON DELETE CASCADE,
+  FOREIGN KEY (anchor_source_name, anchor_schema, anchor_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (shape IN ('SINGLE_RECORD', 'RECORD_LIST'))
+);
+COMMENT ON TABLE graphitron_occurrence_lift IS 'A producer whose records are lifted: one row per producer whose records are re-read by their keys from one anchor table onto its field''s table-bound type. For example Query.filmsByIds, a @service handing back film records under [Film!]!, lifts from film, and a root @routine write whose path leaves its result for rental lifts from rental.';
+COMMENT ON COLUMN graphitron_occurrence_lift.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_lift.coordinate IS 'the producing occurrence, the whole key: one lift per producer';
+COMMENT ON COLUMN graphitron_occurrence_lift.shape IS 'SINGLE_RECORD or RECORD_LIST, the result''s, carried so the foreign key holds the row to a records result';
+COMMENT ON COLUMN graphitron_occurrence_lift.anchor_source_name IS 'the catalog entry of the table the records are re-read from; with the schema and the name a sql_table key';
+COMMENT ON COLUMN graphitron_occurrence_lift.anchor_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_lift.anchor_table IS 'that table: the records'' own for a service, the first step''s for a routine write along a path';
+COMMENT ON COLUMN graphitron_occurrence_lift.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- What fills a connection a producing occurrence builds: the CONNECTION subtype of the producer
 -- result. The connection type gives the shape, the class and the positions it fills; what fills its
@@ -29737,6 +29818,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depth-defects', 'graphitron_entry_defect'),
   ('occurrence-depth-defects', 'graphitron_occurrence_list_element_defect'),
   ('occurrence-depths', 'graphitron_join_path'),
+  ('occurrence-depths', 'graphitron_occurrence_lift'),
   ('occurrence-depths', 'graphitron_join_path_claimed'),
   ('occurrence-depths', 'graphitron_join_path_step'),
   ('occurrence-depths', 'graphitron_join_path_step_column'),
@@ -30010,6 +30092,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-depths', 'graphitron_join_path_claimed', 'graphitron_join_path_claimed_rule'),
   ('occurrence-depths', 'graphitron_join_path_step', 'graphitron_join_path_step_rule'),
   ('occurrence-depths', 'graphitron_join_path_step_to_one', 'graphitron_join_path_step_to_one_rule'),
+  ('occurrence-depths', 'graphitron_occurrence_lift', 'graphitron_occurrence_lift_rule'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate', 'graphitron_occurrence_producer_lift_candidate_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source', 'graphitron_occurrence_source_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_copy_rule'),
@@ -31997,6 +32080,14 @@ INSERT INTO meta_relation VALUES
    'How one need is met: one row per need a path meets, with its kind and where it came from.',
    'For example Staff.homeAddress, inherited from Person.homeAddress, meets its need for Address by a JOIN path of origin INHERITED, and Film.title by an EMPTY one ending where it starts.',
    'One path per need, keyed by the need so the two cannot disagree on what was asked, in either world: a join path from a table source, an accessor path from an object source. The kind is carried into each subtype''s key so a subtype of the other kind cannot be written, and the origin says whether it was written, inherited, inferred or empty, so an empty path is never read as a failed inference.'),
+  ('graphitron_occurrence_lift', 'graph-occurrence', 'graphitron',
+   'A producer whose records are lifted: one row per producer whose records are re-read by their keys from one anchor table onto its field''s table-bound type.',
+   'For example Query.filmsByIds, a @service handing back film records under [Film!]!, lifts from film, and a root @routine write whose path leaves its result for rental lifts from rental.',
+   'Decided once, where the emitter''s lift and the routine write''s admission each decided it in their own query and called a disagreement drift. Owned by occurrence-depths because a routine write''s lift reads the join path, which that stage writes, after the producers'' results are stated. Its own relation rather than a flag beside graphitron_occurrence_producer_result''s table, which also holds the table of records nothing lifts. A polymorphic service''s lift is per participant, a plain join of stored facts its reader states.'),
+  ('graphitron_occurrence_lift_rule', 'graph-occurrence', 'graphitron',
+   'One row the lift rule computes, in the shape graphitron_occurrence_lift stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_lift, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_join_path', 'path-need', 'graphitron',
    'The table a join path reaches: one row per path of kind JOIN.',
    'For example Customer.address reaches address, and Film.title, an empty path, reaches film, where it starts.',

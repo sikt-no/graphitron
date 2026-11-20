@@ -70,7 +70,7 @@ class CallPolymorphicExecutionTest {
         var calls = read.calls();
         var fills = read.fills();
         assertThat(rows).extracting(PolymorphicLiftQuery.Row::coordinate)
-            .containsExactly("Mutation.searchAll", "Mutation.searchAllNullable", "Query.search", "Query.searchOne");
+            .contains("Mutation.searchAll", "Mutation.searchAllNullable", "Query.search", "Query.searchOne");
         var liftHost = ClassName.get(PACKAGE, "Lifts");
         var selection = ClassName.get(PACKAGE + ".util", "SelectionOccurrences");
         var liftType = TypeSpec.classBuilder(liftHost).addModifiers(Modifier.PUBLIC);

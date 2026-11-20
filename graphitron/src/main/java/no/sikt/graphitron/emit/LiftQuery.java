@@ -10,7 +10,6 @@ import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
@@ -18,10 +17,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_TO_ONE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -29,9 +26,7 @@ import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.multiset;
-import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
-import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The lift emitter's query: every producing occurrence whose call hands back records of the table
@@ -150,9 +145,9 @@ public final class LiftQuery {
     }
 
     /**
-     * The graph's lifting occurrences, by coordinate: the services', then the routine writes'. Two
-     * statements, one per kind of producer, since a routine write's row carries its path and a
-     * service's has none.
+     * The graph's lifting occurrences, by coordinate, as {@code graphitron_occurrence_lift} states
+     * them: the services', then the routine writes'. Two statements, one per kind of producer, since a
+     * routine write's row carries its path and a service's has none.
      */
     public static List<Row> read(StoreHandle store) {
         var rows = new ArrayList<Row>(services(store));
@@ -163,31 +158,26 @@ public final class LiftQuery {
     /** The service producers lifting what their call hands back, by coordinate. */
     private static List<Row> services(StoreHandle store) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
-        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+        var l = GRAPHITRON_OCCURRENCE_LIFT;
         var o = GRAPHITRON_OCCURRENCE;
         var f = GRAPHITRON_FIELD;
         var ft = GRAPHITRON_FIELD_TARGET;
-        var tt = GRAPHITRON_TABLETYPE;
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
         return store.dsl()
-            .select(p.COORDINATE, ft.TARGET_TYPE_NAME, r.SHAPE, p.START, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
+            .select(p.COORDINATE, ft.TARGET_TYPE_NAME, l.SHAPE, p.START, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
                 t.JOOQ_NAME, t.RECORD_CLASS_FQN, key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME))
             .from(p)
-            .join(r).on(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE))
+            // The store states which producers lift and the table they lift from.
+            .join(l).on(l.GRAPH_NAME.eq(p.GRAPH_NAME), l.COORDINATE.eq(p.COORDINATE))
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME),
                 ft.FIELD_NAME.eq(f.FIELD_NAME))
-            // The target binds the table the records belong to: the lift is this producer's.
-            .join(tt).on(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME),
-                tt.TABLE_SOURCE_NAME.eq(r.TABLE_SOURCE_NAME), tt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA),
-                tt.TABLE_NAME.eq(r.TABLE_NAME))
-            .join(t).on(t.SOURCE_NAME.eq(r.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(r.TABLE_SCHEMA),
-                t.TABLE_NAME.eq(r.TABLE_NAME))
+            .join(t).on(t.SOURCE_NAME.eq(l.ANCHOR_SOURCE_NAME), t.TABLE_SCHEMA.eq(l.ANCHOR_SCHEMA),
+                t.TABLE_NAME.eq(l.ANCHOR_TABLE))
             .join(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
-            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"),
-                r.SHAPE.in("SINGLE_RECORD", "RECORD_LIST"))
+            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
             .orderBy(p.COORDINATE)
             .fetch(rec -> new Row(rec.value1(), rec.value2(), "RECORD_LIST".equals(rec.value3()),
                 "ROOT".equals(rec.value4()),
@@ -196,55 +186,36 @@ public final class LiftQuery {
     }
 
     /**
-     * The routine writes on the mutation root whose result is records of the table their join path
-     * lands on, by coordinate. The anchor is the path's first step's table, which the routine's
-     * result is keyed onto; the hops are the steps after it. A path with a step joining by no column
-     * pair, a routine's or a condition method's alone, has no row: the lift joins every hop on its
-     * pairs.
+     * The routine writes on the mutation root whose records the store states lifted
+     * ({@code graphitron_occurrence_lift}): the anchor its path's first step reaches, the hops the
+     * steps after it.
      */
     private static List<Row> routineWrites(StoreHandle store) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
-        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+        var l = GRAPHITRON_OCCURRENCE_LIFT;
         var o = GRAPHITRON_OCCURRENCE;
         var f = GRAPHITRON_FIELD;
-        var ro = GRAPHQL_ROOT_OPERATION;
         var ft = GRAPHITRON_FIELD_TARGET;
-        var jp = GRAPHITRON_JOIN_PATH;
         var first = GRAPHITRON_JOIN_PATH_STEP.as("anchor_step");
-        var any = GRAPHITRON_JOIN_PATH_STEP.as("any_step");
-        var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
-        var unpaired = selectOne().from(any)
-            .where(any.GRAPH_NAME.eq(first.GRAPH_NAME), any.COORDINATE.eq(first.COORDINATE),
-                any.TARGET_TYPE.eq(first.TARGET_TYPE))
-            .and(notExists(selectOne().from(sc)
-                .where(sc.GRAPH_NAME.eq(any.GRAPH_NAME), sc.COORDINATE.eq(any.COORDINATE),
-                    sc.TARGET_TYPE.eq(any.TARGET_TYPE), sc.POSITION.eq(any.POSITION))));
         return store.dsl()
-            .select(p.COORDINATE, ft.TARGET_TYPE_NAME, r.SHAPE, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
+            .select(p.COORDINATE, ft.TARGET_TYPE_NAME, l.SHAPE, t.TABLE_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN,
                 t.JOOQ_NAME, t.RECORD_CLASS_FQN, key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME), hops(first))
             .from(p)
-            .join(r).on(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE))
+            // The store states which routine writes lift and the anchor they lift from.
+            .join(l).on(l.GRAPH_NAME.eq(p.GRAPH_NAME), l.COORDINATE.eq(p.COORDINATE))
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
-            .join(ro).on(ro.GRAPH_NAME.eq(f.GRAPH_NAME), ro.TYPE_NAME.eq(f.TYPE_NAME),
-                ro.OPERATION.eq("MUTATION"))
             .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME),
                 ft.FIELD_NAME.eq(f.FIELD_NAME))
-            // The field's path lands on the table the records belong to.
-            .join(jp).on(jp.GRAPH_NAME.eq(p.GRAPH_NAME), jp.COORDINATE.eq(p.COORDINATE),
-                jp.TARGET_TYPE.eq(ft.TARGET_TYPE_NAME), jp.TARGET_SOURCE_NAME.eq(r.TABLE_SOURCE_NAME),
-                jp.TARGET_SCHEMA.eq(r.TABLE_SCHEMA), jp.TARGET_TABLE.eq(r.TABLE_NAME))
-            // Its first step leaves the routine's result for the anchor.
-            .join(first).on(first.GRAPH_NAME.eq(jp.GRAPH_NAME), first.COORDINATE.eq(jp.COORDINATE),
-                first.TARGET_TYPE.eq(jp.TARGET_TYPE), first.POSITION.eq(0))
-            .join(t).on(t.SOURCE_NAME.eq(first.TO_SOURCE_NAME), t.TABLE_SCHEMA.eq(first.TO_SCHEMA),
-                t.TABLE_NAME.eq(first.TO_TABLE))
+            // The path's first step, whose followers are the hops.
+            .join(first).on(first.GRAPH_NAME.eq(p.GRAPH_NAME), first.COORDINATE.eq(p.COORDINATE),
+                first.TARGET_TYPE.eq(ft.TARGET_TYPE_NAME), first.POSITION.eq(0))
+            .join(t).on(t.SOURCE_NAME.eq(l.ANCHOR_SOURCE_NAME), t.TABLE_SCHEMA.eq(l.ANCHOR_SCHEMA),
+                t.TABLE_NAME.eq(l.ANCHOR_TABLE))
             .join(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
-            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("ROUTINE"), p.START.eq("ROOT"),
-                r.SHAPE.in("SINGLE_RECORD", "RECORD_LIST"))
-            .and(notExists(unpaired))
+            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("ROUTINE"))
             .orderBy(p.COORDINATE)
             .fetch(rec -> new Row(rec.value1(), rec.value2(), "RECORD_LIST".equals(rec.value3()), true,
                 new Table(rec.value4(), rec.value5(), rec.value6(), rec.value7(), rec.value8()),

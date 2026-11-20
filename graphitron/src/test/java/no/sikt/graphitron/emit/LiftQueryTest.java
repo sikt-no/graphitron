@@ -6,7 +6,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -69,10 +68,7 @@ class LiftQueryTest {
 
     @Test
     void recordsForAPayloadsDataFieldOrAScalarAreNoLift() {
+        // Which producers lift is scenarios/service-lift's claim on graphitron_occurrence_lift.
         assertThat(rows).doesNotContainKeys("Query.filmsAsPayload", "Query.filmCount");
-        assertThat(List.copyOf(rows.keySet())).containsExactlyInAnyOrder(
-            "Query.filmsByIds", "Query.filmById", "Query.filmActorsByIds", "Film.languageByService",
-            "Film.castMembers", "Query.filmsAsSet", "Query.filmsAsIterable", "Mutation.filmById",
-            "Mutation.filmsByIds");
     }
 }
