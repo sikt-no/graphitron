@@ -1,7 +1,5 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
-import no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.records.EventRecord;
-
 import java.util.List;
 
 /**
@@ -26,13 +24,6 @@ import java.util.List;
 public final class R441EventAccessorPayloads {
 
     private R441EventAccessorPayloads() {}
-
-    /**
-     * Qualified-match case (the reported bug): the accessor returns {@code multischema_a.event}'s
-     * {@code EventRecord}. Against an element type declared {@code @table(name: "multischema_a.event")},
-     * the accessor must match by table-class identity and the field classify green.
-     */
-    public record SchemaAEventsPayload(List<EventRecord> events) {}
 
     /**
      * Genuine-mismatch case (the tightening guard): the accessor returns {@code multischema_b.event}'s

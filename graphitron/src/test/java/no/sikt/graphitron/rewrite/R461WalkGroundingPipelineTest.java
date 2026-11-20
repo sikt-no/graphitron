@@ -1,17 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.model.AccessorResolution;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
-import no.sikt.graphitron.rewrite.model.ValueLocator;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Pipeline-tier coverage of the SDL-field-to-Java-accessor resolution unification, exercised
@@ -40,56 +33,6 @@ class R461WalkGroundingPipelineTest {
             """.formatted(DUMMY_SERVICE, fixtureSimpleName, parentBody, childBody));
     }
 
-    /**
-     * As {@link #build}, but Parent also declares a second, cleanly-grounding object field
-     * {@code sibling: Sib}. Two object data fields means Parent is not a single-object-field
-     * carrier, so a gated {@code child} field surfaces its sole-producer rejection rather than
-     * flipping Parent to a two-level carrier.
-     */
-    private static GraphitronSchema buildNonCarrier(String fixtureSimpleName, String childFieldDecl) {
-        return TestSchemaHelper.buildSchema("""
-            type Query {
-                result: Parent @service(service: {className: "%s", method: "r461%s"})
-            }
-            type Parent { %s sibling: Sib }
-            type Child { tag: String }
-            type Sib { tag: String }
-            """.formatted(DUMMY_SERVICE, fixtureSimpleName, childFieldDecl));
-    }
-
-    private static List<ValidationError> validate(GraphitronSchema schema) {
-        return new GraphitronSchemaValidator().validate(schema);
-    }
-
-    // ===== B1: the class's form decides what is read =====
-
-    @Test
-    void b1_pojoParent_groundsChildFromGetter() {
-        var schema = build("OrderParentPojo", "film: Child", "tag: String");
-        // A class that is no record reads getFilm(); its bare film() is not read, so Child grounds
-        // to the bean child (a Java record).
-        assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
-        assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
-            .isEqualTo(FIX + "BeanChild");
-        // Emission resolves the same accessor.
-        var field = (RecordReadField) schema.field("Parent", "film");
-        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.GetterPrefixed.class);
-        assertThat(((AccessorResolution.GetterPrefixed) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("getFilm");
-    }
-
-    @Test
-    void b1_recordParent_groundsChildFromBareComponent() {
-        var schema = build("OrderParentRecord", "film: Child", "tag: String");
-        // A record reads its film() component; its getFilm() is not read, so Child grounds to the
-        // component's class (a POJO).
-        assertThat(schema.type("Child")).isInstanceOf(GraphitronType.PojoResultType.Backed.class);
-        assertThat(((GraphitronType.PojoResultType.Backed) schema.type("Child")).fqClassName())
-            .isEqualTo(FIX + "FluentChild");
-        var field = (RecordReadField) schema.field("Parent", "film");
-        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.BareName.class);
-        assertThat(((AccessorResolution.BareName) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("film");
-    }
-
     // ===== B2: field arguments =====
 
     @Test
@@ -98,100 +41,5 @@ class R461WalkGroundingPipelineTest {
         assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
         assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
             .isEqualTo(FIX + "SimpleChild");
-    }
-
-    @Test
-    void b2_zeroArgMember_soleProducer_rejectionNamesArityGate() {
-        var schema = buildNonCarrier("ZeroArgParent", "child(x: String): Child");
-        // The zero-arg member no longer grounds the argument-bearing field; Child has no other
-        // producer, so the referencing field's rejection names the arity gate rather than a generic
-        // "no producer" / "table could not be resolved" cascade.
-        assertThat(schema.field("Parent", "child")).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        assertThat(validate(schema)).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("Parent.child") && m.contains("parameter shape"));
-    }
-
-    // ===== B3: @field(name:) =====
-
-    @Test
-    void b3_walkProbesDirectiveResolvedAccessorName() {
-        var schema = build("RenameParent", "child: Child @field(name: \"renamed\")", "tag: String");
-        assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
-        assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
-            .isEqualTo(FIX + "SimpleChild");
-    }
-
-    // ===== B4: non-boolean is<Name> =====
-
-    @Test
-    void b4_nonBooleanIs_soleProducer_rejectionNamesBooleanGate() {
-        var schema = buildNonCarrier("NonBooleanIsParent", "child: Child");
-        assertThat(schema.field("Parent", "child")).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        assertThat(validate(schema)).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("Parent.child") && m.contains("boolean"));
-    }
-
-    // ===== B8: carrier discrimination through the probe =====
-
-    @Test
-    void b8_nonBooleanIsWrapper_flipsToTwoLevelCarrier() {
-        // Single non-@table object data field whose only accessor is a non-boolean is<Name>: the
-        // probe now reads it absent, so producerBindLevel flips Parent from a plain wrapper to a
-        // two-level carrier and the data field becomes a source passthrough.
-        var schema = build("NonBooleanIsParent", "child: Child", "tag: String");
-        assertThat(schema.field("Parent", "child"))
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField.class);
-    }
-
-    @Test
-    void b8_renamedDataField_readsAsPlainWrapper() {
-        // Single non-@table object data field carrying @field(name:), whose wrapper exposes the
-        // renamed accessor: the probe now reads it present (B3), so producerBindLevel keeps Parent a
-        // plain wrapper and the data field reads through the renamed accessor rather than flipping to
-        // a two-level carrier.
-        var schema = build("RenameParent", "child: Child @field(name: \"renamed\")", "tag: String");
-        assertThat(schema.field("Parent", "child")).isInstanceOf(RecordReadField.class);
-        var field = (RecordReadField) schema.field("Parent", "child");
-        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.GetterPrefixed.class);
-        assertThat(((AccessorResolution.GetterPrefixed) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("getRenamed");
-    }
-
-    // ===== B5: a public field is not read =====
-
-    @Test
-    void b5_publicField_soleProducer_rejectionNamesTheGetterToWrite() {
-        var schema = buildNonCarrier("PublicFieldParent", "child: Child");
-        assertThat(schema.field("Parent", "child")).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        assertThat(validate(schema)).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("Parent.child") && m.contains("public field") && m.contains("getChild()"));
-    }
-
-    @Test
-    void b5_bareAccessorOnAPojo_soleProducer_rejectionNamesTheGetterToWrite() {
-        // ZeroArgParentBare's child() is a bare accessor on a class that is no record, which is not
-        // read, so the rejection names the getter to write.
-        var schema = buildNonCarrier("ZeroArgParentBare", "child: Child");
-        assertThat(schema.field("Parent", "child")).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        assertThat(validate(schema)).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("Parent.child") && m.contains("child()") && m.contains("getChild()"));
-    }
-
-    // ===== B6: covariant-return bridge + inheritance (member filter) =====
-
-    @Test
-    void b6_covariantReturn_skipsBridge_groundsRealReturn() {
-        var schema = build("CovariantParent", "detail: Child", "tag: String");
-        // The bridge getDetail():Object is skipped; the real getDetail():DetailChild grounds the child.
-        assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
-        assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
-            .isEqualTo(FIX + "DetailChild");
-    }
-
-    @Test
-    void inheritedAccessor_grounds() {
-        var schema = build("SubChildParent", "inheritedChild: Child", "tag: String");
-        assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
-        assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
-            .isEqualTo(FIX + "InheritedChild");
     }
 }

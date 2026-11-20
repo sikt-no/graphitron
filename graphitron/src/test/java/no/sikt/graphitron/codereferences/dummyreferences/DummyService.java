@@ -46,8 +46,6 @@ public final class DummyService {
     public static DummyFetcherFixtures.FilmDetailsRecord makeFilmDetailsRecord() { return unused(); }
     public static DummyFetcherFixtures.DetailsProps makeDetailsProps() { return unused(); }
     public static DummyFetcherFixtures.FilmDetailsRating makeFilmDetailsRating() { return unused(); }
-    public static DummyFetcherFixtures.FilmHolder makeFilmHolder() { return unused(); }
-    public static DummyFetcherFixtures.TranslatedTextsDto makeTranslatedTexts() { return unused(); }
     public static DummyFetcherFixtures.PivotHolder makePivotHolder() { return unused(); }
     public static DummyFetcherFixtures.FilmKeyHolder makeFilmKeyHolder() { return unused(); }
     public static DummyFetcherFixtures.FilmRecordHolder makeFilmRecordHolder() { return unused(); }
@@ -69,33 +67,14 @@ public final class DummyService {
     public static ServiceKeyPayloads.NoRecordAccessor makeNoRecordAccessor() { return unused(); }
 
     // ===== R441EventAccessorPayloads.* (multischema typed-accessor / qualified @table match) =====
-    public static R441EventAccessorPayloads.SchemaAEventsPayload makeR441SchemaAEventsPayload() { return unused(); }
     public static R441EventAccessorPayloads.SchemaBEventsPayload makeR441SchemaBEventsPayload() { return unused(); }
 
     // ===== R88AccessorFixtures.* (method name = "r88" + fixture simple name) =====
-    public static R88AccessorFixtures.MissingGetterPojo r88MissingGetterPojo() { return unused(); }
     public static R88AccessorFixtures.ReturnTypeMismatchPojo r88ReturnTypeMismatchPojo() { return unused(); }
     public static R88AccessorFixtures.ArgumentBearingPojo r88ArgumentBearingPojo() { return unused(); }
-    public static R88AccessorFixtures.OverridePojo r88OverridePojo() { return unused(); }
-    public static R88AccessorFixtures.PublicFieldPojo r88PublicFieldPojo() { return unused(); }
-    public static R88AccessorFixtures.BareAccessorPojo r88BareAccessorPojo() { return unused(); }
-    public static R88AccessorFixtures.ExtraGetterRecord r88ExtraGetterRecord() { return unused(); }
     public static R88AccessorFixtures.FullEnvPojo r88FullEnvPojo() { return unused(); }
-    public static R88AccessorFixtures.BooleanPojo r88BooleanPojo() { return unused(); }
-    public static R88AccessorFixtures.BareNameRecord r88BareNameRecord() { return unused(); }
-    public static R88AccessorFixtures.MissingComponentRecord r88MissingComponentRecord() { return unused(); }
-    public static R88AccessorFixtures.CollectionScalarRecord r88CollectionScalarRecord() { return unused(); }
     public static R88AccessorFixtures.CollectionScalarMismatchRecord r88CollectionScalarMismatchRecord() { return unused(); }
 
     // ===== R461AccessorFixtures.* (walk-grounding parents; method name = "r461" + fixture simple name) =====
-    public static R461AccessorFixtures.OrderParentPojo r461OrderParentPojo() { return unused(); }
-    public static R461AccessorFixtures.OrderParentRecord r461OrderParentRecord() { return unused(); }
-    public static R461AccessorFixtures.ZeroArgParent r461ZeroArgParent() { return unused(); }
     public static R461AccessorFixtures.PerArgParent r461PerArgParent() { return unused(); }
-    public static R461AccessorFixtures.RenameParent r461RenameParent() { return unused(); }
-    public static R461AccessorFixtures.NonBooleanIsParent r461NonBooleanIsParent() { return unused(); }
-    public static R461AccessorFixtures.PublicFieldParent r461PublicFieldParent() { return unused(); }
-    public static R461AccessorFixtures.ZeroArgParentBare r461ZeroArgParentBare() { return unused(); }
-    public static R461AccessorFixtures.CovariantParent r461CovariantParent() { return unused(); }
-    public static R461AccessorFixtures.SubChildParent r461SubChildParent() { return unused(); }
 }

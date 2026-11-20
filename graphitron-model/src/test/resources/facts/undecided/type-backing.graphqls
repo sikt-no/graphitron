@@ -15,6 +15,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmShelfService", method: "shelf"})
   occupants(addressId: Int): Occupants
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.OccupantsWithErrorsService", method: "listByAddressId"})
+  covariant: CovariantHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "covariant"})
 }
 
 # A list @asConnection pages over is read off the class like any other field, and lands on the
@@ -32,6 +34,10 @@ type Retitled { description: String }
 # which yields a String, and the keyed twin beside it lends the member nothing, so TitledBlurb is
 # never backed by the blurb the twin returns.
 type Shelf { byKey(key: String): KeyedBlurb, lookup(key: String): LookedUpBlurb, title: TitledBlurb }
+"getDetail() narrows the Object its interface declares, so detail is read as a FilmBlurb and the bridge the compiler adds is not read."
+type CovariantHolder { detail: CovariantBlurb }
+type CovariantBlurb { description: String }
+
 type KeyedBlurb { description: String }
 type LookedUpBlurb { description: String }
 type TitledBlurb { description: String }
@@ -88,6 +94,8 @@ extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   Address,         no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.AddressRecord, ACCESSOR
   KeyedBlurb,      no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
   TitledBlurb,     java.lang.String,                                              ACCESSOR
+  CovariantHolder, no.sikt.graphitron.rewrite.test.services.CovariantBlurbHolder, PRODUCER
+  CovariantBlurb,  no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
   AssignInput,     no.sikt.graphitron.rewrite.test.services.FilmRecordAssignment, PRODUCER
   RedirectedInput, no.sikt.graphitron.rewrite.test.services.FilmRecordAssignment, PRODUCER
   FilmInput,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, ACCESSOR
@@ -95,6 +103,19 @@ extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   SecondPickInput, no.sikt.graphitron.rewrite.test.services.SecondPick,           PRODUCER
   ChosenPickInput, no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
   DeepPickInput,   no.sikt.graphitron.rewrite.test.services.FirstPick,            PRODUCER
+  """)
+
+# The class offers detail once, through the getter written on it, yielding the FilmBlurb: the bridge
+# returning Object is synthetic, and what the class offers is what an author can name.
+extend schema @assertContains(relation: "code_read_slot",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.services.CovariantBlurbHolder'", rows: """
+  class_name,                                                 slot_name, method_name, slot_type
+  no.sikt.graphitron.rewrite.test.services.CovariantBlurbHolder, detail,    getDetail,   no.sikt.graphitron.rewrite.test.services.FilmBlurb
+  """)
+extend schema @assertAbsent(relation: "code_read_slot",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.services.CovariantBlurbHolder'", rows: """
+  class_name,                                                 slot_name, slot_type
+  no.sikt.graphitron.rewrite.test.services.CovariantBlurbHolder, detail,    java.lang.Object
   """)
 
 # The @condition mapping the negative case turns on is captured, so ConditionedPickInput being

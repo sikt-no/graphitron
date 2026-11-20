@@ -17,10 +17,17 @@ type Film @table(name: "film") {
   # A computed field reads a method, not a column.
   isEnglish: Boolean
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+  # A plain type nested in film's row, and handed back by a service below as an object of its own class.
+  texts: Texts
 }
+
+"en is a member of the service's PivotTexts and no column of film's row: on the row it is unresolved."
+type Texts { en: String }
 
 type Query {
   films: [Film!]!
+  texts: Texts
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PivotTextsService", method: "translatedTexts"})
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
@@ -28,4 +35,5 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   COLUMN_UNRESOLVED,    Film,      languageNope, nope
   COLUMN_UNRESOLVED,    Film,      renamed,      no_such_column
   COLUMN_UNRESOLVED,    Film,      titel,        titel
+  COLUMN_UNRESOLVED,    Texts,     en,           en
   """)

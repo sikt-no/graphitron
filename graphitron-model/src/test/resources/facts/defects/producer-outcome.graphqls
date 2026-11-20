@@ -51,6 +51,13 @@ type StrictSingleErrorTypePayload { text: String, errors: [FilmInvalid]! }
 "A member that is no @error makes the list a result, not errors."
 type MixedPayload { text: String, errors: [FilmOrError] }
 
+"A connection that may not be null, which the macro rewrites into one object and so a value a failure cannot honour."
+type ConnectionOutcome { films: [Film!]! @asConnection, errors: [FilmFailure] }
+
+"A list of one object type that is no @error: a field of the value named errors, and no outcome."
+type NotePayload { text: String, errors: [Note] }
+type Note { text: String }
+
 type Query {
   filmOutcome: FilmOutcome
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
@@ -77,6 +84,10 @@ type Mutation {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
   strictSingleErrorType: StrictSingleErrorTypePayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  connectionOutcome: ConnectionOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  note: NotePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
 }
 
 # Every field whose value is a list of errors, whoever returns its type: the child service's and the
@@ -93,6 +104,7 @@ extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
   TwicePayload,       errors,     FilmFailure
   TwicePayload,       problems,   FilmFailure
   DirectPayload,      errors,     FilmInvalid
+  ConnectionOutcome,  errors,     FilmFailure
   """)
 
 # The producers returning an outcome, the child service among them, and nothing else: not the type
@@ -105,6 +117,7 @@ extend schema @expectEquals(relation: "graphitron_producer_outcome", rows: """
   Mutation,  strictValue, SERVICE, StrictValueOutcome, errors
   Film,      review,      SERVICE, ReviewPayload,      errors
   Mutation,  direct,      SERVICE, DirectPayload,      errors
+  Mutation,  connectionOutcome, SERVICE, ConnectionOutcome, errors
   """)
 
 # An errors field under an object reads through an accessor, an outcome's and a nested value's alike.
@@ -130,5 +143,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   StrictSingleErrorTypePayload.errors, ERRORS_FIELD_NON_NULL
   TwicePayload.errors,                 MULTIPLE_ERRORS_FIELDS
   StrictValueOutcome.title,            OUTCOME_FIELD_NON_NULL
+  ConnectionOutcome.films,             OUTCOME_FIELD_NON_NULL
   Film.problems,                       ERRORS_IN_A_ROW
   """)

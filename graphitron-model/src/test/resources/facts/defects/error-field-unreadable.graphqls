@@ -9,6 +9,13 @@
 # FilmLookupRatedException's getters return a Java enum, a list of one and a plain class for fields
 # typed as a GraphQL enum, nullable or not, a list of it and an object: graphql-java writes an enum
 # constant by its name, so each is read, and only bogusRating, which no getter answers, is refused.
+# A GENERIC handler naming the client exception the run emits, under the output package configured
+# here, is read against graphql-java's GraphqlErrorException, its superclass, which offers no bogus.
+
+extend schema @withConfiguration(
+  outputPackage: "no.sikt.graphitron.generated.facts.error_field_unreadable",
+  outputJooqPackage: "no.sikt.graphitron.rewrite.test.jooq",
+  outputDirectory: "/build/generated")
 
 type Film @table(name: "film") { title: String }
 
@@ -18,6 +25,8 @@ type FilmNotFound @error(handlers: [{handler: GENERIC, className: "no.sikt.graph
   localizedMessage: String
   bogus: String
   stackTrace: Int
+  "A @field(name:) naming a getter the class does not offer either."
+  detail: String @field(name: "nope")
 }
 
 type FilmCoded @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException"}]) {
@@ -49,6 +58,13 @@ type RateOverflow @error(handlers: [{handler: DATABASE, sqlState: "22003"}]) {
   errorCode: Int
 }
 
+type ClientMistake @error(handlers: [{handler: GENERIC,
+    className: "no.sikt.graphitron.generated.facts.error_field_unreadable.schema.GraphitronClientException"}]) {
+  path: [String!]!
+  message: String!
+  bogus: String
+}
+
 type Invalid @error(handlers: [{handler: VALIDATION}]) {
   path: [String!]!
   message: String!
@@ -62,9 +78,11 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   code,                   coordinate,                    detail
   ERROR_FIELD_UNREADABLE, FilmNotFound.bogus,            no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
   ERROR_FIELD_UNREADABLE, FilmNotFound.stackTrace,       no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
+  ERROR_FIELD_UNREADABLE, FilmNotFound.detail,           no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
   ERROR_FIELD_UNREADABLE, FilmCoded.code,                no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException
   ERROR_FIELD_UNREADABLE, FilmCoded.hint,                no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException
   ERROR_FIELD_UNREADABLE, FilmRated.bogusRating,        no.sikt.graphitron.rewrite.test.services.FilmLookupRatedException
   ERROR_FIELD_UNREADABLE, RateOverflow.sqlState,         java.sql.SQLException
+  ERROR_FIELD_UNREADABLE, ClientMistake.bogus,           graphql.GraphqlErrorException
   ERROR_FIELD_UNREADABLE, Invalid.bogus,                 graphql.GraphQLError
   """)

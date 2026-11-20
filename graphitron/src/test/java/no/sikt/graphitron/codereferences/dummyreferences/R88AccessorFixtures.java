@@ -16,15 +16,6 @@ public final class R88AccessorFixtures {
     private R88AccessorFixtures() {}
 
     /**
-     * The user's bug case: SDL declares {@code sakId: ID} but the POJO has only {@code getSak()}
-     * (no {@code getSakId} or bare {@code sakId} accessor). Resolver rejects with "no method
-     * named getSakId; no method named sakId".
-     */
-    public static final class MissingGetterPojo {
-        public String getSak() { return ""; }
-    }
-
-    /**
      * Return-type-mismatch case: a method by the right name exists but returns the wrong type.
      * SDL {@code sakId: ID} expects {@code String}; this POJO's {@code getSakId} returns
      * itself, which is incompatible. Resolver rejects with the type-mismatch arm of the
@@ -44,32 +35,6 @@ public final class R88AccessorFixtures {
     }
 
     /**
-     * {@code @field(name:)} override path: SDL field {@code sakId: ID @field(name: "sak")}
-     * redirects accessor resolution to {@code sak}. {@code getSak} matches the get-prefixed
-     * candidate, returning {@code String} (assignable to the SDL field's resolved Java type).
-     */
-    public static final class OverridePojo {
-        public String getSak() { return ""; }
-    }
-
-    /**
-     * A public field of the right name and type and no getter: a public field is not read, so the
-     * field is rejected and the message names {@code getTitle()} to write.
-     */
-    public static final class BareAccessorPojo {
-        public String title() { return ""; }
-    }
-
-    /** A record with no component of the field's name and a hand-written getter, not read. */
-    public record ExtraGetterRecord(String other) {
-        public String getTitle() { return ""; }
-    }
-
-    public static final class PublicFieldPojo {
-        public String title;
-    }
-
-    /**
      * Argument-bearing full-environment match: the candidate method takes a single
      * {@link DataFetchingEnvironment} parameter rather than per-SDL-arg parameters. Resolver
      * accepts via {@code paramsMatch}'s full-env branch.
@@ -77,35 +42,6 @@ public final class R88AccessorFixtures {
     public static final class FullEnvPojo {
         public String getFooBar(DataFetchingEnvironment env) { return ""; }
     }
-
-    /**
-     * Boolean {@code is<X>} candidate: the {@code is}-prefixed candidate is added to the list
-     * only when the SDL field's resolved Java type is {@code boolean} / {@code Boolean}.
-     * {@code isActive} matches under that branch despite the absence of {@code getActive}.
-     */
-    public static final class BooleanPojo {
-        public boolean isActive() { return true; }
-    }
-
-    /**
-     * Java record canonical component accessor: {@code sakId()} is the auto-generated bare-name
-     * accessor, which is how a record is read.
-     */
-    public record BareNameRecord(String sakId) {}
-
-    /**
-     * Java record with no component matching the SDL field name. The resolver tries bare-name,
-     * get-prefixed, and public-field candidates (no public field exists either) and produces a
-     * {@code Rejected}.
-     */
-    public record MissingComponentRecord(String otherField) {}
-
-    /**
-     * Accessors returning a custom scalar's array and parameterized Java types: SDL
-     * {@code tags: Tags} (coercing {@code String[]}) and {@code tagList: TagList} (coercing
-     * {@code List<String>}) both resolve.
-     */
-    public record CollectionScalarRecord(String[] tags, java.util.List<String> tagList) {}
 
     /**
      * The same SDL fields over accessors of the wrong type: {@code Integer[]} is not assignable

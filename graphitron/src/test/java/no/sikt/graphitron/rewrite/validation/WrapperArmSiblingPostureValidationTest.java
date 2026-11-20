@@ -35,12 +35,6 @@ class WrapperArmSiblingPostureValidationTest {
         union SakError = ValidationErr | DbErr
         """;
 
-    private static final String UNION_PARTICIPANTS = """
-        type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-        type Content @table(name: "content") { contentId: Int! @field(name: "content_id") }
-        union FilmReferrer = Inventory | Content
-        """;
-
     @Test
     void serviceChildBesideWrapperArmErrorsField_isRejected() {
         // A child @service field's key source reads env.getSource() without unwrapping the
@@ -73,58 +67,5 @@ class WrapperArmSiblingPostureValidationTest {
                 .contains("ServiceTableField")
                 .contains("cannot sit beside the errors field")
                 .contains("ClassCastException"));
-    }
-
-    @Test
-    void polymorphicChildrenBesideWrapperArmErrorsField_areNotRejected() {
-        // The fixed combination: polymorphic children consume the parent-source binding seam
-        // (first posture bucket), so an errors-bearing payload holding them must validate. This is
-        // the reporter's shape: a Pojo payload with a typed hub accessor, a single-valued
-        // polymorphic child, and a WrapperArm errors union.
-        var schema = TestSchemaHelper.buildSchema(ERROR_TYPES + UNION_PARTICIPANTS + """
-            type SinglePayloadType {
-              film: FilmReferrer
-              errors: [SakError]
-            }
-            type Query {
-              sp: SinglePayloadType
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorSinglePayload"})
-            }
-            """);
-
-        assertThat(schema.field("SinglePayloadType", "film"))
-            .isInstanceOf(ChildField.UnionField.class);
-        var errorsField = (ChildField.ErrorsField) schema.field("SinglePayloadType", "errors");
-        assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
-
-        assertThat(validate(schema))
-            .extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("cannot sit beside the errors field"));
-    }
-
-    @Test
-    void batchedPolymorphicChildBesideWrapperArmErrorsField_isNotRejected() {
-        // The record-backed batched form: a @service payload backed by the jOOQ record itself
-        // (JooqTableRecordType), a list-cardinality polymorphic child (BatchedUnionField, the
-        // KeyLift.FkColumns lift under the wrapper), and a WrapperArm errors union.
-        var schema = TestSchemaHelper.buildSchema(ERROR_TYPES + UNION_PARTICIPANTS + """
-            type Film {
-              referrers: [FilmReferrer!]!
-              errors: [SakError]
-            }
-            type Query {
-              film: Film
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-            }
-            """);
-
-        assertThat(schema.field("Film", "referrers"))
-            .isInstanceOf(ChildField.BatchedUnionField.class);
-        var errorsField = (ChildField.ErrorsField) schema.field("Film", "errors");
-        assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
-
-        assertThat(validate(schema))
-            .extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("cannot sit beside the errors field"));
     }
 }

@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.multischema_a.tables.records.EventRecord;
 
+import java.util.List;
+
 /**
  * Compilation-tier fixture for the cross-schema {@code create<Record>} helper-name collision: two
  * jOOQ {@code EventRecord} classes with an identical simple name live in
@@ -22,6 +24,18 @@ public final class MultiSchemaEventRecordService {
     /** Binds the {@code multischema_a.event} record param. */
     public static String modifyEventA(EventRecord in) {
         return "a:" + in.getEventId();
+    }
+
+    /**
+     * A payload whose {@code events()} hands back {@code multischema_a}'s event records, whose bare
+     * table name {@code multischema_b} shares: a field under it keys its rows by the records' own
+     * table, told apart from the other schema's by the record class.
+     */
+    public record SchemaAEvents(List<EventRecord> events) {}
+
+    /** Hands back a {@link SchemaAEvents}. Never called. */
+    public static SchemaAEvents schemaAEvents() {
+        return new SchemaAEvents(List.of());
     }
 
     /** Binds the {@code multischema_b.event} record param. */

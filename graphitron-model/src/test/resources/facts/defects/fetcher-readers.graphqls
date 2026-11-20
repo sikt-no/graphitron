@@ -16,6 +16,12 @@ type Film @table(name: "film") {
   texts: Texts
   "Nested here, and handed back by a service below as film's own record: two shapes graphitron does not serve."
   recordTexts: RecordTexts
+  "Nested here, and carried by a holder a service hands back: a row and an object of a class read by accessor."
+  heldBlurb: HeldBlurb
+  "A pivot's row, and handed back by a service below as an object of its own class."
+  pivotTexts: PivotTitles
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt")
   "A child over the interface no table-bound type implements, as a list and as a connection."
   props: [Prop!]!
   pagedProps: [Prop!]! @asConnection
@@ -54,6 +60,11 @@ type Blurb { description: String }
 
 type Texts { en: String }
 
+type HeldBlurb { description: String }
+type BlurbHolder { blurb: HeldBlurb }
+
+type PivotTitles { nn: String, nb: String }
+
 type RecordTexts { title: String }
 
 "The element of a connection over a routine: a row of the function's result, the carrier only paging it."
@@ -91,6 +102,10 @@ type Query {
   filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
   texts: Texts
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PivotTextsService", method: "translatedTexts"})
+  blurbHolder(filmId: Int): BlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  pivotTexts: PivotTitles
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.PivotTextsService", method: "translatedTexts"})
   actorFilms(actorId: Int, minLength: Int): [ActorFilm!]! @asConnection
     @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
@@ -142,10 +157,14 @@ extend schema @expectEquals(relation: "graphitron_result", where: "type_name = '
   ActorFilm, ROW
   """)
 
-# Texts and RecordTexts are reached both ways; only RecordTexts, an object of film's record, is the
-# defect below.
-extend schema @expectEquals(relation: "graphitron_result", where: "type_name IN ('Texts', 'RecordTexts', 'Orphan')", rows: """
+# Texts, RecordTexts, HeldBlurb and PivotTitles are reached both ways; only RecordTexts, an object of
+# film's record, is the defect below.
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name IN ('Texts', 'RecordTexts', 'HeldBlurb', 'PivotTitles', 'Orphan')", rows: """
   type_name,   shape
+  HeldBlurb,   OBJECT
+  HeldBlurb,   ROW
+  PivotTitles, OBJECT
+  PivotTitles, ROW
   RecordTexts, OBJECT
   RecordTexts, ROW
   Texts,       OBJECT
@@ -161,6 +180,7 @@ extend schema @assertContains(relation: "graphitron_result_table", rows: """
 
 extend schema @expectEquals(relation: "graphitron_result_pivot", rows: """
   type_name,    pivot_type_name, pivot_field_name
+  PivotTitles,  Film,            pivotTexts
   Translations, Film,            translations
   """)
 
@@ -227,6 +247,8 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   Query.pagedMedia, FIELD_WITHOUT_FETCHER
   CarrierError, RESULT_SHAPES_CONFLICT
   Texts,        RESULT_SHAPES_CONFLICT
+  HeldBlurb,    RESULT_SHAPES_CONFLICT
+  PivotTitles,  RESULT_SHAPES_CONFLICT
   WrittenFilmPayload, RESULT_SHAPES_CONFLICT
   CarriedFilmPayload, RESULT_SHAPES_CONFLICT
   Orphan.label, FIELD_WITHOUT_FETCHER

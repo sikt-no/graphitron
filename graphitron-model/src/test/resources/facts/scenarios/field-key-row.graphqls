@@ -106,6 +106,33 @@ type OccupantsBatchPayload {
   occupants: [AddressOccupant!]! @field(name: "addresses")
 }
 
+# A plain class whose events() returns multischema_a's event records, a table whose bare name
+# multischema_b's shares: the record's class is what names the table its keys are of.
+type Event @table(name: "multischema_a.event") { eventId: Int! @field(name: "event_id") }
+type SchemaAEventsPayload {
+  events: [Event!]
+}
+
+type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+type Content @table(name: "content") { contentId: Int! @field(name: "content_id") }
+union FilmReferrer = Inventory | Content
+type FilmLookupFailed @error(handlers: [{handler: DATABASE}]) { path: [String!]!, message: String! }
+union FilmLookupError = FilmLookupFailed
+
+# Backed by the FilmRecord the service hands back, an outcome its errors field makes: a union child,
+# one or a list, keys on film's row as it would with no errors field beside it.
+type ReferredFilm {
+  referrer: FilmReferrer
+  referrers: [FilmReferrer!]!
+  errors: [FilmLookupError]
+}
+
+# Backed by HandedFilm, whose film() hands over the FilmRecord: the union child keys through it.
+type HandedReferredFilm {
+  film: FilmReferrer
+  errors: [FilmLookupError]
+}
+
 type Query {
   films: [Film!]!
   filmNodes: [FilmNode!]!
@@ -124,6 +151,12 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
   occupantsBatch: [OccupantsBatchPayload!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayloadService", method: "occupantsBatch"})
+  schemaAEvents: SchemaAEventsPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MultiSchemaEventRecordService", method: "schemaAEvents"})
+  referredFilm(id: Int): ReferredFilm
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  handedReferredFilm: HandedReferredFilm
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.HandedFilmService", method: "make"})
 }
 
 type Mutation {
@@ -149,6 +182,10 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", row
   Query.filmKeySummaries.keyCensus,             ACCESSOR, ONE,   film,      film_pkey
   Query.filmKeySummaries.languages,             ACCESSOR, ONE,   film,      film_pkey
   Query.occupantsBatch.occupants,               ACCESSOR, MANY,  address,   address_pkey
+  Query.schemaAEvents.events,                   ACCESSOR, MANY,  event,     event_pkey
+  Query.referredFilm.referrer,                  COLUMNS,  ONE,   film,      film_pkey
+  Query.referredFilm.referrers,                 COLUMNS,  ONE,   film,      film_pkey
+  Query.handedReferredFilm.film,                ACCESSOR, ONE,   film,      film_pkey
   Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
   Film.languageByService,                       COLUMNS,  ONE,   film,      film_pkey
   Film.castMembers,                             COLUMNS,  ONE,   film,      film_pkey
@@ -172,6 +209,15 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift_acces
   Query.filmKeySummaries.keyCensus,        no.sikt.graphitron.rewrite.test.services.FilmKeySummary,                    film
   Query.filmKeySummaries.languages,        no.sikt.graphitron.rewrite.test.services.FilmKeySummary,                    film
   Query.occupantsBatch.occupants,          no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload,             addresses
+  Query.schemaAEvents.events,              no.sikt.graphitron.rewrite.test.services.MultiSchemaEventRecordService$SchemaAEvents, events
+  Query.handedReferredFilm.film,           no.sikt.graphitron.rewrite.test.services.HandedFilm,                        film
+  """)
+
+# The event key is multischema_a's, the schema the record class is generated under, and not
+# multischema_b's, whose table has the same bare name.
+extend schema @assertContains(relation: "graphitron_occurrence_producer_lift", rows: """
+  coordinate,                 key_schema,    key_table, key_constraint
+  Query.schemaAEvents.events, multischema_a, event,     event_pkey
   """)
 
 # A service handing back a table's records under a parent holding an object reads off its own
@@ -188,4 +234,15 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_method", row
   """)
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
   coordinate IN ('FilmNode.languageByService', 'FilmNode.castMembers', 'CityNames.lowercase')
+  """)
+
+# Both outcomes catch into their errors field, and nothing beside it is refused.
+extend schema @assertContains(relation: "graphitron_producer_outcome", rows: """
+  type_name, field_name,         kind,    outcome_type_name,  errors_field_name
+  Query,     referredFilm,       SERVICE, ReferredFilm,       errors
+  Query,     handedReferredFilm, SERVICE, HandedReferredFilm, errors
+  """)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate IN ('ReferredFilm.referrer', 'ReferredFilm.referrers', 'HandedReferredFilm.film',
+                 'SchemaAEventsPayload.events')
   """)

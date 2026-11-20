@@ -5,7 +5,6 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
-import no.sikt.graphitron.rewrite.model.ReachableSourceShape;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -145,53 +144,5 @@ class PivotClassificationTest {
         assertThat(nesting.nestedFields()).allMatch(f -> f instanceof ChildField.ColumnBackedField);
         assertThat(schema.type("TranslatedTexts")).isInstanceOf(GraphitronType.NestingType.class);
         assertThat(no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate(schema)).isEmpty();
-    }
-
-    /**
-     * Class-backed coexistence: a {@code @service} producer also reaches the projection type, so
-     * each slot coordinate's classifier-known shape set is the two-shape union (generic Record +
-     * class-backed accessor), in both registration orders — the first-wins registry entry does
-     * not drive the arm set.
-     */
-    @Test
-    void classBackedProducerCoexistence_unionsShapeSet_bothOrders() {
-        String pivotFirst = """
-            type TranslatedTexts { nn: String nb: String }
-            type Film @table(name: "film") {
-              titleTexts: TranslatedTexts
-                @reference(path: [{table: "film_translation"}])
-                @pivot(on: "lang_code", value: "title_txt")
-            }
-            type Query {
-              film: Film
-              serviceTexts: TranslatedTexts
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTranslatedTexts"})
-            }
-            """;
-        String producerFirst = """
-            type TranslatedTexts { nn: String nb: String }
-            type Query {
-              serviceTexts: TranslatedTexts
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTranslatedTexts"})
-              film: Film
-            }
-            type Film @table(name: "film") {
-              titleTexts: TranslatedTexts
-                @reference(path: [{table: "film_translation"}])
-                @pivot(on: "lang_code", value: "title_txt")
-            }
-            """;
-        for (String sdl : new String[] {pivotFirst, producerFirst}) {
-            var schema = TestSchemaHelper.buildSchema(sdl);
-            assertThat(schema.field("Film", "titleTexts")).isInstanceOf(ChildField.PivotField.class);
-            for (String slot : new String[] {"nn", "nb"}) {
-                assertThat(schema.reachableSourceShapes("TranslatedTexts", slot))
-                    .as("slot coordinate TranslatedTexts.%s carries the two-shape union", slot)
-                    .containsExactlyInAnyOrder(
-                        ReachableSourceShape.NESTING_RECORD,
-                        ReachableSourceShape.CLASS_BACKED_ACCESSOR);
-            }
-            assertThat(no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate(schema)).isEmpty();
-        }
     }
 }

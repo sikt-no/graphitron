@@ -50,6 +50,11 @@ type FilmIdsServicePayload {
   filmIds: [ID!] @nodeId(typeName: "Film")
 }
 
+"The service's FilmRecord re-read beside the errors field its outcome catches into."
+type FilmLookupOutcome { film: Film, errors: [FilmLookupFailure] }
+type FilmLookupMissing @error(handlers: [{handler: DATABASE}]) { path: [String!]!, message: String! }
+union FilmLookupFailure = FilmLookupMissing
+
 type Query {
   films: [Film!]!
   createFilmsWithActors(filmIds: [Int!]!): FilmsWithActorsPayload
@@ -58,6 +63,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
   serviceFilmIdsByIdsWithNulls(ids: [Int!]!): FilmIdsServicePayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmListGapService", method: "filmsByIdsWithNulls"})
+  filmLookupOutcome(id: Int!): FilmLookupOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService", method: "filmById"})
 }
 
 type Mutation {
@@ -72,6 +79,7 @@ extend schema @assertContains(relation: "graphitron_payload_data_field", rows: "
   FilmsWithActorsPayload, results,    OBJECT
   FilmBlurbHolder,        blurb,      OBJECT
   FilmIdsServicePayload,  filmIds,    NODE_ID
+  FilmLookupOutcome,      film,       RECORDS
   """)
 
 # A nesting type no producer returns, and a producer-backed parent's table-bound children: each

@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
@@ -27,22 +26,6 @@ import static org.assertj.core.api.Assertions.tuple;
  */
 @UnitTier
 class ErrorChannelClassificationTest {
-
-    private static final String UNION_ERROR_PAYLOAD_SDL = """
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = ValidationErr | DbErr
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            """;
 
     private static final String SERVICE_DECL =
         "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\", method: \"runSak\"})";
@@ -191,26 +174,6 @@ class ErrorChannelClassificationTest {
                 .as("films: %s", dataType)
                 .isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
         }
-    }
-
-    @Test
-    void nonNullConnectionSuccessProjectionField_rejectsCarrier() {
-        // @asConnection is still a list on the pre-rewrite schema the classifier reads; the rule
-        // keys on the field's wrapper, which resolves the directive to a connection, and a
-        // connection counts as a single value on the error arm.
-        var schema = build(SAK_ERRORS_SDL + """
-            type Film @table(name: "film") { title: String }
-            type SakPayload {
-                data: [Film!]! @asConnection
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        assertThat(schema.field("Query", "sak"))
-            .isInstanceOfSatisfying(UnclassifiedField.class, u -> assertThat(u.rejection())
-                .isEqualTo(new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError
-                    .NonNullableSuccessProjectionField("SakPayload", "data")));
     }
 
     @Test
@@ -522,112 +485,6 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void extraField_missingAccessorOnGenericSourceClass_rejectsCarrier() {
-        // An @error type with a field beyond path/message classifies cleanly,
-        // but the carrier's per-(channel, @error type, handler) accessor check rejects when the
-        // handler's source class can't populate the field. IllegalArgumentException has no
-        // getSeverity() / severity() / public field, so the carrier surfaces UnclassifiedField.
-        var schema = build("""
-            enum Severity { LOW HIGH }
-            type RichErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-                path: [String!]!
-                message: String!
-                severity: Severity!
-            }
-            union SakError = RichErr
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var field = schema.field("Query", "sak");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        var u = (UnclassifiedField) field;
-        assertThat(u.reason())
-            .contains("RichErr")
-            .contains("severity")
-            .contains("java.lang.IllegalArgumentException");
-    }
-
-    @Test
-    void extraField_generatedClientException_checkedAgainstSuperclassOnCleanBuild() {
-        // The test codegen loader never carries the generated GraphitronClientException, which
-        // is the clean-build state. The accessor check still runs, against the generated class's
-        // superclass graphql.GraphqlErrorException, which inherits getLocalizedMessage().
-        var schema = build("""
-            type ClientErr @error(handlers: [{handler: GENERIC, className: "fake.code.generated.schema.GraphitronClientException"}]) {
-                path: [String!]!
-                message: String!
-                localizedMessage: String
-            }
-            union SakError = ClientErr
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
-            .extracting(et -> et.name())
-            .containsExactly("ClientErr");
-    }
-
-    @Test
-    void extraField_generatedClientException_missingAccessor_rejectsNamingSuperclass() {
-        var schema = build("""
-            type ClientErr @error(handlers: [{handler: GENERIC, className: "fake.code.generated.schema.GraphitronClientException"}]) {
-                path: [String!]!
-                message: String!
-                bogus: String
-            }
-            union SakError = ClientErr
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var field = schema.field("Query", "sak");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .contains("ClientErr")
-            .contains("bogus")
-            .contains("graphql.GraphqlErrorException");
-    }
-
-    @Test
-    void extraField_pathAndMessageStaySynthesized_noAccessorCheckOnThem() {
-        // path and message are populated by per-@error-type synthesised DataFetchers, not by the
-        // source class's accessors. The accessor check exempts them so an @error type with only
-        // path + message classifies cleanly even when the handler's source class lacks getPath().
-        // (IllegalArgumentException has neither getPath() nor a path() / public path field.)
-        var schema = build("""
-            type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = SimpleErr
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappedErrorTypes())
-            .extracting(et -> et.name())
-            .containsExactly("SimpleErr");
-    }
-
-    @Test
     void extraField_fieldDirectiveRemapsAccessor_classifiesWithOverride() {
         // @field(name:) on an extra field names the source-class accessor when it diverges
         // from the SDL field name. `detail` has no getDetail() on RuntimeException, but
@@ -654,35 +511,6 @@ class ErrorChannelClassificationTest {
             .extracting(o -> o.sdlFieldName(), o -> o.accessorBase())
             .containsExactly(tuple("detail", "localizedMessage"));
         assertThat(errorType.accessorBaseFor("detail")).isEqualTo("localizedMessage");
-    }
-
-    @Test
-    void extraField_fieldDirectiveRemapStillMissing_rejectsCarrierNamingFieldAndDirective() {
-        // A remap to an accessor the source class still does not expose rejects, and the
-        // diagnostic names both the SDL field and the directive value so the failed remap is
-        // diagnosable. RuntimeException has no getNope() / nope() / public nope field.
-        var schema = build("""
-            type RemapMissErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
-                path: [String!]!
-                message: String!
-                detail: String @field(name: "nope")
-            }
-            union SakError = RemapMissErr
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var field = schema.field("Query", "sak");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        var reason = ((UnclassifiedField) field).reason();
-        assertThat(reason)
-            .contains("RemapMissErr")
-            .contains("detail")
-            .contains("nope")
-            .contains("java.lang.RuntimeException");
     }
 
     // ===== Carrier-walk error channel binding =====
@@ -739,78 +567,6 @@ class ErrorChannelClassificationTest {
         assertThat(reason).contains("errors-shaped carrier field 'errors'", "more than one", "VALIDATION");
     }
 
-    // A child @service field catches into its outcome as a root one does: its payload's errors
-    // field is an ErrorsField and the field carries an ErrorChannel.Mapped over the union's
-    // members, with a nested payload backing class as with any other.
-    @Test
-    void childServiceRecordField_payloadWithErrorsField_catchesIntoItsOutcome() {
-        var schema = build("""
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = ValidationErr | DbErr
-            type NestedErrPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Film @table(name: "film") {
-                title: String
-                sak: NestedErrPayload @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runNestedErrors"})
-            }
-            type Query { films: [Film!] }
-            """);
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
-        var ch = ((WithErrorChannel) f).errorChannel().orElseThrow();
-        assertThat(ch).isInstanceOf(ErrorChannel.Mapped.class);
-        assertThat(ch.mappedErrorTypes()).extracting(et -> et.name())
-            .containsExactly("ValidationErr", "DbErr");
-        assertThat(schema.field("NestedErrPayload", "errors"))
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
-    }
-
-    @Test
-    void extraField_childServicePayload_fieldDirectiveRemapsAccessor() {
-        // A child @service field's channel runs the same HandlerAccessorCheck a root one does;
-        // @field(name: "localizedMessage") on an extra field remaps to Throwable.getLocalizedMessage()
-        // so the accessor check passes and the classified ErrorType carries the override.
-        var schema = build("""
-            type RemapErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
-                path: [String!]!
-                message: String!
-                detail: String @field(name: "localizedMessage")
-            }
-            union SakError = RemapErr
-            type NestedErrPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Film @table(name: "film") {
-                title: String
-                sak: NestedErrPayload @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runNestedErrors"})
-            }
-            type Query { films: [Film!] }
-            """);
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
-        var ch = ((WithErrorChannel) f).errorChannel().orElseThrow();
-        var errorType = ch.mappedErrorTypes().stream()
-            .filter(et -> et.name().equals("RemapErr")).findFirst().orElseThrow();
-        assertThat(errorType.accessorBaseFor("detail")).isEqualTo("localizedMessage");
-        assertThat(errorType.accessorOverrides())
-            .extracting(o -> o.sdlFieldName(), o -> o.accessorBase())
-            .containsExactly(tuple("detail", "localizedMessage"));
-    }
-
     // ===== The single @error type as the errors field's element =====
 
     private static final String DB_ERR_SDL = """
@@ -819,29 +575,6 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             """;
-
-    @Test
-    void singleErrorTypeElement_isAnErrorsCarrier() {
-        // No union, no interface and no implements clause: a list of one @error type is the
-        // channel exactly as a union of it would be.
-        var schema = build(DB_ERR_SDL + """
-            type SakPayload {
-                film: Film
-                errors: [DbErr]
-            }
-            """ + DML_SAK);
-
-        var channel = channelOf(schema);
-        assertThat(channel).get().isInstanceOf(ErrorChannel.Mapped.class);
-        assertThat(channel.get().mappedErrorTypes())
-            .extracting(et -> et.name())
-            .containsExactly("DbErr");
-        var errors = schema.field("SakPayload", "errors");
-        assertThat(errors).isInstanceOf(ChildField.ErrorsField.class);
-        assertThat(((ChildField.ErrorsField) errors).errorTypes())
-            .extracting(et -> et.name())
-            .containsExactly("DbErr");
-    }
 
     @Test
     void singleErrorTypeElement_backingClassWithoutErrorsMember_bindsAndCarries() {
@@ -862,85 +595,6 @@ class ErrorChannelClassificationTest {
         assertThat(f.errorChannel()).get().isInstanceOf(ErrorChannel.Mapped.class);
         assertThat(schema.field("ReviewPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
         assertThat(schema.field("ReviewPayload", "data")).isNotInstanceOf(UnclassifiedField.class);
-    }
-
-    @Test
-    void singleNonErrorObjectElement_staysADataField() {
-        var schema = build("""
-            type Note {
-                text: String
-            }
-            type SakPayload {
-                data: String
-                errors: [Note]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var f = schema.field("Query", "sak");
-        if (f instanceof WithErrorChannel carrier) {
-            assertThat(carrier.errorChannel()).isEmpty();
-        }
-        assertThat(schema.field("SakPayload", "errors")).isNotInstanceOf(ChildField.ErrorsField.class);
-    }
-
-    @Test
-    void singleErrorTypeElement_nonNullList_isRejected() {
-        var schema = build(DB_ERR_SDL + """
-            type SakPayload {
-                data: String
-                errors: [DbErr!]!
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var errors = schema.field("SakPayload", "errors");
-        assertThat(errors).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) errors).rejection())
-            .isEqualTo(new ErrorChannelWalkerError.NonNullableErrorsField("SakPayload", "errors"));
-    }
-
-    @Test
-    void singleErrorTypeElement_nonList_isRejected() {
-        var schema = build(DB_ERR_SDL + """
-            type SakPayload {
-                data: String
-                errors: DbErr
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var errors = schema.field("SakPayload", "errors");
-        assertThat(errors).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) errors).reason()).contains("must be a list");
-    }
-
-    @Test
-    void payloadBackingClassWithErrorsAccessor_stillPopulatesErrorChannel() {
-        // The channel is decided from the schema, never from the class: a backing class that
-        // carries its own errors (a record component on SakPayload, a bean getErrors() on
-        // BeanErrorsPayload) changes nothing, and the errors field is the outcome's, not a read
-        // of that accessor.
-        var schema = build(UNION_ERROR_PAYLOAD_SDL + """
-            type BeanPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query {
-                sak: SakPayload %s
-                bean: BeanPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runBeanErrors"})
-            }
-            """.formatted(SERVICE_DECL));
-
-        for (var producer : java.util.List.of("sak", "bean")) {
-            var f = (QueryField.QueryServiceRecordField) schema.field("Query", producer);
-            assertThat(f.errorChannel()).as(producer).isPresent();
-        }
-        for (var payload : java.util.List.of("SakPayload", "BeanPayload")) {
-            assertThat(schema.field(payload, "errors")).as(payload)
-                .isInstanceOf(ChildField.ErrorsField.class)
-                .isNotInstanceOf(ChildField.RecordReadField.class);
-        }
     }
 
     private static Optional<? extends ErrorChannel> channelOf(GraphitronSchema schema) {

@@ -24,4 +24,9 @@ public final class FilmBlurbHolderService {
             .fetchOne(Tables.FILM.DESCRIPTION);
         return description == null ? null : new FilmBlurbHolder(new FilmBlurb(description));
     }
+
+    /** A holder whose detail getter narrows its interface's return. Never called. */
+    public static CovariantBlurbHolder covariant() {
+        return new CovariantBlurbHolder();
+    }
 }

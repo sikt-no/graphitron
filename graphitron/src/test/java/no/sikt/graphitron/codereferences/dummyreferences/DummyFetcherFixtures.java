@@ -37,14 +37,6 @@ public final class DummyFetcherFixtures {
     public record FilmDetailsRating(String rating) {}
 
     /**
-     * Backs a two-hop mixed-source chain: a parent whose {@code details} accessor returns
-     * {@link FilmDetailsRating}, so an SDL {@code FilmDetails} field on the parent binds class-backed
-     * through the parent accessor ({@code propagateResultChildren}) while the same {@code FilmDetails} also
-     * nests off a {@code @table} parent.
-     */
-    public record FilmHolder(FilmDetailsRating details) {}
-
-    /**
      * Backs the read-family {@code @nodeId} encode on a class-backed parent: {@code filmKey} is
      * typed as {@code film.film_id}'s own binding type, which is what an encode from a read needs
      * the accessor to yield, and {@code filmLabel} is the same accessor shape typed as something

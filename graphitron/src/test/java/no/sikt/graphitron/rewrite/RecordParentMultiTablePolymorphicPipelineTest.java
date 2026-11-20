@@ -14,8 +14,6 @@ import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -191,58 +189,6 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
     }
 
-    @Test
-    void childInterfaceField_recordParent_accessorKeyedMany() {
-        // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`; the
-        // list-cardinality polymorphic child named `films` resolves to KeyLift.Accessor (Arity.MANY).
-        var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
-            type ListPayloadType {
-              films: [FilmReferrer!]!
-            }
-            type Query {
-              lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
-            }
-            """);
-        var field = (ChildField.BatchedInterfaceField) schema.field("ListPayloadType", "films");
-        var psk = field.sourceKey();
-        var lift = field.parentKeyLift();
-        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
-        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
-        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
-        assertThat(psk.columns()).hasSize(1);
-        assertThat(psk.columns().get(0).sqlName()).isEqualTo("film_id");
-        assertThat(((KeyLift.Accessor) lift).accessor().methodName()).isEqualTo("films");
-        // The accessor-many arm is the loader.loadMany dispatch, minted where the arity is
-        // decided rather than re-derived at the emitter's load site.
-        assertThat(field.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_MANY);
-    }
-
-    @Test
-    void childInterfaceField_recordParent_accessorKeyedMany_fieldNameRemapsAccessor() {
-        // @field(name:) on a record-backed parent remaps the accessor base name: the SDL field
-        // `referrers` bridges to the Pojo parent's `films()` accessor via @field(name: "films").
-        // Without the remap the matcher would search for an accessor named `referrers` /
-        // `getReferrers` / `isReferrers` and fall through to UnclassifiedField.
-        var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
-            type ListPayloadType {
-              referrers: [FilmReferrer!]! @field(name: "films")
-            }
-            type Query {
-              lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
-            }
-            """);
-        var field = (ChildField.BatchedInterfaceField) schema.field("ListPayloadType", "referrers");
-        var psk = field.sourceKey();
-        var lift = field.parentKeyLift();
-        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
-        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
-        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
-        // The carried method name is the actual accessor name (the directive value), not the SDL
-        // field name.
-        assertThat(((KeyLift.Accessor) lift).accessor().methodName())
-            .isEqualTo("films");
-    }
-
     // ===== UnionField siblings (mirror Interface; pin shape parity rather than re-verifying body) =====
 
     @Test
@@ -285,25 +231,6 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.ONE);
         assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         assertThat(((KeyLift.Accessor) lift).accessor().methodName()).isEqualTo("film");
-    }
-
-    @Test
-    void childUnionField_recordParent_accessorKeyedMany() {
-        var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
-            type ListPayloadType {
-              films: [FilmReferrer!]!
-            }
-            type Query {
-              lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
-            }
-            """);
-        var field = (ChildField.BatchedUnionField) schema.field("ListPayloadType", "films");
-        var psk = field.sourceKey();
-        var lift = field.parentKeyLift();
-        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
-        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
-        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
-        assertThat(field.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_MANY);
     }
 
     // ===== Rejection arms =====
@@ -377,5 +304,4 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(helperNames)
             .contains("selectInventoryForReferrers", "selectContentForReferrers");
     }
-
 }

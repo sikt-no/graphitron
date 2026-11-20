@@ -384,24 +384,6 @@ class MultiTableChildReferenceForPipelineTest {
             .isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
     }
 
-    @Test
-    void recordParentArm_multiFkDisambiguation_classifies() {
-        // Record-backed-parent producer arm: Language is produced by a @service returning a record.
-        var schema = TestSchemaHelper.buildSchema("""
-            interface LangThing { rowId: Int }
-            type Film implements LangThing @table(name: "film") { rowId: Int @field(name: "film_id") }
-            type Language {
-              thing: LangThing @referenceFor(type: "Film", path: [{key: "film_original_language_id_fkey"}])
-            }
-            type Query {
-              language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
-            }
-            """);
-        var field = (ChildField.InterfaceField) schema.field("Language", "thing");
-        var correlation = field.participantJoinPaths().get("Film");
-        assertThat(correlation).isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
-    }
-
     private static final String ROUTE_FIXTURES =
         "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures";
 

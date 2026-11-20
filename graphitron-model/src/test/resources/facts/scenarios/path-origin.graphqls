@@ -110,6 +110,14 @@ type FilmBlurbHolder {
 
 type FilmBlurb { description: String }
 
+# Backed by the LanguageRecords the service hands back: thing's @referenceFor leaves language by the
+# key it names, film's original language, of the two between film and language.
+interface LangThing { rowId: Int }
+type LangFilm implements LangThing @table(name: "film") { rowId: Int @field(name: "film_id") }
+type HandedLanguage {
+  thing: LangThing @referenceFor(type: "LangFilm", path: [{key: "film_original_language_id_fkey"}])
+}
+
 input FilmInput @table(name: "film") { title: String }
 
 type FilmInvalid @error(handlers: [{handler: DATABASE}]) { path: [String!]!, message: String! }
@@ -145,6 +153,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService", method: "recentlyCreatedFilmsBatched"})
   filmBlurbHolder(filmId: Int!): FilmBlurbHolder
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  handedLanguages: [HandedLanguage!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "languagesOnConnection"})
 }
 
 type Mutation {
@@ -180,6 +190,7 @@ extend schema @expectEquals(relation: "graphitron_path", where: "origin <> 'EMPT
   Query.filmsByLanguageName(name:), Film,           JOIN, WRITTEN
   Query.filmBlurbHolder.blurb,     FilmBlurb,       ACCESSOR, INFERRED
   Query.filmBlurbHolder.blurb.description, String,  ACCESSOR, INFERRED
+  Query.handedLanguages.thing,     LangFilm,        JOIN, WRITTEN
   """)
 
 # An empty path for a scalar, a nested object and its field, an argument, an input field, a write
@@ -301,4 +312,15 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key",
     where: "coordinate = 'Query.customers(addressId:)'", rows: """
   coordinate,                   target_type, position, constraint_name
   Query.customers(addressId:),  Customer,    0,        customer_address_id_fkey
+  """)
+
+# A @referenceFor under a record handed over starts on the record's table and takes the key it names.
+extend schema @assertContains(relation: "graphitron_join_path", rows: """
+  coordinate,                  target_type, target_table
+  Query.handedLanguages.thing, LangFilm,    film
+  """)
+extend schema @expectEquals(relation: "graphitron_join_path_step_key",
+    where: "coordinate = 'Query.handedLanguages.thing'", rows: """
+  coordinate,                  position, constraint_name
+  Query.handedLanguages.thing, 0,        film_original_language_id_fkey
   """)

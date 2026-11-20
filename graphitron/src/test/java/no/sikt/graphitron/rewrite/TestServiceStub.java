@@ -514,15 +514,6 @@ public class TestServiceStub {
     }
 
     /**
-     * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.BeanErrorsPayload}
-     * bean, whose class has its own {@code getErrors()}: the classifier still makes the payload's
-     * {@code errors} field the error channel.
-     */
-    public static no.sikt.graphitron.codereferences.dummyreferences.BeanErrorsPayload runBeanErrors() {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
      * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.DataOnlyPayload}
      * record, which has no errors member: the payload binds to it without one.
      */

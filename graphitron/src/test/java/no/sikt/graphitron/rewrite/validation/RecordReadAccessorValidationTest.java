@@ -34,8 +34,6 @@ class RecordReadAccessorValidationTest {
         return ((ValueLocator.JavaAccessor) locator).accessor();
     }
 
-    private static final String FIXTURES_FQN_PREFIX = "no.sikt.graphitron.codereferences.dummyreferences.R88AccessorFixtures$";
-
     private static final String DUMMY_SERVICE_FQN =
         "no.sikt.graphitron.codereferences.dummyreferences.DummyService";
 
@@ -55,37 +53,6 @@ class RecordReadAccessorValidationTest {
 
     private static java.util.List<ValidationError> validate(GraphitronSchema schema) {
         return new GraphitronSchemaValidator().validate(schema);
-    }
-
-    @Test
-    void pojoParent_missingGetter_validatorReportsActionableError() {
-        var schema = buildWithRecord("MissingGetterPojo", "sakId: ID");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("TestType.sakId")
-                && m.contains(FIXTURES_FQN_PREFIX + "MissingGetterPojo")
-                && m.contains("getSakId")
-                && m.contains("sakId")
-                && m.contains("@field(name:"));
-        // Structural: the rejected field classifies as UnclassifiedField, not as a RecordReadField
-        // carrying a Rejected accessor. The arm-type tightening on ValueLocator.JavaAccessor
-        // (AccessorResolution.Resolved) is enforced by routing the rejection through the
-        // Unclassified arm in FieldBuilder; this is the test that pins that routing change.
-        assertThat(schema.field("TestType", "sakId"))
-            .isInstanceOf(GraphitronField.UnclassifiedField.class);
-    }
-
-    @Test
-    void javaRecordParent_missingComponent_validatorReportsActionableError() {
-        var schema = buildWithRecord("MissingComponentRecord", "sakId: ID");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("TestType.sakId")
-                && m.contains(FIXTURES_FQN_PREFIX + "MissingComponentRecord")
-                && m.contains("sakId")
-                && m.contains("@field(name:"));
-        assertThat(schema.field("TestType", "sakId"))
-            .isInstanceOf(GraphitronField.UnclassifiedField.class);
     }
 
     @Test
@@ -118,66 +85,6 @@ class RecordReadAccessorValidationTest {
     }
 
     @Test
-    void pojoParent_fieldNameOverride_resolvesAgainstOverride() {
-        var schema = buildWithRecord("OverridePojo", "sakId: ID @field(name: \"sak\")");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("TestType.sakId"));
-        var accessor = accessorOf(schema.field("TestType", "sakId"));
-        assertThat(accessor).isInstanceOf(AccessorResolution.GetterPrefixed.class);
-        var gp = (AccessorResolution.GetterPrefixed) accessor;
-        assertThat(gp.method().getName()).isEqualTo("getSak");
-    }
-
-    @Test
-    void javaRecordParent_bareNameAccessor_resolves() {
-        var schema = buildWithRecord("BareNameRecord", "sakId: ID");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("TestType.sakId"));
-        var accessor = accessorOf(schema.field("TestType", "sakId"));
-        assertThat(accessor).isInstanceOf(AccessorResolution.BareName.class);
-        var bn = (AccessorResolution.BareName) accessor;
-        assertThat(bn.method().getName()).isEqualTo("sakId");
-    }
-
-    @Test
-    void pojoParent_publicField_isNotRead_validatorNamesTheGetterToWrite() {
-        var schema = buildWithRecord("PublicFieldPojo", "title: String");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("TestType.title")
-                && m.contains("public field `title`")
-                && m.contains("getTitle()"));
-        assertThat(schema.field("TestType", "title"))
-            .isInstanceOf(GraphitronField.UnclassifiedField.class);
-    }
-
-    @Test
-    void pojoParent_bareAccessor_isNotRead_validatorNamesTheGetterToWrite() {
-        var schema = buildWithRecord("BareAccessorPojo", "title: String");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("TestType.title")
-                && m.contains("title()")
-                && m.contains("getTitle()"));
-        assertThat(schema.field("TestType", "title"))
-            .isInstanceOf(GraphitronField.UnclassifiedField.class);
-    }
-
-    @Test
-    void recordParent_getterThatIsNoComponent_isNotRead() {
-        var schema = buildWithRecord("ExtraGetterRecord", "title: String");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("TestType.title")
-                && m.contains("getTitle()")
-                && m.contains("components only"));
-        assertThat(schema.field("TestType", "title"))
-            .isInstanceOf(GraphitronField.UnclassifiedField.class);
-    }
-
-    @Test
     void pojoParent_argumentBearingFieldFullEnv_resolves() {
         var schema = buildWithRecord("FullEnvPojo", "fooBar(x: String): String");
         var errors = validate(schema);
@@ -194,18 +101,6 @@ class RecordReadAccessorValidationTest {
         assertThat(method.getParameterTypes()[0].getName()).isEqualTo("graphql.schema.DataFetchingEnvironment");
     }
 
-    @Test
-    void pojoParent_booleanReturn_resolvesAsIsAccessor() {
-        var schema = buildWithRecord("BooleanPojo", "active: Boolean");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("TestType.active"));
-        var accessor = accessorOf(schema.field("TestType", "active"));
-        assertThat(accessor).isInstanceOf(AccessorResolution.GetterPrefixed.class);
-        var gp = (AccessorResolution.GetterPrefixed) accessor;
-        assertThat(gp.method().getName()).isEqualTo("isActive");
-    }
-
     private static final String COLLECTION_SCALARS = """
         scalar Tags @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAGS")
         scalar TagList @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.TAG_LIST")
@@ -218,16 +113,6 @@ class RecordReadAccessorValidationTest {
             }
             type TestType { tags: Tags tagList: TagList }
             """.formatted(DUMMY_SERVICE_FQN, fixtureSimpleName));
-    }
-
-    @Test
-    void recordParent_arrayAndListScalarAccessors_resolve() {
-        var schema = buildWithCollectionScalars("CollectionScalarRecord");
-        var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("TestType.tags") || m.contains("TestType.tagList"));
-        assertThat(accessorOf(schema.field("TestType", "tags"))).isInstanceOf(AccessorResolution.BareName.class);
-        assertThat(accessorOf(schema.field("TestType", "tagList"))).isInstanceOf(AccessorResolution.BareName.class);
     }
 
     @Test
