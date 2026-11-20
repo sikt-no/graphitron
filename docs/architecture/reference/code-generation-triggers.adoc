@@ -403,7 +403,13 @@ is, `graphitron_occurrence_participant` decides once the rows are fetched. A nod
 such a producer is dispatched by the type id every node id carries, known at runtime without
 decoding (Alf, 2026-11-14): each id goes to the participant whose type it names, so a lookup by ids
 of several participant types answers each from its own participant's rows, and no participant
-decodes another's id. An id naming no participant is malformed for the field, a client error. Where
+decodes another's id. An id naming no participant is malformed for the field, a client error. A
+query-root field returning the `Node` interface, as `Query.node` and `Query.nodes` do, is the
+exception (Alf, 2026-11-04; Filip, 2026-11-20): it asks whether an id resolves in this subgraph at
+all, so a well-formed id whose type id names no node this subgraph serves by id answers `null`, as an
+id of no row does, and only an id that is not well formed is the client error. A subgraph cannot tell
+another subgraph's type from one that exists nowhere, and a gateway asking every subgraph for one id
+hears `null` from those that do not own it. Where
 a field answers node ids by position, as `Query.nodes` does, a malformed id fails its own position
 and not the field (Filip, 2026-11-20): that position is `null` with the client error at its path, and
 the other ids are answered, so how far one bad id reaches is the schema's own nullability to say. A root producer has no
