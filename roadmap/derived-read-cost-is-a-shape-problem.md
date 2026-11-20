@@ -1657,7 +1657,7 @@ generated Java or SQL as text.
   shape, its emitter path following. The tests read documents already: `NodeIdFillEmitterTest` and
   `NodeIdBuildEmitterTest` `scenarios/node-id-decode-record`, `CallEmitterTest`
   `scenarios/service-call-shapes`, and the service census is part of `EmissionCensusTest`.
-* **A fact a document holds is claimed by the document, and decided by a rule** `open`, off the
+* **A fact a document holds is claimed by the document, and decided by a rule, claimed by C** `open`, off the
   critical path. `LiftQueryTest.recordsForAPayloadsDataFieldOrAScalarAreNoLift` names two absences
   and pins every lift in `scenarios/service-lift` exactly, a claim the document should make
   itself, so a new lift in the document breaks a test about payloads and scalars; and `LiftQuery`
