@@ -13,12 +13,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_UNPARSED_ENTRY;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
  * The writer of {@code graphitron_ast_argmapping_pair_entry}: every entry of every argMapping a
- * document writes, at the string it was written as.
+ * document writes, at the string it was written as; and of
+ * {@code graphitron_ast_argmapping_unparsed_entry}, every such string that does not parse.
  *
  * <p>Which strings are mappings is the vocabulary's answer, by name: an argument or an input field
  * it calls {@code argMapping}, found by {@link VocabularyWalk} at whatever depth. That reaches the
@@ -29,7 +31,7 @@ import static org.jooq.impl.DSL.val;
  * <p>The string is parsed by {@link ArgMappingSigil#entries}, which judges nothing about the site.
  * Whether a site admits a sigil, or an argMapping at all, is a rule about the application and is
  * not applied here: what was written is what the rows say. A string that does not parse writes no
- * rows; the transcription keeps it verbatim.
+ * entries, and one row saying what the parse said; the transcription keeps it verbatim.
  */
 final class GraphitronArgMappingEntries {
 
@@ -42,6 +44,9 @@ final class GraphitronArgMappingEntries {
     private record Pair(StringValue mapping, int position, ArgMappingSigil.Entry entry,
                         VocabularyWalk.Trail trail) {}
 
+    /** One mapping that does not parse, and what the parse said. */
+    private record Unparsed(StringValue mapping, String message) {}
+
     /**
      * Makes {@code source}'s rows under {@code graph} be the mappings {@code applications} write,
      * then sweeps what this reading did not touch.
@@ -50,6 +55,7 @@ final class GraphitronArgMappingEntries {
                       List<GraphQLAstEntries.Nested<Directive>> applications,
                       LocalDateTime touchedAt) {
         var pairs = new ArrayList<Pair>();
+        var unparsed = new ArrayList<Unparsed>();
         for (var nested : applications) {
             VocabularyWalk.walk(nested.node(), (trail, value, declared) -> {
                 if (!trail.name().equals(MAPPING_NAME) || !(value instanceof StringValue mapping)) {
@@ -59,6 +65,7 @@ final class GraphitronArgMappingEntries {
                 try {
                     entries = ArgMappingSigil.entries(mapping.getValue());
                 } catch (GraphQLSelectionParseException e) {
+                    unparsed.add(new Unparsed(mapping, e.getMessage()));
                     return;
                 }
                 for (int position = 0; position < entries.size(); position++) {
@@ -94,6 +101,21 @@ final class GraphitronArgMappingEntries {
                 .set(t.ARGUMENT_NAME, excluded(t.ARGUMENT_NAME))
                 .set(t.ARGUMENT_INDEX, excluded(t.ARGUMENT_INDEX))
                 .set(t.PATH_INDEX, excluded(t.PATH_INDEX)));
-        GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, List.of(t));
+        var u = GRAPHITRON_AST_ARGMAPPING_UNPARSED_ENTRY;
+        var unparsedRows = unparsed.stream().collect(Rows.toRowList(
+            entry -> val(graph, u.GRAPH_NAME),
+            entry -> GraphQLAstEntries.sourceName(entry.mapping()),
+            entry -> GraphQLAstEntries.sourceLine(entry.mapping()),
+            entry -> GraphQLAstEntries.sourceColumn(entry.mapping()),
+            entry -> val(entry.message(), u.MESSAGE),
+            entry -> val(touchedAt, u.TOUCHED_AT)));
+        BindBatch.execute(dsl, unparsedRows, markers ->
+            dsl.insertInto(u, u.GRAPH_NAME, u.SOURCE_NAME, u.SOURCE_LINE, u.SOURCE_COLUMN, u.MESSAGE,
+                    u.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(u.MESSAGE, excluded(u.MESSAGE))
+                .set(u.TOUCHED_AT, excluded(u.TOUCHED_AT)));
+        GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, List.of(t, u));
     }
 }

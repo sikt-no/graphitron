@@ -1,0 +1,35 @@
+# An argMapping that does not parse writes no entries, so without a word every parameter would be
+# bound by name as though nothing were written: a trailing name with no colon under a @service, and
+# a key with no colon under a @condition. Each is refused at its string, the detail what the parse
+# said. The same mappings written whole draw nothing.
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  filmTrailing(id: Int!): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id, oops"})
+  film(id: Int!): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id"})
+  filmsNoColon(filmId: Int): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId oops"}, override: true)
+  films(filmId: Int): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: filmId"}, override: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'ARGMAPPING%'",
+    rows: """
+  code,                   coordinate,         detail
+  ARGMAPPING_UNPARSEABLE, Query.filmTrailing, expected ':' after entry key 'oops' but got <EOF>
+  ARGMAPPING_UNPARSEABLE, Query.filmsNoColon, expected ':' after entry key 'filmId' but got NAME(oops)
+  """)
+
+# The strings that parse write their entries; the two that do not write none.
+extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", rows: """
+  target_name, bound_to
+  id,          id
+  filmId,      filmId
+  """)

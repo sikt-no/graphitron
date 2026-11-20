@@ -1,0 +1,5 @@
+Reported at the `argMapping` string, the detail saying where the parse stopped.
+
+An `argMapping` is a comma-separated list of entries, each a parameter name, a colon, and the path or sigil it is bound to. A string that does not parse binds nothing, so every parameter would fall back to being bound by name, as though no mapping were written, and what you meant would be dropped.
+
+*Next step.* Write each entry as `parameter: path`, separated by commas. See xref:directives/service.adoc#arg-mapping[`argMapping`].

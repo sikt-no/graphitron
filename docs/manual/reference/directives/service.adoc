@@ -181,7 +181,8 @@ right-hand side names a GraphQL slot in scope, optionally followed by dot-separa
 right-hand side works identically on every directive that accepts an `argMapping`:
 xref:service.adoc[`@service`], xref:condition.adoc[`@condition`] and
 xref:routine.adoc[`@routine`]. Only the left-hand side differs, because each directive binds a
-different kind of target.
+different kind of target. Entries are separated by commas; a string that does not parse, an entry
+missing its colon say, is refused as `ARGMAPPING_UNPARSEABLE` rather than read as no mapping.
 
 On `@service` the left-hand side may also be `$tenant`, in a build with database-per-tenant routing
 (`<tenantColumn>`): `argMapping: "filmId: id, $tenant: input.org"` says the root service's call runs

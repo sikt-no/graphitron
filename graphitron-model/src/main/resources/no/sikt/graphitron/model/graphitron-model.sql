@@ -2438,6 +2438,28 @@ COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.argument_name IS 'the app
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.argument_index IS 'the string''s index in its argument''s list, NULL where the argument is no list: the path element whose reference it is a field of';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.path_index IS 'the string''s index in a path below its argument, NULL where it sits in none';
 
+CREATE TABLE graphitron_ast_argmapping_unparsed_entry (
+  graph_name    VARCHAR   NOT NULL,
+  source_name   VARCHAR   NOT NULL,
+  source_line   INT       NOT NULL,
+  source_column INT       NOT NULL,
+  message       VARCHAR   NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- The string the mapping was written as, which the transcription already holds verbatim.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_argmapping_unparsed_entry IS 'An argMapping one document wrote that does not parse, and what the parse said: one row per such string, which writes no entries. For example argMapping: "payload: input, oops" gives one row, its message that the entry key oops is not followed by a colon.';
+COMMENT ON COLUMN graphitron_ast_argmapping_unparsed_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN graphitron_ast_argmapping_unparsed_entry.source_name IS 'the file the mapping was written in';
+COMMENT ON COLUMN graphitron_ast_argmapping_unparsed_entry.source_line IS 'source line of the string the mapping was written as, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_argmapping_unparsed_entry.source_column IS 'source column of the same; the four columns are that string''s key in graphql_ast_value_entry, which holds it verbatim';
+COMMENT ON COLUMN graphitron_ast_argmapping_unparsed_entry.message IS 'what the parse said of the string, naming the token it stopped at';
+COMMENT ON COLUMN graphitron_ast_argmapping_unparsed_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a mapping whose string went or now parses is swept';
+
 CREATE TABLE graphitron_ast_code_reference_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -9037,6 +9059,12 @@ SELECT DISTINCT p.graph_name, p.source_name, p.source_line, p.source_column, 'TE
    AND NOT (s.directive_name = 'service' AND s.owner = 'service' AND s.kind = 'ROOT')
    -- With no tenant column nothing routes by it anywhere, which TENANT_ROUTES_NOTHING says.
    AND EXISTS (SELECT 1 FROM store_graph_tenant_column t WHERE t.graph_name = p.graph_name)
+UNION ALL
+-- A mapping that does not parse, at the string: it writes no entries, so every parameter would be
+-- bound by name as though nothing were written. The detail is what the parse said.
+SELECT u.graph_name, u.source_name, u.source_line, u.source_column, 'ARGMAPPING_UNPARSEABLE',
+       u.message, 'argmapping-pairs'
+  FROM graphitron_ast_argmapping_unparsed_entry u
 UNION ALL
 -- Each string one of whose entries a rule above refuses, once per code; the entries are
 -- graphitron_argmapping_pair_entry_defect_pair_rule's rows, written under it.
@@ -31162,6 +31190,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-argmapping-pair',
    'one entry of one argMapping written in one SDL document, at its position in the mapping',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
+  ('sdl-argmapping-string',
+   'one argMapping string written in one SDL document, at its position',
+   'graph_name, source_name, source_line, source_column', 'sdl'),
   ('sdl-code-reference',
    'one Java code reference written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -31678,6 +31709,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.'),
   ('ARGMAPPING_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED',
    'An argMapping right-hand side names a path that does not exist: through the call''s arguments and input fields, on a field beginning with one of the field''s arguments, on an argument or an input field with a field of what that opens into, and each further name a field of the input type before it; or, after $result, through the fields of what the field returns.'),
+  ('ARGMAPPING_UNPARSEABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_UNPARSEABLE',
+   'An argMapping does not parse, so none of its entries binds anything and each parameter would be bound by name as though nothing were written: write each entry as parameter: path, separated by commas.'),
   ('ARGMAPPING_PARAMETER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PARAMETER_UNKNOWN',
    'An argMapping entry''s left side names a parameter the called method does not have, so the value it binds reaches nothing: name one of the method''s parameters.'),
   ('SCOPE_MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_SCOPE_MEMBER_UNKNOWN',
@@ -32949,6 +32982,10 @@ INSERT INTO meta_relation VALUES
    'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this.',
    'For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.',
    'The mapping @routine, @service, @externalField and @condition all take, read once and one way. Each site used to read the string for itself, so what one site supported another did not. The string is the transcription''s already, verbatim at its own position, so this holds what a parse of it says and keys to that position: which directive or reference wrote it is a join, and the raw text is not repeated. Which strings are mappings is the vocabulary''s answer, by name, any argument or input field it calls argMapping. A sigil is recorded as written, admission being a rule about the site. A string that does not parse writes no rows, the transcription keeping it.'),
+  ('graphitron_ast_argmapping_unparsed_entry', 'sdl-argmapping-string', 'graphitron',
+   'An argMapping one document wrote that does not parse, and what the parse said: one row per such string, which writes no entries.',
+   'For example argMapping: "payload: input, oops" gives one row, its message that the entry key oops is not followed by a colon.',
+   'A string that does not parse writes no entries, and without this a mapping an author wrote was indistinguishable from none written, every parameter then bound by name. Beside the entries rather than among them, a string being the grain and an entry the position within it.'),
   ('graphitron_ast_code_reference_entry', 'sdl-code-reference', 'graphitron',
    'A Java code reference as one document wrote it: this position names this class and, where it says, this method.',
    'For example @service(service: {className: "no.example.FilmService", method: "films"}) gives one row at the object value, and @enum(enumReference: {className: "no.example.Rating"}) gives one naming no method.',

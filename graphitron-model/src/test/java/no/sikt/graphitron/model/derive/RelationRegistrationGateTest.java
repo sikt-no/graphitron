@@ -145,8 +145,9 @@ class RelationRegistrationGateTest {
             // GraphitronEnumValueEntriesTest pin them at the sites each one covers.
             "graphitron_ast_binding_entry", "graphitron_ast_node_id_entry",
             // Every entry of every argMapping, read off the vocabulary's name for one; pinned by the
-            // fact document argmapping-pair.graphqls, one mapping per directive that takes one.
-            "graphitron_ast_argmapping_pair_entry",
+            // fact document argmapping-pair.graphqls, one mapping per directive that takes one. A
+            // string that does not parse instead, pinned by argmapping-unparseable.graphqls.
+            "graphitron_ast_argmapping_pair_entry", "graphitron_ast_argmapping_unparsed_entry",
             // The path family, read off every application of the two directives that carry a path
             // rather than off a site: the application, every element at its index, one relation per
             // thing an element names, and @referenceFor's participant. GraphitronFieldEntriesTest and GraphitronInputValueEntriesTest pin them at
