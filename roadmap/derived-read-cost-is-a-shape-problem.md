@@ -82,17 +82,18 @@ utdanningsregisteret generate again. Additive, flip, subtract; the critical path
 The walk's read path is gone
 ├── The projection units are rendered from the store
 │   ├── A projection unit is emitted from the store, censused
-│   ├── The filter conditions are emitted from the store, claimed by F
+│   ├── The filter conditions are emitted from the store, claimed by C
 │   │   └── An argument binds the call parameter it supplies
-│   ├── The root query fetchers are emitted from the store, claimed by F
-│   ├── A child read inline is emitted from the store, claimed by G
+│   ├── The root query fetchers are emitted from the store
+│   ├── A child read inline is emitted from the store, claimed by E
 │   │   ├── A sort key's path is resolved at its occurrence
-│   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
-│   │   └── A single child is looked up by its keys, claimed by G
+│   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
+│   │   └── A single child is looked up by its keys, claimed by E
 │   ├── A narrowed inline list is emitted from the store
 │   ├── A nesting field's leaves state how they're read
-│   ├── A leaf a filter compares is stated once
-│   └── Every list states its order or is refused, claimed by F
+│   ├── A leaf a filter compares is stated once, claimed by C
+│   ├── What an occurrence takes is a binding, claimed by C
+│   └── Every list states its order or is refused
 └── A field on a type handed over both as a row and as an object is judged on the object arm
 ```
 
@@ -781,7 +782,7 @@ static method needs no holder.
   with no shared-alias names; those cases stay with the walk's emitters until the units are designed.
   Dropping the threaded `rkPath` changes the result-key aliases the walk's field readers read, so the
   unit keeps today's alias formula or those readers flip in the same pass.
-  * **A projection unit is emitted from the store, censused** `open`, F's. A `ProjectionQuery` and a
+  * **A projection unit is emitted from the store, censused** `open`. A `ProjectionQuery` and a
     `ProjectionEmitter`, additive and uncalled, render a type's unit from `graphitron_occurrence_column`,
     `graphitron_occurrence_node_id`, each occurrence's path and, for a scalar down a path, its join
     path's steps, with a census beside the condition census whose reasons are the facts below not yet
@@ -799,12 +800,12 @@ static method needs no holder.
     `ProjectionQuery` decides a field's alias owner itself, the declaring interface where a
     discriminating participant recognises the type; a stored owner per field occurrence is read
     instead.
-  * **A child read inline is emitted from the store, claimed by G** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by G" and "A single child is looked up by its keys, claimed by G". A
+  * **A child read inline is emitted from the store, claimed by E** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by E" and "A single child is looked up by its keys, claimed by E". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
     it has one; the census's `INLINE_CHILD` line closes with it. The list multiset is its child's,
-    "An inline list is emitted from the store in its stated or chosen order, claimed by G". A non-null
+    "An inline list is emitted from the store in its stated or chosen order, claimed by E". A non-null
     single child is the single join, rendered as the readers read one today, a multiset of the child's
     unit with `.limit(1)` under its result key; the flip of the readers replaces it with a plain
     correlated row, which a single child's identifying lookup keys or its to-one path make exact. A
@@ -895,7 +896,7 @@ static method needs no holder.
     `FieldSort.path`, so the join path need and step relations resolve it, the to-one refusal
     included, and the key gains a subtype naming its hops and the column they land on. Closes before
     the flip, which keeps no fallback for it.
-  * **An inline list is emitted from the store in its stated or chosen order, claimed by G** `open`. The walk
+  * **An inline list is emitted from the store in its stated or chosen order, claimed by E** `open`. The walk
     resolves an `@orderBy` argument on a list read inside its parent's statement and cannot lower it
     onto the multiset: `LauncherCommands.requireResolvedOrderingsAreLowered` throws a generator bug
     for it, so the store states the choices and refuses the shape with the deferral
@@ -910,7 +911,7 @@ static method needs no holder.
     the deferral, its `defect_type` row and the multiset half of
     `requireResolvedOrderingsAreLowered` go when the store's units replace them, and
     `defects/inline-list-choice` pins the choice until then; closes before the flip.
-  * **A single child is looked up by its keys, claimed by G** `open`.
+  * **A single child is looked up by its keys, claimed by E** `open`.
     A `@lookupKey` on a field of a table-bound type returning one table-bound object is read as the
     one row its keys match (Alf, 2026-11-15). The store's deferral is gone; keys covering no
     identifying key of the table are `LOOKUP_KEY_NOT_IDENTIFYING`, and the walk refuses the shape
@@ -927,12 +928,12 @@ static method needs no holder.
     read is stated where its reach is known, beside "The producer's readers read the occurrence
     producer, and the field-keyed family goes" for the first and the pivot nodes for the second, and
     the line closes.
-  * **A narrowed inline list is emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by F".
+  * **A narrowed inline list is emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by C".
     An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
     argument, and the line closes with it.
-  * **A leaf a filter compares is stated once** `open`. Whether an argument or input-field occurrence sits under a
+  * **A leaf a filter compares is stated once, claimed by C** `open`. Whether an argument or input-field occurrence sits under a
     field that reads, looks up or counts rows is derived again by `graphitron_occurrence_list_element_defect_rule` (twice), by the
     `INPUT_CYCLE_EXPANDED` filter arm and by `ConditionQuery`'s lookup-key test, and "A narrowed
     inline list is emitted from the store" asks it too. Stored at the occurrence by the first stage
@@ -941,7 +942,7 @@ static method needs no holder.
     the cycle arm none (principles review, 2026-11-18).
     `ConditionQuery`'s implicit column filter, an argument or input field landing on the row's
     table with no producer, build or routine taking it, is a fourth reader of the same question.
-  * **Every list states its order or is refused, claimed by F** `open`. `LIST_ORDER_UNDETERMINED` refuses an
+  * **Every list states its order or is refused** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a
     connection with none (`validatePaginationRequiresOrdering`), at the root, split and over several
@@ -958,7 +959,7 @@ static method needs no holder.
     than each spelling its own `instanceof Map` ladder over the wire (Alf, 2026-11-08). A node id
     decodes through one method per node type and policy beside `NodeIdEncoder`, strict or
     not-this-participant, rather than through private copies in every class that reads one.
-  * **The filter conditions are emitted from the store, claimed by F** `open`, the generated predicates first,
+  * **The filter conditions are emitted from the store, claimed by C** `open`, the generated predicates first,
     the authored calls on the `@condition` call node. One condition per field occurrence and table it
     filters, named and aliased from its coordinate, composing the generated predicates, the authored
     `@condition` calls and the path steps' conditions with `override:` read as written, its behaviour
@@ -995,8 +996,8 @@ static method needs no holder.
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
       then goes, after the flips.
-  * **The root query fetchers are emitted from the store, claimed by F** `blocked`, on the filter conditions and
-    the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
+  * **The root query fetchers are emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by C" and "Every list states its order or is refused".
+    A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
     off its occurrence, and flips in the same pass as `$project` and the
     conditions, so every condition caller moves at once (Alf, 2026-11-08, 2026-11-13).
@@ -1015,7 +1016,7 @@ static method needs no holder.
   list is cast where a scalar one is converted by `valueOf`, untested beyond `G`, and a top-level enum
   list argument on an enum column emits glue that does not compile. Each gets a test
   first, then a fix or a stated breaking change, after the flip, which keeps them as they are.
-* **A list of input objects compares what the old emitter could not** `blocked`, on "The filter conditions are emitted from the store, claimed by F", off the critical path.
+* **A list of input objects compares what the old emitter could not** `blocked`, on "The filter conditions are emitted from the store, claimed by C", off the critical path.
   The list-of-input filter's refusals that guarded the old emitter's single row, rather than a rule an
   author meets, are lifted once the flip has moved every caller onto `ConditionEmitter`, each a
   capability with an execution test first and its glossary entry and reference page changed with it.
@@ -1168,7 +1169,7 @@ static method needs no holder.
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
 * **A field on a type handed over both as a row and as an object is judged on the object arm** `open`: the walk refuses a column-only read on such a type, and the store judges no object arm for it, so the subtract would accept it silently. MEMBER_UNRESOLVED reads `graphitron_reader`'s ACCESSOR rows, which the reader rule writes for no type that is both ROW and OBJECT; judged against `graphitron_result`'s OBJECT row instead, the arm must read a jOOQ table record's getters through `sql_column_record_accessor`, the captured fact for those records, since `code_read_slot` holds none for them (a record of another catalog read by accessor otherwise draws a false MEMBER_UNRESOLVED). `MixedSourceNestingReachValidationTest.childReadableOnlyAsColumn` pins the walk's refusal until then.
-* **A $context pair on @condition fills its parameter** `blocked` on "The filter conditions are emitted from the store, claimed by F": the walk's `@condition` parse (`ArgMappingSigil.scan` at `Site.CONDITION`, read by `BuildContext.readConditionDirective`) rejects every `$context` pair, its errors on a condition are not silenced, and where `ConditionEmitter` defers the walk emits the condition with a context argument read by parameter name, so a pair keyed apart from its parameter has no walk equivalent. Once the walk stops judging and emitting conditions the node is one commit of two store changes. First, in `graphitron_occurrence_condition_parameter_rule` the `CONTEXT_KEY` rule's `NOT EXISTS paired` passes over a pair bound to `$context.%`, and its "no element has its name" condition holds only for `contextArguments` keys (`graphitron_call_context_key.origin` `CONTEXT_ARGUMENTS`), a written pair outranking an element of its name as `$session` does; `paired` keeps the pair, so the element and by-type rules stay off that parameter. Second, `CONTEXT_SITE_UNSUPPORTED`, in both rules that raise it, exempts `directive_name` `condition` with `owner` `condition` beside `@service`, a reference step's condition staying refused; its statement and the manual follow. `ConditionEmitter` already emits a `CONTEXT_KEY` fill.
+* **A $context pair on @condition fills its parameter** `blocked` on "The filter conditions are emitted from the store, claimed by C": the walk's `@condition` parse (`ArgMappingSigil.scan` at `Site.CONDITION`, read by `BuildContext.readConditionDirective`) rejects every `$context` pair, its errors on a condition are not silenced, and where `ConditionEmitter` defers the walk emits the condition with a context argument read by parameter name, so a pair keyed apart from its parameter has no walk equivalent. Once the walk stops judging and emitting conditions the node is one commit of two store changes. First, in `graphitron_occurrence_condition_parameter_rule` the `CONTEXT_KEY` rule's `NOT EXISTS paired` passes over a pair bound to `$context.%`, and its "no element has its name" condition holds only for `contextArguments` keys (`graphitron_call_context_key.origin` `CONTEXT_ARGUMENTS`), a written pair outranking an element of its name as `$session` does; `paired` keeps the pair, so the element and by-type rules stay off that parameter. Second, `CONTEXT_SITE_UNSUPPORTED`, in both rules that raise it, exempts `directive_name` `condition` with `owner` `condition` beside `@service`, a reference step's condition staying refused; its statement and the manual follow. `ConditionEmitter` already emits a `CONTEXT_KEY` fill.
 * **A stub node at a root @service is routed by its key, or refused, as Alf rules** `open`, off the
   critical path. A stub node type whose key holds the tenant column mints a tenant slot at a root
   `@service` taking its record, so the call is routed; the walk refused the same shape as the stub
@@ -1441,10 +1442,11 @@ classified records have no reader left and can go with the walk.
     class, where the classifier reads it through that accessor.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
-* **What an occurrence takes is a binding** `open`, F's and E's. The `COLUMN`, `NODE_ID`, `TABLE`,
+* **What an occurrence takes is a binding, claimed by C** `open`. The `COLUMN`, `NODE_ID`, `TABLE`,
   `VALUE` and `MEMBER` bindings are written; an argument a call consumes binds none, the call's
   parameter fill naming it. What is left is `EXPRESSION`, which has only its kind in the binding's
-  check and no writer.
+  check and no writer: the projection census's `EXPRESSION` line, an `@externalField` whose method
+  nothing binds at its occurrence, which blocks "The projection units are rendered from the store".
 * **The result relations dissolve into the producer's result, claimed by B** `open`. The key-row half has
   landed; `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` remain, saying per
   type what the producer's result says per producer, and go with the result rule's fixpoint, their
@@ -1741,14 +1743,14 @@ output package they are written to are settled.
     value source and the schema class's scalar form fail rather than fall back, ahead of the variants
     losing their forms.
 * **`TypeFetcherGenerator` reads the store, one family of field at a time** `open`. Root queries
-  (taken by "The root query fetchers are emitted from the store, claimed by F"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
+  (taken by "The root query fetchers are emitted from the store"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
   fields, pivots and the errors field each render from a query at the grain they emit, the
   launcher's routine row reading the facts R704 captured, with
   `ConditionGlueRenderer` and `ProjectionUnitRenderer` folded into the families that use them.
   * **A batched child's fetcher is emitted from the store, on its stated connection** `blocked`, G's,
-    on "The projection units are rendered from the store", "The filter conditions are emitted from the
-    store, claimed by F" and "The root query fetchers are emitted from the store, claimed by F". A
-    split-query child reads its DataLoader and its connection off the store.
+    on "The projection units are rendered from the store",
+    "The filter conditions are emitted from the store, claimed by C" and
+    "The root query fetchers are emitted from the store". A split-query child reads its DataLoader and its connection off the store.
   * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
     `blocked`, F's, on the same three nodes. A connection field and its count and facet siblings read
     their query and connection off the store; it releases R1119's slice 8e.3 for connection-typed
@@ -2062,7 +2064,7 @@ Stating the seeded cases as documents put real schemas in front of rules that ha
 hand-written rows, and six of those rules answered wrongly, threw, or never fired. Each is fixed
 here with a document that shows it.
 
-* **A `@nodeId` beside `@field(name:)` names a target of the decode's shape** `blocked`, on "A table class's column fields are stated" and "What an occurrence takes is a binding".
+* **A `@nodeId` beside `@field(name:)` names a target of the decode's shape** `blocked`, on "A table class's column fields are stated" and "What an occurrence takes is a binding, claimed by C".
   The name is the `NODE_ID` claim's target: under a table source a column, under an object source a
   member, and its type, a column's generated `Field<T>` or the member's, matches the shape the encode
   or decode needs, a mismatch the defect (Alf, 2026-11-05).
