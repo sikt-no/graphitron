@@ -139,9 +139,9 @@ type FilmLookupInvalid @error(handlers: [{
 }
 ----
 
-Both fields read `getAttemptedId()`. The accessor therefore has to return `film_id`'s own Java type, not a `String`: the encode happens on the way out, so an accessor that already returns an encoded ID is a build error naming the type it should have returned. If you were encoding by hand to publish an ID here, that call site goes away and the accessor exposes the key.
+Both fields read `getAttemptedId()`. The accessor therefore has to return `film_id`'s own Java type (or its primitive, `int` for an `Integer`), not a `String`: the encode happens on the way out, so an accessor that already returns an encoded ID is a build error (`ERROR_FIELD_UNREADABLE`) naming the accessor, the type it returns and the key column's type it should have returned (Alf, 2026-11-19). If you were encoding by hand to publish an ID here, that call site goes away and the accessor exposes the key.
 
-`typeName:` is required, and the node type's key must be one column. An `@error` type stands for no table, so there is nothing for a bare `@nodeId` to inherit its node from; and the field is one value, so a node type keyed on several columns has nothing to be encoded from and the build says so, naming the count.
+`typeName:` is required, and must name one node type whose key is one column. An `@error` type stands for no table, so there is nothing for a bare `@nodeId` to inherit its node from; and the field is one value, so a node type keyed on several columns, or an interface or union standing for several node types, has nothing to be encoded from one accessor, and the build says so (`ERROR_FIELD_UNREADABLE`), naming the count of key columns.
 
 == Constraints
 
@@ -152,7 +152,7 @@ Both fields read `getAttemptedId()`. The accessor therefore has to return `film_
 * For `GENERIC`, `className:` is required. The build rejects a `GENERIC` handler without it.
 * For `DATABASE`, supply at least one of `code:`, `sqlState:`, or `matches:` (otherwise every `SQLException` on the channel routes to this type, which is rarely the intent).
 * `code:` and `sqlState:` cannot be combined: the build rejects a `DATABASE` entry carrying both, since the two discriminators are vendor-conflicting. Split into two entries, one per discriminator. Vendor portability: prefer `sqlState` (PostgreSQL is specific, Oracle is generic), narrowed with a `matches:` substring where needed.
-* An extra field carrying xref:nodeId.adoc[`@nodeId`] needs `typeName:` and a node type keyed on a single column; see xref:#nodeid-extra-field[Publishing a node id from an extra field].
+* An extra field carrying xref:nodeId.adoc[`@nodeId`] needs `typeName:` naming one node type keyed on a single column, and an accessor returning that column's type; see xref:#nodeid-extra-field[Publishing a node id from an extra field].
 * Applies only to `OBJECT`. Interfaces and unions cannot carry `@error` directly — the union-of-error-types pattern works because the union *members* are individually `@error`-decorated.
 
 == See also

@@ -9863,13 +9863,14 @@ UNION ALL
 -- An @error type's field, other than path and message, which no getter of a handler's source class
 -- answers, at the field: the getter named get or is before the field's @field(name:), or else its own
 -- name, capitalised, among the class's slots or graphql-java's contract, a bare accessor or a public
--- field not being read, since a handler's class is no record, returning what
--- the field's scalar is where the field is one scalar of a known class and no @nodeId, which encodes
--- what the accessor yields into the id rather than handing it over as it is. A scalar's class is its
--- input arrival's exact class; an enum is not compared, since a getter may hand graphql-java the
--- enum's name or a constant of any Java enum, which it writes by its name. Each handler's class is read
--- off graphitron_error_handler_source; a handler resolving to no class is judged nowhere. The detail
--- is the class.
+-- field not being read, since a handler's class is no record, returning what the field's scalar is
+-- where the field is one scalar of a known class. A scalar's class is its input arrival's exact
+-- class; an enum is not compared, since a getter may hand graphql-java the enum's name or a constant
+-- of any Java enum, which it writes by its name. A field carrying @nodeId is not judged here: it
+-- encodes what the getter yields into the id, so the getter has to yield the node's key column,
+-- which is known from node-key-columns on, and binding-claims judges it. Each handler's class is
+-- read off graphitron_error_handler_source; a handler resolving to no class is judged nowhere. The
+-- detail is the class.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'ERROR_FIELD_UNREADABLE', hs.class_name, 'code-references'
   FROM graphitron_error_handler_source hs
@@ -9887,15 +9888,15 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON b.graph_name = fa.graph_name AND b.source_name = fa.source_name
    AND b.source_line = fa.source_line AND b.source_column = fa.source_column
   JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE NOT EXISTS (SELECT 1 FROM code_read_slot s
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_directive_application nid
+                    WHERE nid.graph_name = f.graph_name AND nid.coordinate = f.coordinate
+                      AND nid.directive_name = 'nodeId')
+   AND NOT EXISTS (SELECT 1 FROM code_read_slot s
                     WHERE hs.kind = 'CLASS' AND s.source_name = hs.class_source_name
                       AND s.class_name = hs.class_name
                       AND s.method_name IN ('get' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
                                     'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2))
                       AND (f.is_list
-                         OR EXISTS (SELECT 1 FROM graphql_directive_application nid
-                                     WHERE nid.graph_name = f.graph_name AND nid.coordinate = f.coordinate
-                                       AND nid.directive_name = 'nodeId')
                          OR NOT EXISTS (SELECT 1 FROM graphitron_type_arrival x
                                          WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
                                            AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR')
@@ -9907,9 +9908,6 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                       AND c.method_name IN ('get' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
                                     'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2))
                       AND (f.is_list
-                         OR EXISTS (SELECT 1 FROM graphql_directive_application nid
-                                     WHERE nid.graph_name = f.graph_name AND nid.coordinate = f.coordinate
-                                       AND nid.directive_name = 'nodeId')
                          OR NOT EXISTS (SELECT 1 FROM graphitron_type_arrival x
                                          WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
                                            AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR')
@@ -21779,7 +21777,98 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
   LEFT JOIN graphitron_argument a
     ON a.graph_name = cl.graph_name AND a.coordinate = cl.coordinate
  WHERE cl.kind = 'NODE_ID' AND da.source_line IS NOT NULL
-   AND COALESCE(f.named_type, a.named_type) <> 'ID';
+   AND COALESCE(f.named_type, a.named_type) <> 'ID'
+UNION ALL
+-- An @error type's field carrying @nodeId(typeName:), at the field, which ERROR_FIELD_UNREADABLE's
+-- code-references arm leaves here: the field encodes what its getter yields into the id, so the
+-- getter has to yield the node's one key column, and the key columns are known from node-key-columns
+-- on. Judged against each handler's source class, the getter named as that arm names it. Refused
+-- where the type named is several node types or a node whose key has more than one column, the field
+-- reading one value, and otherwise where no get or is getter returns the key column's class, or the
+-- primitive of a boxed one: an accessor already yielding the encoded id, a String, is the case this
+-- is for. A node whose key resolves to no column and a name that is no node draw their own defects
+-- and are not judged here. One row per field, its handlers' details being several and the position
+-- one; the detail names the class, the getter and what it returns, and the key column expected.
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
+       'ERROR_FIELD_UNREADABLE', MIN(r.detail), 'binding-claims'
+  FROM (SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+               CASE WHEN k.key_columns IS NULL
+                      THEN hs.class_name || ': ' || cl.named
+                           || ' is the id of several node types, each keyed on its own columns, and the field reads one value'
+                    WHEN k.key_columns > 1
+                      THEN hs.class_name || ': the key of ' || cl.named || ' has ' || k.key_columns
+                           || ' columns, and the field reads one value'
+                    ELSE COALESCE(
+                           (SELECT MIN(hs.class_name || '.' || s.method_name || '() returns '
+                                       || COALESCE(s.erased_class, s.slot_type))
+                              FROM code_read_slot s
+                             WHERE hs.kind = 'CLASS' AND s.source_name = hs.class_source_name
+                               AND s.class_name = hs.class_name
+                               AND s.method_name IN ('get' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2),
+                                                     'is' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2))),
+                           (SELECT MIN(hs.class_name || '.' || c.method_name || '() returns ' || c.erased_class)
+                              FROM code_contract_slot c
+                             WHERE hs.kind = 'CONTRACT' AND c.class_name = hs.class_name
+                               AND c.method_name IN ('get' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2),
+                                                     'is' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2))),
+                           hs.class_name || ' has no ' || 'get' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2) || '() or '
+                             || 'is' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2) || '()')
+                         || ', and key column ' || k.column_name || ' of ' || cl.named || ' is '
+                         || k.binding_type
+               END AS detail
+          FROM graphitron_binding_claim cl
+          JOIN graphitron_field f
+            ON f.graph_name = cl.graph_name AND f.coordinate = cl.coordinate
+           AND f.field_name NOT IN ('path', 'message')
+          JOIN graphql_directive_application ea
+            ON ea.graph_name = f.graph_name AND ea.coordinate = f.type_name AND ea.directive_name = 'error'
+          JOIN graphitron_ast_error_handler_entry h
+            ON h.graph_name = ea.graph_name AND h.source_name = ea.source_name
+           AND h.application_line = ea.source_line AND h.application_column = ea.source_column
+          JOIN graphitron_error_handler_source hs
+            ON hs.graph_name = h.graph_name AND hs.source_name = h.source_name
+           AND hs.source_line = h.source_line AND hs.source_column = h.source_column
+          JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+          -- The named node's key: how many columns, and the one column's class where there is one.
+          LEFT JOIN (SELECT kc.graph_name, kc.type_name, COUNT(*) AS key_columns,
+                            MIN(kc.column_name) AS column_name, MIN(c.binding_type) AS binding_type
+                       FROM graphitron_node_keycolumn kc
+                       JOIN sql_column c
+                         ON c.source_name = kc.table_source_name AND c.table_schema = kc.table_schema
+                        AND c.table_name = kc.table_name AND c.column_name = kc.column_name
+                      GROUP BY kc.graph_name, kc.type_name) k
+            ON k.graph_name = cl.graph_name AND k.type_name = cl.named
+         WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL
+           AND ((k.key_columns IS NULL
+                 AND EXISTS (SELECT 1 FROM graphitron_binding_claim_container bc
+                              WHERE bc.graph_name = cl.graph_name AND bc.coordinate = cl.coordinate
+                                AND bc.kind = cl.kind AND bc.claimer = cl.claimer))
+                OR k.key_columns > 1
+                OR (k.key_columns = 1
+                    AND NOT EXISTS (SELECT 1 FROM code_read_slot s
+                                     WHERE hs.kind = 'CLASS' AND s.source_name = hs.class_source_name
+                                       AND s.class_name = hs.class_name
+                                       AND s.method_name IN ('get' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2),
+                                                     'is' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2))
+                                       AND (COALESCE(s.erased_class, s.slot_type) = k.binding_type
+                                            OR EXISTS (SELECT 1 FROM (VALUES ('boolean', 'java.lang.Boolean'), ('byte', 'java.lang.Byte'),
+                                                         ('char', 'java.lang.Character'), ('short', 'java.lang.Short'),
+                                                         ('int', 'java.lang.Integer'), ('long', 'java.lang.Long'),
+                                                         ('float', 'java.lang.Float'), ('double', 'java.lang.Double'))
+                                          b (prim, boxed)
+                                    WHERE b.boxed = k.binding_type AND b.prim = COALESCE(s.erased_class, s.slot_type))))
+                    AND NOT EXISTS (SELECT 1 FROM code_contract_slot c
+                                     WHERE hs.kind = 'CONTRACT' AND c.class_name = hs.class_name
+                                       AND c.method_name IN ('get' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2),
+                                                     'is' || UPPER(SUBSTRING(f.bound_name, 1, 1)) || SUBSTRING(f.bound_name, 2))
+                                       AND (c.erased_class = k.binding_type
+                                            OR EXISTS (SELECT 1 FROM (VALUES ('boolean', 'java.lang.Boolean'), ('byte', 'java.lang.Byte'),
+                                                         ('char', 'java.lang.Character'), ('short', 'java.lang.Short'),
+                                                         ('int', 'java.lang.Integer'), ('long', 'java.lang.Long'),
+                                                         ('float', 'java.lang.Float'), ('double', 'java.lang.Double'))
+                                          b (prim, boxed)
+                                    WHERE b.boxed = k.binding_type AND b.prim = c.erased_class)))))) r
+ GROUP BY r.graph_name, r.source_name, r.source_line, r.source_column;
 COMMENT ON VIEW graphitron_binding_claim_entry_defect_rule IS 'One row the binding-claims stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a bare @nodeId on a field of an object type that is no node, with no @reference, gives one NODE_ID_CONTAINING_TYPE_NOT_NODE row at the @nodeId.';
 
 -- The spelled-tables stage's own defects: a written table name judged against what it resolves to,
@@ -31371,7 +31460,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ENUM_CONSTANT_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ENUM_CONSTANT_MISSING',
    'A GraphQL enum value a @service parameter or input member takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
   ('ERROR_FIELD_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_ERROR_FIELD_UNREADABLE',
-   'An @error type''s field, other than path and message, is read off the exception its handler matches, and that class has no get or is getter of the field''s name or @field(name:) returning what the field''s scalar is, a bare accessor or a public field not being read: name a getter the class has with @field(name:), give the class one, or give the field the type its getter returns.'),
+   'An @error type''s field, other than path and message, is read off the exception its handler matches, and that class has no get or is getter of the field''s name or @field(name:) returning what the field''s scalar is, a bare accessor or a public field not being read: name a getter the class has with @field(name:), give the class one, or give the field the type its getter returns. A field carrying @nodeId(typeName:) encodes what its getter yields, so the getter has to return the one key column of the node named, in that column''s own class and not as the encoded id, and a node whose key has several columns, or a type that is several nodes, cannot be read from one getter.'),
   ('CHECKED_EXCEPTION_UNHANDLED', 'error', 'GRAPHITRON', 'GRAPHITRON_CHECKED_EXCEPTION_UNHANDLED',
    'A @service method declares a checked exception no handler of its field''s outcome covers, so the generated fetcher, which catches only what a handler claims, does not compile: add an @error type whose GENERIC handler names the exception or a supertype of it, or a DATABASE handler for an SQLException, or remove the throws clause. IOException and InterruptedException are exempt, as infrastructure failures that redact rather than surface; a declared exception the build resolves to no class, one on a transitive jar among them, is not judged here and is left to the compile.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',

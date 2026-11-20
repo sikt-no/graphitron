@@ -11,13 +11,23 @@
 # constant by its name, so each is read, and only bogusRating, which no getter answers, is refused.
 # A GENERIC handler naming the client exception the run emits, under the output package configured
 # here, is read against graphql-java's GraphqlErrorException, its superclass, which offers no bogus.
+# A field carrying @nodeId(typeName:) encodes what its getter yields, so the getter has to return the
+# node's one key column in that column's class: FilmLookupInvalidIdException's getAttemptedId, an
+# Integer like film_id, is read, and getLocalizedMessage, a String as an encoded id would be, is not;
+# FilmActor's key has two columns and FilmOrActor is two nodes, neither of which one getter fills, and
+# bogusFilm has no getter at all.
 
 extend schema @withConfiguration(
   outputPackage: "no.sikt.graphitron.generated.facts.error_field_unreadable",
   outputJooqPackage: "no.sikt.graphitron.rewrite.test.jooq",
   outputDirectory: "/build/generated")
 
-type Film @table(name: "film") { title: String }
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node { id: ID! title: String }
+type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+
+union FilmOrActor = Film | FilmActor
 
 type FilmNotFound @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException"}]) {
   path: [String!]!
@@ -65,6 +75,16 @@ type ClientMistake @error(handlers: [{handler: GENERIC,
   bogus: String
 }
 
+type FilmInvalid @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException"}]) {
+  path: [String!]!
+  message: String!
+  attemptedFilm: ID @nodeId(typeName: "Film") @field(name: "attemptedId")
+  messageFilm: ID @nodeId(typeName: "Film") @field(name: "localizedMessage")
+  attemptedCast: ID @nodeId(typeName: "FilmActor") @field(name: "attemptedId")
+  attemptedEither: ID @nodeId(typeName: "FilmOrActor") @field(name: "attemptedId")
+  bogusFilm: ID @nodeId(typeName: "Film")
+}
+
 type Invalid @error(handlers: [{handler: VALIDATION}]) {
   path: [String!]!
   message: String!
@@ -84,5 +104,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   ERROR_FIELD_UNREADABLE, FilmRated.bogusRating,        no.sikt.graphitron.rewrite.test.services.FilmLookupRatedException
   ERROR_FIELD_UNREADABLE, RateOverflow.sqlState,         java.sql.SQLException
   ERROR_FIELD_UNREADABLE, ClientMistake.bogus,           graphql.GraphqlErrorException
+  ERROR_FIELD_UNREADABLE, FilmInvalid.messageFilm,       "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException.getLocalizedMessage() returns java.lang.String, and key column film_id of Film is java.lang.Integer"
+  ERROR_FIELD_UNREADABLE, FilmInvalid.attemptedCast,     "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException: the key of FilmActor has 2 columns, and the field reads one value"
+  ERROR_FIELD_UNREADABLE, FilmInvalid.attemptedEither,   "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException: FilmOrActor is the id of several node types, each keyed on its own columns, and the field reads one value"
+  ERROR_FIELD_UNREADABLE, FilmInvalid.bogusFilm,         "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException has no getBogusFilm() or isBogusFilm(), and key column film_id of Film is java.lang.Integer"
   ERROR_FIELD_UNREADABLE, Invalid.bogus,                 graphql.GraphQLError
   """)
