@@ -799,6 +799,9 @@ static method needs no holder.
     condition method or a routine, and a node id down a path. A child read inline is its own
     node below. A child producer's parent columns are projected off its lift, stated under a row
     graphitron selected as under a record.
+    `ProjectionQuery` decides a field's alias owner itself, the declaring interface where a
+    discriminating participant recognises the type; a stored owner per field occurrence is read
+    instead.
   * **A child read inline is emitted from the store, claimed by G** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by G" and "A single child is looked up by its keys, claimed by G". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
@@ -939,6 +942,8 @@ static method needs no holder.
     holding its inputs, row presence the fact, the wider population: each reader joins it and keeps
     its own exceptions, the list rule and `ConditionQuery` a `@lookupKey` argument and an override,
     the cycle arm none (principles review, 2026-11-18).
+    `ConditionQuery`'s implicit column filter, an argument or input field landing on the row's
+    table with no producer, build or routine taking it, is a fourth reader of the same question.
   * **Every list states its order or is refused, claimed by F** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a
@@ -1102,6 +1107,9 @@ static method needs no holder.
   * **A built class at a parameter names its call parameter** `open`, off the critical path.
     `BuildQuery.roots` recomputes the class a parameter takes from `code_method_parameter` to find
     its `PARAMETER` row; tied to the call parameter it lands on, the row is read directly.
+    `BuildQuery`'s input-bean test, an argument fill of an input object into a class other than
+    `Map` or `Object`, restates the built-class rule; it reads `graphitron_occurrence_built_class`
+    instead.
   * **A class's entry in the graph is resolved once** `open`, off the critical path. The graph's
     first entry declaring a class, by name, is spelled in `graphitron_occurrence_source_object`,
     `graphitron_occurrence_producer_result` and `graphitron_occurrence_built_class`; one stored
@@ -1170,6 +1178,9 @@ static method needs no holder.
   `pathLeafDeclaresNodeId`, `resolvePathLeafType`). A nesting parent whose only cause is a
   refused child service the store owns stays a walk error until the walk's service path is gone; the
   subtract emits it.
+  `ServiceEmission.statedVerdict`'s verdict ladder and `walkSilenced`'s partition decide in Java
+  what the store should state; each goes with the subtract or moves into a stored relation as it
+  lands.
   * **The walk's test service shapes are fact documents or walk-only refusals** `open`, E's, blocks
     the subtract. About 520 inline `@service` occurrences in about 100 `graphitron` test files run
     only through the walk (`ServiceEmission.none()`: `TestSchemaHelper.buildSchema`, `buildBundle`,
@@ -1703,6 +1714,9 @@ output package they are written to are settled.
   disjunct in its entity selection go, as does the matching prepend in `EntityResolutionBuilder`. A
   key whose field binds the node id still decodes as `Query.node` does; today the two stay apart only
   because a synthesised key covers every federated node, which this makes a matter of shape. Which argument a node fetcher decodes is stated, by name as Relay has it (Alf, 2026-11-19): `graphitron_occurrence_producer_node`, a subtype of its producer that the `NODE` taken row and the implicit node id rule read, so `Query.node`'s `id` is no longer also compared as a filter's node id, and a fetcher with no `id` (`ids` for a list) is `NODE_FETCHER_WITHOUT_ID`. The fetcher still spells the two names; it reads the row when it renders from a node query.
+  `EntityKeyQuery` also decides in its own query what is an entity, an object type with a `@key`
+  application or a resolvable node whose id binds `NODE_ID`; once its alternatives are exactly the
+  `@key` applications, that is a stored fact both queries read.
   * **The dispatch's read emitters render from a plain keyed read** `open`. `EntityLoaders`, `HandleMethodBody` and `SelectMethodBody` take `EntityKeyQuery`'s entities, so a node query cannot render its own reads through them; they take a value of the type, its table, key columns and tenant position instead, with nothing changing, proven by the execution tests, `VoucherAcceptExecutionTest` among them.
   * **`Query.node` renders its own unit from a node query** `blocked`, on "The dispatch's read emitters render from a plain keyed read". Its own type-id map, loads and tenant routing, planned from the node query; then `EntityKeyQuery`'s prepend, its resolvable-node disjunct, the walk's prepend and `typenameForTypeId` go together.
 * **The facade, dev executor, registrations and schema class read the store** `open`.
@@ -1899,6 +1913,13 @@ someone to profile.
   `graphitron_outbox_routine_target_rule` and one in the outbox defect rule, each splitting the
   configured name into its namespace and name with `REGEXP`. Capture stores the two halves, and one
   stored relation states the match and how many candidates it met, which all three read.
+* **Whether a producer has a frame is stated once** `open`, off the critical path. `FrameQuery`
+  decides in its own query which producers a frame is built for, a service or a root routine write,
+  rooted or under a parent whose table it finds; a stored statement per producer is read by it and
+  by the readers that ask the same.
+* **Which producer an outbox belongs to is stated once** `open`, off the critical path.
+  `OutboxQuery` decides that an outbox is a service's where the producer is a `SERVICE` with no
+  write subtype, and a write's otherwise; a stored placement per outbox is read instead.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's
   own shutdown hook closes the database, so a long session's store does not keep growing.
 
