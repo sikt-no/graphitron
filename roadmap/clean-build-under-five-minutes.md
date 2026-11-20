@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-19
+last-updated: 2026-11-20
 ---
 
 # A clean build runs in under five minutes
@@ -314,6 +314,27 @@ parallelises a module's tests is priced against that before it is tried.
     now follows H2's own search bound and counts each block's conditions (the audit, § "The weight,
     corrected against the arms"): Spearman over the measured arms 0.69 to 0.82, over the rules 0.92 to
     0.87. Next here: a first gate over the report, once a measure has held against a few changes.
+
+18. **The model fork's growth under the 64-statement population cache.** Open. The model module went
+    from 7:51 (11-18) to 10:13 (11-19, `-Xmx5g`, cache 1,024) to about 13:30 after `19031ddd38` pinned
+    both forks at 4 GB and cut the population's cache to 64 a session, read from the reactor logs and
+    the surefire reports of three trees with no build run (2026-11-20):
+    - 11-18 to 11-19 (class time summed 1,535 to 2,104 s): spread over small classes that are cheap
+      alone and returned to their 11-18 times after the pin (`DiagnosticFactsTest` 31, 141, 28 s;
+      `StoreReaderTest` 1.5, 17, 1.9 s), the classes' own work flat. A tax on every class, which reads
+      as the 1,024 cache filling the 5 GB heap with plans, as `19031ddd38` measured.
+    - After the pin (2,104 to 2,869 s): in the classes that re-plan rule views over many captures,
+      `CaptureCorpusIsolationTest` 13 to 279 s, `DetailRuleAgreementTest` 149 to 444 s,
+      `CapturedGraphInvariantsTest` 204 to 479 s, `StageAnswerAgreementTest` 364 to 541 s,
+      `NodeTypeIdDerivationTest` 21 to 73 s, none of them changed. `graphitron`, whose population kept
+      1,024, shows no class growth (913 to 885 s).
+    - The heap is ruled out: the model module at 5 GB and 64, the fork's `MaxHeapSize` read at
+      5,368,709,120, took 17:53 against 13:23 and 13:39 at 4 GB and 64, every class about 30% slower
+      on a desktop under load, and in no case the 10 minutes a heap cost predicts.
+    - `roadmap-tool`'s 3:30 under `-T 1C` is not on the chain: it depends on the model alone and ends
+      about 8 minutes before `graphitron`, its cost the cores it shares.
+    - Next, on an idle machine and interleaved with a 4 GB and 64 control: the model at a population
+      cache of 512. `19031ddd38` put 64 and 256 within the noise of each other at 4 GB.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
