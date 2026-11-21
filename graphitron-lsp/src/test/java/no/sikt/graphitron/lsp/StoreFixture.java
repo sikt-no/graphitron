@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.model.test.CatalogInput;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.StoreAccess;
@@ -284,14 +285,17 @@ final class StoreFixture implements AutoCloseable {
      */
     static List<ClasspathEntry> testClasses() {
         // The test classes are the project's own output; the rest of the JVM's classpath is what
-        // they were compiled against, transitive as a run delivers it, so ancestry can be read.
+        // they were compiled against, transitive as a run delivers it, so ancestry can be read. The
+        // jOOQ runtime is declared, as a consumer declares it, so a generated record is known to be one.
         var root = testClassesRoot().toAbsolutePath().normalize();
+        var jooq = ClasspathCorpus.jooqRuntime().path().toAbsolutePath().normalize();
         var entries = new java.util.ArrayList<ClasspathEntry>();
         entries.add(new ClasspathEntry(testClassesRoot(), ClasspathEntry.Origin.PROJECT, null, null));
         for (String element : System.getProperty("java.class.path").split(java.io.File.pathSeparator)) {
             var path = Path.of(element).toAbsolutePath().normalize();
             if (!path.equals(root)) {
-                entries.add(new ClasspathEntry(path, ClasspathEntry.Origin.TRANSITIVE, null, null));
+                entries.add(new ClasspathEntry(path, path.equals(jooq)
+                    ? ClasspathEntry.Origin.DECLARED : ClasspathEntry.Origin.TRANSITIVE, null, null));
             }
         }
         return List.copyOf(entries);

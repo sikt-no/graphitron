@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CLASS_DECLARED_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
@@ -1193,10 +1194,16 @@ public final class CodeCapture {
     }
 
     /**
-     * Every class the reading read, which is the row everything class-keyed below references.
+     * Every class the reading read, which is the row everything class-keyed below references, and
+     * the supertypes its own header names.
      *
      * <p>Not reactor-scoped the way the arms above it are: a class an author can name may come
      * from any entry, a jOOQ interface on a declared jar included.
+     *
+     * <p>The supertypes are the clauses the classfile writes and nothing above them, so every
+     * writer of a class row states its edges and no edge is read from a class the reading did not
+     * read. What a class is through them depends on which copy of each name a graph sees, so it is
+     * decided per graph, by {@link GraphClasses}, and never here.
      */
     private static void classes(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                                 LocalDateTime touchedAt) {
@@ -1215,6 +1222,29 @@ public final class CodeCapture {
                 .onDuplicateKeyUpdate()
                 .set(c.FILE_PATH, excluded(c.FILE_PATH))
                 .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
+        record Edge(String source, String className, String supertypeName, String declaredVia) {}
+        var edges = classes.stream()
+            .flatMap(at -> at.supertypes().stream()
+                .map(supertype -> new Edge(at.source(), at.className(), supertype.name(),
+                    supertype.declaredVia())))
+            .toList();
+        if (edges.isEmpty()) {
+            return;
+        }
+        var s = CODE_CLASS_DECLARED_SUPERTYPE;
+        var edgeRows = edges.stream().collect(Rows.toRowList(
+            e -> val(e.source(), s.SOURCE_NAME),
+            e -> val(e.className(), s.CLASS_NAME),
+            e -> val(e.supertypeName(), s.SUPERTYPE_NAME),
+            e -> val(e.declaredVia(), s.DECLARED_VIA),
+            e -> val(touchedAt, s.TOUCHED_AT)));
+        BindBatch.execute(dsl, edgeRows, markers ->
+            dsl.insertInto(s, s.SOURCE_NAME, s.CLASS_NAME, s.SUPERTYPE_NAME, s.DECLARED_VIA,
+                    s.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(s.DECLARED_VIA, excluded(s.DECLARED_VIA))
+                .set(s.TOUCHED_AT, excluded(s.TOUCHED_AT)));
     }
 
     /** One type as this gatherer names it: where it was read, its key, and how it renders. */
@@ -1598,10 +1628,10 @@ public final class CodeCapture {
      * Deletes the rows of the entries this reading read that it did not touch, which are the
      * members those entries no longer declare.
      *
-     * <p>The ancestry rows are swept first and on their own instant rather than by cascade: a
-     * throwable that kept its row and lost a supertype is a live case, the class having been
-     * recompiled against a shallower hierarchy, and a cascade from the parent would never fire
-     * for it.
+     * <p>The ancestry rows, a throwable's and any class's declared supertypes, are swept before
+     * their parents and on their own instant rather than by cascade: a class that kept its row and
+     * lost a supertype is a live case, the class having been recompiled against a shallower
+     * hierarchy, and a cascade from the parent would never fire for it.
      */
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
         for (org.jooq.Table<?> table : List.of(
@@ -1610,7 +1640,7 @@ public final class CodeCapture {
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT_ARGUMENT, CODE_TYPE_ELEMENT, CODE_TYPE,
                 CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT, CODE_ENUM_CONSTANT,
-                CODE_CLASS)) {
+                CODE_CLASS_DECLARED_SUPERTYPE, CODE_CLASS)) {
             dsl.deleteFrom(table)
                 .where(table.field(CODE_METHOD.SOURCE_NAME).in(sources))
                 .and(table.field(CODE_METHOD.TOUCHED_AT).ne(touchedAt))

@@ -75,6 +75,16 @@ public final class ClasspathFixtures {
                     entry.coordinate(), entry.suppliedStamp())
                 : entry)
             .toList());
+        // The corpus with the jOOQ runtime inherited rather than declared, which the corpus no longer
+        // does: a module reaching jOOQ only through another one. The reading never opens the jar, so
+        // a class it holds is no class the graph reads, and a generated record's chain leaves what
+        // the graph reads at the jOOQ base class it extends.
+        fixtures.put("corpus-jooq-inherited", () -> ClasspathCorpus.entries().stream()
+            .map(entry -> entry.equals(ClasspathCorpus.jooqRuntime())
+                ? new ClasspathEntry(entry.path(), ClasspathEntry.Origin.TRANSITIVE,
+                    entry.coordinate(), entry.suppliedStamp())
+                : entry)
+            .toList());
         return Map.copyOf(fixtures);
     }
 

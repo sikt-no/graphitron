@@ -310,7 +310,11 @@ public final class TestSchemaHelper {
                 .getCodeSource().getLocation().toURI());
             // The test classes are the project's own output; everything else the JVM was handed is
             // what they were compiled against, transitive as a run's classpath delivers it, so the
-            // reading skips it and the ancestry a parameter's role rests on can still be read.
+            // reading skips it and the ancestry a parameter's role rests on can still be read. The
+            // jOOQ runtime is the exception, declared as a consumer declares it, so the chain above
+            // a generated record is read and the record is known to be one.
+            var jooq = java.nio.file.Path.of(org.jooq.Record.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
             var entries = new java.util.ArrayList<no.sikt.graphitron.model.config.ClasspathEntry>();
             entries.add(new no.sikt.graphitron.model.config.ClasspathEntry(root,
                 no.sikt.graphitron.model.config.ClasspathEntry.Origin.PROJECT, null, null));
@@ -319,8 +323,10 @@ public final class TestSchemaHelper {
                 var path = java.nio.file.Path.of(element).toAbsolutePath().normalize();
                 if (!path.equals(root.toAbsolutePath().normalize())) {
                     entries.add(new no.sikt.graphitron.model.config.ClasspathEntry(path,
-                        no.sikt.graphitron.model.config.ClasspathEntry.Origin.TRANSITIVE, null,
-                        null));
+                        path.equals(jooq)
+                            ? no.sikt.graphitron.model.config.ClasspathEntry.Origin.DECLARED
+                            : no.sikt.graphitron.model.config.ClasspathEntry.Origin.TRANSITIVE,
+                        null, null));
                 }
             }
             return java.util.List.copyOf(entries);

@@ -39,8 +39,8 @@ public final class ClasspathCorpus {
      *
      * <p>Beside them, what the service code is compiled against: the generated catalog, which a run
      * declares, its graphs' catalog being read only from an entry the graph does not inherit, and the
-     * jOOQ runtime, a transitive entry the reading skips. A run's classpath carries both, and the
-     * ancestry a parameter's role is decided by is read from their classfiles.
+     * jOOQ runtime, which a consumer declares too. A run's classpath carries both, and what a
+     * generated record is, a jOOQ record, is read over the supertypes their classfiles declare.
      */
     public static List<ClasspathEntry> entries() {
         return List.of(service(), scalars(), catalog(), jooqRuntime());
@@ -57,10 +57,13 @@ public final class ClasspathCorpus {
             "no.sikt:graphitron-sakila-db", null);
     }
 
-    /** The jOOQ runtime, where org.jooq.Table and its kin are declared. */
+    /**
+     * The jOOQ runtime, where org.jooq.Table and its kin are declared: declared, as a consumer
+     * declares it, so the chain above a generated record is read rather than left at the jar's edge.
+     */
     public static ClasspathEntry jooqRuntime() {
         return new ClasspathEntry(rootOf(org.jooq.Table.class, "the jOOQ runtime"),
-            ClasspathEntry.Origin.TRANSITIVE, "org.jooq:jooq", null);
+            ClasspathEntry.Origin.DECLARED, "org.jooq:jooq", null);
     }
 
     /**

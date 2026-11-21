@@ -1,0 +1,42 @@
+# A producer handing over an object of a class whose supertypes reach a class the graph reads no copy
+# of, at the field: whether the object's fields are read through the Record API or by getters turns
+# on whether the class is a jOOQ record, which the graph cannot tell. The jOOQ runtime is inherited
+# here rather than declared, so a generated FilmRecord's chain leaves what the graph reads at the
+# jOOQ base class it extends, which the detail names. A Java record a service hands over is decided,
+# its chain ending at java.lang.Record, and draws nothing.
+
+extend schema @withConfiguration(classpath: "corpus-jooq-inherited")
+
+type Film @table(name: "film") { title: String }
+
+type FilmDetailsCarrier { filmId: Int @field(name: "film_id") }
+
+type FilmReviewPayload { reviewId: Int }
+
+type Query {
+  films: [Film!]!
+  filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+}
+
+type Mutation {
+  submitReview(filmId: Int, rating: Int): FilmReviewPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "submit"})
+}
+
+# The graph's copy of FilmRecord is undecided, and names the supertype the reading did not read.
+extend schema @assertContains(relation: "code_graph_class",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord'", rows: """
+  class_name,                                                              unread_supertype_name,             is_jooq_record
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord,  org.jooq.impl.UpdatableRecordImpl,
+  """)
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", where: "code = 'CLASS_SUPERTYPE_NOT_READ'", rows: """
+  code,                     coordinate,             detail
+  CLASS_SUPERTYPE_NOT_READ, Query.filmDetailsBatch, org.jooq.impl.UpdatableRecordImpl
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", where: "code = 'CLASS_SUPERTYPE_NOT_READ'", rows: """
+  code,                     coordinate
+  CLASS_SUPERTYPE_NOT_READ, Mutation.submitReview
+  """)

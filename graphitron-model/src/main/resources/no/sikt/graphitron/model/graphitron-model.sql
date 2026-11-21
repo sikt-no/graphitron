@@ -5993,11 +5993,11 @@ CREATE TABLE sql_table_record_supertype (
   FOREIGN KEY (source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
 );
-COMMENT ON TABLE sql_table_record_supertype IS 'Every type a table''s generated jOOQ record is, itself excluded: the superclass chain above the record class and every interface it or they implement, transitively. For example public.customer''s CustomerRecord being an UpdatableRecordImpl, an UpdatableRecord, a TableRecord and a Record. Captured rather than derived, which is the one thing about this relation a reader has to know before reading it: the classpath census reads the generated jOOQ package''s classes as headers, without their members, and the store holds no supertype edge above CustomerRecord, so no closure could climb from one. The catalog walk holds the record Class itself, Table.getRecordType() being what sql_table.record_class_fqn is read from, so its declared ancestry is one more fact off a class the walk already has. It holds the closure and not the edges, unlike the census pair below it, and the reason is the same fact: the chain above a generated record runs through jOOQ''s own runtime classes, which no census scans and which are not tables, so the store holds no edges a closure could be recomputed from. A census-side twin of this relation once existed, a closure over the classpath''s own supertype edges, and it is gone: nothing ever read it, and what a reader wanting to climb a consumer class actually asks is the code family, where the reading resolves a supertype chain while it has the classfiles open. java.lang.Object is a row here, where a relation of declared edges would have left it out to keep itself to what the source wrote: this states what the class is rather than what it declared, and a record is an Object, which is also what a live Class.isAssignableFrom says. Absent for a table jOOQ generated no record for, the catalog answering org.jooq.Record there, which is no record class rather than a record named that.';
+COMMENT ON TABLE sql_table_record_supertype IS 'Every type a table''s generated jOOQ record is, itself excluded: the superclass chain above the record class and every interface it or they implement, transitively. For example public.customer''s CustomerRecord being an UpdatableRecordImpl, an UpdatableRecord, a TableRecord and a Record. Captured rather than derived, which is the one thing about this relation a reader has to know before reading it: the catalog family reads no classfiles, and the supertype edges the code family states, code_class_declared_supertype, are another gatherer''s and stop wherever a graph reads no jOOQ runtime. The catalog walk holds the record Class itself, Table.getRecordType() being what sql_table.record_class_fqn is read from, so its declared ancestry is one more fact off a class the walk already has. It holds the closure and not the edges, and the reason is the same fact: the chain above a generated record runs through jOOQ''s own runtime classes, which are not tables, so the catalog family holds no edges a closure could be recomputed from. What a reader wanting to climb any other class asks is the code family: the edges each class declares, read per entry, and whether the graph''s copy of a class is a jOOQ record, decided per graph on code_graph_class.is_jooq_record. For a table''s own record the two converge on one answer wherever the graph reads the jOOQ runtime; this relation is the catalog''s side of it and changes nothing there. java.lang.Object is a row here, where a relation of declared edges would have left it out to keep itself to what the source wrote: this states what the class is rather than what it declared, and a record is an Object, which is also what a live Class.isAssignableFrom says. Absent for a table jOOQ generated no record for, the catalog answering org.jooq.Record there, which is no record class rather than a record named that.';
 COMMENT ON COLUMN sql_table_record_supertype.source_name IS 'the catalog source the table was read from, as on sql_table; the key''s leading dimension and the refresh unit the whole sql_ family is scoped by';
 COMMENT ON COLUMN sql_table_record_supertype.table_schema IS 'the table''s SQL schema, as on sql_table';
 COMMENT ON COLUMN sql_table_record_supertype.table_name IS 'the table''s SQL name, as on sql_table; with the two columns above, the table whose record class this row is about. Keyed on the table rather than on the record class, so the row is deleted with its table and no reader has to reconcile two spellings of one identity';
-COMMENT ON COLUMN sql_table_record_supertype.supertype_name IS 'the fully-qualified binary name of one type the record class is, a nested one spelled with the $ the JVM uses, and spelled the way the reading spells a class name so a declared parameter type compares to it exactly. Every element of the closure and not only the declared parents, the relation holding a closure for the reason its own comment gives; the record class itself is deliberately not a row, a reader asking about it holding sql_table.record_class_fqn already. Frequently not a class the reading reached and never a foreign key: jOOQ''s runtime classes are not scanned, which is what makes capturing this necessary rather than derivable';
+COMMENT ON COLUMN sql_table_record_supertype.supertype_name IS 'the fully-qualified binary name of one type the record class is, a nested one spelled with the $ the JVM uses, and spelled the way the reading spells a class name so a declared parameter type compares to it exactly. Every element of the closure and not only the declared parents, the relation holding a closure for the reason its own comment gives; the record class itself is deliberately not a row, a reader asking about it holding sql_table.record_class_fqn already. Frequently not a class the catalog walk reached and never a foreign key: the catalog family reads no classfiles, which is what makes capturing this necessary rather than derivable here';
 
 CREATE TABLE sql_table_field (
   source_name     VARCHAR NOT NULL,
@@ -6795,12 +6795,34 @@ COMMENT ON COLUMN code_class.source_name IS 'the classpath entry the class was r
 COMMENT ON COLUMN code_class.class_name IS 'the fully-qualified binary name as the classfile spells it';
 COMMENT ON COLUMN code_class.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from';
 
+CREATE TABLE code_class_declared_supertype (
+  source_name    VARCHAR   NOT NULL,
+  class_name     VARCHAR   NOT NULL,
+  supertype_name VARCHAR   NOT NULL,
+  declared_via   VARCHAR   NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, supertype_name),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
+  CHECK (declared_via IN ('EXTENDS', 'IMPLEMENTS'))
+);
+COMMENT ON TABLE code_class_declared_supertype IS 'One supertype a class''s own classfile names, and the clause it names it in: one row per class and supertype. For example a generated LanguageRecord naming org.jooq.impl.UpdatableRecordImpl in its extends clause, beside a consumer''s FilmService naming nothing, java.lang.Object being left out.';
+COMMENT ON COLUMN code_class_declared_supertype.source_name IS 'the classpath entry the class was read from, as on code_class; the key''s leading dimension';
+COMMENT ON COLUMN code_class_declared_supertype.class_name IS 'the class whose header names the supertype, as on code_class; the row is deleted with it';
+COMMENT ON COLUMN code_class_declared_supertype.supertype_name IS 'the binary name the clause writes, completing the key. A name and never a foreign key: the class it names may be on no entry the graph reads, which is a fact a reader asks about rather than one the store refuses. java.lang.Object is no row where the JVM writes it for a class with no extends clause, so what remains is what the author typed';
+COMMENT ON COLUMN code_class_declared_supertype.declared_via IS 'EXTENDS for a class''s superclass and for an interface''s super-interfaces, which the source writes after extends though the classfile keeps them where a class keeps its interfaces; IMPLEMENTS for a class''s interfaces';
+COMMENT ON COLUMN code_class_declared_supertype.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from, so a class recompiled against another supertype loses the old row though it keeps its own';
+
 CREATE TABLE code_graph_class (
   graph_name  VARCHAR   NOT NULL,
   class_name  VARCHAR   NOT NULL,
   source_name VARCHAR   NOT NULL,
+  is_jooq_record BOOLEAN,
+  unread_supertype_name VARCHAR,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, class_name),
+  -- A chain that left what the graph reads is the one answer with a name to give.
+  CHECK (is_jooq_record IS NULL OR unread_supertype_name IS NULL),
   FOREIGN KEY (graph_name, source_name)
     REFERENCES store_graph_source (graph_name, source_name) ON DELETE CASCADE,
   FOREIGN KEY (source_name, class_name)
@@ -6812,6 +6834,8 @@ COMMENT ON TABLE code_graph_class IS 'The class a graph''s name resolves to: one
 COMMENT ON COLUMN code_graph_class.graph_name IS 'the reading graph''s partition; with the class name, the key';
 COMMENT ON COLUMN code_graph_class.class_name IS 'the fully-qualified binary name, as code_class spells it; with the graph, the key, so a name two entries declare is one row';
 COMMENT ON COLUMN code_graph_class.source_name IS 'the entry whose copy the graph sees: of the graph''s entries declaring the name, the one with the lowest store_graph_dependency.position, as the JVM would load it. An entry the graph claims without a position, a capture handed no build classpath being the case, stands after every positioned entry, and two of those are ordered by name. Not part of the key, which is the point: a reader joining code_ rows on this column and the class name reads one copy, where joining through store_graph_source reads every entry''s';
+COMMENT ON COLUMN code_graph_class.is_jooq_record IS 'whether the class is, itself counting, an org.jooq.Record through any number of extends and implements clauses, read over code_class_declared_supertype for the copy each name resolves to here: TRUE where the chain reaches org.jooq.Record, FALSE where every name the chain reaches is a class the graph reads or a java. name and none of them is the record, NULL where the chain reaches a name the graph reads no class of, which unread_supertype_name gives. A java. name counts as read and as no record without a row: the JVM defines a class in a java. package only from the platform, and the platform cannot depend on jOOQ, so the chain is complete there and FALSE is a fact rather than a guess. NULL is refused where a producer hands such a class over, CLASS_SUPERTYPE_NOT_READ, since whether its fields are read through the Record API or by getters is then unknown. A member rule reads it because a jOOQ record is read through the Record API and never by its getters. Written by the graph-classes stage after the names resolve, by reachability anchored at org.jooq.Record and at the unread names and grown downward over the graph''s edges until a round changes nothing, never by an all-pairs closure';
+COMMENT ON COLUMN code_graph_class.unread_supertype_name IS 'where is_jooq_record is NULL, the least by name of the supertype names the class''s chain reaches that the graph reads no class of and that are no java. name: what the jar the graph is captured against lacks. NULL wherever is_jooq_record is not';
 COMMENT ON COLUMN code_graph_class.touched_at IS 'when the reading that last wrote this row ran. Every capture of the graph rewrites the whole partition and deletes the graph''s rows carrying another instant, never skipping it because no entry changed: the order is the graph''s and can move under unchanged entries, and a winning entry leaving hands its names to the next entry declaring them';
 
 CREATE VIEW code_graph_class_rule (graph_name, class_name, source_name) AS
@@ -13231,6 +13255,28 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                               AND x.shape = 'ROW')) c
   JOIN graphql_ast_type_declaration_entry d
     ON d.graph_name = c.graph_name AND d.name = c.type_name
+UNION ALL
+-- A producer handing over an object of a class whose supertype chain reaches a class the graph reads
+-- no copy of, at the field: whether the object's fields are read through the Record API or by its
+-- getters turns on whether the class is a jOOQ record, which code_graph_class cannot say for it. The
+-- detail is the least such supertype name, the one the classpath lacks. A class the graph reads no
+-- copy of at all has no row there and is not judged here. One row per field, however many classes
+-- its type holds.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'CLASS_SUPERTYPE_NOT_READ', MIN(k.unread_supertype_name), 'fetchers'
+  FROM graphitron_producer p
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_result_class rc
+    ON rc.graph_name = ft.graph_name AND rc.type_name = ft.target_type_name
+  JOIN code_graph_class k
+    ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE k.is_jooq_record IS NULL
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
 -- A field whose union or interface lists an @error type, or whose type is one, but which is no errors
 -- field, at its declaration, by the first rule it breaks: every member @error, a list, and a list
@@ -31484,6 +31530,9 @@ INSERT INTO meta_grain VALUES
   ('class-ancestor',
    'one type one class is, the class itself excluded',
    'source_name, class_name, supertype_name', 'classpath'),
+  ('class-supertype',
+   'one supertype one class''s own classfile names',
+   'source_name, class_name, supertype_name', 'classpath'),
   ('class-constructor',
    'one public constructor of one class, overloads told apart by descriptor',
    'source_name, class_name, descriptor', 'classpath'),
@@ -31777,6 +31826,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A path written on an output field, or a @referenceFor naming a member, reaches a type with no one table, an object type without @table, a union or an interface with no table of its own, so the path has nowhere to arrive and no catalog could make it resolve.'),
   ('CODE_REFERENCE_CLASS_NOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_CLASS_NOT_READ',
    'A code reference names a class the classpath reading did not read, so no method of it can be called: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
+  ('CLASS_SUPERTYPE_NOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_CLASS_SUPERTYPE_NOT_READ',
+   'A producer hands over an object of a class whose supertypes reach a class the classpath reading did not read, so whether it is a jOOQ record, read through the Record API, or an object read by its getters cannot be told: the jar declaring that supertype is not on the classpath the graph is captured against.'),
   ('CODE_REFERENCE_METHOD_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_NOT_FOUND',
    'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.'),
   ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
@@ -34377,11 +34428,15 @@ INSERT INTO meta_relation VALUES
   ('code_graph_class', 'graph-class', 'code',
    'The class a graph''s name resolves to: one row per class name any entry on the graph''s classpath declares, naming the entry whose copy the graph sees.',
    'For example a FilmService on the consumer''s own output and on a library jar listed after it is one row naming the output. The sakila example graph holds 5,403 rows.',
-   'Graphs on different classpaths share a store, and an entry''s rows are a function of that entry alone, so one class name declared by two entries is two code_class rows and which one a graph sees is a question about the graph: the first entry on its classpath declaring the name, as the JVM would load it. Every rule that resolves a name read that predicate inline, an anti-join over the graph''s entries per candidate, or settled for the first entry by name, which classpath order does not decide. Stated once here, the readers join it on its key. The whole visible set rather than the names some reader asks about, because the readers are many and their questions are not known to the gatherer that owns the classpath. Written by the code gatherer''s anchor stage, after its own reading and the store and classpath-source gatherers it depends on, and rewritten for the graph on every capture, since the order is the graph''s and moves under entries that did not change.'),
+   'Graphs on different classpaths share a store, and an entry''s rows are a function of that entry alone, so one class name declared by two entries is two code_class rows and which one a graph sees is a question about the graph: the first entry on its classpath declaring the name, as the JVM would load it. Every rule that resolves a name read that predicate inline, an anti-join over the graph''s entries per candidate, or settled for the first entry by name, which classpath order does not decide. Stated once here, the readers join it on its key. The whole visible set rather than the names some reader asks about, because the readers are many and their questions are not known to the gatherer that owns the classpath. Written by the code gatherer''s anchor stage, after its own reading and the store and classpath-source gatherers it depends on, and rewritten for the graph on every capture, since the order is the graph''s and moves under entries that did not change. It also says whether the class is a jOOQ record, the one question about a class''s ancestry that depends on which copies the graph sees: decided here over code_class_declared_supertype after the names resolve, so no entry''s rows carry another graph''s answer.'),
   ('code_graph_class_rule', 'graph-class', 'code',
    'One row the graph class rule computes, in the shape code_graph_class stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the code gatherer''s graph-classes stage inserts this view''s rows for one graph into code_graph_class, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_target_rule''s terms, so the stage and the rule can be compared row for row on every fact document.'),
+  ('code_class_declared_supertype', 'class-supertype', 'code',
+   'One supertype a class''s own classfile names, and the clause it names it in: one row per class and supertype.',
+   'For example a generated LanguageRecord naming org.jooq.impl.UpdatableRecordImpl in its extends clause, beside a consumer''s FilmService naming nothing, java.lang.Object being left out.',
+   'The edges a class hierarchy is made of, stated per entry as the classfile declares them, so a question about what a class is gets answered per graph over the copies the graph sees rather than at capture through whatever classpath the reading held. Edges and not a closure: a closure written at capture has to climb past its own entry, which classifies a class through the reading graph''s classpath into rows every graph shares and goes stale when an entry above it changes. Taken from the header the census already parses, for every class row the reading writes, the census''s, the nested and handle classes read by name and the platform''s throwables, and never from a class the reading did not read. Read by the graph-classes stage, which decides code_graph_class.is_jooq_record by reachability anchored at org.jooq.Record over the graph''s winning copies.'),
   ('code_class', 'classpath-class', 'code',
    'One class the reading read, and the file under the entry it was read out of.',
    'For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.',

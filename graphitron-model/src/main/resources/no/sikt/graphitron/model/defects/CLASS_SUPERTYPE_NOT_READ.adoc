@@ -1,0 +1,5 @@
+Reported at the field whose producer hands the object over, the detail naming the supertype the reading did not read.
+
+Graphitron reads a field off an object in one of two ways: through the jOOQ Record API where the object's class is a jOOQ record, and through its getters or record components otherwise. It tells the two apart by following the class's extends and implements clauses through the classes the build hands it, and a chain that reaches a class that reading never met cannot be followed further, so the class could be either. This is told apart from a class that was not read at all, `CODE_REFERENCE_CLASS_NOT_READ`.
+
+*Next step.* Declare the artifact carrying the supertype in the module's own `<dependencies>`, so the classpath the graph is captured against holds it: a transitive dependency or a plugin's `<dependencies>` block does not count. For a generated jOOQ record that is `org.jooq:jooq`. See xref:../how-to/external-code.adoc#make-the-class-nameable[Make the class nameable].

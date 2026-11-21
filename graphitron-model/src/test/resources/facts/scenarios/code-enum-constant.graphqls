@@ -1,6 +1,6 @@
 # What the code reading states of classes no schema names: the constants each enum class on the
-# classpath declares, and the platform's throwables, read off the runtime image as a source of their
-# own.
+# classpath declares, the platform's throwables, read off the runtime image as a source of their
+# own, the supertypes each class declares, and whether the graph's copy of a class is a jOOQ record.
 #
 # The constants each enum class on the classpath declares, read off the classfile's enum flag: the
 # names Enum.valueOf takes, so a GraphQL enum value taken as a Java constant can be checked against
@@ -56,4 +56,48 @@ extend schema @assertContains(relation: "code_read_slot",
   class_name,                                                    method_name, declaring_class
   java.lang.IllegalArgumentException,                            getMessage,  java.lang.Throwable
   no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException, getMessage,  java.lang.Throwable
+  """)
+
+# The supertypes a class's own header names, one row per clause and nothing above them: jOOQ's
+# UpdatableRecordImpl extends TableRecordImpl and implements UpdatableRecord, and the fixture catalog's
+# LanguageRecord extends UpdatableRecordImpl. A Java record names java.lang.Record, a class extending
+# nothing names nothing, java.lang.Object being no row.
+extend schema @assertContains(relation: "code_class_declared_supertype",
+    where: "class_name IN ('org.jooq.impl.UpdatableRecordImpl', 'no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord', 'no.sikt.graphitron.rewrite.test.services.FilmReviewGrouped')", rows: """
+  class_name,                                                                  supertype_name,                      declared_via
+  org.jooq.impl.UpdatableRecordImpl,                                           org.jooq.impl.TableRecordImpl,       EXTENDS
+  org.jooq.impl.UpdatableRecordImpl,                                           org.jooq.UpdatableRecord,            IMPLEMENTS
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord,  org.jooq.impl.UpdatableRecordImpl,   EXTENDS
+  no.sikt.graphitron.rewrite.test.services.FilmReviewGrouped,                  java.lang.Record,                    EXTENDS
+  """)
+
+extend schema @assertAbsent(relation: "code_class_declared_supertype",
+    where: "class_name IN ('no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord', 'no.sikt.graphitron.rewrite.test.services.FilmService')", rows: """
+  class_name,                                                                  supertype_name
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord,  org.jooq.Record
+  no.sikt.graphitron.rewrite.test.services.FilmService,                        java.lang.Object
+  """)
+
+# Whether the graph's copy of a class is a jOOQ record, decided over those edges: LanguageRecord
+# reaches org.jooq.Record through jOOQ's own classes, which the graph reads, though no schema here
+# names it. A Java record is not one, its chain ending at java.lang.Record, a java. name and so
+# complete without a row; nor is a plain service class. A class whose chain reaches a name the graph
+# reads no class of is undecided, its flag empty, and names it: a service exception implementing
+# graphql-java's GraphQLError, which this classpath does not carry.
+extend schema @assertContains(relation: "code_graph_class",
+    where: "class_name IN ('no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord', 'no.sikt.graphitron.rewrite.test.services.FilmReviewGrouped', 'no.sikt.graphitron.rewrite.test.services.FilmService', 'no.sikt.graphitron.rewrite.test.services.FilmLookupClientFacingException')", rows: """
+  class_name,                                                                  unread_supertype_name, is_jooq_record
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord,  ,                      TRUE
+  no.sikt.graphitron.rewrite.test.services.FilmReviewGrouped,                  ,                      FALSE
+  no.sikt.graphitron.rewrite.test.services.FilmService,                        ,                      FALSE
+  no.sikt.graphitron.rewrite.test.services.FilmLookupClientFacingException,    graphql.GraphQLError,
+  """)
+
+# The near miss: none of them answers the other way.
+extend schema @assertAbsent(relation: "code_graph_class",
+    where: "class_name IN ('no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord', 'no.sikt.graphitron.rewrite.test.services.FilmReviewGrouped', 'no.sikt.graphitron.rewrite.test.services.FilmService')", rows: """
+  class_name,                                                                  is_jooq_record
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord,  FALSE
+  no.sikt.graphitron.rewrite.test.services.FilmReviewGrouped,                  TRUE
+  no.sikt.graphitron.rewrite.test.services.FilmService,                        TRUE
   """)

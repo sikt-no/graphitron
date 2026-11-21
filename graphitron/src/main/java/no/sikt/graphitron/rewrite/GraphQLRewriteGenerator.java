@@ -491,15 +491,16 @@ public class GraphQLRewriteGenerator {
 
     /**
      * The store's error-severity defects as build errors. A class a code reference names that the
-     * reading did not read is explained from the classpath: the dependency that carries it and
-     * that the module does not declare, which the defect itself cannot know. An unknown
-     * {@code $session} member is explained by the members the handle does offer.
+     * reading did not read, or a supertype it did not read, is explained from the classpath: the
+     * dependency that carries it and that the module does not declare, which the defect itself
+     * cannot know. An unknown {@code $session} member is explained by the members the handle does
+     * offer.
      */
     private List<ValidationError> storedRefusals() {
         var nameability = new ClasspathNameability(ctx.classpathRoots());
         return EntryDefectVerdict.rows(store.dsl(), store.graphName()).stream()
             .map(row -> EntryDefectVerdict.error(row, switch (row.code()) {
-                case "CODE_REFERENCE_CLASS_NOT_READ" -> row.detail() != null
+                case "CODE_REFERENCE_CLASS_NOT_READ", "CLASS_SUPERTYPE_NOT_READ" -> row.detail() != null
                     && nameability.verdictFor(row.detail())
                         instanceof ClasspathNameability.Verdict.Rejected rejected
                     ? rejected.reason()
