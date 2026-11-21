@@ -1,0 +1,34 @@
+# A type a result reaches as a row and as an object is refused where the object is a jOOQ record of
+# any catalog, not only of the catalog the graph reads: the generated fetcher reads any Record it is
+# handed as the row, so the record's columns would be read as the parent row's. RecordTexts is nested
+# in solo_parent's row and handed back by a service as film's record, which is a table's record in
+# the fixture catalog and in no table of this one, and is refused all the same. Its twin under the
+# fixture catalog is fetcher-readers' RecordTexts, which pins the refusal; this document states that
+# it is the one defect here without pinning it a second time.
+
+extend schema @withConfiguration(jooqPackage: "no.sikt.graphitron.rewrite.singleschemafixture")
+
+type Parent @table(name: "solo_parent") {
+  name: String
+  "Nested in the parent's row."
+  texts: RecordTexts
+}
+
+type RecordTexts { name: String }
+
+type Query {
+  parents: [Parent!]!
+  recordTexts(id: Int): RecordTexts
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+}
+
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'RecordTexts'", rows: """
+  type_name,   shape
+  RecordTexts, OBJECT
+  RecordTexts, ROW
+  """)
+
+# A defect document stores at least one defect, and this one stores no other.
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  NOT (coordinate = 'RecordTexts' AND code = 'RESULT_SHAPES_CONFLICT')
+  """)

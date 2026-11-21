@@ -95,6 +95,12 @@ name the tables or the class.
   table record is rows of its table, any other class an object.
 * A field of a root type has no source. It executes from nothing, so `Query.films` has no row.
 
+A type can be reached both ways, nested in a table's row and handed back as an object by a
+producer. That mix is served where the object's class is read by accessor, each field dispatching on
+which it was handed. An object that is a jOOQ record, of any catalog, does not mix with a row: the
+generated fetcher reads any jOOQ record it is handed as the row, so the type is refused as
+`RESULT_SHAPES_CONFLICT` (Alf, 2026-11-21).
+
 include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_occurrence_source_table]
 
 '''

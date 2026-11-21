@@ -1,5 +1,5 @@
 Reported at the type's declarations.
 
-Each field of a type is fetched one way: off a row a statement selected, or off an object held in memory. A type reached both ways would have every field fetched both ways. Graphitron serves one mix, a row beside an object of a class it reads by accessor, each field dispatching on which it was handed; an object that is a table's own jOOQ record, or of no class, does not mix. A write's payload, which graphitron builds itself, also returned by a `@service`, is two objects of different classes.
+Each field of a type is fetched one way: off a row a statement selected, or off an object held in memory. A type reached both ways would have every field fetched both ways. Graphitron serves one mix, a row beside an object of a class it reads by accessor, each field dispatching on which it was handed; an object of no class does not mix. Nor does an object that is a jOOQ record, of any catalog, the schema's own tables' records among them: the generated fetcher reads a `Record` it is handed as the row. A write's payload, which graphitron builds itself, also returned by a `@service`, is two objects of different classes.
 
 *Next step.* Declare a type of its own for each place the type is reached from, so each is reached one way.

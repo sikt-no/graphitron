@@ -13291,10 +13291,13 @@ UNION ALL
 -- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
 -- rule, and every field of the type would be fetched both ways. A row beside an object of classes
 -- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
--- handed; an object of a table's own record, or of no class, is not. Two objects break it too: a
--- write's payload, which graphitron builds and holds no class, returned by a @service as well,
--- whose object is a class of its own, so the payload's fields would read two different objects.
--- Where the type is also a row, the mix above is what is judged.
+-- handed; an object of no class is not, and neither is an object whose class is a jOOQ record of any
+-- catalog (code_graph_class.is_jooq_record), the graph's own tables' records among them, since the
+-- fetcher takes any Record it is handed for the row. A class whose chain leaves what the graph reads
+-- is CLASS_SUPERTYPE_NOT_READ's below. Two objects break it too: a write's payload, which graphitron
+-- builds and holds no class, returned by a @service as well, whose object is a class of its own, so
+-- the payload's fields would read two different objects. Where the type is also a row, the mix above
+-- is what is judged.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'fetchers'
   FROM (SELECT r.graph_name, r.type_name
@@ -13303,10 +13306,10 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
          WHERE NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
                              WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
                     AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
-                                      JOIN sql_table st ON st.record_class_fqn = rc.class_name
-                                      JOIN store_graph_source sg
-                                        ON sg.graph_name = rc.graph_name AND sg.source_name = st.source_name
-                                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name))
+                                      JOIN code_graph_class k
+                                        ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
+                                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name
+                                       AND k.is_jooq_record = TRUE))
         UNION
         SELECT wf.graph_name, wf.named_type
           FROM graphitron_producer w
@@ -27621,9 +27624,9 @@ UNION ALL
 -- through the Record API, never by its getters. Only a class the graph knows is no record is judged:
 -- one whose chain leaves what the graph reads is CLASS_SUPERTYPE_NOT_READ's where a producer hands
 -- it over, and judging its getters here would be a guess. Whether the object is read is the occurrence's own read, so
--- a type also handed over as a row is judged on its object however the row reads the field; the
--- fetcher serving that mix reads a jOOQ record as the row. A row beside an object of no class is the
--- result shapes' to judge rather than a member's.
+-- a type also handed over as a row is judged on its object however the row reads the field. A row
+-- beside an object of no class, or beside a jOOQ record of any catalog, is RESULT_SHAPES_CONFLICT's,
+-- so one cause draws one code: the first is skipped below, the second is a record and never judged.
 -- A declaration reached at several occurrences is one site, reported once, the detail the class.
 -- Reported at the @field where one is written, since that is the name to fix, and at the field
 -- otherwise.

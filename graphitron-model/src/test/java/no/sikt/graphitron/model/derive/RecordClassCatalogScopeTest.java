@@ -22,9 +22,8 @@ import static org.assertj.core.api.Assertions.tuple;
  * A record class is a table's only where the graph reads the catalog that table is in. Graphs on
  * different catalogs share a store, so a rule that matches a class name against {@code sql_table}
  * without going through the graph's sources finds a sibling's table and judges this graph by it.
- * A fact document is one graph, which is why the pairing is made here: each document is read under
- * the fixture catalog and under another catalog that has none of the tables its records belong to,
- * or states the other catalog itself beside a graph reading the fixture one.
+ * A fact document is one graph, which is why the pairing is made here: the document is read under
+ * the fixture catalog and under another catalog that has none of the tables its records belong to.
  */
 class RecordClassCatalogScopeTest {
 
@@ -43,8 +42,6 @@ class RecordClassCatalogScopeTest {
         store = CapturedStore.ownStoreOfDocument(tmp, "defects/key-row", "keys-fixture", fixture,
             classpath);
         store.andDocument("defects/key-row", "keys-other", other, classpath);
-        // States the other catalog itself, film's record being a table's only in the sibling's.
-        store.andDocument("scenarios/result-shapes-own-catalog", "shapes-other", fixture, classpath);
     }
 
     @AfterAll
@@ -61,14 +58,6 @@ class RecordClassCatalogScopeTest {
         assertThat(defects(store.dsl(), "keys-other", "NO_KEY_FROM_PARENT", "KEY_ROW_AMBIGUOUS"))
             .as("film is no table of this graph's catalog, so the source parameter collects no"
                 + " table's records and there is no key row to look for")
-            .isEmpty();
-    }
-
-    @Test
-    void anObjectOfASiblingsRecordIsAPlainObject() {
-        assertThat(defects(store.dsl(), "shapes-other", "RESULT_SHAPES_CONFLICT"))
-            .as("film's record is no table's record in this graph's catalog, so the object beside"
-                + " the row is one of a class graphitron reads by accessor")
             .isEmpty();
     }
 
