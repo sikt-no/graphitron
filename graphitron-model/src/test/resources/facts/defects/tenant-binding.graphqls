@@ -1,15 +1,16 @@
-# A call's tenant named twice, by a $tenant pair and by @tenant on another argument; a value named as
-# the tenant whose scalar arrives as another class than the tenant column's, film_id an Integer, or
-# which is an input object, beside a list of the column's class, each element a tenant, which passes;
-# $tenant written where nothing routes by it yet, a @condition; a call handed a connection, re-reading
-# film rows and naming no tenant; one whose only tenant value may be left out; @tenant beside
-# @nodeId, beside the node id alone, whose decoded film_id routes the call; @tenant read by a
-# child @service and by a query field, beside it read by a root @service, which binds it; and a node
-# id of a union over film and film_actor, each holding film_id at its own key position, which names
-# no one tenant, as an argument and inside a bean a call handed a connection takes. A root handed a
-# connection and naming no tenant is refused alone, the payload's films under it running on the key
-# it hands down; and the session handle alone is a connection too, so a call taking only $session
-# and naming no tenant is refused as one handed the jOOQ context is.
+# A call's tenant named twice, by a $tenant pair and by @tenant on another argument; a value named
+# as the tenant whose scalar arrives as another class than the tenant column's, film_id an Integer,
+# or which is an input object, beside a list of the column's class, each element a tenant, which
+# passes; $tenant written where nothing routes by it yet, a @condition; a call handed a connection,
+# re-reading film rows and naming no tenant; one whose only tenant value may be left out, beside one
+# needing no tenant, which runs unscoped; @tenant beside @nodeId, beside the node id alone, whose
+# decoded film_id routes the call; @tenant read by a child @service and by a query field, beside it
+# read by a root @service, which binds it; and a node id of a union over film and film_actor, each
+# holding film_id at its own key position, which names no one tenant, as an argument and inside a
+# bean a call handed a connection takes. A root handed a connection and naming no tenant is refused
+# alone, the payload's films under it running on the key it hands down; and the session handle alone
+# is a connection too, so a call taking only $session and naming no tenant is refused as one handed
+# the jOOQ context is.
 
 extend schema @withConfiguration(tenantColumn: "film_id", sessionState: true,
   sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary")
@@ -44,9 +45,16 @@ type Query {
   filmUnrouted(id: Int!): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById"})
+  # Handed a connection and re-reading film's rows, its one tenant value optional: it needs a tenant
+  # a request may leave out.
   filmOptional(id: Int!, org: Int): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById", argMapping: "id: id, $tenant: org"})
+  # filmOptional's near miss: handed no connection and returning no table's rows, so it needs no
+  # tenant and runs on the empty tenant part whether or not the request names one.
+  labelOptional(id: Int @tenant): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService",
+      method: "byFilmId"})
   filmByMarkedNodeId(id: ID! @nodeId(typeName: "Film") @tenant): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById", argMapping: "id: id"})
@@ -149,6 +157,11 @@ extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot",
   Query.thingAssigned,         NODE_ID_KEY, Query.thingAssigned(occupant:),      0
   Query.thingAssigned,         NODE_ID_KEY, Query.thingAssigned(occupant:),      1
   """)
+
+# filmOptional's near miss draws no defect above, so it has a connection, and it is unscoped: not
+# routed by the slot a request may leave out.
+extend schema @assertEmpty(relation: "graphitron_occurrence_connection",
+    where: "coordinate = 'Query.labelOptional' AND outcome <> 'UNSCOPED'")
 
 # The refused root's payload hands its films the key it was handed, so they are not refused again.
 extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: "code = 'UNROUTED_CHILD' AND coordinate LIKE 'RateFilmsPayload.%'")

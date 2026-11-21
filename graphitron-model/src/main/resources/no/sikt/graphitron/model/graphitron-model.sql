@@ -23463,7 +23463,7 @@ CREATE TABLE graphitron_occurrence_connection (
 COMMENT ON TABLE graphitron_occurrence_connection IS 'The connection one producer of a graph whose ConnectionKey has a part runs on: one row per producer the generated code can say that for. For example Mutation.rateFilms runs on a connection keyed by the tenant its input''s film ids name, Film.servedBy on the key its parent handed down, and Language.servedBy on the key with an empty tenant part.';
 COMMENT ON COLUMN graphitron_occurrence_connection.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_connection.coordinate IS 'the producer''s occurrence; with the graph, the key';
-COMMENT ON COLUMN graphitron_occurrence_connection.outcome IS 'ROUTED, a root''s connection keyed by the parts beneath it; INHERIT, a child''s run on the whole key its producer chain hands down; UNSCOPED, the key with an empty tenant part: a child whose rows lie in no tenant scope, or a root that reads or writes global data, or names no tenant and needs none';
+COMMENT ON COLUMN graphitron_occurrence_connection.outcome IS 'ROUTED, a root''s connection keyed by the parts beneath it; INHERIT, a child''s run on the whole key its producer chain hands down; UNSCOPED, the key with an empty tenant part: a child whose rows lie in no tenant scope, or a root that reads or writes global data, or needs no tenant and names none or names one only through values that may all be left out';
 COMMENT ON COLUMN graphitron_occurrence_connection.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_occurrence_connection_part (
@@ -23511,7 +23511,7 @@ WITH root (graph_name, coordinate, call, element_coordinate, kind) AS (
                             AND ro.operation = 'MUTATION'
                           WHERE f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate))
 ),
-fact (graph_name, coordinate, call, kind, result_scope, bound, any_slot, several_types, guaranteed,
+fact (graph_name, coordinate, call, kind, result_scope, bound, several_types, guaranteed,
       per_element, own_argument, has_empty) AS (
   SELECT r.graph_name, r.coordinate, r.call, r.kind,
          -- The table the service's records are re-read from: none, one a tenant's database holds,
@@ -23526,8 +23526,6 @@ fact (graph_name, coordinate, call, kind, result_scope, bound, any_slot, several
            OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer_service ps
                        WHERE ps.graph_name = r.graph_name AND ps.coordinate = r.coordinate
                          AND ps.constructor_descriptor = '(Lorg/jooq/DSLContext;)V'),
-         EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
-                  WHERE s.graph_name = r.graph_name AND s.call_coordinate = r.coordinate AND s.call = r.call),
          -- A slot read off a node id of several node types, an interface's or a union's, each member
          -- decoding the id with its own key: one slot reads one node's key, so none routes the call.
          EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
@@ -23559,17 +23557,17 @@ fact (graph_name, coordinate, call, kind, result_scope, bound, any_slot, several
 verdict (graph_name, coordinate, call, outcome, guaranteed, own_argument, has_empty) AS (
   SELECT graph_name, coordinate, call,
          -- Global records are re-read on the key with an empty tenant part whatever the arguments name.
-         -- A root no route reaches has none, and no row: a slot read off a node id of several node
-         -- types where the call needs a tenant, whatever else names it, a tenant slot that may be left
-         -- out, a routine write onto a tenant's table, or a tenant's records or a connection with no
-         -- tenant named. A call needing none runs on the empty tenant part beside such a slot, which
-         -- then routes nothing.
+         -- A root no route reaches has none, and no row: a call needing a tenant, re-reading a tenant's
+         -- records or handed a connection, whose only tenant slots are read off a node id of several
+         -- node types, whatever else names it, or may all be left out, or that names no tenant at all,
+         -- and a routine write onto a tenant's table. A call needing none runs on the empty tenant part
+         -- beside such slots, which then route nothing.
          CASE WHEN result_scope = 'GLOBAL' THEN 'UNSCOPED'
               WHEN several_types = TRUE AND (result_scope = 'TENANT' OR bound = TRUE)
                 THEN CAST(NULL AS VARCHAR)
               WHEN several_types = TRUE THEN 'UNSCOPED'
               WHEN guaranteed = TRUE OR per_element = TRUE THEN 'ROUTED'
-              WHEN any_slot = TRUE OR result_scope = 'TENANT' OR bound = TRUE THEN CAST(NULL AS VARCHAR)
+              WHEN result_scope = 'TENANT' OR bound = TRUE THEN CAST(NULL AS VARCHAR)
               ELSE 'UNSCOPED' END,
          guaranteed, own_argument, has_empty
     FROM fact
@@ -23656,9 +23654,9 @@ CREATE VIEW graphitron_occurrence_route_entry_defect_rule
 -- A root service call or routine write of a graph with a tenant column that the stored connection
 -- lacks, the connection rule having decided no route reaches it, as UNROUTED_CHILD is raised for a
 -- child: by why, a slot read off a node id of several node types, which names no one tenant and is
--- refused as unrouted whatever else the call names, a tenant slot that may be left out, a routine
--- write onto a tenant's table, or else a call naming no tenant that re-reads a tenant's rows or is
--- handed a connection.
+-- refused as unrouted whatever else the call names, tenant slots that may all be left out on a call
+-- that re-reads a tenant's rows or is handed a connection (one needing neither runs unscoped), a
+-- routine write onto a tenant's table, or else a call naming no tenant that needs one.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
        CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                            JOIN graphitron_occurrence_node_id n
@@ -31795,7 +31793,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ROUTINE_WRITE_TENANT_SCOPED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_TENANT_SCOPED',
    'A @routine mutation in a database-per-tenant build re-reads rows a tenant''s database holds, and a routine write names no tenant, so it runs on the default source and cannot reach that tenant''s rows: return rows of a table no tenant column scopes, or write through a @service that names its tenant with $tenant.'),
   ('TENANT_SLOTS_OPTIONAL_ONLY', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_SLOTS_OPTIONAL_ONLY',
-   'Every value a root @service''s tenant is read from may be left out, so a call can name none and nothing says where it runs: make one of them required.'),
+   'Every value a root @service''s tenant is read from may be left out, and the call needs a tenant, re-reading a tenant''s rows or handed a connection, so a call can name none and nothing says where it runs: make one of them required.'),
   ('TENANT_NAMED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_NAMED_TWICE',
    'A call''s tenant is named twice, by a $tenant pair and by @tenant on another argument or input field, so nothing says which it runs on: name it once.'),
   ('TENANT_VALUE_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_VALUE_TYPE_DISAGREES',
