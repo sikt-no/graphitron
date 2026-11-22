@@ -114,7 +114,8 @@ Slices 1 to 8f are on trunk: A issues vouchers end to end, B verifies them and r
 entity and every field below it on the vouched connection, except a connection-typed field, which
 `VOUCHER_ACCEPT_NOT_GENERATED` still refuses below an accepting type; and both markers sit on the type,
 with the voucher field minted (*Rulings*, 2026-11-18). What remains is 8e.3, connection-typed fields,
-which waits on R876's node for their fetchers. See *Slices*.
+which waits on R876's node for their fetchers, and 8g, a rework: the one-value limit fails per
+representation rather than failing the whole lookup. See *Slices*.
 
 The *Implementation* text below the *Rulings* was written for the field markers and describes some
 mechanisms in that form (the membership's `issuing_field`, the claim read off a field-level
@@ -231,9 +232,10 @@ the vouched subtree asks for it.
 ### One connection per vouched-for value
 
 An operation takes one vouched connection, for one vouched-for value. Vouchers carrying it, from a list
-of results or several parents' lists, share that connection. An operation whose vouchers carry more than
-one vouched-for value fails with an error that names the limit, not `null`, so the limit is not mistaken
-for a denial. The limit lives in one place so it can be raised later.
+of results or several parents' lists, share that connection. The first vouched-for value an operation presents, in representation order, is admitted;
+a representation carrying another fails on its own, answering `null` with an error at its own index that
+names the limit, and the rest resolve (slice 8g). The limit is never a request rejection, so it is not
+mistaken for a denial and never fails the lookup it occurs in. The limit lives in one place so it can be raised later.
 
 Every entity of the group reads through a connection mounted for that value, so a subtree is scoped to
 its entities by the graph it was reached through, and its reads to the value by RLS. Sharing the
@@ -715,6 +717,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8e.2. The walk reads the handed-down key | A split query and a polymorphic field below a vouched entity read on the key it hands down | `c0f511d`, `420ba54` |
 | 8e.3. Connection-typed fields | Pending on R876; below | |
 | 8f. Markers on the type | `@issue` and `@accept` on the type, `internalGraphitronVoucher` minted on both sides | see *Slice 8f* |
+| 8g. The limit fails per representation | Rework: a representation past the one-value limit fails alone; below | |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -957,6 +960,34 @@ Independent of 8e.3. As built:
 * *Tests.* The fact documents changed by the rows above; the refusal documents claim the collision on
   both sides and the double marker, and that neither collision mints. The execution tests pass unchanged
   in substance, the representation now `{internalGraphitronVoucher}`.
+
+**Slice 8g, the limit fails per representation (rework, Alf 2026-11-22).** Moved here from R1199,
+whose options for more than one value per lookup it is the floor of. Today `admitVouched` throws
+`VouchedValueLimitExceededException`, a request rejection, as soon as a second vouched-for value is
+presented. A federation router batches every representation bound for a subgraph into one `_entities`
+call, so a list whose rows belong to different owners always crosses the limit and the whole lookup
+fails. Observed in kreg under FS's `sakerV2`, three cases with different applicants: the rejection is
+unmapped, `GraphqlHttpHandler` answers a redacted `500`, and the router nulls every
+`vgsKompetanseoppnaelser`. Keeping an `_entities` lookup to one connection from the pool is wanted;
+failing the whole lookup to keep it there is not (Alf, 2026-11-18).
+
+* *Admission.* The limit stops admitting values instead of throwing. The first vouched-for value in
+  representation order is admitted, so which one wins never depends on loader dispatch order;
+  representations carrying it resolve as today, on its connection.
+* *Each one past the limit fails alone.* It answers `null` with an error at its own `_entities` index,
+  which the router places at the parent's path, and the message names the limit and the value it
+  admitted in its place. The same holds for a vouched entity reached any other way in the operation.
+* *What stays a request rejection.* A voucher whose signature or expiry fails verification is a forged
+  or stale token, not a capacity limit, and still rejects the request.
+* *Where.* The generated connection runtime (`ConnectionRuntimeClassGenerator`'s `admitVouched`) and the
+  entity dispatch (`EntityFetcherDispatch`'s batches). No store fact, SDL or consumer configuration
+  changes; `VouchedValueLimitExceededException` either goes or becomes the per-representation error's
+  carrier, and the voucher how-to says which errors a consumer may see.
+* *Tests.* The emitted admission tested at the unit tier with the emitter harness (`testing.adoc`,
+  "Every emitted unit runs at the unit tier"): representation order, a second and a third value, a
+  failed signature still rejecting. An execution test in sakila's federated fixture: an `_entities`
+  call with representations for two vouched-for values resolves the first value's entities and gives
+  each of the second's an error at its own index.
 
 ## Tests
 

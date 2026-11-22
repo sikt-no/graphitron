@@ -1,6 +1,6 @@
 ---
 id: R1199
-title: "An _entities lookup with vouchers for several values resolves on one connection, and a limit fails only the entities past it"
+title: "An _entities lookup with vouchers for several values resolves on one connection"
 status: Backlog
 bucket: feature
 priority: 3
@@ -10,15 +10,15 @@ created: 2026-11-18
 last-updated: 2026-11-18
 ---
 
-# An _entities lookup with vouchers for several values resolves on one connection, and a limit fails only the entities past it
+# An _entities lookup with vouchers for several values resolves on one connection
 
 ## Goal
 
 An accepting subgraph answers a router's `_entities` call whose vouchers carry several vouched-for values
 (a list of cases with different applicants, say) with every entity it can resolve, still taking at most
-one vouched connection from the pool. Where a limit does stop a representation, that representation gets
-its own error at its own path and the rest resolve, so the limit never reads as a failed fetch of the
-whole lookup.
+one vouched connection from the pool. How a lookup past the limit fails is settled in R1119's slice 8g:
+each representation past it fails alone and the rest resolve. This item is about raising the limit
+itself, so a list of several owners resolves whole.
 
 ## Why
 
@@ -43,21 +43,16 @@ would not help: the limit is documented as not being a denial, and the router wo
 How it fails is the most important part (Alf, 2026-11-18). Keeping an `_entities` lookup to one
 connection from the pool is wanted; failing the whole lookup to keep it there is not.
 
-## Options for how it fails
+## Options for raising the limit
 
-These are compatible; the first is the floor whatever else lands.
+The floor, failing per representation, moved into R1119 as slice 8g (Alf, 2026-11-22) and is not this
+item's. These two build on it and are compatible.
 
-1. *Fail per representation.* The limit stops admitting values but does not throw a request rejection.
-   Representations whose value is admitted resolve as today; each one past the limit answers `null`
-   with an error at its own `_entities` index naming the limit, which the router places at the parent's
-   path. Which values are admitted must not depend on loader dispatch order: admit in representation
-   order. A failed voucher check stays a request rejection, since that is a forged or expired token, not
-   a capacity limit.
 2. *One connection mounted for every value.* Every voucher of one `_entities` call is verified before
    any connection is taken, so the whole set of vouched-for values is known up front. A `ConnectionKey`
    carrying that set lets the consumer's source mount one connection that reads the superset, and one
    SELECT resolves every entity. The limit then becomes a cap on the set's size, a safety bound on the
-   policy and array size rather than "one", configurable with a generous default, enforced as in 1.
+   policy and array size rather than "one", configurable with a generous default, enforced per representation as in R1119's slice 8g.
 3. *A connection per value.* Each value keeps a connection of its own, as the one-value rule's
    reasoning assumed. Since slices 8e.1 and 8e.2 a child `@service`, a split query and a polymorphic
    field below a vouched entity read later, on the key the entity hands down, so a value's connection is
@@ -65,8 +60,7 @@ These are compatible; the first is the floor whatever else lands.
    per-value isolation at the cost of one leased connection per value for the operation, the cost the
    limit exists to bound, and so needs R1192's release when a value's reads finish.
 
-The recommendation so far is 1 now, then 2, with 3 as the fallback for a consumer that needs per-entity
-isolation.
+The recommendation so far is 2, with 3 as the fallback for a consumer that needs per-entity isolation.
 
 ## Shape of the set key (option 2)
 
