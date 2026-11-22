@@ -18,14 +18,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A generated scalar taken at a call by its components, through the generated facade of the fact
- * scenario {@code generated-scalar-call.graphqls} against the shared database: the value is decoded
- * against the schema the facade serves and checked against the argument's requirements before the
- * call, a root and a child {@code @service} and a routine write each receive the components their
- * argMapping names, and a wrong value is refused at the argument with nothing called. A value read
- * out of an input object, as opptak's {@code input.mottakersti} is, is decoded, checked and refused at
- * its own path, one input object down as well as at the first. The services
- * hand back what they were given ({@link GeneratedScalarService}), and the routine writes it into an
- * endorsement's note.
+ * scenario {@code generated-scalar-call.graphqls} against the shared database: what needs a request.
+ * A root and a child {@code @service} and a routine write each receive the components their
+ * argMapping names, decoded against the schema the facade serves, a null value as nulls, and a wrong
+ * value is answered as an error on the field it was given on with nothing called. A value read out of
+ * an input object, as opptak's {@code input.mottakersti} is, is decoded, checked and refused at its
+ * own path, one input object down as well as at the first. The services hand back what they were
+ * given ({@link GeneratedScalarService}), and the routine writes it into an endorsement's note.
+ *
+ * <p>What a decoder accepts and refuses, and what each {@code @assertType} operator holds for, is
+ * {@link no.sikt.graphitron.emit.GeneratedScalarDecodeEmitterTest}'s, which runs the generated
+ * decoders and checks without a request. The one path case here steps through the connection the
+ * facade generates for {@code @asConnection}, which only the served schema has.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -48,22 +52,9 @@ class GeneratedScalarCallExecutionTest {
     }
 
     @Test
-    void aPathOfNoStepsHandsOverTheEmptyStepsAndEndsWhereItStarts() {
-        assertThat(data("{ along(path: \"Film\") }").get("along")).isEqualTo("Film|Film||Film");
-    }
-
-    @Test
-    void aPathStepsThroughAConnectionAndMayEndAtAUnion() {
+    void aPathStepsThroughTheConnectionTheFacadeGenerates() {
         assertThat(data("{ along(path: \"Query.occupants.edges.node\") }").get("along"))
             .isEqualTo("Query.occupants.edges.node|Query|occupants.edges.node|Occupant");
-    }
-
-    @Test
-    void aPathMayEndAtAnInterfaceWhichImplementsNoInterfaceOfItsOwnName() {
-        assertThat(data("{ along(path: \"Query.node\") }").get("along")).isEqualTo("Query.node|Query|node|Node");
-        assertThat(data("{ alongToNode(path: \"Film\") }").get("alongToNode")).isEqualTo("Film|Film||Film");
-        assertRefused("{ alongToNode(path: \"Query.node\") }", "alongToNode",
-            "path: the path's endType `Node` does not implement `Node`");
     }
 
     @Test
@@ -74,49 +65,6 @@ class GeneratedScalarCallExecutionTest {
     @Test
     void anotherComponentReachesAnotherService() {
         assertThat(data("{ startOf(path: \"Actor.firstName\") }").get("startOf")).isEqualTo("Actor");
-    }
-
-    @Test
-    void aMalformedPathIsRefusedAtTheArgument() {
-        assertRefused("{ along(path: \"Nope.title\") }", "along",
-            "path: Nope is no object or interface type of this schema");
-        assertRefused("{ along(path: \"Film.nope\") }", "along", "path: Film has no field nope");
-        assertRefused("{ along(path: \"Query.occupants.edges.node.firstName\") }", "along",
-            "path: Occupant has no fields, so the path cannot step to firstName");
-        assertRefused("{ along(path: \"Film..title\") }", "along", "is not a path");
-    }
-
-    @Test
-    void anImplementsRequirementAcceptsAndRefuses() {
-        assertThat(data("{ alongNode(path: \"Film.title\") }").get("alongNode")).isEqualTo("Film.title|Film|title|String");
-        assertRefused("{ alongNode(path: \"Actor.firstName\") }", "alongNode",
-            "path: the path's startType `Actor` does not implement `Node`");
-    }
-
-    @Test
-    void anIsRequirementAcceptsAndRefuses() {
-        assertThat(data("{ alongFilm(path: \"Film\") }").get("alongFilm")).isEqualTo("Film|Film||Film");
-        assertRefused("{ alongFilm(path: \"Actor\") }", "alongFilm", "path: the path's endType `Actor` is not `Film`");
-    }
-
-    @Test
-    void anAnyOfRequirementAcceptsAndRefuses() {
-        assertThat(data("{ alongEither(path: \"Actor\") }").get("alongEither")).isEqualTo("Actor|Actor||Actor");
-        assertRefused("{ alongEither(path: \"Film.title\") }", "alongEither",
-            "path: the path's endType `String` does not meet {anyOf: [{is: \"Film\"}, {is: \"Actor\"}]}");
-    }
-
-    @Test
-    void aNotRequirementAcceptsAndRefuses() {
-        assertThat(data("{ alongNotNode(path: \"Actor\") }").get("alongNotNode")).isEqualTo("Actor|Actor||Actor");
-        assertRefused("{ alongNotNode(path: \"Film\") }", "alongNotNode",
-            "path: the path's startType `Film` does not meet {not: {implements: \"Node\"}}");
-    }
-
-    @Test
-    void anAnyOfInsideAnAllOfAcceptsAndRefuses() {
-        assertThat(data("{ alongNested(path: \"Film\") }").get("alongNested")).isEqualTo("Film|Film||Film");
-        assertRefused("{ alongNested(path: \"Actor\") }", "alongNested", "path: the path's endType `Actor` does not meet");
     }
 
     @Test
