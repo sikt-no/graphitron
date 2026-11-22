@@ -72,32 +72,6 @@ public final class RoutineCallEmitter {
     }
 
     /**
-     * One routine IN parameter's value read off {@code env} at the path the author wrote, typed
-     * {@code paramType}: a bare slot directly, a dotted path through a registered descent helper,
-     * and a path projecting a {@code @nodeId}'s key column off the decoded record in {@code keys}.
-     * For a caller holding the path as written rather than resolved; the per-segment list-lifting
-     * a resolved path also carries decides nothing here.
-     *
-     * @param segments   the {@code argMapping} right-hand side split on the dot, outermost first
-     * @param argHelpers collects the descent helper a dotted binding needs
-     * @param keys       the emitting method's node-id decodes
-     */
-    public static CodeBlock envArgumentRead(List<String> segments, TypeName paramType,
-            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
-        var argSource = new ArgumentValueSource.Env();
-        // Row presence decides, not a shape test on the path, for the reason the model-shaped arm
-        // below states: a projected binding's path is spelled exactly like an ordinary dotted one.
-        // Asked of a bare path too: a binding that stops on a @nodeId whose key is one column is a
-        // projection, and declining single-segment paths here is what used to hand such a parameter
-        // the base64 wire string. Which segment the node id is comes off the row, inside the sink.
-        return keys.readFor(segments,
-                leaf -> descentRead(leaf, TypeName.get(Object.class), argSource, argHelpers))
-            .orElseGet(() -> segments.size() == 1
-                ? typedSlotRead(paramType, segments.getFirst(), argSource)
-                : descentRead(segments, paramType, argSource, argHelpers));
-    }
-
-    /**
      * A path's value read off the request: the outer slot directly when the path is one segment,
      * otherwise through a registered descent helper that walks the tail and applies the leaf cast.
      * Untyped at the read where the caller asks for {@code Object}, which is what the wire read

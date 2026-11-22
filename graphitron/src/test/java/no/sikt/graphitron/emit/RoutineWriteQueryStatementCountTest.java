@@ -16,8 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Four
- * statements at four grains, and four however many coordinates the graph holds, however many
+ * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Five
+ * statements at five grains, and five however many coordinates the graph holds, however many
  * steps their paths take and however many arguments their routines take.
  *
  * <p>An enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for being
@@ -38,10 +38,11 @@ class RoutineWriteQueryStatementCountTest {
 
     /**
      * One per grain: the occurrence, a records result's captured pairing, a plural identifying
-     * write's stated order, an object result's captured pairing. Admission is read off the
-     * occurrence statement's own facts instead of a statement of its own ahead of it.
+     * write's stated order, an object result's captured pairing, and a routine parameter with the
+     * store's fill for it. Admission is read off the occurrence statement's own facts instead of a
+     * statement of its own ahead of it.
      */
-    private static final int GRAINS = 4;
+    private static final int GRAINS = 5;
 
     @RegisterExtension
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
@@ -63,7 +64,7 @@ class RoutineWriteQueryStatementCountTest {
 
     @Test
     void aGraphWithNoRoutineWriteCostsTheSame() {
-        // Absence is an answer, and it is the same four statements: nothing here may probe a
+        // Absence is an answer, and it is the same five statements: nothing here may probe a
         // relation at a time to discover that none of them holds a row, and nothing may skip a
         // grain because an earlier one came back empty. Either shape makes the count a function of
         // the corpus in the direction the pin is blind to reading as a saving.

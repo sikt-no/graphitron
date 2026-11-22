@@ -104,10 +104,12 @@ class RoutineWriteQueryTest {
             .as("the write is the declared routine call")
             .isEqualTo("rentFilm");
         assertThat(row.call().arguments())
-            .as("the routine's IN parameters in declaration order, each bound to the argument the"
-                + " author's argMapping named")
-            .extracting(RoutineWriteQuery.Argument::path)
-            .containsExactly("inventoryId", "customerId");
+            .as("the routine's IN parameters in declaration order, each filled with the argument the"
+                + " author's argMapping lands on, a plain value with no decode")
+            .extracting(RoutineWriteQuery.Argument::parameterName, RoutineWriteQuery.Argument::pathNames,
+                RoutineWriteQuery.Argument::nodeId)
+            .containsExactly(tuple("pInventoryId", List.of("inventoryId"), false),
+                tuple("pCustomerId", List.of("customerId"), false));
         assertThat(row.returnTypeName()).isEqualTo("Rental");
         assertThat(row.listReturn())
             .as("the field returns a list")

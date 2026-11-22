@@ -1,11 +1,13 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.emit.RoutineWriteQuery.Argument;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Column;
 import no.sikt.graphitron.emit.RoutineWriteQuery.ObjectResult;
 import no.sikt.graphitron.emit.RoutineWriteQuery.OrderKey;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Pair;
 import no.sikt.graphitron.emit.RoutineWriteQuery.RecordsResult;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Row;
+import no.sikt.graphitron.emit.RoutineWriteQuery.Rows;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Table;
 import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
@@ -13,14 +15,14 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
-import no.sikt.graphitron.render.ArgPathHelperRegistry;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.render.ProjectedKeyReads;
-import no.sikt.graphitron.render.RoutineCallEmitter;
 
 import javax.lang.model.element.Modifier;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Emits the body of one {@code @routine}-writing mutation coordinate, from that coordinate's row of
@@ -41,6 +43,11 @@ import java.util.List;
  * An error in the routine rolls back at the {@code transactionResult} boundary; an error in the
  * follow-up cannot undo the committed write.
  *
+ * <p>The routine's arguments are the store's fills, {@link RoutineWriteQuery.Argument}: each read
+ * off the request along the path the store states, null-safe through the input objects on the way, a
+ * list into an array where the parameter takes one, and a node id decoded into the one key column the
+ * parameter takes, all ahead of the call and the write's transaction.
+ *
  * <p>Generated names (the body, the lift, the transaction provider) are the caller's, minted where
  * every other reference to them is.
  */
@@ -53,9 +60,21 @@ public final class RoutineWriteEmitter {
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
     private static final ClassName LIST = ClassName.get("java.util", "List");
-    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
     private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+
+    /** The body's own names, which a local named after a parameter must not shadow. */
+    private static final Set<String> TAKEN = Set.of("env", "dsl", "source", "keys", "numbered", "tx");
+
+    /**
+     * The body and the helpers it calls, each node id's decode, which the caller adds to the class
+     * beside the body.
+     */
+    public record Rendered(MethodSpec body, List<MethodSpec> helpers) {
+        public Rendered {
+            helpers = List.copyOf(helpers);
+        }
+    }
 
     /**
      * Renders the body for {@code row}, answering what the write produces: the lifted rows as a
@@ -63,38 +82,42 @@ public final class RoutineWriteEmitter {
      * {@code Result<RecordN>} or {@code RecordN} for an object result, {@code null} where a single
      * capture finds no row. Its return type is the value type the frame declares.
      *
+     * @param rows              the rows {@code row} was read with, whose node id decodes its
+     *                          arguments' are resolved against
      * @param bodyName          the body's generated name, which the frame calls
      * @param lift              the method {@link LiftEmitter#lift} rendered for a records result's
      *                          lift; read for a records result only
-     * @param argHelpers        the host class's collector of dotted-path descent helpers
-     * @param keys              the method's node-id decodes, for an argument whose path projects a
-     *                          key column
+     * @param decode            the generated runtime a node id is decoded through
      * @param transactionProvider the emitted provider the write's transaction is opened through,
      *                          from {@link OwnedScope#provider}
      */
-    public static MethodSpec render(Row row, String bodyName, java.util.Optional<CallEmitter.Lift> lift,
-            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys, ClassName transactionProvider) {
-        var call = routineCall(row, argHelpers, keys);
-        return switch (row) {
+    public static Rendered render(Row row, Rows rows, String bodyName, Optional<CallEmitter.Lift> lift,
+            NodeIdDecodeEmitter.Runtime decode, ClassName transactionProvider) {
+        var reads = new ArrayList<CodeBlock>();
+        var helpers = new ArrayList<MethodSpec>();
+        var call = routineCall(row, rows, decode, reads, helpers);
+        var body = switch (row) {
             case RecordsResult records -> recordsLift(records, bodyName, lift.orElseThrow(
                 () -> new IllegalArgumentException("the records result at " + records.typeName() + "."
                     + records.fieldName() + " is rendered with no lift to hand its keys to")),
-                call, keys, transactionProvider);
-            case ObjectResult object -> objectResultKeys(object, bodyName, call, keys, transactionProvider);
+                call, reads, transactionProvider);
+            case ObjectResult object -> objectResultKeys(object, bodyName, call, reads, transactionProvider);
         };
+        return new Rendered(body, helpers);
     }
 
     private static MethodSpec recordsLift(RecordsResult row, String bodyName, CallEmitter.Lift lift,
-            CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
+            CodeBlock call, List<CodeBlock> reads, ClassName transactionProvider) {
         boolean isList = row.listReturn();
         TypeName valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var builder = body(bodyName, valueType);
         var anchorKeyColumns = row.capturedPairs().stream().map(Pair::target).toList();
         TypeName keyRowType = keyRecordType(anchorKeyColumns);
 
-        // Node-id decodes go first, ahead of the routine call and the write's transaction: a
-        // malformed id is a client error about an argument, raised before anything is written.
-        builder.addCode(keys.declarations());
+        // The arguments go first, node-id decodes among them, ahead of the routine call and the
+        // write's transaction: a malformed id is a client error about an argument, raised before
+        // anything is written.
+        reads.forEach(builder::addStatement);
         builder.addStatement("$T source = $L", tableClass(row.call().resultTable()), call);
         // Re-typed under the anchor's key fields, which the lift's derived source table reads them by.
         builder.addCode(captureTransaction(
@@ -107,7 +130,7 @@ public final class RoutineWriteEmitter {
     }
 
     private static MethodSpec objectResultKeys(ObjectResult row, String bodyName, CodeBlock call,
-            ProjectedKeyReads keys, ClassName transactionProvider) {
+            List<CodeBlock> reads, ClassName transactionProvider) {
         var reRead = row.reRead();
         boolean isList = reRead.listReturn();
         var targetKeyColumns = reRead.capturedPairs().stream().map(Pair::target).toList();
@@ -115,7 +138,7 @@ public final class RoutineWriteEmitter {
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType;
         var builder = body(bodyName, valueType);
 
-        builder.addCode(keys.declarations());
+        reads.forEach(builder::addStatement);
         builder.addStatement("$T source = $L", tableClass(row.call().resultTable()), call);
 
         // Re-typed under the re-read table's key fields, so the re-reading field reads them back by
@@ -130,33 +153,69 @@ public final class RoutineWriteEmitter {
 
     /**
      * {@code Routines.<method>(<args>)}, the value overload: a routine write is a mutation root's,
-     * so every parameter binds a request value and none a previous node's column.
+     * so every parameter binds a request value and none a previous node's column. Each argument is
+     * read into a local first, added to {@code reads}, and a node id's decode helper to
+     * {@code helpers}; the call names the locals.
      */
-    private static CodeBlock routineCall(Row row, ArgPathHelperRegistry argHelpers,
-            ProjectedKeyReads keys) {
+    private static CodeBlock routineCall(Row row, Rows rows, NodeIdDecodeEmitter.Runtime decode,
+            List<CodeBlock> reads, List<MethodSpec> helpers) {
         var call = row.call();
-        var args = CodeBlock.join(call.arguments().stream()
-            .map(a -> {
-                var type = CatalogRefs.decodeBindingType(a.javaTypeName());
-                return type instanceof ArrayTypeName array && a.segments().size() == 1
-                    ? arrayArgumentRead(array, a.segments().getFirst())
-                    : RoutineCallEmitter.envArgumentRead(a.segments(), type, argHelpers, keys);
-            })
-            .toList(), ", ");
+        var args = new ArrayList<CodeBlock>();
+        for (int position = 0; position < call.arguments().size(); position++) {
+            var argument = call.arguments().get(position);
+            var local = TAKEN.contains(argument.parameterName())
+                ? argument.parameterName() + "Parameter" : argument.parameterName();
+            reads.addAll(argumentRead(row, rows, argument, position, local, decode, helpers));
+            args.add(CodeBlock.of("$L", local));
+        }
         return CodeBlock.of("$T.$L($L)", CatalogRefs.className(call.routinesClassName()),
-            call.methodName(), args);
+            call.methodName(), CodeBlock.join(args, ", "));
     }
 
     /**
-     * An array parameter's value off a list argument: graphql-java hands a list argument over as a
-     * {@code java.util.List}, which the routine's array parameter does not take, so the elements are
-     * copied into an array of the parameter's component type, in the list's order. A null argument
-     * stays null.
+     * The statements reading one argument into {@code local}: the value at the end of the stored path,
+     * null wherever an input object on the way is absent; a list copied into an array of the
+     * parameter's component type, in the list's order, graphql-java handing a list over as a
+     * {@code java.util.List}, which the routine's array parameter does not take; or a node id read as
+     * it arrives and decoded into the key column the parameter takes, a malformed id a client error.
+     * A path read through a list above its last step, or a node id with no {@code KEY_VALUE} shape, is
+     * a shape the store refuses, so meeting one is a generator bug.
      */
-    private static CodeBlock arrayArgumentRead(ArrayTypeName array, String slot) {
-        var element = array.componentType();
-        return CodeBlock.of("$T.ofNullable(env.<$T>getArgument($S)).map(elements -> elements.toArray(new $T[0]))"
-            + ".orElse(null)", OPTIONAL, ParameterizedTypeName.get(LIST, element), slot, element);
+    private static List<CodeBlock> argumentRead(Row row, Rows rows, Argument argument, int position, String local,
+            NodeIdDecodeEmitter.Runtime decode, List<MethodSpec> helpers) {
+        var coordinate = row.typeName() + "." + row.fieldName();
+        var path = argument.pathNames();
+        if (path.isEmpty()) {
+            throw new IllegalStateException("Graphitron generator bug (routine-write arguments): parameter "
+                + argument.parameterName() + " of " + coordinate + " has no fill, which the build refuses");
+        }
+        if (argument.lists().stream().anyMatch(i -> i < path.size() - 1)) {
+            throw new IllegalStateException("Graphitron generator bug (routine-write arguments): parameter "
+                + argument.parameterName() + " of " + coordinate + " is read through a list along "
+                + String.join(".", path) + ", which the build defers");
+        }
+        var type = CatalogRefs.decodeBindingType(argument.javaTypeName());
+        if (argument.nodeId()) {
+            if (argument.decode().isEmpty()) {
+                throw new IllegalStateException("Graphitron generator bug (routine-write arguments): parameter "
+                    + argument.parameterName() + " of " + coordinate + " takes a node id the store states no"
+                    + " KEY_VALUE shape for, which the build refuses");
+            }
+            var keyValue = argument.decode().get();
+            var decoded = new BuildQuery.Result.Decoded(List.of(rows.decodeFor(row, argument)), "KEY_VALUE",
+                Optional.of(keyValue.columnJavaName()), argument.javaTypeName());
+            var helper = "decode" + coordinate.replaceAll("[^A-Za-z0-9]", "_") + "_" + position;
+            helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decoded, decode));
+            return List.of(FillEmitter.argument(ClassName.get(Object.class), local + "Wire", path),
+                CodeBlock.of("$T $L = $L($LWire)", type, local, helper, local));
+        }
+        if (type instanceof ArrayTypeName array) {
+            var elements = ParameterizedTypeName.get(LIST, array.componentType());
+            return List.of(FillEmitter.argument(elements, local + "Elements", path),
+                CodeBlock.of("$T $L = $LElements == null ? null : $LElements.toArray(new $T[0])",
+                    type, local, local, local, array.componentType()));
+        }
+        return List.of(FillEmitter.argument(type, local, path));
     }
 
     /** {@code public static <valueType> <bodyName>(DataFetchingEnvironment env, DSLContext dsl)}. */

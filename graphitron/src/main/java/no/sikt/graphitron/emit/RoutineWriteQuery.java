@@ -2,45 +2,48 @@ package no.sikt.graphitron.emit;
 
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.tables.GraphitronOccurrenceProducerRoutine;
-import no.sikt.graphitron.model.tables.GraphitronProducerRoutine;
 import org.jooq.Field;
 import org.jooq.Records;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIFT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
@@ -76,18 +79,19 @@ import static org.jooq.impl.DSL.selectOne;
  * query does not read them. A closed list of shapes the store states but the emitter does not render
  * yet is named by {@link Unrendered} and never reaches the rows.
  *
- * <p>Four statements at their grains, which is the rule and not a tuning. The occurrence statement
- * reads every routine-write occurrence with its call, its routine arguments, its join path's anchor
- * and its re-reading children, the lists as correlated {@code MULTISET}s, which is what admission is
- * decided from. The anchor's captured pairing, a re-reading child's, and a plural identifying
- * write's stated order are their own statements, paired back on keys the store declares and narrowed
- * to the admitted coordinates, read once here instead of once per coordinate. Every catalog name is captured rather than derived
+ * <p>Five statements at their grains, which is the rule and not a tuning. The occurrence statement
+ * reads every routine-write occurrence with its call, its join path's anchor and its re-reading
+ * children, the list as a correlated {@code MULTISET}, which is what admission is decided from. The
+ * anchor's captured pairing, a re-reading child's, a plural identifying write's stated order and the
+ * routine's parameters with the store's fills for them are their own statements, paired back on keys
+ * the store declares and narrowed to the admitted coordinates, read once here instead of once per
+ * coordinate. Every catalog name is captured rather than derived
  * ({@code sql_table.class_fqn}, {@code sql_schema.tables_class_fqn} and {@code keys_class_fqn},
  * {@code sql_constraint.jooq_name}), so a row is built with no live catalog.
  *
- * <p><b>Cost.</b> The {@code MULTISET}s correlate stored rows read on their key, the routine's
- * arguments and the occurrences directly under the field, once per routine-write occurrence on the
- * mutation root. That population is the graph's routine-writing mutation fields, which is small by
+ * <p><b>Cost.</b> The {@code MULTISET}s correlate stored rows read on their key, the occurrences
+ * directly under the field once per routine-write occurrence on the mutation root, and a fill's path
+ * steps once per routine parameter. That population is the graph's routine-writing mutation fields, which is small by
  * construction.
  */
 public final class RoutineWriteQuery {
@@ -133,17 +137,36 @@ public final class RoutineWriteQuery {
     }
 
     /**
-     * One IN parameter of the routine, in declaration order. {@code path} is where the value is read
-     * from the request: the author's {@code argMapping} right-hand side as written, or the
-     * parameter's own name where the author wrote none. {@code javaTypeName} is the parameter's
-     * binding type as captured, in {@code Class.getName()}'s spelling ({@code [Ljava.lang.Integer;}
-     * for an array).
+     * One IN parameter of the routine, in declaration order, and what the store fills it with.
+     * {@code javaTypeName} is the parameter's binding type as captured, in {@code Class.getName()}'s
+     * spelling ({@code [Ljava.lang.Integer;} for an array). {@code pathNames} is where the value is
+     * read from the request, the names from the argument down to the argument or input field the fill
+     * lands on, and {@code lists} the positions on it whose value is a list; a parameter nothing
+     * fills has no names. {@code nodeId} says the landing is a node id, and {@code decode} how
+     * it is decoded into the one key column the parameter takes, where the store states a
+     * {@code KEY_VALUE} shape at its slot.
      */
-    public record Argument(String parameterName, String javaTypeName, String path) {
+    public record Argument(String parameterName, String javaTypeName, List<String> pathNames, Set<Integer> lists,
+                           boolean nodeId, Optional<KeyValue> decode) {
+        public Argument {
+            Objects.requireNonNull(parameterName, "parameterName");
+            Objects.requireNonNull(javaTypeName, "javaTypeName");
+            pathNames = List.copyOf(pathNames);
+            lists = Set.copyOf(lists);
+            Objects.requireNonNull(decode, "decode");
+        }
+    }
 
-        /** The written path split on the dot, outermost first. */
-        public List<String> segments() {
-            return List.of(path.split("\\."));
+    /**
+     * A node id decoded into its node's key and one column of it taken: the node id occurrence, the
+     * node table it is decoded as ({@link NodeIdDecodeQuery#resolve}'s {@code bound}), and the
+     * generated name of the key column the parameter takes.
+     */
+    public record KeyValue(String coordinate, String bound, String columnJavaName) {
+        public KeyValue {
+            Objects.requireNonNull(coordinate, "coordinate");
+            Objects.requireNonNull(bound, "bound");
+            Objects.requireNonNull(columnJavaName, "columnJavaName");
         }
     }
 
@@ -288,13 +311,15 @@ public final class RoutineWriteQuery {
      * captured keys to the lift.
      */
     public record Rows(List<Row> rows, Map<String, FrameQuery.Row> frames,
-                       Map<String, ConnectionQuery.Row> connections, Map<String, LiftQuery.Row> lifts) {
+                       Map<String, ConnectionQuery.Row> connections, Map<String, LiftQuery.Row> lifts,
+                       Optional<NodeIdDecodeQuery> decodes) {
 
         public Rows {
             rows = List.copyOf(rows);
             frames = Map.copyOf(frames);
             connections = Map.copyOf(connections);
             lifts = Map.copyOf(lifts);
+            Objects.requireNonNull(decodes, "decodes");
             var seen = new java.util.HashSet<String>();
             for (var r : rows) {
                 if (!seen.add(coordinate(r))) {
@@ -305,9 +330,9 @@ public final class RoutineWriteQuery {
             }
         }
 
-        /** The rows alone, with no frame, connection or lift read beside them. */
+        /** The rows alone, with no frame, connection, lift or decode read beside them. */
         public Rows(List<Row> rows) {
-            this(rows, Map.of(), Map.of(), Map.of());
+            this(rows, Map.of(), Map.of(), Map.of(), Optional.empty());
         }
 
         /** No rows: a graph that writes through no routine, or a run with no store. */
@@ -317,14 +342,15 @@ public final class RoutineWriteQuery {
 
         /**
          * These rows with each one's frame out of {@code graphFrames}, connection out of
-         * {@code graphConnections} and lift out of {@code graphLifts}, the rest dropped. Every row has
+         * {@code graphConnections} and lift out of {@code graphLifts}, the rest dropped, and the
+         * graph's node id decodes, which an argument's {@link KeyValue} is resolved against. Every row has
          * a frame: a routine write is a root occurrence, which {@link FrameQuery} frames by
          * construction, so a row with none is drift between the two queries. Every records result has
          * a lift, both this query and {@link LiftQuery} reading {@code graphitron_occurrence_lift}, so
          * one with none is a defect in one of them.
          */
         public Rows framed(List<FrameQuery.Row> graphFrames, Map<String, ConnectionQuery.Row> graphConnections,
-                           List<LiftQuery.Row> graphLifts) {
+                           List<LiftQuery.Row> graphLifts, NodeIdDecodeQuery graphDecodes) {
             var framed = new LinkedHashMap<String, FrameQuery.Row>();
             graphFrames.forEach(f -> framed.put(f.coordinate(), f));
             var lifted = new LinkedHashMap<String, LiftQuery.Row>();
@@ -353,7 +379,7 @@ public final class RoutineWriteQuery {
                     ownLifts.put(coordinate, lift);
                 }
             }
-            return new Rows(rows, ownFrames, ownConnections, ownLifts);
+            return new Rows(rows, ownFrames, ownConnections, ownLifts, Optional.of(graphDecodes));
         }
 
         /** The row for one coordinate, empty when the coordinate writes through no routine. */
@@ -366,6 +392,27 @@ public final class RoutineWriteQuery {
         /** {@code row}'s frame, empty where these rows were read with none beside them. */
         public Optional<FrameQuery.Row> frameFor(Row row) {
             return Optional.ofNullable(frames.get(coordinate(row)));
+        }
+
+        /**
+         * The decode of {@code argument}'s node id into its node's own record, whose key column the
+         * parameter takes. A {@code KEY_VALUE} shape the store states at the slot always resolves, the
+         * shape being stated only where the id binds one node over a table with a generated record,
+         * so a refusal here is the store and this reader disagreeing.
+         */
+        public NodeIdDecodeQuery.Decode decodeFor(Row row, Argument argument) {
+            var keyValue = argument.decode().orElseThrow(() -> new IllegalArgumentException(
+                "the argument " + argument.parameterName() + " of " + coordinate(row) + " decodes nothing"));
+            var graphDecodes = decodes.orElseThrow(() -> new IllegalStateException(
+                "Graphitron generator bug (routine-write decode): " + coordinate(row) + " decodes a node id"
+                + " and its rows were read with no decodes beside them"));
+            return switch (graphDecodes.resolve(keyValue.coordinate(), keyValue.bound(), Optional.empty())) {
+                case NodeIdDecodeQuery.Resolution.Resolved resolved -> resolved.decode();
+                case NodeIdDecodeQuery.Resolution.Refused refused -> throw new IllegalStateException(
+                    "Graphitron generator bug (routine-write decode): the store states a KEY_VALUE shape for "
+                    + argument.parameterName() + " of " + coordinate(row) + ", and its decode is refused: "
+                    + refused.reason());
+            };
         }
 
         /** {@code row}'s lift, empty for an object result or where these rows were read with none. */
@@ -398,16 +445,22 @@ public final class RoutineWriteQuery {
         var anchorPairs = anchorPairs(store, records);
         var statedOrders = statedOrders(store, records);
         var reReadPairs = reReadPairs(store, objects);
+        var admitted = new ArrayList<Occurrence>(records);
+        admitted.addAll(objects);
+        var arguments = arguments(store, admitted);
         var rows = new ArrayList<Row>();
         for (var o : occurrences) {
+            var coordinate = o.typeName() + "." + o.fieldName();
+            var call = new Call(o.call().routinesClassName(), o.call().methodName(), o.call().resultTable(),
+                arguments.getOrDefault(coordinate, List.of()));
             if (records.contains(o)) {
                 rows.add(new RecordsResult(o.typeName(), o.fieldName(), o.returnTypeName(),
-                    o.listReturn(), o.call(), o.liftTable(), o.anchor(),
+                    o.listReturn(), call, o.liftTable(), o.anchor(),
                     anchorPairs.getOrDefault(o.typeName() + "." + o.fieldName(), List.of()),
                     statedOrders.getOrDefault(o.typeName() + "." + o.fieldName(), List.of())));
             } else if (objects.contains(o)) {
                 rows.add(new ObjectResult(o.typeName(), o.fieldName(), o.returnTypeName(),
-                    o.listReturn(), o.call(),
+                    o.listReturn(), call,
                     o.reReads().stream()
                         .map(r -> new ReRead(r.fieldName(), r.table(), r.listReturn(),
                             reReadPairs.getOrDefault(r.coordinate(), List.of())))
@@ -504,9 +557,8 @@ public final class RoutineWriteQuery {
      * <p>The producer's routine, its result, the call surface the generated model publishes, the
      * routine's result table and its constants class are inner joins: an occurrence missing one
      * states no call to render. The lift table and the anchor are left joins because only a records
-     * result has them.
-     * The arguments are read from the {@code @routine} application the producer calls, as
-     * {@code graphitron_producer_routine} records it.
+     * result has them. The call's arguments are their own statement's, {@link #arguments}, read
+     * for the admitted coordinates.
      */
     private static List<Occurrence> occurrences(StoreHandle store) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -540,13 +592,11 @@ public final class RoutineWriteQuery {
                 b.KIND.eq("NODE_ID"))
             .where(child.GRAPH_NAME.eq(p.GRAPH_NAME), child.PARENT_COORDINATE.eq(p.COORDINATE),
                 child.KIND.eq("FIELD"))));
-        var arguments = arguments(called, pr);
         var reReads = reReads(p.GRAPH_NAME, p.COORDINATE, pr);
         return store.dsl()
             .select(f.TYPE_NAME, f.FIELD_NAME, ft.TARGET_TYPE_NAME, f.IS_LIST, res.SHAPE,
                 sr.ROUTINES_CLASS_FQN, sr.ROUTINES_METHOD_NAME,
                 rt.TABLE_NAME, rt.JOOQ_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN,
-                arguments,
                 lt.TABLE_NAME, lt.JOOQ_NAME, lt.CLASS_FQN, ls.TABLES_CLASS_FQN,
                 lifted, landsOnRoutineResult,
                 at.TABLE_NAME, at.JOOQ_NAME, at.CLASS_FQN, anchorSchema.TABLES_CLASS_FQN,
@@ -585,7 +635,7 @@ public final class RoutineWriteQuery {
                 new Call(r.get(sr.ROUTINES_CLASS_FQN), r.get(sr.ROUTINES_METHOD_NAME),
                     new Table(r.get(rt.TABLE_NAME), r.get(rt.JOOQ_NAME), r.get(rt.CLASS_FQN),
                         r.get(rs.TABLES_CLASS_FQN)),
-                    r.get(arguments)),
+                    List.of()),
                 r.get(lt.TABLE_NAME) == null ? null : new Table(r.get(lt.TABLE_NAME),
                     r.get(lt.JOOQ_NAME), r.get(lt.CLASS_FQN), r.get(ls.TABLES_CLASS_FQN)),
                 Boolean.TRUE.equals(r.get(lifted)), Boolean.TRUE.equals(r.get(landsOnRoutineResult)),
@@ -595,41 +645,85 @@ public final class RoutineWriteQuery {
                 Boolean.TRUE.equals(r.get(nodeIdChild))));
     }
 
+    // -------------------------------------------------------------------------------------
+    // Statement five: the routine's parameters and what the store fills each with.
+    // -------------------------------------------------------------------------------------
+
+    /** One step of a fill's path: the name and whether the value there is a list. */
+    private record Step(String name, boolean list) {}
+
     /**
-     * The routine's IN parameters in declaration order, each bound to the request value that
-     * supplies it: the author's {@code argMapping} entry for the parameter, or the parameter's own
-     * name where the author wrote none, a routine call identity-binding every parameter the author
-     * did not spell. A parameter naming no argument either way is a validator rejection before this
-     * runs.
+     * Each admitted coordinate's routine parameters, keyed by its {@code Type.field} coordinate, in
+     * declaration order: one row per parameter of the routine its producer calls, with the
+     * {@code ROUTINE} fill the store states for it ({@code graphitron_occurrence_call_parameter}), the
+     * path from the argument down to the fill's landing ({@code graphitron_occurrence_argument_step}),
+     * and, where the landing is a node id, the slot's {@code KEY_VALUE} shape and the key column a
+     * pair projects into it. The fill is the store's, a pair's landing or the argument named as the
+     * parameter, so a path is never read off what the author wrote; a parameter with no fill has a
+     * path of no names, which the build refuses before anything is emitted.
+     *
+     * <p>Driven from the routine's parameters rather than from the fills, so a parameter with no fill
+     * is a row and not an absence. The path is a correlated {@code MULTISET} on the landing's own key.
+     * A node id at a routine parameter lands on one node table's key column or nowhere, so the shape
+     * and the projection are at most one row per parameter, joined at the slot and the bound.
      */
-    private static Field<List<Argument>> arguments(GraphitronProducerRoutine called,
-            GraphitronOccurrenceProducerRoutine pr) {
+    private static Map<String, List<Argument>> arguments(StoreHandle store, List<Occurrence> admitted) {
+        var pr = GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
         var p = SQL_ROUTINE_PARAMETER;
-        var m = GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
-        var ms = GRAPHITRON_ARGMAPPING_SITE;
-        // The called application, found at its position; its mapping is the site written on it.
-        var a = GRAPHQL_DIRECTIVE_APPLICATION;
-        return multiset(
-            select(p.JOOQ_NAME, p.BINDING_TYPE,
-                coalesce(
-                    field(select(m.BOUND_TO)
-                        .from(a)
-                        .join(ms).on(ms.GRAPH_NAME.eq(a.GRAPH_NAME), ms.COORDINATE.eq(a.COORDINATE),
-                            ms.DIRECTIVE_NAME.eq(a.DIRECTIVE_NAME), ms.ORDINAL.eq(a.ORDINAL))
-                        .join(m).on(m.GRAPH_NAME.eq(ms.GRAPH_NAME), m.SOURCE_NAME.eq(ms.SOURCE_NAME),
-                            m.SOURCE_LINE.eq(ms.SOURCE_LINE), m.SOURCE_COLUMN.eq(ms.SOURCE_COLUMN))
-                        .where(a.GRAPH_NAME.eq(called.GRAPH_NAME), a.SOURCE_NAME.eq(called.SOURCE_NAME),
-                            a.SOURCE_LINE.eq(called.SOURCE_LINE), a.SOURCE_COLUMN.eq(called.SOURCE_COLUMN),
-                            a.DIRECTIVE_NAME.eq("routine"),
-                            m.TARGET_KIND.eq("NAME"), m.TARGET_NAME.eq(p.JOOQ_NAME))
-                        .orderBy(m.POSITION)
-                        .limit(1)),
-                    p.JOOQ_NAME))
-                .from(p)
-                .where(p.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME), p.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA),
-                    p.ROUTINE_NAME.eq(pr.ROUTINE_NAME))
-                .orderBy(p.POSITION))
-            .convertFrom(r -> r.map(Records.mapping(Argument::new)));
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var st = GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+        var sp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+        var sh = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+        var pj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
+        var kp = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var col = SQL_COLUMN;
+        var coordinates = admitted.stream().map(o -> o.typeName() + "." + o.fieldName()).toList();
+        var path = multiset(select(st.NAME, st.IS_LIST)
+                .from(st)
+                .where(st.GRAPH_NAME.eq(c.GRAPH_NAME), st.COORDINATE.eq(c.LANDING_COORDINATE))
+                .orderBy(st.DEPTH))
+            .convertFrom(r -> r.map(Records.mapping(Step::new)));
+        var byKey = new LinkedHashMap<String, List<Argument>>();
+        store.dsl()
+            .select(pr.COORDINATE, p.POSITION, p.JOOQ_NAME, p.BINDING_TYPE, path, sp.COORDINATE,
+                sh.DECODE_SHAPE, sh.BOUND, col.JOOQ_NAME)
+            .from(pr)
+            .join(p).on(p.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME), p.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA),
+                p.ROUTINE_NAME.eq(pr.ROUTINE_NAME))
+            .leftJoin(c).on(c.GRAPH_NAME.eq(pr.GRAPH_NAME), c.COORDINATE.eq(pr.COORDINATE),
+                c.CALL_KIND.eq("ROUTINE"), c.POSITION.eq(p.POSITION), c.FILL.eq("ARGUMENT"))
+            .leftJoin(sp).on(sp.GRAPH_NAME.eq(c.GRAPH_NAME), sp.CALL_COORDINATE.eq(c.COORDINATE),
+                sp.CALL.eq(c.CALL), sp.POSITION.eq(c.POSITION))
+            .leftJoin(sh).on(sh.GRAPH_NAME.eq(sp.GRAPH_NAME), sh.COORDINATE.eq(sp.COORDINATE),
+                sh.SLOT.eq(sp.SLOT), sh.DECODE_SHAPE.eq("KEY_VALUE"))
+            .leftJoin(pj).on(pj.GRAPH_NAME.eq(sp.GRAPH_NAME), pj.CALL_COORDINATE.eq(sp.CALL_COORDINATE),
+                pj.CALL.eq(sp.CALL), pj.POSITION.eq(sp.POSITION), pj.BOUND.eq(sh.BOUND))
+            .leftJoin(kp).on(kp.GRAPH_NAME.eq(pj.GRAPH_NAME), kp.COORDINATE.eq(pj.COORDINATE),
+                kp.BOUND.eq(pj.BOUND), kp.POSITION.eq(pj.KEY_POSITION))
+            .leftJoin(col).on(col.SOURCE_NAME.eq(kp.TABLE_SOURCE_NAME), col.TABLE_SCHEMA.eq(kp.TABLE_SCHEMA),
+                col.TABLE_NAME.eq(kp.TABLE_NAME), col.COLUMN_NAME.eq(kp.COLUMN_NAME))
+            .where(pr.GRAPH_NAME.eq(store.graphName()), pr.COORDINATE.in(coordinates))
+            .orderBy(pr.COORDINATE, p.POSITION)
+            .forEach(r -> {
+                var arguments = byKey.computeIfAbsent(r.value1(), key -> new ArrayList<>());
+                if (arguments.size() != r.value2()) {
+                    throw new IllegalStateException("Graphitron generator bug (routine-write arguments): "
+                        + r.value1() + " reads parameter " + r.value3() + " at position " + r.value2()
+                        + " after " + arguments.size() + " others; a parameter's node id lands at most once");
+                }
+                var steps = r.value5();
+                var lists = new HashSet<Integer>();
+                for (int i = 0; i < steps.size(); i++) {
+                    if (steps.get(i).list()) {
+                        lists.add(i);
+                    }
+                }
+                Optional<KeyValue> decode = r.value7() == null || r.value9() == null ? Optional.empty()
+                    : Optional.of(new KeyValue(r.value6(), r.value8(), r.value9()));
+                arguments.add(new Argument(r.value3(), r.value4(), steps.stream().map(Step::name).toList(),
+                    lists, r.value6() != null, decode));
+            });
+        return byKey;
     }
 
     /**

@@ -262,11 +262,13 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         var conditions = ConditionCommands.produce(schema, outputPackage);
         // Each routine write's frame, connection and lift are read beside its rows, so its fetcher is
-        // the frame around its body, and a records result's body hands its keys to its lift.
+        // the frame around its body, and a records result's body hands its keys to its lift; the
+        // graph's node id decodes too, which a node id argument's decode is resolved against.
         var frames = store == null ? List.<FrameQuery.Row>of() : FrameQuery.read(store);
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty()
             : RoutineWriteQuery.read(store).framed(frames,
-                ConnectionQuery.read(store), LiftQuery.read(store));
+                ConnectionQuery.read(store), LiftQuery.read(store),
+                no.sikt.graphitron.emit.NodeIdDecodeQuery.read(store));
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage,
@@ -277,7 +279,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
             projectionRelation.dslProjections(), store);
         var keyProjections = KeyProjectionCommands.produce(projections);
-        requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers, conditions);
+        requireEveryProjectionIsReachable(keyProjections, launchers, conditions);
         LauncherCommands.requireResolvedOrderingsAreLowered(launchers, projectionRelation);
         return new EmitPlan(globals, conditions,
             projectionRelation,
@@ -304,19 +306,18 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * routine hop reached through a {@link no.sikt.graphitron.rewrite.model.JoinStep} rather than
      * through a command row is exactly that case.
      *
-     * <p>Reachability is asked as row presence rather than re-derived: the coordinate has a
-     * routine-write row, a launcher row whose source is a routine chain, or a condition row whose glue
-     * renders the projected read. Wiring a further shape means adding its relation here, and until then
-     * the shape fails the build naming its coordinate.
+     * <p>Reachability is asked as row presence rather than re-derived: the coordinate has a launcher
+     * row whose source is a routine chain, or a condition row whose glue renders the projected read.
+     * A routine write reads its node ids off the store's fills rather than off a projection, so its
+     * coordinates carry none here. Wiring a further shape means adding its relation here, and until
+     * then the shape fails the build naming its coordinate.
      */
     private static void requireEveryProjectionIsReachable(KeyProjectionRelation keyProjections,
-            RoutineWriteQuery.Rows routineWrites, LauncherRelation launchers,
-            ConditionRelation conditions) {
+            LauncherRelation launchers, ConditionRelation conditions) {
         for (var projection : keyProjections.rows()) {
             String type = projection.coordinate().getTypeName();
             String field = projection.coordinate().getFieldName();
-            boolean reached = routineWrites.rowFor(type, field).isPresent()
-                || launchers.rowFor(type, field)
+            boolean reached = launchers.rowFor(type, field)
                     .filter(row -> row.source() instanceof LaunchSource.RoutineChain)
                     .isPresent()
                 || !conditions.rowsFor(type, field).isEmpty();
@@ -325,8 +326,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                     "the argMapping entry '" + projection.argumentPath() + "' at '" + type + "."
                     + field + "' projects key column '" + projection.column().sqlName() + "' of node"
                     + " type '" + projection.nodeTypeName() + "', but no emitter at that coordinate"
-                    + " reads a projection: the coordinate holds no routine-write row, no launcher row"
-                    + " sourced from a routine chain, and no condition row. Emitting it as an ordinary"
+                    + " reads a projection: the coordinate holds no launcher row sourced from a"
+                    + " routine chain and no condition row. Emitting it as an ordinary"
                     + " nested read would hand the consumer the base64 node id verbatim, so the build"
                     + " stops here instead");
             }

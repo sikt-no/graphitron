@@ -272,12 +272,6 @@ class PackageImportDirectionTest {
      * the walk's emitters share, so one shape keeps one spelling while both kinds of emitter exist.
      */
     private static final java.util.Map<String, String> EMIT_ALLOWANCES = java.util.Map.ofEntries(
-        java.util.Map.entry("no.sikt.graphitron.render.ArgPathHelperRegistry",
-            "the host class's collector of dotted-path descent helpers: a call and the helper it names land on one class"),
-        java.util.Map.entry("no.sikt.graphitron.render.ProjectedKeyReads",
-            "the method's node-id decodes, for an argument whose path projects a key column"),
-        java.util.Map.entry("no.sikt.graphitron.render.RoutineCallEmitter",
-            "a routine IN parameter's request read has one spelling, shared with the read chain's call"),
         java.util.Map.entry("no.sikt.graphitron.render.CatalogRefs",
             "the one decode of captured class and binding-type names, arrays included"),
         java.util.Map.entry("no.sikt.graphitron.render.ColumnComparison",

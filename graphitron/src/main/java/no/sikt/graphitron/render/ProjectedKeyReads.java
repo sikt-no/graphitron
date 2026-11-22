@@ -25,10 +25,9 @@ import java.util.function.Function;
  * it. The declarations are hoisted to the top of the method because they can be: a decode reads an
  * argument and nothing else, so it depends on no alias, no {@code DSLContext} and no chain local.
  *
- * <p>That hoisting is also what keeps the decode <em>outside</em> the write transaction on the
- * routine-write shapes: a malformed node id is a client error about an argument, not a database error
- * about a write, so it is raised before the routine is called or the transaction opens; a caller emits
- * {@link #declarations()} first and the guard follows for free.
+ * <p>That hoisting is also what keeps the decode ahead of the routine call: a malformed node id is a
+ * client error about an argument, not a database error, so it is raised before the routine is called;
+ * a caller emits {@link #declarations()} first and the guard follows for free.
  *
  * <p><b>Read in the prelude, not at the call.</b> A projected column is a declared local too, so what
  * a consumer splices is a name: the argument list of a routine call and the initialiser of a

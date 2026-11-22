@@ -16,6 +16,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * {@link RoutineWriteQuery}'s admission: which mutation-root {@code @routine} writes draw a row, in
@@ -48,6 +49,26 @@ class RoutineWriteAdmissionTest {
             .contains("Mutation.rentFilmPayload ObjectResult RentFilmPayload");
         assertThat(rows).as("the insert beside them draws no row")
             .noneMatch(row -> row.startsWith("Mutation.createFilm "));
+    }
+
+    /**
+     * A routine write's arguments are the store's fills: a node id stopped on at a routine parameter
+     * is decoded into the node's key and its one column taken, as {@code scenarios/argmapping-key-column}
+     * states the slot's {@code KEY_VALUE} shape, and a plain value beside it is read as it arrives.
+     */
+    @Test
+    void aNodeIdArgumentIsFilledWithItsKeyColumn() {
+        var arguments = FACTS.read("scenarios/argmapping-key-column",
+            graph -> RoutineWriteQuery.read(graph.handle()).rowFor("Mutation", "rentFilmBare")
+                .orElseThrow().call().arguments());
+        assertThat(arguments)
+            .extracting(RoutineWriteQuery.Argument::parameterName, RoutineWriteQuery.Argument::pathNames,
+                RoutineWriteQuery.Argument::nodeId, RoutineWriteQuery.Argument::decode)
+            .containsExactly(
+                tuple("pInventoryId", List.of("inventoryId"), false, java.util.Optional.empty()),
+                tuple("pCustomerId", List.of("customerId"), true, java.util.Optional.of(
+                    new RoutineWriteQuery.KeyValue("Mutation.rentFilmBare(customerId:)", "public.customer",
+                        "CUSTOMER_ID"))));
     }
 
     @Test

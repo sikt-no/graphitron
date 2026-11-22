@@ -349,9 +349,10 @@ public final class FillEmitter {
 
     /**
      * An argument read off the fetch: the argument itself target-typed, an input field below it
-     * through each input object on the way, {@code null} wherever one is absent.
+     * through each input object on the way, {@code null} wherever one is absent. The routine write
+     * reads its arguments with it too, {@link RoutineWriteEmitter}, along the path the store states.
      */
-    private static CodeBlock argument(TypeName type, String local, List<String> path) {
+    static CodeBlock argument(TypeName type, String local, List<String> path) {
         if (path.size() == 1) {
             return CodeBlock.of("$T $L = env.getArgument($S)", type, local, path.getFirst());
         }

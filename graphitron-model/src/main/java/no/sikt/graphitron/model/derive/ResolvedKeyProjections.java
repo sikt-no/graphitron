@@ -8,7 +8,10 @@ import org.jooq.Table;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
+import static org.jooq.impl.DSL.notExists;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The {@code argMapping} bindings that decode a node id and project one of its key columns, read off
@@ -52,7 +55,7 @@ public final class ResolvedKeyProjections {
      * whatever the projection rows say.
      */
     public static final Set<Table<?>> READS = StoreNodeTables.readsWith(
-        Set.of(INTENT_RESOLVED_NODE_KEY_PROJECTION));
+        Set.of(INTENT_RESOLVED_NODE_KEY_PROJECTION, GRAPHQL_ROOT_OPERATION));
 
     /**
      * One projected binding, carrying everything its emission needs and nothing a walk holds: the
@@ -111,12 +114,17 @@ public final class ResolvedKeyProjections {
     public static Projections read(DSLContext dsl, String graphName) {
         var nodeTables = StoreNodeTables.read(dsl, graphName);
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
+        var r = GRAPHQL_ROOT_OPERATION;
         return new Projections(dsl
             .selectDistinct(p.TYPE_NAME, p.FIELD_NAME, p.WRITTEN_PATH, p.TRAILING_NAME,
                 p.NODE_TYPE_NAME, p.COLUMN_NAME)
             .from(p)
-            // A @service parameter's projection is read by the fetcher the store emits, off the slot.
-            .where(p.GRAPH_NAME.eq(graphName), p.DIRECTIVE_NAME.ne("service"))
+            // A @service parameter's projection is read by the fetcher the store emits, off the slot,
+            // and so is a routine write's on the mutation root, off the store's fills.
+            .where(p.GRAPH_NAME.eq(graphName), p.DIRECTIVE_NAME.ne("service"),
+                p.DIRECTIVE_NAME.ne("routine").or(notExists(selectOne().from(r)
+                    .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.TYPE_NAME.eq(p.TYPE_NAME),
+                        r.OPERATION.eq("MUTATION")))))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.WRITTEN_PATH)
             .fetch(row -> projectionOf(nodeTables, row.value1(), row.value2(), row.value3(),
                 row.value4(), row.value5(), row.value6())));

@@ -1424,8 +1424,9 @@ public class TypeFetcherGenerator {
      * and beside it the body {@link no.sikt.graphitron.emit.RoutineWriteEmitter} renders, which the
      * frame calls. A records result's body hands its captured keys to its lift,
      * {@link no.sikt.graphitron.emit.LiftEmitter#lift}, added beside the body with the lifted table's
-     * derived source table nested once per class, as a service's is. The frame's outcome and
-     * connection are the store's, read beside the routine-write rows; the generated names come from
+     * derived source table nested once per class, as a service's is, and so are the body's node id
+     * decode helpers. The frame's outcome and connection are the store's, read beside the
+     * routine-write rows; the generated names come from
      * {@link no.sikt.graphitron.plan.GeneratedUnits} like every other reference to them.
      */
     private static void renderRoutineWrite(TypeFetcherEmissionContext ctx, TypeSpec.Builder builder,
@@ -1461,15 +1462,18 @@ public class TypeFetcherGenerator {
                 className(units.typeClass(liftRow.targetType())), className(units.selectionOccurrences())));
             liftRef = Optional.of(new no.sikt.graphitron.emit.CallEmitter.Lift(fetchers, liftName, liftRow.list()));
         }
-        var body = no.sikt.graphitron.emit.RoutineWriteEmitter.render(row, bodyName, liftRef,
-            ctx.argPathHelpers(), ctx.projectedKeyHost().at(coordinate), OwnedScope.provider(outputPackage));
+        var rendered = no.sikt.graphitron.emit.RoutineWriteEmitter.render(row, routineWrites, bodyName, liftRef,
+            new no.sikt.graphitron.emit.NodeIdDecodeEmitter.Runtime(
+                no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage), outputPackage),
+            OwnedScope.provider(outputPackage));
         var entry = no.sikt.graphitron.emit.FrameEmitter.render(frame,
             units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
-            body.returnType(), fetchers, bodyName,
+            rendered.body().returnType(), fetchers, bodyName,
             frameRuntime(ctx, units), true, false,
             routineWriteConnection(routineWrites.connectionFor(row), coordinate, outputPackage));
         builder.addMethod(entry);
-        builder.addMethod(body);
+        builder.addMethod(rendered.body());
+        rendered.helpers().forEach(builder::addMethod);
     }
 
     /**
