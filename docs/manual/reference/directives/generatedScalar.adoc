@@ -93,7 +93,7 @@ A null or absent value is not checked and hands every component as null.
 == Constraints
 
 * A value reaches a call only as a component named in `argMapping`. Binding it whole, by a parameter's name or type, through an input object a call takes whole, as a column a `@mutation` writes, as a filter, a tenant or an `@outbox` key, is xref:../defects.adoc#generated-scalar-bound-whole[`GENERATED_SCALAR_BOUND_WHOLE`], since only a component binding is decoded and checked.
-* An argument or input field of one that no call takes is xref:../defects.adoc#generated-scalar-undecoded[`GENERATED_SCALAR_UNDECODED`], so no `@assertType` is ever silently skipped. Under a `@service` it is `ARGUMENT_UNBOUND` instead.
+* An argument or input field of one that no call takes is xref:../defects.adoc#generated-scalar-undecoded[`GENERATED_SCALAR_UNDECODED`], so no `@assertType` is ever silently skipped. Where another code already says nothing takes it, `ARGUMENT_UNBOUND` under a `@service`, `COLUMN_UNRESOLVED` on a filter naming no column or `MEMBER_UNKNOWN` under a class its input object is built into, that code speaks instead.
 * A name past the scalar that is none of its kind's components is xref:../defects.adoc#argmapping-path-unresolved[`ARGMAPPING_PATH_UNRESOLVED`].
 * A parameter takes the component's class, a `String` for every component today; another is xref:../defects.adoc#parameter-mismatch[`PARAMETER_MISMATCH`], at a routine judged against the function's parameter type.
 * A list of these scalars, or one read through a list of input objects, is not supported yet: xref:../defects.adoc#generated-scalar-list-unsupported[`GENERATED_SCALAR_LIST_UNSUPPORTED`].

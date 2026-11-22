@@ -20590,6 +20590,313 @@ whole (graph_name, coordinate, binder) AS (
       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
      AND t.taken_by IN ('PARAMETER', 'MEMBER', 'CONDITION')
    WHERE s.step_coordinate <> s.coordinate
+),
+-- What an argument or input field nothing takes draws, by code, at the occurrence judged, with the
+-- position and detail its defect is reported at and with: ARGUMENT_UNBOUND under a @service or an
+-- overriding condition, COLUMN_UNRESOLVED on a filter and MEMBER_UNKNOWN under a built class. Each is
+-- raised from here, once per position, and GENERATED_SCALAR_UNDECODED stands aside wherever one of
+-- them speaks for the occurrence or a step above it, so one cause draws one code.
+untaken (graph_name, coordinate, code, source_name, source_line, source_column, detail) AS (
+  -- An argument of a @service field nothing takes, at the argument: a service composes with no filter,
+  -- so an argument nothing takes, itself or anything under it (graphitron_occurrence_taken), has
+  -- nowhere to go. Raised here, where the taken fact is written, and only where the service's method
+  -- resolved, an unresolved one being its reference's defect. The arguments graphitron reads itself, an
+  -- @orderBy and a connection's page arguments, are taken by it; the ones expansion mints are written
+  -- nowhere and so are not reached.
+  SELECT o.graph_name, o.coordinate, 'ARGUMENT_UNBOUND', el.source_name, el.source_line,
+         el.source_column, CAST(NULL AS VARCHAR)
+    FROM graphitron_occurrence o
+    JOIN graphitron_occurrence po ON po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
+    JOIN graphitron_occurrence_producer p
+      ON p.graph_name = po.graph_name AND p.coordinate = po.coordinate AND p.kind = 'SERVICE'
+    JOIN graphql_ast_element_entry el
+      ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+   WHERE o.kind = 'FIELD_ARGUMENT'
+     AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
+                  WHERE m.graph_name = po.graph_name AND m.coordinate = po.coordinate AND m.call = 'producer')
+     -- Taken by what a call or graphitron reads: a parameter, the tenant, an @outbox key, the ordering
+     -- or the page.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                        AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                      WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
+  UNION ALL
+  -- An input field under an argument of a @service field that the argMapping paths taking the
+  -- argument leave behind, at the input field: something under the argument is taken, by a dotted
+  -- path, but nothing takes this field or anything inside it, and no step above it takes it whole.
+  -- Reported once, at the outermost such field: its parent has something under it taken. A field
+  -- whose input object is built into a class or a record is judged member by member, MEMBER_UNKNOWN's.
+  SELECT o.graph_name, o.coordinate, 'ARGUMENT_UNBOUND', el.source_name, el.source_line,
+         el.source_column, CAST(NULL AS VARCHAR)
+    FROM graphitron_occurrence o
+    JOIN graphitron_occurrence a ON a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate
+    JOIN graphitron_occurrence_producer p
+      ON p.graph_name = a.graph_name AND p.coordinate = a.parent_coordinate AND p.kind = 'SERVICE'
+    JOIN graphql_ast_element_entry el
+      ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+   WHERE o.kind = 'INPUT_FIELD'
+     AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
+                  WHERE m.graph_name = p.graph_name AND m.coordinate = p.coordinate AND m.call = 'producer')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                      WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+     -- Nothing at or under it is taken.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                        AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                      WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
+     -- No step above it takes it whole.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                        AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                      WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate
+                        AND s.step_coordinate <> o.coordinate)
+     -- The outermost: its parent has something under it taken.
+     AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                   JOIN graphitron_occurrence_taken t
+                     ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                    AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
+                  WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate)
+  UNION ALL
+  -- An argument or input field an overriding condition suppresses the predicate of that nothing reads,
+  -- at the slot: the condition stands in for its column's predicate, and no parameter of any condition
+  -- or call takes it, itself or anything under it, nor does its own @condition or the tenant. Reported
+  -- once, at the outermost such slot: an argument, or a field whose parent has something under it
+  -- taken. A slot whose input object is built into a class or record is judged member by member,
+  -- MEMBER_UNKNOWN's.
+  SELECT o.graph_name, o.coordinate, 'ARGUMENT_UNBOUND', el.source_name, el.source_line,
+         el.source_column, CAST(NULL AS VARCHAR)
+    FROM graphitron_occurrence o
+    JOIN graphitron_occurrence_overridden ov ON ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate
+    JOIN graphql_ast_element_entry el
+      ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+   WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                      WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+     -- Nothing at or under it is taken.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                      WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
+     -- No step above it takes it whole.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                      WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate
+                        AND s.step_coordinate <> o.coordinate)
+     -- The outermost: an argument, or a field whose parent has something under it taken.
+     AND (o.kind = 'FIELD_ARGUMENT'
+          OR EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
+                      WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate))
+  UNION ALL
+  -- A filter's argument or input field that names no column, at the @field where one is written and at
+  -- the declaration otherwise: under a field whose rows a filter reads, so no @service or write, and
+  -- returning a table-bound type or a connection of one, or a @routine's result, which every leaf its
+  -- parameters do not take filters (graphitron_routine_result), it binds no column or node id,
+  -- nothing at or under it is taken, by its own @condition among the rest, and no step above it takes
+  -- it, an overriding condition or a call reading the object; so no predicate compares it and the value
+  -- a client sends goes nowhere.
+  -- Its leaves only: an input object is judged by its fields. One built into a class or record is judged
+  -- member by member. The detail is the spelling.
+  SELECT o.graph_name, o.coordinate, 'COLUMN_UNRESOLVED', COALESCE(da.source_name, el.source_name),
+         COALESCE(da.source_line, el.source_line), COALESCE(da.source_column, el.source_column),
+         COALESCE(cl.named, o.name)
+    FROM graphitron_occurrence o
+    JOIN graphql_ast_element_entry el
+      ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+    JOIN graphitron_path_need_table n
+      ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+    -- Where a written @reference path lands, its join path says, the need's landing staying null.
+    LEFT JOIN graphitron_join_path jp
+      ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
+    JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
+    JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
+    -- The type the field's rows are of, unwrapped from a connection where it returns one.
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = ff.graph_name AND ft.type_name = ff.type_name AND ft.field_name = ff.field_name
+    LEFT JOIN graphitron_routine_result rr
+      ON rr.graph_name = ff.graph_name AND rr.type_name = ff.type_name AND rr.field_name = ff.field_name
+    LEFT JOIN graphitron_binding_claim cl
+      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+    LEFT JOIN graphitron_directive_application da
+      ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+     AND da.directive_name = 'field' AND da.ordinal = 0
+   WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+     AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+     AND (rr.field_name IS NOT NULL
+          OR EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                      WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
+                      WHERE c.graph_name = o.graph_name AND c.parent_coordinate = o.coordinate)
+     -- A routine reading rows is judged; one writing them, which returns no function's rows, is not.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                      WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
+                        AND (p.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT')
+                             OR p.kind = 'ROUTINE' AND rr.field_name IS NULL))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                      WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
+                      WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                      WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                      WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+     -- An overriding condition stands in for a filter's predicate, not for a lookup's join.
+     AND (NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                       WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+          OR EXISTS (SELECT 1 FROM graphitron_directive_application lk
+                      WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
+                        AND lk.directive_name = 'lookupKey'))
+     -- A @lookupKey argument naming no column is judged here too, a lookup needing a column to drive its
+     -- join; one that decodes a node id is the lookup's own node-id rules'.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application lk
+                      WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
+                        AND lk.directive_name = 'lookupKey'
+                        AND EXISTS (SELECT 1 FROM graphitron_directive_application ni
+                                     WHERE ni.graph_name = lk.graph_name AND ni.coordinate = lk.coordinate
+                                       AND ni.directive_name = 'nodeId'))
+     -- Nothing takes it, a lookup aside, which needs the column as much as a filter does.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                        AND t.taken_by <> 'LOOKUP_KEY'
+                      WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate)
+  UNION ALL
+  -- A filter on a union or an interface whose argument or input field names a column of one
+  -- participant's table and none of another's, at the @field where one is written and at the
+  -- declaration otherwise: the filter is compared on each participant's table, read off
+  -- graphitron_occurrence_column, which holds one row per landing, so on the table lacking it no
+  -- predicate compares the value and the participant cannot be filtered. The detail is the spelling.
+  SELECT o.graph_name, o.coordinate, 'COLUMN_UNRESOLVED', COALESCE(da.source_name, el.source_name),
+         COALESCE(da.source_line, el.source_line), COALESCE(da.source_column, el.source_column),
+         COALESCE(cl.named, o.name)
+    FROM graphitron_occurrence o
+    JOIN graphql_ast_element_entry el
+      ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+    JOIN graphitron_path_need_table n
+      ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+    LEFT JOIN graphitron_join_path jp
+      ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
+    -- The participant the need reaches, a table-bound type.
+    JOIN graphitron_tabletype tt ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
+    LEFT JOIN graphitron_binding_claim cl
+      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+    LEFT JOIN graphitron_directive_application da
+      ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+     AND da.directive_name = 'field' AND da.ordinal = 0
+   WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+     AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+     -- Compared on some landing: a column of another participant's table.
+     AND EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                  WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+     -- And none on this one.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                      WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate
+                        AND c.table_source_name = COALESCE(jp.target_source_name, n.landing_source_name)
+                        AND c.table_schema = COALESCE(jp.target_schema, n.landing_schema)
+                        AND c.table_name = COALESCE(jp.target_table, n.landing_table))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                      WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
+                        AND p.kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT'))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                      WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+     -- An overriding condition stands in for every participant's predicate.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                      WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+  UNION ALL
+  -- A filter on a union or an interface whose argument or input field names a column of no
+  -- participant's table, at the @field where one is written and at the declaration otherwise: under a
+  -- field that selects the rows, nothing takes it and no participant's table has it, so no predicate
+  -- compares the value on any of them. The detail is the spelling.
+  SELECT o.graph_name, o.coordinate, 'COLUMN_UNRESOLVED', COALESCE(da.source_name, el.source_name),
+         COALESCE(da.source_line, el.source_line), COALESCE(da.source_column, el.source_column),
+         COALESCE(cl.named, o.name)
+    FROM graphitron_occurrence o
+    JOIN graphql_ast_element_entry el
+      ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+    JOIN graphitron_path_need_table n
+      ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+    LEFT JOIN graphitron_join_path jp
+      ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
+    -- The participant the need reaches, a table-bound type.
+    JOIN graphitron_tabletype tt ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
+    JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
+    JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = ff.graph_name AND ft.type_name = ff.type_name AND ft.field_name = ff.field_name
+    LEFT JOIN graphitron_binding_claim cl
+      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+    LEFT JOIN graphitron_directive_application da
+      ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+     AND da.directive_name = 'field' AND da.ordinal = 0
+   WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+     AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+     -- The field's rows are a union's or an interface's, each participant's table, a field returning one
+     -- table-bound type being the filter arm's.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype ftt
+                      WHERE ftt.graph_name = ft.graph_name AND ftt.type_name = ft.target_type_name)
+     -- A field that selects the rows, so a filter reads them: a node fetcher looks up the ids it is
+     -- handed, and its other arguments are no filter.
+     AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                  WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate AND p.kind = 'SELECT')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
+                      WHERE c.graph_name = o.graph_name AND c.parent_coordinate = o.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                      WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
+                      WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
+     -- A column of no participant's table.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                      WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                      WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                      WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+     -- Nothing takes it, itself or a step above it.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken t
+                         ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                      WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate)
+  UNION ALL
+  -- An input field nothing takes, under the class its input object is built into (Alf, 2026-11-17):
+  -- neither it nor anything inside it is taken (graphitron_occurrence_taken), a member of that class
+  -- by the name the class matches on, exactly, case included, among them. Its value would reach
+  -- nothing. Reported once, at the outermost such field: a nested input object none of whose fields
+  -- is taken is the misspelt member, and its fields are not reported. A list of input objects is
+  -- GROUPING_LIST's, and an input object closing a cycle INPUT_CYCLE_EXPANDED's. Here, where the taken
+  -- fact is written; at the input field, the detail the class.
+  SELECT o.graph_name, o.coordinate, 'MEMBER_UNKNOWN', el.source_name, el.source_line,
+         el.source_column, pr.class_name
+    FROM graphitron_occurrence o
+    JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
+    JOIN graphitron_occurrence_built_class pr
+      ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
+    JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+   WHERE o.kind = 'INPUT_FIELD'
+     AND NOT (t.kind = 'INPUT_OBJECT' AND f.is_list)
+     AND pr.record_table IS NULL
+     AND pr.constructible
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                       JOIN graphitron_occurrence_taken tk
+                         ON tk.graph_name = s.graph_name AND tk.coordinate = s.coordinate
+                      WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
+     -- The outermost only: a field whose parent is itself a grouping nothing at or under takes is
+     -- reported at that grouping. The grouping's own member does not count here.
+     AND NOT (pr.declared_via = 'GROUPING'
+              AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                                JOIN graphitron_occurrence_taken tk
+                                  ON tk.graph_name = s.graph_name AND tk.coordinate = s.coordinate
+                               WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate
+                                 AND NOT (s.coordinate = o.parent_coordinate AND tk.taken_by = 'MEMBER')))
+     AND NOT (t.kind = 'INPUT_OBJECT'
+              AND EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
+                           WHERE ch.graph_name = o.graph_name AND ch.coordinate = o.coordinate
+                             AND ch.type_name = f.named_type))
 )
 SELECT a.graph_name, a.source_name, a.source_line, a.source_column, 'TENANT_NAMED_TWICE',
        MIN(d.element_coordinate), 'occurrence-tenants'
@@ -20691,313 +20998,12 @@ SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_MARK
  WHERE x.source_name IS NOT NULL
  GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column
 UNION ALL
--- An argument of a @service field nothing takes, at the argument: a service composes with no filter,
--- so an argument nothing takes, itself or anything under it (graphitron_occurrence_taken), has
--- nowhere to go. Raised here, where the taken fact is written, and only where the service's method
--- resolved, an unresolved one being its reference's defect. The arguments graphitron reads itself, an
--- @orderBy and a connection's page arguments, are taken by it; the ones expansion mints are written
--- nowhere and so are not reached.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'ARGUMENT_UNBOUND', CAST(NULL AS VARCHAR), 'occurrence-tenants'
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence po ON po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
-  JOIN graphitron_occurrence_producer p
-    ON p.graph_name = po.graph_name AND p.coordinate = po.coordinate AND p.kind = 'SERVICE'
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE o.kind = 'FIELD_ARGUMENT'
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
-                WHERE m.graph_name = po.graph_name AND m.coordinate = po.coordinate AND m.call = 'producer')
-   -- Taken by what a call or graphitron reads: a parameter, the tenant, an @outbox key, the ordering
-   -- or the page.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
-                      AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
-                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
-UNION ALL
--- An input field under an argument of a @service field that the argMapping paths taking the
--- argument leave behind, at the input field: something under the argument is taken, by a dotted
--- path, but nothing takes this field or anything inside it, and no step above it takes it whole.
--- Reported once, at the outermost such field: its parent has something under it taken. A field
--- whose input object is built into a class or a record is judged member by member, MEMBER_UNKNOWN's.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'ARGUMENT_UNBOUND', CAST(NULL AS VARCHAR), 'occurrence-tenants'
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence a ON a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate
-  JOIN graphitron_occurrence_producer p
-    ON p.graph_name = a.graph_name AND p.coordinate = a.parent_coordinate AND p.kind = 'SERVICE'
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE o.kind = 'INPUT_FIELD'
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
-                WHERE m.graph_name = p.graph_name AND m.coordinate = p.coordinate AND m.call = 'producer')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
-                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
-   -- Nothing at or under it is taken.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
-                      AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
-                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
-   -- No step above it takes it whole.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
-                      AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
-                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate
-                      AND s.step_coordinate <> o.coordinate)
-   -- The outermost: its parent has something under it taken.
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                 JOIN graphitron_occurrence_taken t
-                   ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
-                  AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
-                WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate)
-UNION ALL
--- An argument or input field an overriding condition suppresses the predicate of that nothing reads,
--- at the slot: the condition stands in for its column's predicate, and no parameter of any condition
--- or call takes it, itself or anything under it, nor does its own @condition or the tenant. Reported
--- once, at the outermost such slot: an argument, or a field whose parent has something under it
--- taken. A slot whose input object is built into a class or record is judged member by member,
--- MEMBER_UNKNOWN's.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'ARGUMENT_UNBOUND', CAST(NULL AS VARCHAR), 'occurrence-tenants'
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence_overridden ov ON ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
-                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
-   -- Nothing at or under it is taken.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
-                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
-   -- No step above it takes it whole.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
-                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate
-                      AND s.step_coordinate <> o.coordinate)
-   -- The outermost: an argument, or a field whose parent has something under it taken.
-   AND (o.kind = 'FIELD_ARGUMENT'
-        OR EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.coordinate
-                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate))
-UNION ALL
--- A filter's argument or input field that names no column, at the @field where one is written and at
--- the declaration otherwise: under a field whose rows a filter reads, so no @service or write, and
--- returning a table-bound type or a connection of one, or a @routine's result, which every leaf its
--- parameters do not take filters (graphitron_routine_result), it binds no column or node id,
--- nothing at or under it is taken, by its own @condition among the rest, and no step above it takes
--- it, an overriding condition or a call reading the object; so no predicate compares it and the value
--- a client sends goes nowhere.
--- Its leaves only: an input object is judged by its fields. One built into a class or record is judged
--- member by member. The detail is the spelling.
-SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
-       COALESCE(da.source_column, el.source_column),
-       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name)), 'occurrence-tenants'
-  FROM graphitron_occurrence o
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
-  JOIN graphitron_path_need_table n
-    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
-  -- Where a written @reference path lands, its join path says, the need's landing staying null.
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
-  JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
-  JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
-  -- The type the field's rows are of, unwrapped from a connection where it returns one.
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = ff.graph_name AND ft.type_name = ff.type_name AND ft.field_name = ff.field_name
-  LEFT JOIN graphitron_routine_result rr
-    ON rr.graph_name = ff.graph_name AND rr.type_name = ff.type_name AND rr.field_name = ff.field_name
-  LEFT JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
-  LEFT JOIN graphitron_directive_application da
-    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
-   AND da.directive_name = 'field' AND da.ordinal = 0
- WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
-   AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
-   AND (rr.field_name IS NOT NULL
-        OR EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                    WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
-                    WHERE c.graph_name = o.graph_name AND c.parent_coordinate = o.coordinate)
-   -- A routine reading rows is judged; one writing them, which returns no function's rows, is not.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
-                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
-                      AND (p.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT')
-                           OR p.kind = 'ROUTINE' AND rr.field_name IS NULL))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
-                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
-                    WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
-                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
-   -- An overriding condition stands in for a filter's predicate, not for a lookup's join.
-   AND (NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
-                     WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
-        OR EXISTS (SELECT 1 FROM graphitron_directive_application lk
-                    WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
-                      AND lk.directive_name = 'lookupKey'))
-   -- A @lookupKey argument naming no column is judged here too, a lookup needing a column to drive its
-   -- join; one that decodes a node id is the lookup's own node-id rules'.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application lk
-                    WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
-                      AND lk.directive_name = 'lookupKey'
-                      AND EXISTS (SELECT 1 FROM graphitron_directive_application ni
-                                   WHERE ni.graph_name = lk.graph_name AND ni.coordinate = lk.coordinate
-                                     AND ni.directive_name = 'nodeId'))
-   -- Nothing takes it, a lookup aside, which needs the column as much as a filter does.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
-                      AND t.taken_by <> 'LOOKUP_KEY'
-                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate)
- GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
-       COALESCE(da.source_column, el.source_column)
-UNION ALL
--- A filter on a union or an interface whose argument or input field names a column of one
--- participant's table and none of another's, at the @field where one is written and at the
--- declaration otherwise: the filter is compared on each participant's table, read off
--- graphitron_occurrence_column, which holds one row per landing, so on the table lacking it no
--- predicate compares the value and the participant cannot be filtered. The detail is the spelling.
-SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
-       COALESCE(da.source_column, el.source_column),
-       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name)), 'occurrence-tenants'
-  FROM graphitron_occurrence o
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
-  JOIN graphitron_path_need_table n
-    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
-  -- The participant the need reaches, a table-bound type.
-  JOIN graphitron_tabletype tt ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
-  LEFT JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
-  LEFT JOIN graphitron_directive_application da
-    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
-   AND da.directive_name = 'field' AND da.ordinal = 0
- WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
-   AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
-   -- Compared on some landing: a column of another participant's table.
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_column c
-                WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
-   -- And none on this one.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
-                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate
-                      AND c.table_source_name = COALESCE(jp.target_source_name, n.landing_source_name)
-                      AND c.table_schema = COALESCE(jp.target_schema, n.landing_schema)
-                      AND c.table_name = COALESCE(jp.target_table, n.landing_table))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
-                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
-                      AND p.kind IN ('SERVICE', 'ROUTINE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
-   -- An overriding condition stands in for every participant's predicate.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
-                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
- GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
-       COALESCE(da.source_column, el.source_column)
-UNION ALL
--- A filter on a union or an interface whose argument or input field names a column of no
--- participant's table, at the @field where one is written and at the declaration otherwise: under a
--- field that selects the rows, nothing takes it and no participant's table has it, so no predicate
--- compares the value on any of them. The detail is the spelling.
-SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
-       COALESCE(da.source_column, el.source_column),
-       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name)), 'occurrence-tenants'
-  FROM graphitron_occurrence o
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
-  JOIN graphitron_path_need_table n
-    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
-  -- The participant the need reaches, a table-bound type.
-  JOIN graphitron_tabletype tt ON tt.graph_name = n.graph_name AND tt.type_name = n.target_type
-  JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
-  JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = ff.graph_name AND ft.type_name = ff.type_name AND ft.field_name = ff.field_name
-  LEFT JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
-  LEFT JOIN graphitron_directive_application da
-    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
-   AND da.directive_name = 'field' AND da.ordinal = 0
- WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
-   AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
-   -- The field's rows are a union's or an interface's, each participant's table, a field returning one
-   -- table-bound type being the filter arm's.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype ftt
-                    WHERE ftt.graph_name = ft.graph_name AND ftt.type_name = ft.target_type_name)
-   -- A field that selects the rows, so a filter reads them: a node fetcher looks up the ids it is
-   -- handed, and its other arguments are no filter.
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
-                WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate AND p.kind = 'SELECT')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
-                    WHERE c.graph_name = o.graph_name AND c.parent_coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
-                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
-                    WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
-   -- A column of no participant's table.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
-                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
-                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
-                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
-   -- Nothing takes it, itself or a step above it.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken t
-                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
-                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate)
- GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
-       COALESCE(da.source_column, el.source_column)
-UNION ALL
--- An input field nothing takes, under the class its input object is built into (Alf, 2026-11-17):
--- neither it nor anything inside it is taken (graphitron_occurrence_taken), a member of that class
--- by the name the class matches on, exactly, case included, among them. Its value would reach
--- nothing. Reported once, at the outermost such field: a nested input object none of whose fields
--- is taken is the misspelt member, and its fields are not reported. A list of input objects is
--- GROUPING_LIST's, and an input object closing a cycle INPUT_CYCLE_EXPANDED's. Here, where the taken
--- fact is written; at the input field, the detail the class.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MEMBER_UNKNOWN', MIN(pr.class_name), 'occurrence-tenants'
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
-  JOIN graphitron_occurrence_built_class pr
-    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE o.kind = 'INPUT_FIELD'
-   AND NOT (t.kind = 'INPUT_OBJECT' AND f.is_list)
-   AND pr.record_table IS NULL
-   AND pr.constructible
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                     JOIN graphitron_occurrence_taken tk
-                       ON tk.graph_name = s.graph_name AND tk.coordinate = s.coordinate
-                    WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
-   -- The outermost only: a field whose parent is itself a grouping nothing at or under takes is
-   -- reported at that grouping. The grouping's own member does not count here.
-   AND NOT (pr.declared_via = 'GROUPING'
-            AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
-                              JOIN graphitron_occurrence_taken tk
-                                ON tk.graph_name = s.graph_name AND tk.coordinate = s.coordinate
-                             WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.parent_coordinate
-                               AND NOT (s.coordinate = o.parent_coordinate AND tk.taken_by = 'MEMBER')))
-   AND NOT (t.kind = 'INPUT_OBJECT'
-            AND EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
-                         WHERE ch.graph_name = o.graph_name AND ch.coordinate = o.coordinate
-                           AND ch.type_name = f.named_type))
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+-- An argument or input field nothing takes, by untaken's arms: once per position and code, the detail
+-- the first where several occurrences meet there.
+SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.code, MIN(u.detail),
+       'occurrence-tenants'
+  FROM untaken u
+ GROUP BY u.graph_name, u.source_name, u.source_line, u.source_column, u.code
 UNION ALL
 -- A generated scalar's value reaches a call only as a component an argMapping names, which the call
 -- decodes and checks: an argument or input field of one bound any other way, at its declaration. The
@@ -21008,26 +21014,19 @@ SELECT j.graph_name, j.source_name, j.source_line, j.source_column, 'GENERATED_S
   JOIN whole w ON w.graph_name = j.graph_name AND w.coordinate = j.coordinate
  GROUP BY j.graph_name, j.source_name, j.source_line, j.source_column
 UNION ALL
--- An argument or input field of a generated scalar nothing takes, itself or above it, so no call
--- decodes its value and no @assertType on it ever runs, at its declaration. It stands aside where
--- ARGUMENT_UNBOUND speaks for it, under a @service whose method resolved or where an overriding
--- condition stands in for its predicate.
+-- An argument or input field of a generated scalar nothing judges, at its declaration: nothing takes
+-- it, itself or above it, so no call decodes its value and no @assertType on it ever runs, and no
+-- other code speaks for it there or at a step above it, ARGUMENT_UNBOUND, COLUMN_UNRESOLVED or
+-- MEMBER_UNKNOWN by untaken's arms, so one cause draws one code.
 SELECT j.graph_name, j.source_name, j.source_line, j.source_column, 'GENERATED_SCALAR_UNDECODED',
        CAST(NULL AS VARCHAR), 'occurrence-tenants'
   FROM judged j
-  JOIN graphitron_occurrence o ON o.graph_name = j.graph_name AND o.coordinate = j.coordinate
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_taken t
                     WHERE t.graph_name = j.graph_name AND t.coordinate = j.coordinate)
    AND NOT EXISTS (SELECT 1 FROM whole w WHERE w.graph_name = j.graph_name AND w.coordinate = j.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence a
-                     JOIN graphitron_occurrence_producer p
-                       ON p.graph_name = a.graph_name AND p.coordinate = a.parent_coordinate
-                      AND p.kind = 'SERVICE'
-                     JOIN graphitron_occurrence_call_method m
-                       ON m.graph_name = p.graph_name AND m.coordinate = p.coordinate AND m.call = 'producer'
-                    WHERE a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
-                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN untaken u ON u.graph_name = s.graph_name AND u.coordinate = s.step_coordinate
+                    WHERE s.graph_name = j.graph_name AND s.coordinate = j.coordinate)
  GROUP BY j.graph_name, j.source_name, j.source_line, j.source_column
 UNION ALL
 -- An argument or input field of a generated scalar read through a list, its own or an input
@@ -21050,9 +21049,9 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'GENERATED_S
 COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_rule IS 'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.';
 
 -- The table a filter's argument or input field naming no column was looked for in, under its
--- COLUMN_UNRESOLVED: the three filter arms of graphitron_occurrence_tenant_entry_defect_rule restated
--- row for row, so the defect and the table it names agree, one row per defect and landing; on a union
--- or an interface, each participant table lacking the column. The diagnostic view ranks
+-- COLUMN_UNRESOLVED: the three filter arms of graphitron_occurrence_tenant_entry_defect_rule's
+-- untaken restated row for row, so the defect and the table it names agree, one row per defect and
+-- landing; on a union or an interface, each participant table lacking the column. The diagnostic view ranks
 -- that table's columns against the spelling, so every reader of a defect offers the same names.
 CREATE VIEW graphitron_occurrence_tenant_entry_defect_table_rule
   (graph_name, source_name, source_line, source_column, code,

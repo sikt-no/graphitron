@@ -1,5 +1,5 @@
 Reported at the argument or input field.
 
-A generated scalar's value is decoded and checked where a call takes one of its components through `argMapping`, and only there. An argument or input field of one that no call takes is never decoded, so a wrong value is not refused, and any `@assertType` written on it never runs. Where it sits under a `@service` whose method resolved, `ARGUMENT_UNBOUND` already reports it, and this code stands aside.
+A generated scalar's value is decoded and checked where a call takes one of its components through `argMapping`, and only there. An argument or input field of one that no call takes is never decoded, so a wrong value is not refused, and any `@assertType` written on it never runs. Where another code already reports that nothing takes it, `ARGUMENT_UNBOUND` under a `@service` or an overriding condition, `COLUMN_UNRESOLVED` on a filter naming no column, or `MEMBER_UNKNOWN` under a class its input object is built into, that code speaks for it, there or at a step above it, and this one stands aside.
 
 *Next step.* Bind the component a call needs, `pStart: path.startType`, or remove the argument. See xref:directives/generatedScalar.adoc#where-a-value-is-checked[Where a value is checked].
