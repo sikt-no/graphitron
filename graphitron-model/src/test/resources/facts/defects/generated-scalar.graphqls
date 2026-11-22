@@ -1,20 +1,45 @@
-# A scalar Graphitron generates itself: Path a path through this schema, TypeName the name of one of
-# its types. The application states the kind and nothing else; the components each kind decodes a
-# value into are the store's own vocabulary, and the class every generated scalar is read as is the
-# wire's string. Opaque, a custom scalar with neither @generatedScalar nor @scalarType, is the near
-# miss: no entry and no class. Query.ping has no fetcher, a defect this document is not about; the
-# components are a constant of the store, so they are claimed as contained rather than whole.
+# A scalar Graphitron generates itself, @generatedScalar stating its kind: what the store holds for
+# one, and the refusals of its declaration and of a field returning one. Each scalar is declared on
+# one line, the line the entry claim reads.
+# - The scalar: Path, a path through this schema, and TypeName, the name of one of its types, are
+#   each an entry by its kind; the components each kind decodes a value into are the store's own
+#   vocabulary, a constant claimed as contained rather than whole; the class every generated scalar
+#   is read as is the wire's string. Near miss Opaque, a custom scalar with neither @generatedScalar
+#   nor @scalarType: no entry and no class.
+# - CLAIMS_CONFLICT: Both carries @scalarType and @generatedScalar, each claiming what the scalar
+#   stands for, so it is one conflict at its declaration with both claims under it, and has no class
+#   rather than one of the two picked silently. Near misses Money and Sti, one directive each: one
+#   claim, no defect, and a class.
+# - GENERATED_SCALAR_COLUMN_NOT_TEXT: as output, a field of one hands back its column's text as
+#   stored, so a column jOOQ binds to another class is refused at the field, the detail the class:
+#   Film.length over a smallint and Film.updated over a timestamp. Near misses Film.title over a
+#   varchar and Query.echo, a @service reading no column.
 
 scalar Path @generatedScalar(kind: SCHEMA_PATH)
 scalar TypeName @generatedScalar(kind: TYPE_NAME)
 scalar Opaque
+scalar Both @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal") @generatedScalar(kind: SCHEMA_PATH)
+scalar Money @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+scalar Sti @generatedScalar(kind: SCHEMA_PATH)
 
-type Query { ping: String }
+type Film @table(name: "film") {
+  title: Path
+  length: Path
+  updated: Path @field(name: "last_update")
+}
+
+type Query {
+  films: [Film!]!
+  echo(marker: String!): Path
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "noDatabase"})
+}
 
 extend schema @expectEquals(relation: "graphitron_ast_generated_scalar_entry", rows: """
   source_line, kind
-  8,           SCHEMA_PATH
-  9,           TYPE_NAME
+  18,          SCHEMA_PATH
+  19,          TYPE_NAME
+  21,          SCHEMA_PATH
+  23,          SCHEMA_PATH
   """)
 
 # Every kind's components, a constant of the store rather than of this graph.
@@ -29,9 +54,32 @@ extend schema @assertContains(relation: "graphitron_generated_scalar_component",
   """)
 
 extend schema @expectEquals(relation: "graphitron_scalar_class",
-    where: "type_name IN ('Path', 'TypeName', 'Opaque', 'String')", rows: """
-  type_name, java_class,       source
-  Path,      java.lang.String, GENERATED
-  TypeName,  java.lang.String, GENERATED
-  String,    java.lang.String, BUILT_IN
+    where: "type_name IN ('Path', 'TypeName', 'Opaque', 'String', 'Both', 'Money', 'Sti')", rows: """
+  type_name, java_class,           source
+  Path,      java.lang.String,     GENERATED
+  TypeName,  java.lang.String,     GENERATED
+  String,    java.lang.String,     BUILT_IN
+  Money,     java.math.BigDecimal, SCALAR_TYPE
+  Sti,       java.lang.String,     GENERATED
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_claim", rows: """
+  code,            coordinate, kind
+  CLAIMS_CONFLICT, Both,       GENERATED_SCALAR
+  CLAIMS_CONFLICT, Both,       SCALAR_TYPE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_claim", where: "coordinate IN ('Both', 'Money', 'Sti')", rows: """
+  coordinate, kind
+  Both,       GENERATED_SCALAR
+  Both,       SCALAR_TYPE
+  Money,      SCALAR_TYPE
+  Sti,        GENERATED_SCALAR
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'GENERATED_SCALAR_%'", rows: """
+  code,                             coordinate,   detail
+  GENERATED_SCALAR_COLUMN_NOT_TEXT, Film.length,  java.lang.Short
+  GENERATED_SCALAR_COLUMN_NOT_TEXT, Film.updated, java.time.LocalDateTime
   """)

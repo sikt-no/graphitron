@@ -1,0 +1,129 @@
+# How a generated scalar's argument or input field is bound: its value reaches a call only as a
+# component an argMapping names, which the call decodes and checks, and every other binding, or
+# none, is refused at the argument or input field. The outbox table is configured for the @outbox.
+# - GENERATED_SCALAR_BOUND_WHOLE: bound whole, handing over the unchecked string: a @service
+#   parameter filled by the argument's name (Query.byName) or type (Query.byType), an input object a
+#   parameter takes whole (PathHolder.sti), a column a @mutation writes (FilmPathInput.title), an
+#   implicit filter comparing a column (Query.films) and an @outbox payload key (Mutation.tagged).
+#   Near miss Query.byComponent binds path.startType.
+# - GENERATED_SCALAR_UNDECODED: bound nowhere, so never decoded and an @assertType on it never runs:
+#   AssertedFilm.title's path, on a field that makes no call. Drawn only where nothing else judges
+#   the occurrence, one cause drawing one code: under a @service whose method resolved,
+#   ARGUMENT_UNBOUND already says Query.ignored's path goes nowhere, as argument-unbound pins, and
+#   Query.filmsByPath's sti, a filter naming no column of film, is COLUMN_UNRESOLVED alone, as
+#   filter-column-unresolved pins. Near miss Query.decoded binds a component, so its @assertType
+#   runs.
+# - GENERATED_SCALAR_LIST_UNSUPPORTED: decoded once per call into one record, so a list of them
+#   (Query.many) or one read through a list of input objects (PathElement.sti) would need a decode
+#   per element, which is deferred, the detail the scalar; the positive rule does not judge them.
+#   Near miss Query.one takes a component of a single value.
+# - GENERATED_SCALAR_SITE_UNSUPPORTED: the decode is generated for @service calls and for a @routine
+#   writing on the mutation root, so a component bound at a @condition (Query.filteredFilms), at a
+#   child @routine step (Actor.filmsAlong) or at a @routine read on the query root
+#   (Query.filmsByRoutine) is deferred at the argMapping string, the detail the directive; the
+#   positive rule does not judge what such a site takes. Near miss Mutation.endorse binds a
+#   component at a mutation's @routine.
+
+extend schema @withConfiguration(outboxTable: "outbox")
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type Film @table(name: "film") { title: String }
+
+type AssertedFilm @table(name: "film") {
+  title(path: Path @assertType(component: "endType", type: {is: "AssertedFilm"})): String
+}
+
+type FilteredFilm @table(name: "film") { title: String }
+
+type ActorFilm { filmId: Int @field(name: "film_id") }
+
+type FilmEndorsement @table(name: "film_endorsement") { note: String }
+
+type Actor @table(name: "actor") {
+  filmsAlong(path: Path): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: path.startType")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+input PathHolder { sti: Path }
+input FilmPathInput { title: Path }
+input FilmInput { title: String }
+input PathElement { sti: Path }
+input PathFilter { sti: Path }
+
+type Query {
+  films(title: Path): [Film!]!
+  byName(title: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  byType(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  inObject(value: PathHolder): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byAnything"})
+  byComponent(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.startType"})
+  assertedFilms: [AssertedFilm!]!
+  filmsByPath(sti: Path): [AssertedFilm!]!
+  ignored(id: Int!, path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byIntId"})
+  decoded(path: Path @assertType(component: "endType", type: {is: "AssertedFilm"})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.endType"})
+  many(paths: [Path!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: paths.endType"})
+  throughList(in: [PathElement!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: in.sti.startType"})
+  one(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.startType"})
+  actors: [Actor]
+  filteredFilms(filter: PathFilter @condition(condition: {className: "example.Ref", method: "m", argMapping: "t: filter.sti.startType"})): [FilteredFilm!]!
+  filmsByRoutine(path: Path!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: path.text, pMinLength: path.startType")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+type Mutation {
+  createFilm(in: FilmPathInput!): Film @mutation(typeName: INSERT)
+  tagged(in: FilmInput!, sti: Path): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "sti: sti")
+  endorse(film: Int!, path: Path!): [FilmEndorsement!]!
+    @routine(name: "endorse_film", argMapping: "pEndorsedFilm: film, pNote: path.startType")
+    @reference(path: [{table: "film_endorsement"}])
+}
+
+# Every generated scalar refusal the document draws, one per case's occurrence and none at a near
+# miss or where another code speaks.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'GENERATED_SCALAR_%'", rows: """
+  code,                              coordinate
+  GENERATED_SCALAR_BOUND_WHOLE,      Query.films(title:)
+  GENERATED_SCALAR_BOUND_WHOLE,      Query.byName(title:)
+  GENERATED_SCALAR_BOUND_WHOLE,      Query.byType(path:)
+  GENERATED_SCALAR_BOUND_WHOLE,      PathHolder.sti
+  GENERATED_SCALAR_BOUND_WHOLE,      FilmPathInput.title
+  GENERATED_SCALAR_BOUND_WHOLE,      Mutation.tagged(sti:)
+  GENERATED_SCALAR_UNDECODED,        AssertedFilm.title(path:)
+  GENERATED_SCALAR_LIST_UNSUPPORTED, Query.many(paths:)
+  GENERATED_SCALAR_LIST_UNSUPPORTED, PathElement.sti
+  GENERATED_SCALAR_SITE_UNSUPPORTED, Actor.filmsAlong
+  GENERATED_SCALAR_SITE_UNSUPPORTED, Query.filteredFilms(filter:)
+  GENERATED_SCALAR_SITE_UNSUPPORTED, Query.filmsByRoutine
+  """)
+
+# The deferrals' details: the scalar a list holds, the directive a site is.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('GENERATED_SCALAR_LIST_UNSUPPORTED', 'GENERATED_SCALAR_SITE_UNSUPPORTED')", rows: """
+  code,                              coordinate,                   detail
+  GENERATED_SCALAR_LIST_UNSUPPORTED, Query.many(paths:),           Path
+  GENERATED_SCALAR_LIST_UNSUPPORTED, PathElement.sti,              Path
+  GENERATED_SCALAR_SITE_UNSUPPORTED, Actor.filmsAlong,             routine
+  GENERATED_SCALAR_SITE_UNSUPPORTED, Query.filteredFilms(filter:), condition
+  GENERATED_SCALAR_SITE_UNSUPPORTED, Query.filmsByRoutine,         routine
+  """)
+
+# The filter's COLUMN_UNRESOLVED, Query.filmsByPath's sti, read off the table its name was looked
+# for in, film.
+extend schema @expectEquals(relation: "graphitron_entry_defect_table", where: "code = 'COLUMN_UNRESOLVED'", rows: """
+  source_line, table_name
+  66,          film
+  """)

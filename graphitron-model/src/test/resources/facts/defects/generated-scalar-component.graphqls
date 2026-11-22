@@ -1,0 +1,84 @@
+# A generated scalar's component named in an argMapping: what the name lands on, and the parameter
+# the component is handed to.
+# - The landing: a name past a generated scalar that is a component of its kind lands on the
+#   scalar's own occurrence and hands over that component, whether the scalar is an argument
+#   (Query.start, Query.named) or an input field below one (Query.nested). Any other name opens
+#   nothing and is refused at the mapping string, as a name past a String is: a misspelt component
+#   (Query.misspelt) and a component of another kind (Query.otherKind), which write no landing.
+# - PARAMETER_MISMATCH: the parameter takes the component's class, a String for every component
+#   today, at a @service and at a root @routine. A service parameter of another class, an int
+#   (Query.asInt), a Long (Query.asLong) or a list of strings (Query.asList), is a mismatch, as is
+#   a routine parameter whose SQL type is an integer (Mutation.endorseIntoInteger). Near misses
+#   draw nothing: a String and an Object service parameter (Query.asString, Query.asObject), a text
+#   routine parameter (Mutation.endorseByStart), and a routine parameter bound to a plain argument
+#   of another type (Mutation.endorsePlain), which the component rule does not judge.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+scalar TypeName @generatedScalar(kind: TYPE_NAME)
+
+input Route { sti: Path }
+
+type FilmEndorsement @table(name: "film_endorsement") { note: String }
+
+type Query {
+  start(path: Path): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: path.startType"})
+  nested(route: Route): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: route.sti.endType, q: route.sti.text"})
+  named(type: TypeName): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: type.name"})
+  # A misspelt component, and one a TYPE_NAME does not have.
+  misspelt(path: Path): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: path.startTyp"})
+  otherKind(type: TypeName): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: type.startType"})
+  asString(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.startType"})
+  asObject(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byAnything", argMapping: "value: path.endType"})
+  asInt(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byIntId", argMapping: "id: path.startType"})
+  asLong(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byLongId", argMapping: "id: path.text"})
+  asList(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitles", argMapping: "titles: path.endType"})
+}
+
+type Mutation {
+  endorseByStart(film: Int!, path: Path!): [FilmEndorsement!]!
+    @routine(name: "endorse_film", argMapping: "pEndorsedFilm: film, pNote: path.startType")
+    @reference(path: [{table: "film_endorsement"}])
+  endorseIntoInteger(path: Path!): [FilmEndorsement!]!
+    @routine(name: "endorse_film", argMapping: "pEndorsedFilm: path.startType, pNote: path.text")
+    @reference(path: [{table: "film_endorsement"}])
+  endorsePlain(film: String!, note: String!): [FilmEndorsement!]!
+    @routine(name: "endorse_film", argMapping: "pEndorsedFilm: film, pNote: note")
+    @reference(path: [{table: "film_endorsement"}])
+}
+
+# The landing case's calls, every landing they write; the mismatch case's calls land too, outside it.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing",
+    where: "call_coordinate IN ('Query.start', 'Query.nested', 'Query.named', 'Query.misspelt', 'Query.otherKind')", rows: """
+  call_coordinate, target_name, landing_coordinate,          trailing_name, receives
+  Query.nested,    p,           Query.nested(route.sti:),    endType,       COMPONENT
+  Query.nested,    q,           Query.nested(route.sti:),    text,          COMPONENT
+  Query.named,     p,           Query.named(type:),          name,          COMPONENT
+  Query.start,     p,           Query.start(path:),          startType,     COMPONENT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
+  code,                       detail
+  ARGMAPPING_PATH_UNRESOLVED, path.startTyp
+  ARGMAPPING_PATH_UNRESOLVED, type.startType
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                       coordinate
+  ARGMAPPING_PATH_UNRESOLVED, Query.start
+  ARGMAPPING_PATH_UNRESOLVED, Query.nested
+  ARGMAPPING_PATH_UNRESOLVED, Query.named
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_defect",
+    where: "code = 'PARAMETER_MISMATCH'", rows: """
+  coordinate,                  call_kind, parameter_name
+  Query.asInt,                 SERVICE,   id
+  Query.asLong,                SERVICE,   id
+  Query.asList,                SERVICE,   titles
+  Mutation.endorseIntoInteger, ROUTINE,   pEndorsedFilm
+  """)
