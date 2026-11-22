@@ -1,7 +1,7 @@
 ---
 id: R1204
 title: "A Path or TypeName argument is checked against the subgraph schema, and a routine binds the path's start and end types"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 1
 theme: mutation-write
