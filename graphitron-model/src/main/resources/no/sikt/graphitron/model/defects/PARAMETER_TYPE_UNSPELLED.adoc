@@ -1,0 +1,5 @@
+Reported at the `@condition`'s method reference, naming the parameter.
+
+The generated condition reads each parameter's value into a local of the parameter's declared type. A type that is a member of a parameterised class, such as `Outer<A>.Inner`, is not one the generator can declare a local of yet.
+
+*Next step.* Declare the parameter as the member's own class, or as a type the argument arrives as. See xref:directives/condition.adoc[`@condition`].

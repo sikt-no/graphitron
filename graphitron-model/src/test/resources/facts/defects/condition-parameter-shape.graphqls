@@ -1,0 +1,28 @@
+# A @condition's parameter the generated condition cannot hand its value to, at the condition's method
+# reference, naming the parameter. ratedAs takes one Java enum: filmsByRatings fills it from a list of
+# ratings, one constant standing for no list, so it is PARAMETER_MISMATCH, where filmsByRating's one
+# rating fills it and draws nothing. byHeldMember's parameter is a member of a parameterised class,
+# Holder<String>.Inner, which the condition cannot declare a local of yet: PARAMETER_TYPE_UNSPELLED.
+
+enum MpaaRating { G PG PG_13 R NC_17 }
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  filmsByRatings(rating: [MpaaRating!]): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
+      method: "ratedAs"}, override: true)
+  filmsByRating(rating: MpaaRating): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
+      method: "ratedAs"}, override: true)
+  filmsByHeld(held: String): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
+      method: "byHeldMember"}, override: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_parameter_rule",
+    where: "code IN ('PARAMETER_MISMATCH', 'PARAMETER_TYPE_UNSPELLED')", rows: """
+  code,                     coordinate,           parameter_name
+  PARAMETER_MISMATCH,       Query.filmsByRatings, rating
+  PARAMETER_TYPE_UNSPELLED, Query.filmsByHeld,    held
+  """)

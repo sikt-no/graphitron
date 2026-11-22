@@ -1,0 +1,3 @@
+Reported at each element field that reaches its column over another path than a sibling field of the same element.
+
+include::_list-of-input-filter.adoc[]

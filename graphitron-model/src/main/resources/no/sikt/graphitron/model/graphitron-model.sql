@@ -16198,7 +16198,34 @@ SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'condition' AND pr.owner = 'condition'
-                      AND pr.target_name = p.parameter_name AND pr.target_kind = 'NAME');
+                      AND pr.target_name = p.parameter_name AND pr.target_kind = 'NAME')
+UNION ALL
+-- A parameter taking one Java enum, filled from an enum argument or input field that is a list: one
+-- constant stands for no list of names.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'PARAMETER_MISMATCH'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = cp.graph_name AND it.coordinate = cp.landing_coordinate
+ WHERE cp.call_kind = 'CONDITION' AND cp.fill = 'ARGUMENT' AND mp.extraction = 'ENUM_VALUE_OF'
+   AND it.type_kind = 'ENUM' AND it.is_list
+UNION ALL
+-- A parameter whose declared type is a member of a parameterised class, Outer<A>.Inner, which the
+-- condition's local cannot be spelled as yet.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'PARAMETER_TYPE_UNSPELLED'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+ WHERE cp.call_kind = 'CONDITION' AND (mp.parameter_type LIKE '%>$%' OR mp.parameter_type LIKE '%>.%');
 COMMENT ON VIEW graphitron_occurrence_condition_parameter_defect_rule IS 'One row the condition parameter defect rule computes, in the shape graphitron_occurrence_call_parameter_defect stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings writes this view''s rows for one graph into graphitron_occurrence_call_parameter_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_defect_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.coordinate';
@@ -16223,7 +16250,7 @@ CREATE TABLE graphitron_occurrence_call_parameter_defect (
     REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
   CHECK (code IN ('PARAMETER_UNFILLED', 'PARAMETER_AMBIGUOUS', 'PARAMETER_FILLED_TWICE',
-                  'PARAMETER_NAMES_MISSING', 'PARAMETER_MISMATCH'))
+                  'PARAMETER_NAMES_MISSING', 'PARAMETER_MISMATCH', 'PARAMETER_TYPE_UNSPELLED'))
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that nothing binds, that two fills bind, or that cannot take what fills it: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument by that name and no pair naming it is PARAMETER_UNFILLED at that parameter, under each occurrence of the call.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
@@ -21955,7 +21982,7 @@ CREATE TABLE graphitron_occurrence_list_element_defect (
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
   CHECK (code IN ('LIST_ELEMENT_CONDITION', 'LIST_ELEMENT_NODE_ID', 'LIST_ELEMENT_NOT_ONE_VALUE',
-                  'LIST_CONDITION_BELOW_LIST'))
+                  'LIST_CONDITION_BELOW_LIST', 'LIST_ELEMENT_PATHS_DIFFER'))
 );
 COMMENT ON TABLE graphitron_occurrence_list_element_defect IS 'A list of input objects a filter compares as rows that cannot be compared so, at one occurrence: one row per occurrence and rule it breaks there, an element field that cannot be one cell of its row or a @condition taking a value read per element. For example Query.filmsByCells(cells.filmId:), a node id read per element of cells, draws a LIST_ELEMENT_NODE_ID row.';
 COMMENT ON COLUMN graphitron_occurrence_list_element_defect.graph_name IS 'the owning graph''s partition';
@@ -26664,6 +26691,32 @@ SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NOT_ONE_VALUE'
                    WHERE ol.graph_name = e.graph_name AND ol.coordinate = e.coordinate)
    AND EXISTS (SELECT 1 FROM graphitron_field f
                 WHERE f.graph_name = e.graph_name AND f.coordinate = e.element_coordinate AND f.is_list)
+UNION ALL
+-- Two fields of one list's element reaching their columns over different paths, at each: the element
+-- is compared as one row inside one EXISTS over the path its fields share, so fields landing on other
+-- tables, or by other steps, are not compared yet.
+SELECT DISTINCT e.graph_name, e.coordinate, 'LIST_ELEMENT_PATHS_DIFFER'
+  FROM element e
+  JOIN graphitron_occurrence_list_element l1 ON l1.graph_name = e.graph_name AND l1.coordinate = e.coordinate
+  JOIN graphitron_occurrence_list_element l2
+    ON l2.graph_name = l1.graph_name AND l2.list_coordinate = l1.list_coordinate AND l2.coordinate <> l1.coordinate
+  JOIN graphitron_occurrence_column c1 ON c1.graph_name = e.graph_name AND c1.coordinate = e.coordinate
+  JOIN graphitron_occurrence_column c2 ON c2.graph_name = l2.graph_name AND c2.coordinate = l2.coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = l1.graph_name AND ov.coordinate = l1.list_coordinate)
+   AND (c1.table_source_name <> c2.table_source_name OR c1.table_schema <> c2.table_schema
+        OR c1.table_name <> c2.table_name
+        OR EXISTS (SELECT 1 FROM graphitron_join_path_step s1
+                    WHERE s1.graph_name = e.graph_name AND s1.coordinate = e.coordinate
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s2
+                                       WHERE s2.graph_name = l2.graph_name AND s2.coordinate = l2.coordinate
+                                         AND s2.position = s1.position AND s2.to_source_name = s1.to_source_name
+                                         AND s2.to_schema = s1.to_schema AND s2.to_table = s1.to_table))
+        OR EXISTS (SELECT 1 FROM graphitron_join_path_step s2
+                    WHERE s2.graph_name = l2.graph_name AND s2.coordinate = l2.coordinate
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s1
+                                       WHERE s1.graph_name = e.graph_name AND s1.coordinate = e.coordinate
+                                         AND s1.position = s2.position)))
 UNION ALL
 -- A @condition with a parameter filled from a field read per element of a list the condition is not
 -- itself read under: the list field's own, or the field's reaching through it. One call has no
@@ -32667,8 +32720,12 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A code reference names a method the directive cannot call: an @externalField''s method must be static, take exactly one jOOQ table and return an org.jooq.Field.'),
   ('EXTERNAL_FIELD_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_EXTERNAL_FIELD_PATH_UNSUPPORTED',
    'An @externalField on a field that also writes a @reference path is not supported yet: the method takes the table the field''s values are rows of, and an expression at the path''s end is not bound. Remove the @reference and reach the joined table inside the method.'),
+  ('LIST_ELEMENT_PATHS_DIFFER', 'error', 'UNSUPPORTED', 'GRAPHITRON_LIST_ELEMENT_PATHS_DIFFER',
+   'Fields of one element of a list of input objects a filter compares reach their columns over different paths, and the element is compared as one row over the one path its fields share: give the element''s fields one path, or filter the other fields outside the list.'),
+  ('PARAMETER_TYPE_UNSPELLED', 'error', 'UNSUPPORTED', 'GRAPHITRON_PARAMETER_TYPE_UNSPELLED',
+   'A @condition method''s parameter is typed as a member of a parameterised class, Outer<A>.Inner, which the generated condition cannot declare a local of yet: take the member''s own class, or a type the argument arrives as.'),
   ('PARAMETER_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_MISMATCH',
-   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar; or a @service or root @routine parameter an argMapping hands a generated scalar''s component, typed as another class than the component''s. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
+   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, a @condition parameter taking one Java enum where its argument is a list of them, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar; or a @service or root @routine parameter an argMapping hands a generated scalar''s component, typed as another class than the component''s. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',
