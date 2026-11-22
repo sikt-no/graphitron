@@ -19,7 +19,9 @@ import java.util.List;
  * @param stage      which stage refused the document
  * @param errorClass the refusing error's class name, graphql-java's own word for what went wrong
  *                   and the only dimension it publishes; {@code getErrorType()} is uniformly
- *                   {@code ValidationError} across the whole SDL error set and discriminates nothing
+ *                   {@code ValidationError} across the whole SDL error set and discriminates nothing.
+ *                   A refusal of graphql-java's schema validator, which is not a {@link GraphQLError},
+ *                   carries its classification's name here instead ({@code InvalidAppliedDirectiveArgument})
  * @param message    the error's rendered message; display material, never a dimension
  * @param location   where the error points, or {@code null} where it points nowhere. graphql-java
  *                   locates at the enclosing declaration rather than the offending element (a

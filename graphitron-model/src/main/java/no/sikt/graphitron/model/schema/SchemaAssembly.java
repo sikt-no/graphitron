@@ -1,14 +1,20 @@
 package no.sikt.graphitron.model.schema;
 
+import graphql.ErrorType;
 import graphql.GraphQLError;
 import graphql.GraphQLException;
+import graphql.GraphqlErrorBuilder;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.EchoingWiringFactory;
 import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
+import graphql.schema.validation.InvalidSchemaException;
+import graphql.schema.validation.SchemaValidationError;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -75,6 +81,8 @@ public sealed interface SchemaAssembly {
         } catch (SchemaProblem e) {
             return new Rejected(registry,
                 SchemaError.allOf(SchemaError.Stage.ASSEMBLY, e.getErrors()), e);
+        } catch (InvalidSchemaException e) {
+            return rejectedByValidation(registry, e);
         } catch (GraphQLException e) {
             // Some refusals are thrown bare rather than collected into a SchemaProblem, an object
             // type used where an input type belongs (NotAnInputTypeError) and its output twin among
@@ -87,6 +95,44 @@ public sealed interface SchemaAssembly {
             return new Rejected(registry,
                 SchemaError.allOf(SchemaError.Stage.ASSEMBLY, problem.getErrors()), problem);
         }
+    }
+
+    /**
+     * The refusal graphql-java's schema validator raises once the schema is built, as the rows of a
+     * rejection. The validator runs last in building, over every rule it holds (an applied
+     * directive's argument its type refuses, a {@code @oneOf} literal setting no field or two among
+     * them), and throws its findings together, not as {@link GraphQLError}s but as
+     * {@link SchemaValidationError}s, each a classification and a description and neither located.
+     * Each is recorded as its own assembly problem, its classification as the error class, so any
+     * validation refusal is a verdict on the schema rather than a crash of the reading.
+     *
+     * <p>graphql-java keeps the exception's error list package-private, so it is read reflectively;
+     * where that read fails the exception propagates as it always did.
+     */
+    private static Rejected rejectedByValidation(TypeDefinitionRegistry registry,
+                                                 InvalidSchemaException e) {
+        Collection<?> raised;
+        try {
+            var getErrors = InvalidSchemaException.class.getDeclaredMethod("getErrors");
+            getErrors.setAccessible(true);
+            raised = (Collection<?>) getErrors.invoke(e);
+        } catch (ReflectiveOperationException | RuntimeException unreadable) {
+            e.addSuppressed(unreadable);
+            throw e;
+        }
+        var errors = new ArrayList<SchemaError>();
+        var causes = new ArrayList<GraphQLError>();
+        for (var item : raised) {
+            var validation = (SchemaValidationError) item;
+            GraphQLError cause = GraphqlErrorBuilder.newError()
+                .message(validation.getDescription())
+                .errorType(ErrorType.ValidationError)
+                .build();
+            causes.add(cause);
+            errors.add(new SchemaError(SchemaError.Stage.ASSEMBLY,
+                validation.getClassification().toString(), validation.getDescription(), null, cause));
+        }
+        return new Rejected(registry, List.copyOf(errors), new SchemaProblem(causes));
     }
 
     /**

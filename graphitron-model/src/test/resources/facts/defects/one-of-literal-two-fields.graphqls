@@ -1,0 +1,26 @@
+# A @oneOf input written as a directive's literal must set exactly one field. graphql-java refuses one
+# setting two, but only when it validates the built schema, and throws that refusal without a
+# location rather than collecting it with the others; capture records it as an assembly problem like
+# any other instead of failing the document. The refusal names the directive, so @pickTwo's
+# application draws the row and @pickOne's, setting one field, the near miss, draws none.
+
+input Pick @oneOf {
+  title: String
+  length: Int
+}
+
+directive @pickTwo(by: Pick!) on FIELD_DEFINITION
+directive @pickOne(by: Pick!) on FIELD_DEFINITION
+
+type Query {
+  both: String @pickTwo(by: {title: "ACADEMY DINOSAUR", length: 86})
+  one: String @pickOne(by: {title: "ACADEMY DINOSAUR"})
+}
+
+extend schema @expectEquals(relation: "graphql_schema_problem",
+    where: "message LIKE '%pickTwo%'", rows: """
+  stage,    error_class,                     source_line
+  ASSEMBLY, InvalidAppliedDirectiveArgument,
+  """)
+
+extend schema @assertEmpty(relation: "graphql_schema_problem", where: "message LIKE '%pickOne%'")
