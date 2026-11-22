@@ -5,13 +5,16 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,10 +50,8 @@ class ReadmeLinkIntegrityTest {
         Path repoRoot = locateRepoRoot();
         List<String> failures = new ArrayList<>();
 
-        try (Stream<Path> files = Files.walk(repoRoot)) {
-            files.filter(p -> p.getFileName().toString().equals("README.md"))
-                .filter(p -> isReaderFacing(repoRoot.relativize(p)))
-                .forEach(readme -> collectFailures(readme, repoRoot, failures));
+        for (Path readme : readerFacingReadmes(repoRoot)) {
+            collectFailures(readme, repoRoot, failures);
         }
 
         assertThat(failures)
@@ -61,18 +62,45 @@ class ReadmeLinkIntegrityTest {
     }
 
     /**
-     * A README is reader-facing unless it sits under build output
-     * ({@code target/}), a dependency cache ({@code node_modules/}), or a hidden
-     * directory ({@code .git/} and friends).
+     * Every reader-facing {@code README.md} under the root. A README is reader-facing unless it
+     * sits under build output ({@code target/}), a dependency cache ({@code node_modules/}), or a
+     * hidden directory ({@code .git/} and friends), and the walk never enters those: a parallel
+     * build writes and deletes other modules' {@code target/} trees while this runs, so a walk
+     * that entered them and filtered afterwards could list a report file another fork then
+     * removed. A file that still vanishes between listing and visiting is skipped, for the same
+     * reason.
      */
-    private static boolean isReaderFacing(Path relative) {
-        for (Path segment : relative) {
-            String name = segment.toString();
-            if (name.equals("target") || name.equals("node_modules") || name.startsWith(".")) {
-                return false;
+    private static List<Path> readerFacingReadmes(Path repoRoot) throws IOException {
+        List<Path> readmes = new ArrayList<>();
+        Files.walkFileTree(repoRoot, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (dir.equals(repoRoot)) {
+                    return FileVisitResult.CONTINUE;
+                }
+                String name = dir.getFileName().toString();
+                return name.equals("target") || name.equals("node_modules") || name.startsWith(".")
+                    ? FileVisitResult.SKIP_SUBTREE
+                    : FileVisitResult.CONTINUE;
             }
-        }
-        return true;
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (file.getFileName().toString().equals("README.md")) {
+                    readmes.add(file);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException e) throws IOException {
+                if (e instanceof NoSuchFileException) {
+                    return FileVisitResult.CONTINUE;
+                }
+                throw e;
+            }
+        });
+        return readmes;
     }
 
     private static void collectFailures(Path readme, Path repoRoot, List<String> failures) {
