@@ -5355,7 +5355,7 @@ COMMENT ON COLUMN graphitron_argmapping_landing.call_coordinate IS 'the occurren
 COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argument or input-field occurrence the path names; what it is, its column, table or node identity, is that occurrence''s own binding, not restated here';
 COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: a key column of the node id the landing carries, which the landing''s binding resolves and judges. Only a landing whose element claims NODE_ID has one; a name past anything else lands nowhere';
 COMMENT ON COLUMN graphitron_argmapping_landing.descends IS 'whether the path goes past the slot it opens, an argument of a field-level call or the argument or input field the directive is written on, rather than stopping on it';
-COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what a node id at the landing hands over: COLUMN, one key column, where the path names one past the id, which only a node id lets it, or, at a call parameter, descends onto it; WHOLE otherwise, the decoded key at a call parameter and the encoded id at an @outbox payload key, whose clients see the id as the API does';
+COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what a node id at the landing hands over: COLUMN, one key column, where the path names one past the id, which only a node id lets it, where it is a @routine''s, a database function taking one value per parameter, or where it descends onto the id at another call''s parameter; WHOLE otherwise, the decoded key at a @service or @condition parameter the path stops on and the encoded id at an @outbox payload key, whose clients see the id as the API does';
 COMMENT ON COLUMN graphitron_argmapping_landing.repeats_own_name IS 'whether the path began with the call''s own name, as an argument-level or input-field-level argMapping was once required to: a spelling that still resolves';
 COMMENT ON COLUMN graphitron_argmapping_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 CREATE INDEX graphitron_argmapping_landing_landing_ix
@@ -5792,10 +5792,12 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.targe
             ELSE lo.coordinate <> co.coordinate END,
        -- What a node id at the landing hands over. A key column named past it is that column, and
        -- only a node id has a name past it here. A payload key otherwise takes the id whole, as the
-       -- API's clients see it; a call parameter reached by descending onto it takes a key column, one
-       -- stopping on its slot the whole key.
+       -- API's clients see it, and a routine parameter one key column, a database function taking
+       -- one value per parameter; any other call parameter reached by descending onto it takes a key
+       -- column, one stopping on its slot the whole key.
        CASE WHEN s.consumed < s.segments THEN 'COLUMN'
             WHEN s.directive_name = 'outbox' THEN 'WHOLE'
+            WHEN s.directive_name = 'routine' THEN 'COLUMN'
             WHEN CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
                       ELSE lo.coordinate <> co.coordinate END THEN 'COLUMN'
             ELSE 'WHOLE' END
@@ -31950,7 +31952,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
    'The key column an argMapping path projects out of a @nodeId''s node has a jOOQ type that is not the type of the parameter of the @service or @condition method it goes to: declare the parameter with the column''s own type, boxed.'),
   ('ARGMAPPING_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_KEY_COLUMN_UNRESOLVED',
-   'An argMapping path past a @nodeId reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name a key column after the id, or end the path on the id: a parameter then takes the whole decoded key, an @outbox payload key the id as clients see it.'),
+   'An argMapping path past a @nodeId, or stopping on one at a @routine parameter, which takes one value, reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name a key column after the id, or end the path on the id: a @service or @condition parameter then takes the whole decoded key, an @outbox payload key the id as clients see it.'),
   ('NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINER_NOT_AT_A_SLOT',
    'A @nodeId(typeName:) names an interface or union, which an id decodes per member only into a @service parameter, and here the value reaches none: name one node type, or move the polymorphic id to the @service input.'),
   ('NODE_ID_SINGLE_TABLE_CONTAINER', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SINGLE_TABLE_CONTAINER',

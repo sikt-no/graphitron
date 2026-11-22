@@ -3,7 +3,9 @@
 # input object onto a @nodeId input field, projects one key column, named where it is written and
 # else the node's one-column key. filmsBySlot takes its slot by name, the whole key; filmsByNamed
 # names film_id past its slot; filmsByPicked descends through pick onto film, whose node has one key
-# column. The projection is a fact of the argMapping landing, and each fill a pair wrote states it.
+# column. A routine parameter takes one value, so a pair stopping on a node id at a @routine projects
+# one key column too: rentFilmBare's customerId is a Customer id, whose key is customer_id alone.
+# The projection is a fact of the argMapping landing, and each fill a pair wrote states it.
 
 interface Node { id: ID! }
 
@@ -11,6 +13,12 @@ type Film implements Node @table(name: "film") @node {
   id: ID!
   title: String
 }
+
+type Customer implements Node @table(name: "customer") @node {
+  id: ID!
+}
+
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
 input FilmPick { film: ID @nodeId(typeName: "Film") }
 
@@ -24,6 +32,12 @@ type Query {
   filmsByPicked(pick: FilmPick): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmIdKeyEquals", argMapping: "filmId: pick.film"}, override: true)
+}
+
+type Mutation {
+  rentFilmBare(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
 }
 
 # Whether each written path descends past the slot it opens, and so what it hands over.
@@ -48,4 +62,20 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair
   coordinate,          call,                  position, target_name
   Query.filmsByNamed,  condition:public.film, 1,        filmId
   Query.filmsByPicked, condition:public.film, 1,        filmId
+  """)
+
+# A pair stopping on the node id at a routine parameter takes one key column, as a descent does at
+# another call; the plain inventoryId beside it takes its value.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing",
+    where: "directive_name = 'routine'", rows: """
+  target_name,  landing_coordinate,                  trailing_name, descends, receives
+  pInventoryId, Mutation.rentFilmBare(inventoryId:), ,              FALSE,    COLUMN
+  pCustomerId,  Mutation.rentFilmBare(customerId:),  ,              FALSE,    COLUMN
+  """)
+
+# Customer's one key column, inferred where nothing past the id names one.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column",
+    where: "directive_name = 'routine'", rows: """
+  target_name, landing_coordinate,                 bound,           position
+  pCustomerId, Mutation.rentFilmBare(customerId:), public.customer, 0
   """)

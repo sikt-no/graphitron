@@ -751,7 +751,14 @@ static method needs no holder.
   `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
-  R1204's two blockers retire `intent_argmapping_projection_defect` on the way, its `UNDECLARED_NODE_ID` arm first.
+  R1204's first blocker retired `intent_argmapping_projection_defect`'s `UNDECLARED_NODE_ID` arm, and its second moves the
+  Mutation-root routine write off the view; the view and the author arms of `ArgmappingProjectionDefects` retire here,
+  with the store counterparts still missing for them: `NODE_ID_TARGET_UNRESOLVED`'s "nothing to take the node from"
+  arm is `SERVICE`-only, so an untyped `@nodeId` at a routine or a condition has none; a keyless node type; the
+  typing of a child routine's parameters; the list and unwired-site deferrals
+  (`ArgmappingProjectionDefects.unemittableProjections`); and the other readers of `intent_resolved_node_key_projection`,
+  the condition glue, the walk's Query-root and child routine launchers and `NodeIdDecodeCoverageFacts`. A composite id
+  feeding two routine parameters is decoded twice in the store-fed routine write; one shared local is a later refinement.
 * **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
 * **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
