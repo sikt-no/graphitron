@@ -978,20 +978,32 @@ static method needs no holder.
     `aSurvivingInputLeafNarrowsTheRoutineResult`), and the store's row is meant as that filter,
     the bound leaves being no filter term; the flip's run of that test is what confirms it.
     An authored call on a node id's table and one taking its key as a tuple or a projected column are
-    emitted. ConditionQuery still resolves a decode through `NodeIdDecodeQuery`, a query other emitters
-    read, rather than stating it in its own query. What is left: `AUTHORED_NODE_ID` where a one-column
-    key goes whole to a parameter of the column's type (`customersByAddressDistrict` and its siblings,
-    `stockByLanguageOverride`, whose node id also reaches neither participant's table by any path),
-    and `NODE_ID`, a generated term on a converter-backed or composite key, waiting on
-    `NodeIdDecodeQuery` resolving a decode for it. A participant's node ids are dispatched by the type
-    id each carries, each participant decoding only its own (`code-generation-triggers.adoc`, Alf
-    2026-11-14); an id naming no participant, or one whose type id does not read, is false on every
-    branch, so its client error is the fetcher's to raise at the flip, the walk's guard raising it
-    until then. The record-or-tuple rule at a `@condition` (Alf,
-    2026-11-14) waits on branch `wip/r876-condition-arity-at-flip` and ships when the walk no longer
-    renders conditions: a `@condition` on a `@nodeId` input field projecting its own key column is
-    the walk's deferral, which the store emits, so refusing the whole key before then leaves that
-    site, tilgangsstyring's `miljoer` among them, no shape that generates.
+    emitted, and so is every reason but one: the census's `AUTHORED_NODE_ID` line, five rows a
+    one-column key goes whole to a parameter of the column's type (`customersByAddressDistrict` and
+    its siblings) and two `stockByLanguageOverride` rows whose node id reaches neither participant's
+    table by any path. A participant's node ids are dispatched by the type id each carries, each
+    participant decoding only its own (`code-generation-triggers.adoc`, Alf 2026-11-14); an id naming
+    no participant, or one whose type id does not read, is false on every branch, so its client error
+    is the fetcher's to raise at the flip, the walk's guard raising it until then.
+    The flip swaps what renders the condition glue at its one render point,
+    `GraphQLRewriteGenerator`'s `writeUnits("condition glue", ...)`: every WHERE consumer keeps its
+    `ConditionGlueCall`, `<Parent>Conditions.<field>Condition(alias, args[, env][, dsl])` at the
+    `GeneratedUnits` address, and `ConditionEmitter` writes each unit's method from the store's row,
+    the main, participant, facet base and facet fragment methods alike, a row with nothing to
+    filter as `DSL.noCondition()`, no unit falling back to the classified model; a parity test holds
+    the store's methods and signatures to `plan.conditions()` until the walk's `ConditionCommands`
+    goes, and `ConditionGlueRenderer` and its render-only helpers go with it. Conditions flip on
+    their own, ahead of the root fetchers and the projection units, whose call sites the fixed
+    contract leaves unchanged (Alf, 2026-11-13: piece by piece, as the store states each piece
+    whole). Branch `c-conditions-flip` holds, unbuilt, the facet fragments (`3c4ee1d764`,
+    `ConditionQuery` stating each term's facet and a row's `facetBase()` and `facetOwn(facet)`) and
+    then the record-or-tuple rule at a `@condition` (`c40e0f55a5`, Alf 2026-11-14, `feat!`, 15
+    FS-plattform sites each fixed by one `argMapping` projection). The swap is next, and that rule
+    is squashed into it as one `feat!`: the rule writes the projected form only the store emits, so
+    without the swap the walk defers it, and without the rule the swap meets the five
+    `AUTHORED_NODE_ID` rows it cannot emit. The swap's last gap is `ConditionEmitter` emitting a
+    node-id call with an empty path on the row's own table, its key projected per the rule
+    (`stockByLanguageOverride`).
     * **An argument binds the call parameter it supplies** `open`. Each `ARGUMENT` fill is also a
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
@@ -999,8 +1011,9 @@ static method needs no holder.
   * **The root query fetchers are emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by C" and "Every list states its order or is refused".
     A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
-    off its occurrence, and flips in the same pass as `$project` and the
-    conditions, so every condition caller moves at once (Alf, 2026-11-08, 2026-11-13).
+    off its occurrence, and flips in the same pass as `$project` (Alf, 2026-11-08, 2026-11-13); the
+    conditions flip ahead of it on their own, its condition call reading the store's glue by the
+    name it calls today.
 * **A root's tenant is the input binding its table's tenant column, stated per producer** `open`, E's, off the critical path. A root's tenant is the argument or input field binding its table's
   tenant column (Alf, 2026-11-15), so the store derives it, for a root query as for a root
   service, and an author names `$tenant` only where nothing binds it: a plain value a service
