@@ -1,7 +1,7 @@
 ---
 id: R1204
 title: "A Path or TypeName argument is checked against the subgraph schema, and a routine binds the path's start and end types"
-status: In Review
+status: Ready
 bucket: feature
 priority: 1
 theme: mutation-write
@@ -212,3 +212,18 @@ Two things on trunk stand in the way, and each is its own commit ahead of the fe
 - **`@assertType` on plain strings**, either a `String` holding a type name or value conditions such as a pattern: rejected. A type name is what `TYPE_NAME` declares in the published schema, and value validation of strings is `graphql-java-extended-validation`'s directive set, which R98 adopts (Alf, 2026-11-22). `@assertType` keeps to conditions on the types a generated scalar's components name.
 - **Checking in the scalar's coercion** against a generated table of types and fields: rejected, since a failure there fails the whole request where `@error` cannot catch it, the scalar cannot see which argument's requirements apply, and the table would be a second copy of the schema.
 - **Checking in the database function**: the function would need the schema, which is what this item exists to avoid.
+
+## Reviewer findings
+
+### In Review → Done, round 1 (2026-11-22): rework
+
+**Question 3, correct and the approved change: passes.** The full verification build passes at `0e9227368`. Both blockers landed as planned: the trailing-name arm is gone from the deprecated family, and the routine write reads its fills from the store with `envArgumentRead` deleted. The feature matches the plan, and the retired vocabulary is gone from code and docs. `generatedScalar.adoc`, `assertType.adoc`, `service.adoc` and `routine.adoc` state the rules. The defect-document merge in `0e9227368` keeps all 25 asserted (code, coordinate) rows, with differences only from the listed renames.
+
+**Question 4, how we know the goal is delivered: one gap.** The goal's own example, and the canonical example on `generatedScalar.adoc`, bind a component through an input object's field: `input.mottakersti.endType`, with `@assertType` on the input field. No committed test binds `<argument>.<inputField>.<component>` at any tier. Every case in `scenarios/generated-scalar-call` and the defect documents binds a top-level argument (`path.startType`). The nested shape runs through different code from the flat one:
+- the decode's argument path comes from `graphitron_occurrence_argument_step`;
+- the `@assertType` lookup is keyed on an input-field coordinate;
+- the `whole`/`judged` arms of the bound-whole and undecoded rules reason about steps above the occurrence.
+
+A reviewer probe, a scratch scenario and execution test not committed, showed the shape works today. An input object `{ sti: Path! @assertType(...) }`, bound as `input.sti.text/startType/path/endType` by a root `@service` and by a Mutation-root `@routine`, drew none of the generated-scalar defects. Both calls received the components, both refused a failing value with `input.sti: the path's ...`, and the routine wrote nothing.
+
+To satisfy this, pin that shape in `scenarios/generated-scalar-call`, and in `GeneratedScalarCallExecutionTest` for both call kinds: an accepted value, an `@assertType` refusal naming `input.<field>`, and the routine writing nothing on a refusal. Nothing else is owed. The interface-ending case, the `GENERATED_SCALAR_COLUMN_NOT_TEXT` defect and the `UNDECODED` stand-aside are in.
