@@ -1,0 +1,5 @@
+Reported at the field returning the interface or union, once for each participant after the first by name on the shared table.
+
+A field returning an interface or union with no discriminator tells each row apart by the table it is a row of. Two participants on one table give rows of one record class, which neither the generated dispatch nor the combined read can assign to one of them. A node fetcher, a query field returning `Node`, tells its rows apart by the id's type id, and a `@service` by the records it returns, so neither is reported.
+
+*Next step.* Model the types as a single-table discriminated interface, a `@table` with `@discriminate` and a `@discriminator` on each type, or split the types so each is on a table of its own. See xref:directives/discriminate.adoc[`@discriminate`] and xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types].
