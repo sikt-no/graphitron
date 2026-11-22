@@ -17,12 +17,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnsOf;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.nodeIdSpelling;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The {@code @nodeId} key-projection rules for {@code argMapping}, projected from the store: an
@@ -92,7 +95,8 @@ public final class ArgmappingProjectionDefects {
      * one {@link NodeIdMessages#keyColumnsOf} names on its behalf.
      */
     public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
-        Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION));
+        Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION,
+            GRAPHQL_ROOT_OPERATION));
 
     /**
      * The sites whose emitters read a resolved key projection: a routine IN parameter and
@@ -324,17 +328,23 @@ public final class ArgmappingProjectionDefects {
         "int", "Integer", "long", "Long", "float", "Float", "double", "Double");
 
     /**
-     * The view's author arms, decoded, but the type mismatch at a {@code @service} parameter:
-     * the occurrence build judges that parameter against the shape the id decodes into, a {@code List}
-     * of the column for a list of ids, as {@code NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT}, and the view
-     * compares the column with the whole declared type.
+     * The view's author arms, decoded, but the type mismatch where the occurrence build judges the
+     * parameter against the shape the id decodes into, as {@code NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT}:
+     * a {@code @service} parameter, a field's or an argument's {@code @condition} parameter, and a
+     * root {@code @routine}'s, whose call the store fills. Reported here too it would be reported
+     * twice. A child routine's parameters are a path step's, which the build does not judge, so its
+     * mismatch stays here.
      */
     private static List<Defect> authorDefects(DSLContext dsl, String graphName) {
         var v = INTENT_ARGMAPPING_PROJECTION_DEFECT;
         return dsl.selectFrom(v)
-            // A @service parameter's type is the occurrence build's to judge, against the decode shape.
+            // These parameters' types are the occurrence build's to judge, against the decode shape.
             .where(v.GRAPH_NAME.eq(graphName), not(v.VERDICT.eq("KEY_COLUMN_TYPE_MISMATCH")
-                .and(v.DIRECTIVE_NAME.eq("service"))))
+                .and(v.DIRECTIVE_NAME.eq("service")
+                    .or(v.DIRECTIVE_NAME.eq("condition")
+                        .and(v.ELEMENT_KIND.isNotNull())
+                        .and(v.ELEMENT_KIND.in("FIELD_DEFINITION", "FIELD_ARGUMENT")))
+                    .or(atRootRoutine(v.GRAPH_NAME, v.DIRECTIVE_NAME, v.TYPE_NAME)))))
             .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.COORDINATE, v.ORDINAL, v.POSITION)
             .fetch(row -> {
                 var site = Site.of(row.getDirectiveName(), row.getElementKind());
@@ -371,7 +381,9 @@ public final class ArgmappingProjectionDefects {
                 p.TYPE_NAME, p.FIELD_NAME, p.POSITION, p.WRITTEN_PATH, p.NODE_TYPE_NAME,
                 p.LEAF_IS_LIST, p.TARGET_NAME, p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN)
             .from(p)
-            .where(p.GRAPH_NAME.eq(graphName))
+            // A list of ids at a root @routine is the occurrence build's stored deferral.
+            .where(p.GRAPH_NAME.eq(graphName), not(p.LEAF_IS_LIST.isNotDistinctFrom(true)
+                .and(atRootRoutine(p.GRAPH_NAME, p.DIRECTIVE_NAME, p.TYPE_NAME))))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.COORDINATE, p.ORDINAL, p.POSITION)
             .fetch()
             .stream()
@@ -409,6 +421,18 @@ public final class ArgmappingProjectionDefects {
      */
     private static boolean listDeferred(Boolean leafIsList, Site site) {
         return Boolean.TRUE.equals(leafIsList) && site != Site.SERVICE;
+    }
+
+    /**
+     * Whether a row's mapping is a root {@code @routine}'s: one written on a field of a root operation
+     * type, whose call the store fills and whose node-id parameters the occurrence build judges, a list
+     * of ids among them as {@code ROUTINE_NODE_ID_LIST_UNSUPPORTED}.
+     */
+    private static Condition atRootRoutine(Field<String> graphName, Field<String> directiveName,
+                                           Field<String> typeName) {
+        var r = GRAPHQL_ROOT_OPERATION;
+        return directiveName.eq("routine").and(exists(selectOne().from(r)
+            .where(r.GRAPH_NAME.eq(graphName), r.TYPE_NAME.eq(typeName))));
     }
 
     /**

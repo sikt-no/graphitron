@@ -1,0 +1,54 @@
+# What a root @routine's node-id parameter is refused for, judged at the parameter as a @service's
+# is: the decoded value lands on a position of the generated method the routine is called through,
+# whose class is the binding type the catalog states. noteByFilm projects film_id, an Integer, into
+# create_secure_note's String pOwner, refused at the @routine naming both types; rentFilmsByIds hands
+# a list of Customer ids to rent_film's one-value pCustomerId, which the routine write does not decode
+# into an array yet. rentFilmByCustomer projects customer_id into the Integer pCustomerId and is
+# refused for nothing, the near miss. A routine parameter taking a node id by the argument's name,
+# with no pair, is the whole-key refusal defects/node-id-decode-defect-slot-verdicts pins.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node { id: ID! }
+type Customer implements Node @table(name: "customer") @node { id: ID! }
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+type SecureNote @table(name: "secure_note") { noteId: Int! @field(name: "note_id") }
+
+type Query { rental: Rental }
+
+type Mutation {
+  noteByFilm(owner: ID! @nodeId(typeName: "Film"), note: String!): [SecureNote!]!
+    @routine(name: "create_secure_note", argMapping: "pOwner: owner, pNote: note")
+    @reference(path: [{table: "secure_note"}])
+  rentFilmsByIds(inventoryId: Int!, customerIds: [ID!]! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerIds")
+    @reference(path: [{table: "rental"}])
+  rentFilmByCustomer(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+}
+
+# Each refusal, the disagreement at the @routine and the list at the @nodeId; the near miss draws none.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'ROUTINE_NODE_ID_LIST_UNSUPPORTED',
+           'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_SLOT_SHAPE_MISMATCH')
+  """, rows: """
+  coordinate,                            code,                                 detail
+  Mutation.noteByFilm,                   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.lang.String: Declare it Integer"
+  Mutation.rentFilmsByIds(customerIds:), ROUTINE_NODE_ID_LIST_UNSUPPORTED,     pCustomerId
+  """)
+
+# Where each id lands: the routine parameter, at its binding type, one value or, for the list, in a
+# shape no list of ids fills.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows: """
+  coordinate,                               kind,      list_depth, slot_shape, landing_class
+  Mutation.noteByFilm(owner:),              PARAMETER, 0,          SINGLE,     java.lang.String
+  Mutation.rentFilmsByIds(customerIds:),    PARAMETER, 1,          MISMATCH,   java.lang.Integer
+  Mutation.rentFilmByCustomer(customerId:), PARAMETER, 0,          SINGLE,     java.lang.Integer
+  """)
+
+# Only the near miss lands, as the projected column's value.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape", rows: """
+  coordinate,                               bound,           decode_shape
+  Mutation.rentFilmByCustomer(customerId:), public.customer, KEY_VALUE
+  """)

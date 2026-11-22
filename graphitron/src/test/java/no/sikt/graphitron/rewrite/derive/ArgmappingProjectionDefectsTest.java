@@ -258,11 +258,12 @@ class ArgmappingProjectionDefectsTest {
     }
 
     /**
-     * A projection off a list of node ids defers where parameter binding does not build the list,
-     * and the deferral says it is the list: a routine IN parameter takes one value.
+     * A projection off a list of node ids at a root routine is not deferred here: the occurrence build
+     * judges a root routine's parameters and stores the deferral, {@code ROUTINE_NODE_ID_LIST_UNSUPPORTED},
+     * which {@code defects/routine-node-id-slot} pins, so reporting it here too would report it twice.
      */
     @Test
-    void aListProjectionDefersAtARoutine() {
+    void aListProjectionAtARootRoutineIsLeftToTheStore() {
         var violations = detect("""
             type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
                 id: ID! @nodeId
@@ -278,10 +279,9 @@ class ArgmappingProjectionDefectsTest {
             }
             """);
 
-        assertThat(violations).hasSize(1);
-        assertThat(violations.getFirst().rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(violations.getFirst().message())
-            .contains("opens a list of node ids, so it names the list of a key column of 'Inventory'");
+        assertThat(violations)
+            .as("the stored deferral speaks for a root routine's list, so nothing is minted here")
+            .isEmpty();
     }
 
     /** The same list at a {@code @service} parameter is built, one column per decoded id, so nothing defers. */

@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, the routine parameter named in the detail. Valid: a list of node ids is a legal argument, and a `@service` parameter takes it as a `List` of the key column it projects.
+
+A `@routine` parameter takes one value, or an array where the database function takes one, so a node id bound to it is decoded and one key column handed over. Graphitron does not yet decode a list of ids into an array of that column for a routine call.
+
+*Instead.* Take one id per call, or pass the list to a xref:directives/service.adoc[`@service`] that hands the routine its keys. See xref:directives/routine.adoc#node-id-key-projection[Projecting a key column out of a node id].

@@ -79,3 +79,21 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column"
   target_name, landing_coordinate,                 bound,           position
   pCustomerId, Mutation.rentFilmBare(customerId:), public.customer, 0
   """)
+
+# The routine parameter is the id's slot, at the binding type the catalog states, and takes the
+# projected column's value.
+extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", rows: """
+  coordinate,                         kind,      list_depth, slot_shape, landing_class
+  Mutation.rentFilmBare(customerId:), PARAMETER, 0,          SINGLE,     java.lang.Integer
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot_projection",
+    where: "call_coordinate = 'Mutation.rentFilmBare'", rows: """
+  call,     position, coordinate,                         bound,           key_position
+  producer, 1,        Mutation.rentFilmBare(customerId:), public.customer, 0
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
+  coordinate,                         bound,           decode_shape
+  Mutation.rentFilmBare(customerId:), public.customer, KEY_VALUE
+  """)

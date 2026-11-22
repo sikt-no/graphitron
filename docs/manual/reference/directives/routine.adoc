@@ -244,7 +244,7 @@ sits, an argument of the field (`pOrganisasjonskode: organisasjonId`) as much as
 one. Naming the column is then a matter of saying out loud what the build would infer, which is worth
 doing where the reader benefits.
 
-Three things are build errors rather than surprises at runtime:
+Four things are build errors rather than surprises at runtime, and one is not supported yet:
 
 * *Binding a `@nodeId` whose key is more than one column without saying which.* One binding carries
   one value, and nothing in `pOrganisasjonskode: input.organisasjonId` says which of the two it is.
@@ -260,6 +260,12 @@ Three things are build errors rather than surprises at runtime:
   parameter can take. The check needs both types: where the parameter's type cannot be resolved, a
   routine whose call surface was not captured, the build lets it through and your compiler is the
   backstop.
+* *A `@nodeId` argument a parameter takes by name, with no `argMapping` entry.* A parameter named
+  like the argument would receive the whole decoded key, and a routine parameter holds one value, so
+  the build refuses it (`NODE_ID_KEY_ARITY_EXCEEDS_SLOT`). Write the entry, `pCustomerId: customerId`,
+  and the key column is projected as above.
+* *A list of node ids* bound to a routine parameter is not decoded into an array of a key column yet
+  (`ROUTINE_NODE_ID_LIST_UNSUPPORTED`).
 
 An omitted node id is not one of them. A `@nodeId` the client leaves out, or sends as `null`, has
 nothing to decode, so the projection is `null` and the parameter receives `null`. That holds wherever

@@ -1,4 +1,4 @@
-Reported at the xref:directives/service.adoc[`@service`] or xref:directives/condition.adoc[`@condition`] reference, the detail naming the key column, its type and the type the parameter declares.
+Reported at the xref:directives/service.adoc[`@service`] or xref:directives/condition.adoc[`@condition`] reference, or at the xref:directives/routine.adoc[`@routine`], the detail naming the key column, its type and the type the parameter declares.
 
 An `argMapping` path opening a node id with one of its key columns hands that column's own decoded value to the parameter, compared without widening; for a list of ids it hands a `List` of the column's values. A parameter of another type cannot receive it.
 

@@ -300,10 +300,9 @@ class ArgmappingProjectionRejectionPipelineTest {
      * a scalar never resolves. It used to reach the consumer as a javac error inside generated code;
      * it fails the build here, naming both types.
      *
-     * <p>The message is pinned here in full rather than in the derive tier beside the other three
-     * verdicts, and the reason is the harness: {@code CapturedStore} captures SDL and no jOOQ
-     * catalog, so a projected column has no type there to compare. This is the tier with a catalog
-     * on both sides.
+     * <p>A root routine's parameters are the occurrence build's to judge, so the refusal is the
+     * stored {@code NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT} at the {@code @routine}, naming both types,
+     * and the projection family's own mismatch stands aside rather than reporting it twice.
      */
     @Test
     void aKeyColumnTheParameterCannotTakeFailsTheBuild(@TempDir Path tmp) throws IOException {
@@ -324,11 +323,11 @@ class ArgmappingProjectionRejectionPipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("the projected column's type and the parameter's are both named")
-                .contains("Field 'Mutation.rentFilm': @routine argMapping entry"
-                    + " 'pInventoryId: input.customerRef.first_name' at Mutation.rentFilm#0 projects"
-                    + " 'first_name' of 'Customer', which jOOQ binds as String, but the parameter it"
-                    + " binds to takes Integer; bind a parameter of the column's own type"));
+                .as("the projected column's type and the parameter's are both named, once")
+                .anyMatch(m -> m.contains("[NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT]")
+                    && m.contains("key column first_name is java.lang.String, and the parameter it"
+                        + " binds to is declared java.lang.Integer"))
+                .noneMatch(m -> m.contains("which jOOQ binds as String")));
     }
 
     /**
@@ -337,8 +336,8 @@ class ArgmappingProjectionRejectionPipelineTest {
      * one is inferred, and the type gate on it still fails the build. Without this case the arity
      * rule would read as trading a rejection for silence.
      *
-     * <p>The message names the inferred column rather than quoting a segment the author never wrote,
-     * and it offers only the one remedy: with one key column there is no other to project instead.
+     * <p>The stored refusal names the inferred column rather than quoting a segment the author never
+     * wrote, as the named case's does.
      */
     @Test
     void anInferredKeyColumnTheParameterCannotTakeFailsTheBuild(@TempDir Path tmp)
@@ -360,12 +359,11 @@ class ArgmappingProjectionRejectionPipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("the inferred column is named, and the second remedy has nothing to offer")
-                .contains("Field 'Mutation.rentFilm': @routine argMapping entry"
-                    + " 'pInventoryId: input.customerRef' at Mutation.rentFilm#0 binds the"
-                    + " @nodeId(typeName: \"Customer\"), whose key column 'first_name' jOOQ binds as"
-                    + " String, but the parameter it binds to takes Integer; bind a parameter of the"
-                    + " column's own type"));
+                .as("the inferred column is named, once")
+                .anyMatch(m -> m.contains("[NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT]")
+                    && m.contains("key column first_name is java.lang.String, and the parameter it"
+                        + " binds to is declared java.lang.Integer"))
+                .noneMatch(m -> m.contains("jOOQ binds as")));
     }
 
     /**

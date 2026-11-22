@@ -1,5 +1,5 @@
 Reported at the `@nodeId`, the detail naming the parameter or bean member.
 
-A decoded node id is the node's whole key, and graphitron never hands the opaque id string on. A whole key lands only on the node type's own generated record or on a jOOQ `RecordN` or `RowN` of the key's columns; a slot holding one value, such as `Integer` or `String`, is refused whatever the key's arity, and so is a class the classpath scan cannot name.
+A decoded node id is the node's whole key, and graphitron never hands the opaque id string on. A whole key lands only on the node type's own generated record or on a jOOQ `RecordN` or `RowN` of the key's columns; a slot holding one value, such as `Integer` or `String`, is refused whatever the key's arity, and so is a class the classpath scan cannot name. A `@routine` parameter always holds one value, so a node id it takes by the argument's name, with no `argMapping` entry, is refused the same way.
 
 *Next step.* Declare the parameter or member as the node's record or a tuple of its key columns' types, or take one key column with an `argMapping` entry such as `id: key.film_id`. See xref:directives/nodeId.adoc#named-parameter-decode[Decoding into a producer parameter named for the argument].

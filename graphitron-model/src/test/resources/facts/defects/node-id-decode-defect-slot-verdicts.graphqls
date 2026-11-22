@@ -1,7 +1,10 @@
 # A @nodeId argument whose decoded value reaches a Java parameter by name, judged at that parameter:
 # the whole key lands only on the node's own record or a tuple of its key, so it is refused at any
 # other class, on a tuple typed otherwise than the key, or on the slot's shape, and otherwise carried
-# out. One key column is taken by projecting it with argMapping. Each verdict sits beside the shapes
+# out. One key column is taken by projecting it with argMapping. A root @routine's parameter is
+# judged the same way, at the binding type the catalog states: one taken by the argument's name gets
+# the whole key and holds one value, refused, where a pair naming the same argument projects the key
+# column. Each verdict sits beside the shapes
 # that resolve, since the relation is the population the decode does not claim and an absence there
 # is a resolution.
 
@@ -22,6 +25,9 @@ type FilmActor @table(name: "film_actor") @node { filmId: Int @field(name: "film
 type Pinned @table(name: "language") @node(keyColumns: ["not_a_column"]) { name: String }
 
 type FilmDraftsCountedPayload { count: Int }
+
+type Customer @table(name: "customer") @node { customerId: Int @field(name: "customer_id") }
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
 "A film id built into a setter bean's String member, which holds one value."
 input FilmSurveyNoteInput { note: ID @nodeId(typeName: "Film") }
@@ -136,6 +142,17 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
 }
 
+type Mutation {
+  # A routine parameter named for the argument takes the whole key, and holds one Integer: refused.
+  rentFilmByName(pInventoryId: Int!, pCustomerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film")
+    @reference(path: [{table: "rental"}])
+  # A pair naming the same argument projects Customer's one key column into it instead.
+  rentFilmByPair(pInventoryId: Int!, pCustomerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pCustomerId: pCustomerId")
+    @reference(path: [{table: "rental"}])
+}
+
 # Each refusal is a defect at the @nodeId, the parameter it lands in as its detail; a projected key
 # column no shape fits is refused at the reference, naming the declaration that would take it.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
@@ -162,6 +179,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.filmActorByIds(ids:),     NODE_ID_SLOT_SHAPE_MISMATCH,          ids
   Query.untyped(ids:),            NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Query.untypedPairing(ids:),     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
+  Mutation.rentFilmByName(pCustomerId:), NODE_ID_KEY_ARITY_EXCEEDS_SLOT, pCustomerId
   Query.rateFilmsByProjection,    NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.util.List<no.sikt.graphitron.rewrite.test.services.FilmRating>: Declare it List<Integer>"
   """)
 
@@ -188,6 +206,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", r
   Query.filmByTuple(key:),    public.film,       RECORD_N
   Query.pairByTuple(key:),    public.film_actor, RECORD_N
   Query.pairsByRows(keys:),   public.film_actor, ROW_N
+  Mutation.rentFilmByPair(pCustomerId:), public.customer, KEY_VALUE
   """)
 
 # What a pair projects into its parameter: the key position of the column it names, the composite's
