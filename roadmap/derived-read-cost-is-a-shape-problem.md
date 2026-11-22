@@ -751,6 +751,7 @@ static method needs no holder.
   `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
+  R1204's two blockers retire `intent_argmapping_projection_defect` on the way, its `UNDECLARED_NODE_ID` arm first.
 * **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
 * **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
