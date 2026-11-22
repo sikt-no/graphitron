@@ -21,7 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * scenario {@code generated-scalar-call.graphqls} against the shared database: the value is decoded
  * against the schema the facade serves and checked against the argument's requirements before the
  * call, a root and a child {@code @service} and a routine write each receive the components their
- * argMapping names, and a wrong value is refused at the argument with nothing called. The services
+ * argMapping names, and a wrong value is refused at the argument with nothing called. A value read
+ * out of an input object, as opptak's {@code input.mottakersti} is, is decoded, checked and refused at
+ * its own path, one input object down as well as at the first. The services
  * hand back what they were given ({@link GeneratedScalarService}), and the routine writes it into an
  * endorsement's note.
  */
@@ -35,7 +37,8 @@ class GeneratedScalarCallExecutionTest {
     @AfterAll
     static void removeTheEndorsementsWritten() {
         TestDatabase.dsl().deleteFrom(DSL.table("film_endorsement"))
-            .where(DSL.field("note", String.class).in("Film.title|Film|title|String", "<null>|<null>|<null>|<null>"))
+            .where(DSL.field("note", String.class).in("Film.title|Film|title|String", "<null>|<null>|<null>|<null>",
+                "Query.films|Actor|films|String", "Film|<null>||<null>"))
             .execute();
     }
 
@@ -164,6 +167,73 @@ class GeneratedScalarCallExecutionTest {
             assertThat(error.getMessage()).contains("path: the path's endType `Actor` is not `Film`");
             assertThat(error.getPath()).containsExactly("films", 0, "refused");
         });
+    }
+
+    @Test
+    void componentsInsideAnInputObjectReachTheServiceFromTheirOwnPaths() {
+        assertThat(data("{ alongInput(input: {p: \"Query.films\", t: \"Actor\", inner: {p: \"Film.title\"}}) }")
+            .get("alongInput")).isEqualTo("Query.films|Query|films|Film|Actor|String");
+    }
+
+    @Test
+    void anAssertTypeOnAnInputFieldAcceptsAndRefusesNamingTheInputPath() {
+        assertThat(data("{ alongInput(input: {p: \"Film\"}) }").get("alongInput"))
+            .isEqualTo("Film|Film||Film|null|null");
+        assertRefused("{ alongInput(input: {p: \"Film.title\"}) }", "alongInput",
+            "input.p: the path's endType `String` is not `Film`");
+    }
+
+    @Test
+    void aWrongValueInsideAnInputObjectIsRefusedAtItsOwnPath() {
+        assertRefused("{ alongInput(input: {p: \"Film\", t: \"Nope\"}) }", "alongInput",
+            "input.t: Nope is no object type of this schema");
+        assertRefused("{ alongInput(input: {p: \"Film\", inner: {p: \"Film.nope\"}}) }", "alongInput",
+            "input.inner.p: Film has no field nope");
+    }
+
+    @Test
+    void aNullInputObjectOrANullFieldInsideOneHandsOverNulls() {
+        assertThat(data("{ alongInput(input: null) }").get("alongInput")).isEqualTo("null|null|null|null|null|null");
+        assertThat(data("{ alongInput(input: {p: null, t: null, inner: null}) }").get("alongInput"))
+            .isEqualTo("null|null|null|null|null|null");
+        assertThat(data("{ alongInput(input: {inner: {p: null}}) }").get("alongInput"))
+            .isEqualTo("null|null|null|null|null|null");
+        assertThat(data("{ alongInput(input: {inner: {}}) }").get("alongInput"))
+            .isEqualTo("null|null|null|null|null|null");
+    }
+
+    @Test
+    void aRoutineWriteReceivesComponentsReadOutOfAnInputObject() {
+        var data = data("mutation { endorseAlongInput(film: 1, input: {p: \"Query.films\", t: \"Actor\","
+            + " inner: {p: \"Film.title\"}}) { note } }");
+
+        assertThat((List<Map<String, Object>>) data.get("endorseAlongInput"))
+            .singleElement()
+            .satisfies(endorsement -> assertThat(endorsement.get("note")).isEqualTo("Query.films|Actor|films|String"));
+    }
+
+    @Test
+    void aRoutineWriteReceivesNullsForANullInputObjectOrANullFieldInsideOne() {
+        var whole = data("mutation { endorseAlongInput(film: 1, input: null) { note } }");
+        assertThat((List<Map<String, Object>>) whole.get("endorseAlongInput"))
+            .singleElement()
+            .satisfies(endorsement -> assertThat(endorsement.get("note")).isEqualTo("<null>|<null>|<null>|<null>"));
+
+        var inner = data("mutation { endorseAlongInput(film: 1, input: {p: \"Film\", inner: null}) { note } }");
+        assertThat((List<Map<String, Object>>) inner.get("endorseAlongInput"))
+            .singleElement()
+            .satisfies(endorsement -> assertThat(endorsement.get("note")).isEqualTo("Film|<null>||<null>"));
+    }
+
+    @Test
+    void aRoutineWriteIsNotCalledWithAValueAnInputFieldsAssertTypeRefuses() {
+        int before = endorsements();
+
+        var result = execute("mutation { endorseAlongInput(film: 1, input: {p: \"Film.title\"}) { note } }");
+
+        assertThat(result.getErrors()).anySatisfy(error ->
+            assertThat(error.getMessage()).contains("input.p: the path's endType `String` is not `Film`"));
+        assertThat(endorsements()).as("nothing was written").isEqualTo(before);
     }
 
     private static void assertRefused(String query, String field, String message) {

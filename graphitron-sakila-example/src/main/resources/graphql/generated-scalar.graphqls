@@ -3,7 +3,9 @@
 # GraphitronClientException, naming the argument, and a GENERIC handler naming that class claims it
 # into the payload's errors. On its own execution because the handler names the client exception
 # under this execution's output package. Every other case of a generated scalar's decode is
-# graphitron's GeneratedScalarCallExecutionTest, over a fact scenario.
+# graphitron's GeneratedScalarCallExecutionTest, over a fact scenario. Query.endTypeIn reads the
+# value out of an input object, as opptak's input.mottakersti does, so its refusal names the input
+# field's path.
 
 scalar Path @generatedScalar(kind: SCHEMA_PATH)
 
@@ -12,6 +14,13 @@ type Query {
     endType(path: Path @assertType(component: "endType", type: {is: "Film"})): EndTypePayload
         @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService",
             method: "endType", argMapping: "end: path.endType"})
+    endTypeIn(input: EndTypeInput): EndTypePayload
+        @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService",
+            method: "endType", argMapping: "end: input.p.endType"})
+}
+
+input EndTypeInput {
+    p: Path @assertType(component: "endType", type: {is: "Film"})
 }
 
 type Film @table(name: "film") {

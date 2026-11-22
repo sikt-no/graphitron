@@ -18,7 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the decode at the call refuses the value with the generated client exception, its message naming
  * the argument, and the payload's {@code GENERIC} handler naming that class claims it, so the field
  * answers the refusal as data rather than as a field error, and the service is not called. Generated
- * from {@code generated-scalar.graphqls} by its own execution.
+ * from {@code generated-scalar.graphqls} by its own execution. A value read out of an input object is
+ * refused naming the input field's path.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -34,9 +35,13 @@ class GeneratedScalarErrorRoutingExecutionTest {
     }
 
     private Map<String, Object> payload(String query) {
+        return payload(query, "endType");
+    }
+
+    private Map<String, Object> payload(String query, String field) {
         var result = graphql.execute(Graphitron.newExecutionInput(dsl).query(query).build());
         assertThat(result.getErrors()).as("a claimed refusal is data, not a field error").isEmpty();
-        return (Map<String, Object>) ((Map<String, Object>) result.getData()).get("endType");
+        return (Map<String, Object>) ((Map<String, Object>) result.getData()).get(field);
     }
 
     @Test
@@ -62,5 +67,24 @@ class GeneratedScalarErrorRoutingExecutionTest {
 
         assertThat((List<Map<String, Object>>) payload.get("errors")).singleElement().satisfies(error ->
             assertThat(error.get("message")).isEqualTo("path: Film has no field nope"));
+    }
+
+    @Test
+    void aValidPathInsideAnInputObjectReachesTheService() {
+        var payload = payload("{ endTypeIn(input: {p: \"Film\"}) { endType errors { ... on PathRefused { message } } } }",
+            "endTypeIn");
+
+        assertThat(payload.get("endType")).isEqualTo("Film");
+        assertThat((List<Object>) payload.get("errors")).isNullOrEmpty();
+    }
+
+    @Test
+    void aRefusedPathInsideAnInputObjectIsRoutedIntoThePayloadNamingTheInputPath() {
+        var payload = payload("{ endTypeIn(input: {p: \"Film.title\"}) { endType errors { ... on PathRefused { message } } } }",
+            "endTypeIn");
+
+        assertThat(payload.get("endType")).isNull();
+        assertThat((List<Map<String, Object>>) payload.get("errors")).singleElement().satisfies(error ->
+            assertThat(error.get("message")).isEqualTo("input.p: the path's endType `String` is not `Film`"));
     }
 }

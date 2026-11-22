@@ -21,6 +21,15 @@ public final class GeneratedScalarService {
         return text + "|" + start + "|" + steps + "|" + end;
     }
 
+    /**
+     * A path's four components, a type name's name and the end type of a path one input object
+     * further down, all read out of one input object, joined by bars in that order.
+     */
+    public static String alongInput(String text, String start, String steps, String end, String name,
+                                    String innerEnd) {
+        return along(text, start, steps, end) + "|" + name + "|" + innerEnd;
+    }
+
     /** Per film key, the start and end types of the path one field was given, joined by an arrow. */
     public static Map<Record1<Integer>, String> alongForFilms(Set<Record1<Integer>> filmIds, String start,
                                                               String end) {

@@ -6,7 +6,10 @@
 # Query.named takes a TYPE_NAME's name; Film.ends is a child service taking components, decoded in
 # its fetcher before it loads; Mutation.endorseAlong a routine write taking them. Query.occupants
 # reaches a union, which a path cannot step past, and Query.node the Node interface, where a path may
-# end and which alongToNode requires its end to implement. Generated for graphitron's
+# end and which alongToNode requires its end to implement. Query.alongInput and
+# Mutation.endorseAlongInput take their components out of an input object, as opptak's
+# input.mottakersti does: a path carrying its own @assertType, a type name, and a path one input
+# object further down, each decoded and checked at its own path. Generated for graphitron's
 # GeneratedScalarCallExecutionTest.
 
 scalar Path @generatedScalar(kind: SCHEMA_PATH)
@@ -48,6 +51,22 @@ type Staff @table(name: "staff") {
 "Whoever occupies an address."
 union Occupant = Customer | Staff
 
+"A path ending at a film, a type name and a path one input object further down."
+input PathInput {
+  "A path, which must end at a film."
+  p: Path @assertType(component: "endType", type: {is: "Film"})
+  "A type name."
+  t: TypeName
+  "The input object one level down."
+  inner: InnerInput
+}
+
+"The input object one level down, holding a path of its own."
+input InnerInput {
+  "A path."
+  p: Path
+}
+
 "A film endorsement, read from the film_endorsement table."
 type FilmEndorsement @table(name: "film_endorsement") {
   "What the endorsement says, here what the routine was handed."
@@ -87,6 +106,9 @@ type Query {
   "The components of a path ending at a film or an actor, but not at an actor."
   alongNested(path: Path @assertType(component: "endType", type: {allOf: [{anyOf: [{is: "Film"}, {is: "Actor"}]}, {not: {is: "Actor"}}]})): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The components of the path, the type name and the deeper path's end, all read out of the input."
+  alongInput(input: PathInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "alongInput", argMapping: "text: input.p.text, start: input.p.startType, steps: input.p.path, end: input.p.endType, name: input.t.name, innerEnd: input.inner.p.endType"})
   "The type name it is given, handed back by a service echoing its marker."
   named(type: TypeName): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "noDatabase", argMapping: "marker: type.name"})
@@ -97,6 +119,10 @@ type Mutation {
   endorseAlong(film: Int!, path: Path): [FilmEndorsement!]!
     @routine(name: "endorse_film_along_path", argMapping: "pEndorsedFilm: film, pText: path.text, pStart: path.startType, pPath: path.path, pEnd: path.endType")
     @reference(path: [{table: "film_endorsement"}])
+  "Endorses a film with a note recording components read out of the input it is given."
+  endorseAlongInput(film: Int!, input: PathInput): [FilmEndorsement!]!
+    @routine(name: "endorse_film_along_path", argMapping: "pEndorsedFilm: film, pText: input.p.text, pStart: input.t.name, pPath: input.p.path, pEnd: input.inner.p.endType")
+    @reference(path: [{table: "film_endorsement"}])
 }
 
 extend schema @assertContains(relation: "graphitron_argmapping_landing", rows: """
@@ -106,4 +132,9 @@ extend schema @assertContains(relation: "graphitron_argmapping_landing", rows: "
   Query.named,           marker,      Query.named(type:),          name,          COMPONENT
   Film.ends,             end,         Film.ends(path:),            endType,       COMPONENT
   Mutation.endorseAlong, pEnd,        Mutation.endorseAlong(path:), endType,      COMPONENT
+  Query.alongInput,      start,       Query.alongInput(input.p:),  startType,     COMPONENT
+  Query.alongInput,      name,        Query.alongInput(input.t:),  name,          COMPONENT
+  Query.alongInput,      innerEnd,    Query.alongInput(input.inner.p:), endType,  COMPONENT
+  Mutation.endorseAlongInput, pStart, Mutation.endorseAlongInput(input.t:), name, COMPONENT
+  Mutation.endorseAlongInput, pEnd,   Mutation.endorseAlongInput(input.inner.p:), endType, COMPONENT
   """)

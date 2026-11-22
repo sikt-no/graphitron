@@ -4,7 +4,8 @@
 #   scalar's own occurrence and hands over that component, whether the scalar is an argument
 #   (Query.start, Query.named) or an input field below one (Query.nested). Any other name opens
 #   nothing and is refused at the mapping string, as a name past a String is: a misspelt component
-#   (Query.misspelt) and a component of another kind (Query.otherKind), which write no landing.
+#   (Query.misspelt), the same below an input object (Query.misspeltNested) and a component of
+#   another kind (Query.otherKind), which write no landing.
 # - PARAMETER_MISMATCH: the parameter takes the component's class, a String for every component
 #   today, at a @service and at a root @routine. A service parameter of another class, an int
 #   (Query.asInt), a Long (Query.asLong) or a list of strings (Query.asList), is a mismatch, as is
@@ -26,6 +27,7 @@ type Query {
   named(type: TypeName): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: type.name"})
   # A misspelt component, and one a TYPE_NAME does not have.
   misspelt(path: Path): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: path.startTyp"})
+  misspeltNested(route: Route): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: route.sti.startTyp"})
   otherKind(type: TypeName): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: type.startType"})
   asString(path: Path): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.startType"})
@@ -53,7 +55,7 @@ type Mutation {
 
 # The landing case's calls, every landing they write; the mismatch case's calls land too, outside it.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing",
-    where: "call_coordinate IN ('Query.start', 'Query.nested', 'Query.named', 'Query.misspelt', 'Query.otherKind')", rows: """
+    where: "call_coordinate IN ('Query.start', 'Query.nested', 'Query.named', 'Query.misspelt', 'Query.misspeltNested', 'Query.otherKind')", rows: """
   call_coordinate, target_name, landing_coordinate,          trailing_name, receives
   Query.nested,    p,           Query.nested(route.sti:),    endType,       COMPONENT
   Query.nested,    q,           Query.nested(route.sti:),    text,          COMPONENT
@@ -64,6 +66,7 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing",
 extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
   code,                       detail
   ARGMAPPING_PATH_UNRESOLVED, path.startTyp
+  ARGMAPPING_PATH_UNRESOLVED, route.sti.startTyp
   ARGMAPPING_PATH_UNRESOLVED, type.startType
   """)
 
