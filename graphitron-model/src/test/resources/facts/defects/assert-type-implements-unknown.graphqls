@@ -1,0 +1,19 @@
+# An implements condition naming no interface of this subgraph: an object type, Sak, is no interface
+# to implement. Refused at the condition, nested here under a not. The near miss names Node, which
+# the schema declares as an interface.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+interface Node { id: ID! }
+
+type Sak implements Node { id: ID! }
+
+type Query {
+  object(path: Path @assertType(component: "startType", type: {not: {implements: "Sak"}})): String
+  iface(path: Path @assertType(component: "startType", type: {implements: "Node"})): String
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'ASSERT_TYPE_%'", rows: """
+  code,                           coordinate,          detail
+  ASSERT_TYPE_IMPLEMENTS_UNKNOWN, Query.object(path:), Sak
+  """)

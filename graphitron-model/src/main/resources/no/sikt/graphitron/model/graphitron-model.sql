@@ -10188,6 +10188,253 @@ COMMENT ON VIEW graphitron_scalar_class_rule IS 'One row the scalar class rule c
 -- COMMENT ON COLUMN graphitron_scalar_class_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_scalar_class.java_class';
 -- COMMENT ON COLUMN graphitron_scalar_class_rule.source IS 'the source of a row of this rule, which the stage writes into graphitron_scalar_class.source';
 
+-- What an @assertType requires, as a tree keyed by the declaration it is written on: the requirement
+-- holds once per argument or input field, not per occurrence, and the condition beneath it is one
+-- row per node, named by its path from the root rather than by where it was written, so an edit
+-- elsewhere in the file moves no key. Decoded from the transcription's value tree, which already
+-- holds every written literal; nothing positional is captured twice.
+CREATE TABLE graphitron_assert_type (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  ordinal    INT       NOT NULL,
+  component  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, ordinal),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_element (graph_name, coordinate) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_assert_type IS 'One @assertType written on an argument or input field, with the component of the value it is about: one row per element and application. For example mottakersti: Path! @assertType(component: "endType", type: {is: "Soker"}) on an input field gives the row (OpprettUtsendingInput.mottakersti, 0, endType).';
+COMMENT ON COLUMN graphitron_assert_type.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_assert_type.coordinate IS 'the argument or input field the requirement is written on, spelled as graphitron_element spells it: Type.field(argument:) for an argument, Input.field for an input field';
+COMMENT ON COLUMN graphitron_assert_type.ordinal IS 'which of the element''s @assertType applications this is, numbered from zero in the order graphql_directive_application numbers them; the directive repeats, and every one must hold';
+COMMENT ON COLUMN graphitron_assert_type.component IS 'the component argument as written, the name of one component of the value whose type the condition judges. Whether the element''s scalar has such a component is the ASSERT_TYPE_COMPONENT_UNKNOWN rule''s question, not this column''s, so a misspelt one is a row and a defect rather than an absence';
+COMMENT ON COLUMN graphitron_assert_type.touched_at IS 'when the reading that derived this row ran; the assert-types stage deletes the graph''s rows a reading did not mark';
+
+CREATE TABLE graphitron_assert_type_node (
+  graph_name    VARCHAR   NOT NULL,
+  coordinate    VARCHAR   NOT NULL,
+  ordinal       INT       NOT NULL,
+  node_path     VARCHAR   NOT NULL,
+  parent_path   VARCHAR,
+  operator      VARCHAR   NOT NULL,
+  type_name     VARCHAR,
+  source_name   VARCHAR   NOT NULL,
+  source_line   INT       NOT NULL,
+  source_column INT       NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, ordinal, node_path),
+  FOREIGN KEY (graph_name, coordinate, ordinal)
+    REFERENCES graphitron_assert_type (graph_name, coordinate, ordinal) ON DELETE CASCADE,
+  CHECK (operator IN ('IS', 'IMPLEMENTS', 'ANY_OF', 'ALL_OF', 'NOT')),
+  -- Only an atom names a type; a combinator holds conditions, its children.
+  CHECK (operator IN ('IS', 'IMPLEMENTS') OR type_name IS NULL),
+  -- The root is the condition the type: argument holds, and every other node sits under one.
+  CHECK ((parent_path IS NULL) = (node_path = '0'))
+);
+COMMENT ON TABLE graphitron_assert_type_node IS 'One condition node of an @assertType''s requirement, with its operator and, for an atom, the type it names: one row per requirement and node. For example type: {anyOf: [{is: "Sak"}, {not: {implements: "Node"}}]} gives 0 ANY_OF, 0.anyOf.0 IS Sak, 0.anyOf.1 NOT and 0.anyOf.1.not IMPLEMENTS Node.';
+COMMENT ON COLUMN graphitron_assert_type_node.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_assert_type_node.coordinate IS 'the element the requirement is written on; with the ordinal, the requirement';
+COMMENT ON COLUMN graphitron_assert_type_node.ordinal IS 'which of the element''s @assertType applications the node belongs to';
+COMMENT ON COLUMN graphitron_assert_type_node.node_path IS 'the node''s place in its tree, by names: 0 for the root, then for each step down the TypeCondition field taken and, under anyOf or allOf, the element''s index, as in 0.anyOf.1.not. Keyed by name rather than by where the node was written, so the key holds across an edit that moves the text';
+COMMENT ON COLUMN graphitron_assert_type_node.parent_path IS 'the node_path of the combinator this node sits under, NULL exactly at the root. No foreign key back into this relation: the stage writes a tree in one statement, and the path itself already says which row is the parent';
+COMMENT ON COLUMN graphitron_assert_type_node.operator IS 'which TypeCondition field the node sets: IS and IMPLEMENTS are atoms naming a type, ANY_OF, ALL_OF and NOT combine the nodes beneath. A condition setting no field or two is no node: graphql-java refuses such a @oneOf literal, which is the defect';
+COMMENT ON COLUMN graphitron_assert_type_node.type_name IS 'the type an atom names, as written; NULL on a combinator and on an atom written {is: null}, which names nothing and is refused as naming no type';
+COMMENT ON COLUMN graphitron_assert_type_node.source_name IS 'the file the node''s condition was written in, where a defect about it points; carried, not keyed';
+COMMENT ON COLUMN graphitron_assert_type_node.source_line IS 'the line of the condition''s object literal, 1-based';
+COMMENT ON COLUMN graphitron_assert_type_node.source_column IS 'its column, 1-based';
+COMMENT ON COLUMN graphitron_assert_type_node.touched_at IS 'when the reading that derived this row ran; the assert-types stage deletes the graph''s rows a reading did not mark';
+
+-- An @assertType on an argument or input field with its component written as a string. A
+-- directive definition's argument has no element the generator emits and is not read.
+CREATE VIEW graphitron_assert_type_rule (graph_name, coordinate, ordinal, component) AS
+SELECT da.graph_name, da.coordinate, da.ordinal, cv.written_text
+  FROM graphql_directive_application da
+  JOIN graphitron_element el
+    ON el.graph_name = da.graph_name AND el.coordinate = da.coordinate
+   AND el.element_kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+  JOIN graphql_ast_applied_argument_entry ca
+    ON ca.graph_name = da.graph_name AND ca.source_name = da.source_name
+   AND ca.parent_line = da.source_line AND ca.parent_column = da.source_column
+   AND ca.name = 'component'
+  JOIN graphql_ast_value_entry cv
+    ON cv.graph_name = ca.graph_name AND cv.source_name = ca.source_name
+   AND cv.holder_line = ca.source_line AND cv.holder_column = ca.source_column
+   AND cv.parent_line IS NULL
+ WHERE da.directive_name = 'assertType' AND cv.kind = 'STRING';
+COMMENT ON VIEW graphitron_assert_type_rule IS 'One row the assert type rule computes, in the shape graphitron_assert_type stores: the rule itself, evaluated on demand rather than read off disk. For example the assert-types stage inserts this view''s rows for one graph into graphitron_assert_type, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_assert_type_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_assert_type.graph_name';
+-- COMMENT ON COLUMN graphitron_assert_type_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_assert_type.coordinate';
+-- COMMENT ON COLUMN graphitron_assert_type_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_assert_type.ordinal';
+-- COMMENT ON COLUMN graphitron_assert_type_rule.component IS 'the component of a row of this rule, which the stage writes into graphitron_assert_type.component';
+
+-- The condition tree beneath each requirement the rule above states, walked down the value tree
+-- from the type: argument's literal.
+CREATE VIEW graphitron_assert_type_node_rule
+  (graph_name, coordinate, ordinal, node_path, parent_path, operator, type_name,
+   source_name, source_line, source_column) AS
+WITH RECURSIVE
+-- Each condition written under an @assertType's type: argument, an object literal setting exactly one
+-- of TypeCondition's fields, with that field's value. One setting none or two is no condition.
+cond (graph_name, source_name, source_line, source_column, field_name, field_line, field_column,
+      field_kind, field_text) AS (
+  SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
+         f.object_field_name, f.source_line, f.source_column, f.kind, f.written_text
+    FROM graphql_ast_value_entry o
+    JOIN graphql_ast_applied_argument_entry a
+      ON a.graph_name = o.graph_name AND a.source_name = o.source_name
+     AND a.source_line = o.holder_line AND a.source_column = o.holder_column AND a.name = 'type'
+    JOIN graphql_ast_directive_application_entry d
+      ON d.graph_name = a.graph_name AND d.source_name = a.source_name
+     AND d.source_line = a.parent_line AND d.source_column = a.parent_column AND d.name = 'assertType'
+    JOIN graphql_ast_value_entry f
+      ON f.graph_name = o.graph_name AND f.source_name = o.source_name
+     AND f.parent_line = o.source_line AND f.parent_column = o.source_column
+   WHERE o.kind = 'OBJECT'
+     AND f.object_field_name IN ('is', 'implements', 'anyOf', 'allOf', 'not')
+     AND NOT EXISTS (SELECT 1 FROM graphql_ast_value_entry g
+                      WHERE g.graph_name = o.graph_name AND g.source_name = o.source_name
+                        AND g.parent_line = o.source_line AND g.parent_column = o.source_column
+                        AND g.object_field_name IS NOT NULL
+                        AND NOT (g.source_line = f.source_line AND g.source_column = f.source_column))
+),
+-- One step down from a combinator to a condition beneath it, named by the field taken and, under
+-- anyOf or allOf, the element's index. A lone condition written where a list belongs is the list of
+-- one the specification coerces it to.
+step (graph_name, source_name, parent_line, parent_column, child_line, child_column, segment) AS (
+  SELECT c.graph_name, c.source_name, c.source_line, c.source_column, c.field_line, c.field_column,
+         CAST('not' AS VARCHAR)
+    FROM cond c
+   WHERE c.field_name = 'not' AND c.field_kind = 'OBJECT'
+  UNION ALL
+  SELECT c.graph_name, c.source_name, c.source_line, c.source_column, e.source_line, e.source_column,
+         c.field_name || '.' || CAST(e.position AS VARCHAR)
+    FROM cond c
+    JOIN graphql_ast_value_entry e
+      ON e.graph_name = c.graph_name AND e.source_name = c.source_name
+     AND e.parent_line = c.field_line AND e.parent_column = c.field_column
+   WHERE c.field_name IN ('anyOf', 'allOf') AND c.field_kind = 'LIST' AND e.kind = 'OBJECT'
+  UNION ALL
+  SELECT c.graph_name, c.source_name, c.source_line, c.source_column, c.field_line, c.field_column,
+         c.field_name || '.0'
+    FROM cond c
+   WHERE c.field_name IN ('anyOf', 'allOf') AND c.field_kind = 'OBJECT'
+),
+-- The tree: the type: literal of each requirement graphitron_assert_type_rule states, then every
+-- condition one step beneath a node already reached.
+tree (graph_name, coordinate, ordinal, node_path, parent_path, source_name, source_line,
+      source_column) AS (
+  SELECT da.graph_name, da.coordinate, da.ordinal, CAST('0' AS VARCHAR), CAST(NULL AS VARCHAR),
+         tv.source_name, tv.source_line, tv.source_column
+    FROM graphql_directive_application da
+    JOIN graphitron_element el
+      ON el.graph_name = da.graph_name AND el.coordinate = da.coordinate
+     AND el.element_kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+    JOIN graphql_ast_applied_argument_entry ta
+      ON ta.graph_name = da.graph_name AND ta.source_name = da.source_name
+     AND ta.parent_line = da.source_line AND ta.parent_column = da.source_column AND ta.name = 'type'
+    JOIN graphql_ast_value_entry tv
+      ON tv.graph_name = ta.graph_name AND tv.source_name = ta.source_name
+     AND tv.holder_line = ta.source_line AND tv.holder_column = ta.source_column
+     AND tv.parent_line IS NULL
+   WHERE da.directive_name = 'assertType' AND tv.kind = 'OBJECT'
+     -- the requirement itself is a row, its component written as a string
+     AND EXISTS (SELECT 1 FROM graphql_ast_applied_argument_entry ca
+                   JOIN graphql_ast_value_entry cv
+                     ON cv.graph_name = ca.graph_name AND cv.source_name = ca.source_name
+                    AND cv.holder_line = ca.source_line AND cv.holder_column = ca.source_column
+                    AND cv.parent_line IS NULL
+                  WHERE ca.graph_name = da.graph_name AND ca.source_name = da.source_name
+                    AND ca.parent_line = da.source_line AND ca.parent_column = da.source_column
+                    AND ca.name = 'component' AND cv.kind = 'STRING')
+  UNION ALL
+  SELECT t.graph_name, t.coordinate, t.ordinal, t.node_path || '.' || s.segment, t.node_path,
+         t.source_name, s.child_line, s.child_column
+    FROM tree t
+    JOIN step s
+      ON s.graph_name = t.graph_name AND s.source_name = t.source_name
+     AND s.parent_line = t.source_line AND s.parent_column = t.source_column
+)
+SELECT t.graph_name, t.coordinate, t.ordinal, t.node_path, t.parent_path,
+       CASE c.field_name WHEN 'is' THEN 'IS' WHEN 'implements' THEN 'IMPLEMENTS'
+                         WHEN 'anyOf' THEN 'ANY_OF' WHEN 'allOf' THEN 'ALL_OF' ELSE 'NOT' END,
+       CASE WHEN c.field_name IN ('is', 'implements') THEN c.field_text END,
+       t.source_name, t.source_line, t.source_column
+  FROM tree t
+  JOIN cond c
+    ON c.graph_name = t.graph_name AND c.source_name = t.source_name
+   AND c.source_line = t.source_line AND c.source_column = t.source_column;
+COMMENT ON VIEW graphitron_assert_type_node_rule IS 'One row the assert type node rule computes, in the shape graphitron_assert_type_node stores: the rule itself, evaluated on demand rather than read off disk. For example the assert-types stage inserts this view''s rows for one graph into graphitron_assert_type_node, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_assert_type_node.graph_name';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_assert_type_node.coordinate';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_assert_type_node.ordinal';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.node_path IS 'the node_path of a row of this rule, which the stage writes into graphitron_assert_type_node.node_path';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.parent_path IS 'the parent_path of a row of this rule, which the stage writes into graphitron_assert_type_node.parent_path';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.operator IS 'the operator of a row of this rule, which the stage writes into graphitron_assert_type_node.operator';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_assert_type_node.type_name';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_assert_type_node.source_name';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_assert_type_node.source_line';
+-- COMMENT ON COLUMN graphitron_assert_type_node_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_assert_type_node.source_column';
+
+-- The assert-types stage's own defects, over the requirements it has just stored: what a requirement
+-- names that its element or this subgraph does not have.
+CREATE VIEW graphitron_assert_type_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- Each requirement at its application, with the type of the element it is on and, where that type
+-- is a generated scalar, its kind.
+WITH asserted (graph_name, coordinate, ordinal, component, source_name, source_line, source_column,
+               named_type, kind) AS (
+  SELECT a.graph_name, a.coordinate, a.ordinal, a.component, da.source_name, da.source_line,
+         da.source_column, COALESCE(ga.named_type, gf.named_type), g.kind
+    FROM graphitron_assert_type a
+    JOIN graphql_directive_application da
+      ON da.graph_name = a.graph_name AND da.coordinate = a.coordinate
+     AND da.directive_name = 'assertType' AND da.ordinal = a.ordinal
+    LEFT JOIN graphitron_argument ga ON ga.graph_name = a.graph_name AND ga.coordinate = a.coordinate
+    LEFT JOIN graphitron_field gf ON gf.graph_name = a.graph_name AND gf.coordinate = a.coordinate
+    LEFT JOIN (SELECT gd.graph_name, gd.coordinate, ge.kind
+                 FROM graphql_directive_application gd
+                 JOIN graphitron_ast_generated_scalar_entry ge
+                   ON ge.graph_name = gd.graph_name AND ge.source_name = gd.source_name
+                  AND ge.source_line = gd.source_line AND ge.source_column = gd.source_column
+                WHERE gd.directive_name = 'generatedScalar' AND gd.ordinal = 0) g
+      ON g.graph_name = a.graph_name AND g.coordinate = COALESCE(ga.named_type, gf.named_type)
+)
+-- A requirement on an element whose type Graphitron does not generate: there is no value decoded
+-- into components for it to judge. The detail is the element's type.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
+       'ASSERT_TYPE_ELEMENT_NOT_GENERATED', s.named_type, 'assert-types'
+  FROM asserted s
+ WHERE s.kind IS NULL
+UNION ALL
+-- A component its scalar's kind does not decode a value into. The detail is the component as
+-- written.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
+       'ASSERT_TYPE_COMPONENT_UNKNOWN', s.component, 'assert-types'
+  FROM asserted s
+ WHERE s.kind IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_generated_scalar_component c
+                    WHERE c.kind = s.kind AND c.component = s.component)
+UNION ALL
+-- An is naming no object, interface or union of this subgraph, or nothing at all, at the condition
+-- that names it. The detail is the name as written, NULL for {is: null}.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'ASSERT_TYPE_IS_UNKNOWN', n.type_name, 'assert-types'
+  FROM graphitron_assert_type_node n
+ WHERE n.operator = 'IS'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type t
+                    WHERE t.graph_name = n.graph_name AND t.type_name = n.type_name
+                      AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION'))
+UNION ALL
+-- An implements naming no interface of this subgraph, or nothing at all, on the same terms.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'ASSERT_TYPE_IMPLEMENTS_UNKNOWN', n.type_name, 'assert-types'
+  FROM graphitron_assert_type_node n
+ WHERE n.operator = 'IMPLEMENTS'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type t
+                    WHERE t.graph_name = n.graph_name AND t.type_name = n.type_name
+                      AND t.kind = 'INTERFACE');
+COMMENT ON VIEW graphitron_assert_type_entry_defect_rule IS 'One row the assert-types stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example @assertType(component: "end", type: {is: "Soker"}) on a Path argument gives one ASSERT_TYPE_COMPONENT_UNKNOWN row at the @assertType.';
+
 CREATE TABLE graphitron_occurrence_input_type (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -30243,39 +30490,40 @@ INSERT INTO meta_stage VALUES
   ('directive-applications', 'graphitron', 12, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
   ('federation-imports', 'graphitron', 13, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
   ('federation-vocabulary', 'graphitron', 14, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
-  ('call-parameter-tables', 'graphitron', 15, 'no.sikt.graphitron.model.derive.CallParameterTables'),
-  ('tenant-columns', 'graphitron', 16, 'no.sikt.graphitron.model.derive.TenantColumns'),
-  ('argmapping-candidates', 'graphitron', 17, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
-  ('node-key-columns', 'graphitron', 18, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
-  ('node-legacy-key-shapes', 'graphitron', 19, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
-  ('field-targets', 'graphitron', 20, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
-  ('producer-claims', 'graphitron', 21, 'no.sikt.graphitron.model.derive.ProducerClaims'),
-  ('binding-claims', 'graphitron', 22, 'no.sikt.graphitron.model.derive.BindingClaims'),
-  ('type-claims', 'graphitron', 23, 'no.sikt.graphitron.model.derive.TypeClaims'),
-  ('spelled-tables', 'graphitron', 24, 'no.sikt.graphitron.model.derive.SpelledTables'),
-  ('path-elements', 'graphitron', 25, 'no.sikt.graphitron.model.derive.PathElements'),
-  ('routine-results', 'graphitron', 26, 'no.sikt.graphitron.model.derive.RoutineResults'),
-  ('occurrences', 'graphitron', 27, 'no.sikt.graphitron.model.derive.Occurrences'),
-  ('argmapping-landings', 'graphitron', 28, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
-  ('path-claims', 'graphitron', 29, 'no.sikt.graphitron.model.derive.PathClaims'),
-  ('type-backings', 'graphitron', 30, 'no.sikt.graphitron.model.derive.TypeBackings'),
-  ('fetchers', 'graphitron', 31, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('occurrence-participants', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-lists', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
-  ('occurrence-overrides', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
-  ('occurrence-producers', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
-  ('occurrence-source-claims', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
-  ('occurrence-depths', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-bindings', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
-  ('occurrence-lookup-keys', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceLookupKeys'),
-  ('occurrence-orderings', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceOrderings'),
-  ('occurrence-builds', 'graphitron', 41, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-tenants', 'graphitron', 42, 'no.sikt.graphitron.model.derive.OccurrenceTenants'),
-  ('occurrence-routes', 'graphitron', 43, 'no.sikt.graphitron.model.derive.OccurrenceRoutes'),
-  ('occurrence-depth-defects', 'graphitron', 44, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 45, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 46, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 47, 'no.sikt.graphitron.model.derive.Outboxes');
+  ('assert-types', 'graphitron', 15, 'no.sikt.graphitron.model.derive.AssertTypes'),
+  ('call-parameter-tables', 'graphitron', 16, 'no.sikt.graphitron.model.derive.CallParameterTables'),
+  ('tenant-columns', 'graphitron', 17, 'no.sikt.graphitron.model.derive.TenantColumns'),
+  ('argmapping-candidates', 'graphitron', 18, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
+  ('node-key-columns', 'graphitron', 19, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
+  ('node-legacy-key-shapes', 'graphitron', 20, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
+  ('field-targets', 'graphitron', 21, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 22, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 23, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 24, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 25, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 26, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 27, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 28, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 29, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 30, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 31, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 32, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('occurrence-participants', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-lists', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
+  ('occurrence-overrides', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
+  ('occurrence-producers', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
+  ('occurrence-source-claims', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
+  ('occurrence-depths', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-bindings', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
+  ('occurrence-lookup-keys', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceLookupKeys'),
+  ('occurrence-orderings', 'graphitron', 41, 'no.sikt.graphitron.model.derive.OccurrenceOrderings'),
+  ('occurrence-builds', 'graphitron', 42, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-tenants', 'graphitron', 43, 'no.sikt.graphitron.model.derive.OccurrenceTenants'),
+  ('occurrence-routes', 'graphitron', 44, 'no.sikt.graphitron.model.derive.OccurrenceRoutes'),
+  ('occurrence-depth-defects', 'graphitron', 45, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 46, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 47, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 48, 'no.sikt.graphitron.model.derive.Outboxes');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -30332,6 +30580,9 @@ ALTER TABLE graphitron_claim ADD FOREIGN KEY (stage)
 -- Seeded from the anchor phase's writes over the fact documents, the classification corpus and the
 -- scaled fixture.
 INSERT INTO meta_stage_write VALUES
+  ('assert-types', 'graphitron_assert_type'),
+  ('assert-types', 'graphitron_assert_type_node'),
+  ('assert-types', 'graphitron_entry_defect'),
   ('anchor', 'graphitron_deprecated'),
   ('anchor', 'graphitron_entry_defect'),
   ('code-references', 'graphitron_code_reference'),
@@ -30640,6 +30891,9 @@ INSERT INTO meta_stage_write_kind VALUES
 -- The rule views each stage inserts its relations from, read by the gates comparing a table with its
 -- rules, holding a stage to its declared kinds and keeping a defect rule to its stage.
 INSERT INTO meta_stage_rule VALUES
+  ('assert-types', 'graphitron_assert_type', 'graphitron_assert_type_rule'),
+  ('assert-types', 'graphitron_assert_type_node', 'graphitron_assert_type_node_rule'),
+  ('assert-types', 'graphitron_entry_defect', 'graphitron_assert_type_entry_defect_rule'),
   ('anchor', 'graphitron_entry_defect', 'graphitron_anchor_entry_defect_rule'),
   ('argmapping-landings', 'graphitron_argmapping_landing', 'graphitron_argmapping_landing_rule'),
   ('argmapping-landings', 'graphitron_argmapping_pair_defect', 'graphitron_argmapping_landing_entry_defect_pair_rule'),
@@ -31147,6 +31401,12 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('assert-type',
+   'one @assertType written on one argument or input field, in one graph',
+   'graph_name, coordinate, ordinal', 'sdl'),
+  ('assert-type-node',
+   'one condition node of one @assertType''s requirement, named by its path from the root, in one graph',
+   'graph_name, coordinate, ordinal, node_path', 'sdl'),
   ('occurrence-taken',
    'one binder that takes one argument or input-field occurrence, in one graph',
    'graph_name, coordinate, taken_by', 'sdl'),
@@ -31828,6 +32088,14 @@ INSERT INTO graphitron_claim_inclusion VALUES
   ('LOOKUP', 'ROUTINE', 'ROUTINE_LOOKUP_DEFERRED');
 
 INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) VALUES
+  ('ASSERT_TYPE_ELEMENT_NOT_GENERATED', 'error', 'GRAPHITRON', 'GRAPHITRON_ASSERT_TYPE_ELEMENT_NOT_GENERATED',
+   'An @assertType sits on an argument or input field whose type is no scalar Graphitron generates, so no value is decoded into components for it to judge: put it on an element of a @generatedScalar type, or remove it.'),
+  ('ASSERT_TYPE_COMPONENT_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_ASSERT_TYPE_COMPONENT_UNKNOWN',
+   'An @assertType names a component its element''s generated scalar does not decode a value into: name one of the kind''s components, text, startType, path or endType for SCHEMA_PATH and text or name for TYPE_NAME.'),
+  ('ASSERT_TYPE_IS_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_ASSERT_TYPE_IS_UNKNOWN',
+   'An @assertType condition''s is names no object, interface or union type of this subgraph, or nothing at all, so no value could ever meet it: name a type this subgraph declares.'),
+  ('ASSERT_TYPE_IMPLEMENTS_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_ASSERT_TYPE_IMPLEMENTS_UNKNOWN',
+   'An @assertType condition''s implements names no interface of this subgraph, or nothing at all, so no value could ever meet it: name an interface this subgraph declares.'),
   ('WRITE_TABLES_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_TABLES_DISAGREE',
    'A @mutation writes one table, and the tables it is read on are not one: the table its return or the fields re-reading the written rows bind, and the one @mutation(table:) names, disagree, so nothing says which table is written.'),
   ('CONDITION_ON_WRITE_RESULT', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_ON_WRITE_RESULT',
@@ -32286,6 +32554,26 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An argMapping entry reads $session or one of its members into a parameter that is not declared as what the handle or the member yields, so the generated call would not compile: declare the parameter as that type, a primitive member being allowed its boxed type.');
 
 INSERT INTO meta_relation VALUES
+  ('graphitron_assert_type', 'assert-type', 'graphitron',
+   'One @assertType written on an argument or input field, with the component of the value it is about: one row per element and application.',
+   'For example mottakersti: Path! @assertType(component: "endType", type: {is: "Soker"}) on an input field gives the row (OpprettUtsendingInput.mottakersti, 0, endType).',
+   'A requirement is a statement about the argument, not about the scalar, so it is keyed on the declaration it is written on and holds for every occurrence of it; what the emitter renders as a check, and what the defects judge, read one row rather than the transcription. Keyed by the coordinate and the repeat rather than by where it was written, so an edit above it in the file changes no row.'),
+  ('graphitron_assert_type_node', 'assert-type-node', 'graphitron',
+   'One condition node of an @assertType''s requirement, with its operator and, for an atom, the type it names: one row per requirement and node.',
+   'For example type: {anyOf: [{is: "Sak"}, {not: {implements: "Node"}}]} gives 0 ANY_OF, 0.anyOf.0 IS Sak, 0.anyOf.1 NOT and 0.anyOf.1.not IMPLEMENTS Node.',
+   'The written TypeCondition is a @oneOf tree of atoms and combinators, and the transcription already holds it as values; decoded once into nodes named by their path, the emitter renders the predicate and the defects judge each atom without walking the value tree again. A new atom is a new operator here. Where the condition was written rides along, not keyed, so a defect about an atom points at it.'),
+  ('graphitron_assert_type_rule', 'assert-type', 'graphitron',
+   'One row the assert type rule computes, in the shape graphitron_assert_type stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the assert-types stage inserts this view''s rows for one graph into graphitron_assert_type, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_assert_type_node_rule', 'assert-type-node', 'graphitron',
+   'One row the assert type node rule computes, in the shape graphitron_assert_type_node stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the assert-types stage inserts this view''s rows for one graph into graphitron_assert_type_node, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_assert_type_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the assert-types stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example @assertType(component: "end", type: {is: "Soker"}) on a Path argument gives one ASSERT_TYPE_COMPONENT_UNKNOWN row at the @assertType.',
+   'The assert-types stage''s own defects, decided from the requirements it has just stored, the generated scalars'' kinds and components, and the types the composed schema holds, so each reads only what is upstream of it.'),
   ('graphitron_field_tenant_fan_out', 'field-tenant-fan-out', 'graphitron',
    'A field routed by its parent row''s tenant: one row per field and target type whose first key fans out by tenant, with the parent''s column naming it.',
    'For example under film_id FilmEndorsement.film fans out by film_endorsement.endorsed_film, and FilmBookmark.film by film_bookmark.bookmarked_film.',

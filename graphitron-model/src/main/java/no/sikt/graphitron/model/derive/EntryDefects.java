@@ -6,6 +6,7 @@ import org.jooq.Table;
 
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ASSERT_TYPE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_MEMBER;
@@ -178,6 +179,10 @@ public final class EntryDefects {
     /** The macro-expansion stage's rule, judging the expanded schema's fields, connections and carriers. */
     public static final Rule MACRO_EXPANSION =
         new Rule("macro-expansion", GRAPHITRON_MACRO_EXPANSION_ENTRY_DEFECT_RULE);
+
+    /** The assert-types stage's rule, {@link AssertTypes}: what an {@code @assertType} names that is not there. */
+    public static final Rule ASSERT_TYPES =
+        new Rule("assert-types", GRAPHITRON_ASSERT_TYPE_ENTRY_DEFECT_RULE);
 
     /** The table-types stage's rule, {@link TableTypes}: what a binding's table answers about it. */
     public static final Rule TABLE_TYPES = new Rule("table-types", GRAPHITRON_TABLE_TYPE_ENTRY_DEFECT_RULE);

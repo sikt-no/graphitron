@@ -1,0 +1,5 @@
+Reported at the condition, the detail naming the type as written, or none for `{is: null}`.
+
+An `is` condition holds when the component's type is the named type, and a value can only name a type this subgraph declares. A name that is no object, interface or union of this subgraph, or no name at all, is a condition no value can meet, so every value would be refused.
+
+*Next step.* Name an object, interface or union type this subgraph declares, spelled as the schema spells it.

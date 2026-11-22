@@ -1,0 +1,25 @@
+# An is condition naming no object, interface or union of this subgraph: a misspelt type, an input
+# type, and nothing at all, which graphql-java lets through a @oneOf literal as {is: null}. Each is
+# refused at the condition that names it. The near miss names Soker, which the schema declares.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type Soker { name: String }
+
+input SokerFilter { name: String }
+
+type Query {
+  misspelt(path: Path @assertType(component: "endType", type: {is: "Sokr"})): String
+  inputType(path: Path @assertType(component: "endType", type: {is: "SokerFilter"})): String
+  nothing(path: Path @assertType(component: "endType", type: {is: null})): String
+  named(path: Path @assertType(component: "endType", type: {is: "Soker"})): String
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'ASSERT_TYPE_%'", rows: """
+  code,                   coordinate,            detail
+  ASSERT_TYPE_IS_UNKNOWN, Query.inputType(path:), SokerFilter
+  ASSERT_TYPE_IS_UNKNOWN, Query.misspelt(path:), Sokr
+  ASSERT_TYPE_IS_UNKNOWN, Query.nothing(path:),
+  """)
+
+extend schema @assertEmpty(relation: "graphql_schema_problem")

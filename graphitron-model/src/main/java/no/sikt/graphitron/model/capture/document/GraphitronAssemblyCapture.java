@@ -36,6 +36,7 @@ import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.TypeBackings;
 import no.sikt.graphitron.model.derive.TypeClaims;
+import no.sikt.graphitron.model.derive.AssertTypes;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -82,6 +83,10 @@ public final class GraphitronAssemblyCapture {
      * sweep tell this reading's rows from the last one's by it.
      */
     static final List<AnchorStage> STAGES = List.of(
+        // What each @assertType requires and the condition tree beneath it, off the transcription,
+        // and the defects of what a requirement names, against the types the federation vocabulary
+        // has just completed and the generated scalars the macro expansion classed.
+        new AnchorStage("assert-types", AssertTypes.class, AssertTypes::derive),
         // Which catalog tables each parameter of a method a code reference names can be handed, off
         // the references resolved above and the classpath and catalog upstream.
         new AnchorStage("call-parameter-tables", CallParameterTables.class, CallParameterTables::derive),

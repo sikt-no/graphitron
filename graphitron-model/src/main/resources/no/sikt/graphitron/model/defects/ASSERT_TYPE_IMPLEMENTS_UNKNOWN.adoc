@@ -1,0 +1,5 @@
+Reported at the condition, the detail naming the interface as written, or none for `{implements: null}`.
+
+An `implements` condition holds when the component's type implements the named interface, directly or through another interface. A name that is no interface of this subgraph, an object type among them, or no name at all, is a condition no value can meet.
+
+*Next step.* Name an interface this subgraph declares, or use `is` to require one type by name.

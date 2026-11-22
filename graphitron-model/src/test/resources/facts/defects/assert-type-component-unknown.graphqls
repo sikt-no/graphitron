@@ -1,0 +1,17 @@
+# An @assertType naming a component its scalar's kind does not decode a value into: a path has
+# startType and endType, not end. The near miss is the same requirement on endType, which draws
+# nothing.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type Soker { name: String }
+
+type Query {
+  wrong(path: Path @assertType(component: "end", type: {is: "Soker"})): String
+  right(path: Path @assertType(component: "endType", type: {is: "Soker"})): String
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'ASSERT_TYPE_%'", rows: """
+  code,                          coordinate,         detail
+  ASSERT_TYPE_COMPONENT_UNKNOWN, Query.wrong(path:), end
+  """)
