@@ -56,6 +56,14 @@ class GeneratedScalarCallExecutionTest {
     }
 
     @Test
+    void aPathMayEndAtAnInterfaceWhichImplementsNoInterfaceOfItsOwnName() {
+        assertThat(data("{ along(path: \"Query.node\") }").get("along")).isEqualTo("Query.node|Query|node|Node");
+        assertThat(data("{ alongToNode(path: \"Film\") }").get("alongToNode")).isEqualTo("Film|Film||Film");
+        assertRefused("{ alongToNode(path: \"Query.node\") }", "alongToNode",
+            "path: the path's endType `Node` does not implement `Node`");
+    }
+
+    @Test
     void aNullPathHandsOverNullInEveryComponent() {
         assertThat(data("{ along(path: null) }").get("along")).isEqualTo("null|null|null|null");
     }

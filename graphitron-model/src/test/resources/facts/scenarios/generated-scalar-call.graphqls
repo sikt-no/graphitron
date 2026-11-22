@@ -5,7 +5,8 @@
 # components to a service, and each alongX field puts one kind of requirement in front of it;
 # Query.named takes a TYPE_NAME's name; Film.ends is a child service taking components, decoded in
 # its fetcher before it loads; Mutation.endorseAlong a routine write taking them. Query.occupants
-# reaches a union, which a path cannot step past. Generated for graphitron's
+# reaches a union, which a path cannot step past, and Query.node the Node interface, where a path may
+# end and which alongToNode requires its end to implement. Generated for graphitron's
 # GeneratedScalarCallExecutionTest.
 
 scalar Path @generatedScalar(kind: SCHEMA_PATH)
@@ -58,6 +59,8 @@ type Query {
   films(filmId: Int @field(name: "film_id")): [Film!]!
   "Every actor."
   actors: [Actor!]!
+  "The node with the id given."
+  node(id: ID!): Node
   "The occupants of the addresses chosen by key."
   occupants(addressIds: [Int!] @field(name: "address_id")): [Occupant!]! @asConnection
   "The start type of the path it is given, handed back by a service echoing its marker."
@@ -74,6 +77,9 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
   "The components of a path ending at a film or an actor."
   alongEither(path: Path @assertType(component: "endType", type: {anyOf: [{is: "Film"}, {is: "Actor"}]})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The components of a path ending at a type that implements Node."
+  alongToNode(path: Path @assertType(component: "endType", type: {implements: "Node"})): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
   "The components of a path starting anywhere but at a node."
   alongNotNode(path: Path @assertType(component: "startType", type: {not: {implements: "Node"}})): String
