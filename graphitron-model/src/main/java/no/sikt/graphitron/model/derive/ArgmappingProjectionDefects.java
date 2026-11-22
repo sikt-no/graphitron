@@ -33,7 +33,7 @@ import static org.jooq.impl.DSL.not;
  * here is the decode of the view's closed {@code verdict} vocabulary into {@link Rejection} arms and
  * the prose those arms carry.
  *
- * <p>Six arms are the author's to fix, and they close the silence this family had: binding a
+ * <p>Five arms are the author's to fix, and they close the silence this family had: binding a
  * {@code @nodeId} without naming a key column used to hand a routine parameter or a service method
  * the base64 wire id verbatim, and nothing in the build said a word. Which arm fires is the view's
  * decision, taken on whether the leaf declares a decode, then on the trailing-segment count, then on
@@ -47,14 +47,11 @@ import static org.jooq.impl.DSL.not;
  * still fire: a type disagreement at the inferred column refuses, and a resolved projection at a
  * site no emitter reads defers. Neither lets base64 through.
  *
- * <p>That includes the arm a reader might expect the schema walk to own. An {@code ID} carrying no
- * {@code @nodeId} has nothing to open, but that is a question about captured directive facts and the
- * walk runs before capture. So the walk carries every name it cannot resolve against SDL and judges
- * none of them, and {@code UNDECLARED_NODE_ID} is where that rule lives. A rule spelled in the walk
- * instead would be an earlier second copy that wins by rejecting first, which is how one family ends
- * up with two answers that agree until one changes. A path spelling more than one name past what it
- * opened has no verdict of its own: nothing at its coordinate is spelled that way, so it draws no
- * match and is refused with every other unresolvable spelling.
+ * <p>A name past something that opens nothing, an {@code ID} carrying no {@code @nodeId}, a
+ * {@code String} or an enum, is not judged here: the {@code argmapping-landings} stage writes such a
+ * path no landing and raises {@code ARGMAPPING_PATH_UNRESOLVED} at it. A path spelling more than one
+ * name past what it opened has no verdict of its own either: nothing at its coordinate is spelled
+ * that way, so it draws no match and is refused with every other unresolvable spelling.
  *
  * <p>One more arm is the author's and is derived here all the same, for the reason the two below
  * are: a {@code @condition} method parameter declared as a Java primitive cannot take a projected
@@ -191,13 +188,6 @@ public final class ArgmappingProjectionDefects {
 
     private enum Verdict {
         /**
-         * A path opening something with nothing to open: an ID carrying no {@code @nodeId}, and
-         * equally a String or an enum. The walk carries such a segment rather than rejecting it,
-         * because deciding it needs the directive facts only capture holds, so this arm is where the
-         * whole rule lives.
-         */
-        UNDECLARED_NODE_ID,
-        /**
          * A declared decode with no key column named after it and none to infer: no node type
          * named, no key resolved for the one that is, or a key of more than one column, where one
          * binding carries one value. A one-column key is not here, the sole column being the only
@@ -265,7 +255,7 @@ public final class ArgmappingProjectionDefects {
 
     /**
      * Projects every {@code argMapping} node-id rejection over {@code graphName}'s partition: the
-     * five author defects from the detection view, then the projections a primitive parameter cannot
+     * four author defects from the detection view, then the projections a primitive parameter cannot
      * take, then the deferrals for projections that resolve and cannot be emitted. Empty for a graph
      * whose {@code argMapping} paths all bind ordinary values, and whose projections all resolve at
      * sites that emit them in a shape those emitters build.
@@ -334,7 +324,7 @@ public final class ArgmappingProjectionDefects {
         "int", "Integer", "long", "Long", "float", "Float", "double", "Double");
 
     /**
-     * The view's six author arms, decoded, but the type mismatch at a {@code @service} parameter:
+     * The view's author arms, decoded, but the type mismatch at a {@code @service} parameter:
      * the occurrence build judges that parameter against the shape the id decodes into, a {@code List}
      * of the column for a list of ids, as {@code NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT}, and the view
      * compares the column with the whole declared type.
@@ -357,8 +347,7 @@ public final class ArgmappingProjectionDefects {
                     rejectionOf(Verdict.of(row.getVerdict()), entry, row.getNodeTypeRef(),
                         row.getTrailingName(),
                         keyColumnsOf(dsl, graphName, row.getNodeTypeRef()),
-                        row.getColumnJavaType(), row.getParamJavaType(),
-                        row.getLeafNamedType()),
+                        row.getColumnJavaType(), row.getParamJavaType()),
                     location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
             });
     }
@@ -444,17 +433,8 @@ public final class ArgmappingProjectionDefects {
      */
     private static Rejection rejectionOf(Verdict verdict, String entry, String nodeTypeRef,
                                          String trailingSegment, List<String> keyColumns,
-                                         String columnJavaType, String paramJavaType,
-                                         String leafNamedType) {
+                                         String columnJavaType, String paramJavaType) {
         return switch (verdict) {
-            case UNDECLARED_NODE_ID -> Rejection.structural(entry + " opens "
-                + article(leafNamedType) + " '" + leafNamedType + "' with '" + trailingSegment
-                + "', which has nothing to open"
-                + ("ID".equals(leafNamedType)
-                    ? ": that ID declares no @nodeId, so there is no node identity to project a key"
-                      + " column out of. Annotate it @nodeId(typeName: \"<NodeType>\") to open it"
-                      + " into that node type's key columns"
-                    : "; " + OPENABLE_KINDS));
             case BARE_NODE_ID -> Rejection.structural(bareMessage(entry, nodeTypeRef, keyColumns));
             case MISSING_TYPE_NAME -> Rejection.structural(entry + " opens a @nodeId with '"
                 + trailingSegment + "', but @nodeId must specify typeName: explicitly at an"
@@ -478,21 +458,6 @@ public final class ArgmappingProjectionDefects {
                 + "; bind a parameter of the column's own type"
                 + (keyColumns.size() > 1 ? ", or project a key column the parameter can take" : ""));
         };
-    }
-
-    /**
-     * The two things a dot may open, as a message states them. One clause rather than two rules: the
-     * separator has always meant "open the thing at this position", and what a thing opens into
-     * follows from what it is.
-     */
-    private static final String OPENABLE_KINDS =
-        "an input object opens into its fields, and an ID carrying @nodeId opens into the key"
-        + " columns of the node type it names";
-
-    /** {@code an} before a vowel, {@code a} otherwise; the type name is the author's own spelling. */
-    private static String article(String typeName) {
-        return typeName != null && !typeName.isEmpty()
-            && "AEIOUaeiou".indexOf(typeName.charAt(0)) >= 0 ? "an" : "a";
     }
 
     /**

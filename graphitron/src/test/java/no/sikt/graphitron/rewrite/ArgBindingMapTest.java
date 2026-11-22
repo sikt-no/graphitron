@@ -287,8 +287,9 @@ class ArgBindingMapTest {
     /**
      * An {@code ID} declaring no {@code @nodeId} is carried exactly like one that does, because the
      * difference is a directive fact and this method cannot see directives. The rejection for it is
-     * the store's {@code UNDECLARED_NODE_ID} arm, and pinning it here instead would have been the
-     * second copy: an earlier one, worded worse, that fires before the arm can.
+     * the store's: the argMapping landing rule writes a name past it no landing, and the path draws
+     * {@code ARGMAPPING_PATH_UNRESOLVED}. Pinning it here instead would have been the second copy:
+     * an earlier one, worded worse, that fires before the store can.
      */
     @Test
     void of_aScalarThatIsNoNodeId_isCarriedJustTheSame() {

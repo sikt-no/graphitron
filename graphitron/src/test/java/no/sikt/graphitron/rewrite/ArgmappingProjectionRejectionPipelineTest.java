@@ -294,32 +294,6 @@ class ArgmappingProjectionRejectionPipelineTest {
     }
 
     /**
-     * An {@code ID} declaring no {@code @nodeId} has nothing to open. Same obligation as the per-site
-     * cases above and the same owner: the walk carries the segment, the store's
-     * {@code UNDECLARED_NODE_ID} arm judges it, and the build fails. One fixture rather than six,
-     * because the rule sits on a relation keyed by the pair rather than on any one site's emitter.
-     */
-    @Test
-    void anIdDeclaringNoNodeIdFailsTheBuild(@TempDir Path tmp) throws IOException {
-        assertThatThrownBy(() -> validate(tmp, """
-            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-            type Query { rental: Rental }
-            input RentFilmInput { inventoryId: ID!, customerId: Int! }
-            type Mutation {
-                rentFilm(input: RentFilmInput!): [Rental!]!
-                    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id, pCustomerId: input.customerId")
-                    @reference(path: [{table: "rental"}])
-            }
-            """))
-            .isInstanceOf(ValidationFailedException.class)
-            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
-                .extracting(ValidationError::message)
-                .as("what opens is a node id, and the store says so about one that is not")
-                .anyMatch(m -> m.contains("has nothing to open")
-                    && m.contains("that ID declares no @nodeId")));
-    }
-
-    /**
      * A column the node type does have, whose Java type the routine parameter cannot take. The path
      * resolves, the segment names a real key column, and the only thing wrong is a type comparison
      * the shared coercion gate cannot make, that gate reading an SDL leaf type a path descending past

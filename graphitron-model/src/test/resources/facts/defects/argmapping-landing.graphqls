@@ -2,14 +2,20 @@
 # its directive is written on, a walk over the occurrences a name at a time. On a field the first name
 # is one of its arguments; on an argument or an input field it is a field of what that opens into, or
 # its own name, a spelling that still resolves. Each further name is a field of the input type before
-# it, and one name past the last that names nothing is a node id's key column, the landing's binding
-# to resolve. A path that names nothing, or that follows a self-nesting input type past its first
-# repetition, does not land and is a defect at its mapping string.
+# it, and one name past the last that names nothing is a key column of a node id, which only an
+# element carrying @nodeId is, the landing's binding to resolve. One name past anything else, an input
+# object without that field, a String or an ID with no @nodeId, opens nothing. A path that names
+# nothing, that opens nothing, or that follows a self-nesting input type past its first repetition,
+# does not land and is a defect at its mapping string.
 
 input FilmIds { ids: [Int] ref: Reference }
 input Reference { key: Int }
 input TitleFilter { title: String }
 input Tree { value: Int child: Tree }
+input PlainInput { inventoryId: ID note: String }
+input FilmKey { filmId: ID @nodeId(typeName: "Film") }
+
+type Film @table(name: "film") @node { title: String }
 
 type Shelf { titles(ids: FilmIds): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: ids.ids"}) }
 
@@ -20,15 +26,19 @@ type Query {
   shelfB: Shelf
   missing(input: FilmIds): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: input.nope.deeper"})
   deep(tree: Tree): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: tree.child.child.value"})
+  # A name past an ID declaring no @nodeId, and past a String, opens nothing.
+  undeclared(input: PlainInput): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: input.inventoryId.inventory_id, q: input.note.nope"})
+  # The near miss: past an ID carrying @nodeId, the name is a key column and the path lands.
+  keyed(key: FilmKey): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: key.filmId.film_id"})
 }
 
 extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
   coordinate,              directive_name, owner,     target_name, call_coordinate,         landing_coordinate,               trailing_name, repeats_own_name
   Query.byIds,             service,        service,   a,              Query.byIds,             Query.byIds(input.ids:),          ,              FALSE
   Query.byIds,             service,        service,   b,              Query.byIds,             Query.byIds(input.ref.key:),      ,              FALSE
-  Query.byIds,             service,        service,   c,              Query.byIds,             Query.byIds(input.ref:),          actor_id,      FALSE
   Query.byFilter(filter:), condition,      condition, t,              Query.byFilter(filter:), Query.byFilter(filter.title:),    ,              FALSE
   Query.byFilter(filter:), condition,      condition, u,              Query.byFilter(filter:), Query.byFilter(filter.title:),    ,              TRUE
+  Query.keyed,             service,        service,   p,              Query.keyed,             Query.keyed(key.filmId:),         film_id,       FALSE
   Shelf.titles,            service,        service,   p,              Query.shelfA.titles,     Query.shelfA.titles(ids.ids:),    ,              FALSE
   Shelf.titles,            service,        service,   p,              Query.shelfB.titles,     Query.shelfB.titles(ids.ids:),    ,              FALSE
   """)
@@ -36,12 +46,23 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
 extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
   code,                       detail
   ARGMAPPING_PATH_UNRESOLVED, input.nope.deeper
+  ARGMAPPING_PATH_UNRESOLVED, input.ref.actor_id
+  ARGMAPPING_PATH_UNRESOLVED, input.inventoryId.inventory_id
+  ARGMAPPING_PATH_UNRESOLVED, input.note.nope
   ARGMAPPING_PATH_PAST_CYCLE, tree.child.child.value
   """)
 
-# An argMapping path naming nothing under its field, and one that walks back into a cycle, are refused at the entry.
+# An argMapping path naming nothing under its field, one opening something that opens nothing, and one
+# that walks back into a cycle, are refused at the entry.
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                       coordinate
   ARGMAPPING_PATH_UNRESOLVED, Query.missing
+  ARGMAPPING_PATH_UNRESOLVED, Query.byIds
+  ARGMAPPING_PATH_UNRESOLVED, Query.undeclared
   ARGMAPPING_PATH_PAST_CYCLE, Query.deep
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                       coordinate
+  ARGMAPPING_PATH_UNRESOLVED, Query.keyed
   """)
