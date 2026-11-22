@@ -1,0 +1,40 @@
+# A generated scalar opens into the components its kind decodes a value into: a name past one that
+# is a component of its kind lands on the scalar's own occurrence and hands over that component,
+# whether the scalar is an argument or an input field below one. Any other name opens nothing: a
+# misspelt component, and a component of another kind, write no landing and are refused at the
+# mapping string, as a name past a String is.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+scalar TypeName @generatedScalar(kind: TYPE_NAME)
+
+input Route { sti: Path }
+
+type Query {
+  start(path: Path): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: path.startType"})
+  nested(route: Route): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: route.sti.endType, q: route.sti.text"})
+  named(type: TypeName): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: type.name"})
+  # A misspelt component, and one a TYPE_NAME does not have.
+  misspelt(path: Path): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: path.startTyp"})
+  otherKind(type: TypeName): [String] @service(service: {className: "example.Ref", method: "m", argMapping: "p: type.startType"})
+}
+
+extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
+  call_coordinate, target_name, landing_coordinate,          trailing_name, receives
+  Query.nested,    p,           Query.nested(route.sti:),    endType,       COMPONENT
+  Query.nested,    q,           Query.nested(route.sti:),    text,          COMPONENT
+  Query.named,     p,           Query.named(type:),          name,          COMPONENT
+  Query.start,     p,           Query.start(path:),          startType,     COMPONENT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
+  code,                       detail
+  ARGMAPPING_PATH_UNRESOLVED, path.startTyp
+  ARGMAPPING_PATH_UNRESOLVED, type.startType
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                       coordinate
+  ARGMAPPING_PATH_UNRESOLVED, Query.start
+  ARGMAPPING_PATH_UNRESOLVED, Query.nested
+  ARGMAPPING_PATH_UNRESOLVED, Query.named
+  """)

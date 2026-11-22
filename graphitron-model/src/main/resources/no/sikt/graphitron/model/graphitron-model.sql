@@ -5354,7 +5354,7 @@ CREATE TABLE graphitron_argmapping_landing (
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name,
                call_coordinate),
-  CHECK (receives IN ('WHOLE', 'COLUMN')),
+  CHECK (receives IN ('WHOLE', 'COLUMN', 'COMPONENT')),
   -- The pair, so a landing cannot outlive what an author wrote.
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
     REFERENCES graphitron_argmapping_pair (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
@@ -5375,9 +5375,9 @@ COMMENT ON COLUMN graphitron_argmapping_landing.target_kind IS 'what the pair''s
 COMMENT ON COLUMN graphitron_argmapping_landing.target_name IS 'the pair''s left side, completing the pair''s key';
 COMMENT ON COLUMN graphitron_argmapping_landing.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on, completing the key: a field of a nested type is reached once per parent, and the path resolves under each';
 COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argument or input-field occurrence the path names; what it is, its column, table or node identity, is that occurrence''s own binding, not restated here';
-COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: a key column of the node id the landing carries, which the landing''s binding resolves and judges. Only a landing whose element claims NODE_ID has one; a name past anything else lands nowhere';
+COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: what the value at the landing opens into. Past a node id, whose element claims NODE_ID, a key column of it, which the landing''s binding resolves and judges; past a generated scalar, one of the components its kind decodes a value into, as graphitron_generated_scalar_component lists them. A name past anything else, or past a generated scalar naming none of its components, lands nowhere';
 COMMENT ON COLUMN graphitron_argmapping_landing.descends IS 'whether the path goes past the slot it opens, an argument of a field-level call or the argument or input field the directive is written on, rather than stopping on it';
-COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what a node id at the landing hands over: COLUMN, one key column, where the path names one past the id, which only a node id lets it, where it is a @routine''s, a database function taking one value per parameter, or where it descends onto the id at another call''s parameter; WHOLE otherwise, the decoded key at a @service or @condition parameter the path stops on and the encoded id at an @outbox payload key, whose clients see the id as the API does';
+COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what the landing hands over: COMPONENT, the one component of a generated scalar''s decoded value that trailing_name names; for a node id COLUMN, one key column, where the path names one past the id, where it is a @routine''s, a database function taking one value per parameter, or where it descends onto the id at another call''s parameter; WHOLE otherwise, the value as it arrives, for a node id the decoded key at a @service or @condition parameter the path stops on and the encoded id at an @outbox payload key, whose clients see the id as the API does';
 COMMENT ON COLUMN graphitron_argmapping_landing.repeats_own_name IS 'whether the path began with the call''s own name, as an argument-level or input-field-level argMapping was once required to: a spelling that still resolves';
 COMMENT ON COLUMN graphitron_argmapping_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 CREATE INDEX graphitron_argmapping_landing_landing_ix
@@ -5794,62 +5794,6 @@ COMMENT ON COLUMN graphitron_binding_claim.kind IS 'the graphitron_occurrence_bi
 COMMENT ON COLUMN graphitron_binding_claim.claimer IS 'the element whose fact implies the claim, the element itself for every claim written today; with the three columns before it, graphitron_claim''s key';
 COMMENT ON COLUMN graphitron_binding_claim.named IS 'what the claim names, as written: the column for COLUMN, the node type for NODE_ID. Null for a bare @nodeId, whose node type the binding infers, and for EXPRESSION';
 COMMENT ON COLUMN graphitron_binding_claim.target_name IS 'where a NODE_ID claim''s decoded value goes, as a @field(name:) beside the @nodeId writes it: the member of the class an occurrence binds into. Whether a target is meaningful depends on the occurrence''s source, so the claim states it and the reader judges it; null where no @field is written and on every other kind';
-
-CREATE VIEW graphitron_argmapping_landing_rule
-  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
-   landing_coordinate, trailing_name, repeats_own_name, descends, receives) AS
--- Where the path stops: every name consumed, or every name but one where the occurrence reached is
--- a node id, as its NODE_ID binding claim says, and the last name names a key column of it, the path
--- end's to resolve. Past anything else, a String, an enum, an ID declaring no @nodeId or an input
--- object with no field of that name, one name more opens nothing: there is no landing, and the
--- stage's defect rule raises the path where it is written.
-SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.target_kind, s.target_name,
-       s.call_coordinate,
-       s.step_coordinate,
-       CASE WHEN s.consumed = s.segments THEN CAST(NULL AS VARCHAR) ELSE s.rest END,
-       s.repeats_own_name,
-       -- Past the slot the path opens: a field's argument, or the argument or input field the
-       -- directive is written on.
-       CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
-            ELSE lo.coordinate <> co.coordinate END,
-       -- What a node id at the landing hands over. A key column named past it is that column, and
-       -- only a node id has a name past it here. A payload key otherwise takes the id whole, as the
-       -- API's clients see it, and a routine parameter one key column, a database function taking
-       -- one value per parameter; any other call parameter reached by descending onto it takes a key
-       -- column, one stopping on its slot the whole key.
-       CASE WHEN s.consumed < s.segments THEN 'COLUMN'
-            WHEN s.directive_name = 'outbox' THEN 'WHOLE'
-            WHEN s.directive_name = 'routine' THEN 'COLUMN'
-            WHEN CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
-                      ELSE lo.coordinate <> co.coordinate END THEN 'COLUMN'
-            ELSE 'WHOLE' END
-  FROM graphitron_argmapping_step s
-  JOIN graphitron_occurrence co ON co.graph_name = s.graph_name AND co.coordinate = s.call_coordinate
-  JOIN graphitron_occurrence lo ON lo.graph_name = s.graph_name AND lo.coordinate = s.step_coordinate
- WHERE (s.consumed = s.segments
-        OR (s.consumed = s.segments - 1
-            AND EXISTS (SELECT 1 FROM graphitron_binding_claim bc
-                         WHERE bc.graph_name = lo.graph_name AND bc.coordinate = lo.element_coordinate
-                           AND bc.kind = 'NODE_ID')))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_step d
-                    WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
-                      AND d.directive_name = s.directive_name AND d.ordinal = s.ordinal
-                      AND d.owner = s.owner AND d.target_name = s.target_name AND d.target_kind = s.target_kind
-                      AND d.call_coordinate = s.call_coordinate
-                      AND d.consumed > s.consumed);
-COMMENT ON VIEW graphitron_argmapping_landing_rule IS 'One row the argMapping landing rule computes, in the shape graphitron_argmapping_landing stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_landing, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.descends IS 'the descends of a row of this rule, which the stage writes into graphitron_argmapping_landing.descends';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.graph_name';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.coordinate IS 'the pair''s coordinate';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.directive_name IS 'the pair''s directive_name';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.ordinal IS 'the pair''s ordinal';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.owner IS 'the pair''s owner';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.target_name IS 'the pair''s target_name';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.call_coordinate';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.landing_coordinate';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.trailing_name IS 'the trailing_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.trailing_name';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.repeats_own_name IS 'the repeats_own_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.repeats_own_name';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.receives IS 'the receives of a row of this rule, which the stage writes into graphitron_argmapping_landing.receives';
 
 -- What each field, input field and argument's written directives claim it binds to. None of the
 -- three directives repeats, so an element's one application of each is its ordinal 0; a refused
@@ -10477,6 +10421,83 @@ COMMENT ON VIEW graphitron_occurrence_input_type_rule IS 'One row the occurrence
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.type_kind IS 'the type_kind of a row of this rule, which the stage writes into graphitron_occurrence_input_type.type_kind';
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.is_list IS 'the is_list of a row of this rule, which the stage writes into graphitron_occurrence_input_type.is_list';
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_occurrence_input_type.java_class';
+
+CREATE VIEW graphitron_argmapping_landing_rule
+  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
+   landing_coordinate, trailing_name, repeats_own_name, descends, receives) AS
+-- Where the path stops: every name consumed, or every name but one where the occurrence reached
+-- opens into the last name. A node id opens into a key column of it, as its NODE_ID binding claim
+-- says, the path end's to resolve; a generated scalar opens into the components its kind decodes a
+-- value into (graphitron_generated_scalar_component), its kind read off the scalar's
+-- @generatedScalar entry. Past anything else, a String, an enum, an ID declaring no @nodeId, an
+-- input object with no field of that name or a generated scalar's name that is none of its kind's
+-- components, one name more opens nothing: there is no landing, and the stage's defect rule raises
+-- the path where it is written.
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.target_kind, s.target_name,
+       s.call_coordinate,
+       s.step_coordinate,
+       CASE WHEN s.consumed = s.segments THEN CAST(NULL AS VARCHAR) ELSE s.rest END,
+       s.repeats_own_name,
+       -- Past the slot the path opens: a field's argument, or the argument or input field the
+       -- directive is written on.
+       CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
+            ELSE lo.coordinate <> co.coordinate END,
+       -- What the landing hands over. A component named past a generated scalar is that component,
+       -- first, since a name past anything is otherwise a key column. A key column named past a node
+       -- id is that column, and only a node id has another name past it here. A payload key
+       -- otherwise takes the id whole, as the API's clients see it, and a routine parameter one key
+       -- column, a database function taking one value per parameter; any other call parameter
+       -- reached by descending onto it takes a key column, one stopping on its slot the whole key.
+       CASE WHEN gc.component IS NOT NULL THEN 'COMPONENT'
+            WHEN s.consumed < s.segments THEN 'COLUMN'
+            WHEN s.directive_name = 'outbox' THEN 'WHOLE'
+            WHEN s.directive_name = 'routine' THEN 'COLUMN'
+            WHEN CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
+                      ELSE lo.coordinate <> co.coordinate END THEN 'COLUMN'
+            ELSE 'WHOLE' END
+  FROM graphitron_argmapping_step s
+  JOIN graphitron_occurrence co ON co.graph_name = s.graph_name AND co.coordinate = s.call_coordinate
+  JOIN graphitron_occurrence lo ON lo.graph_name = s.graph_name AND lo.coordinate = s.step_coordinate
+  -- The component the one name left names, where the occurrence reached is a generated scalar whose
+  -- kind has it: one row at most, a scalar having one kind.
+  LEFT JOIN (SELECT it.graph_name, it.coordinate, c.component
+               FROM graphitron_occurrence_input_type it
+               JOIN graphitron_scalar_class sc
+                 ON sc.graph_name = it.graph_name AND sc.type_name = it.type_name AND sc.source = 'GENERATED'
+               JOIN graphql_directive_application gd
+                 ON gd.graph_name = sc.graph_name AND gd.coordinate = sc.type_name
+                AND gd.directive_name = 'generatedScalar' AND gd.ordinal = 0
+               JOIN graphitron_ast_generated_scalar_entry ge
+                 ON ge.graph_name = gd.graph_name AND ge.source_name = gd.source_name
+                AND ge.source_line = gd.source_line AND ge.source_column = gd.source_column
+               JOIN graphitron_generated_scalar_component c ON c.kind = ge.kind) gc
+    ON gc.graph_name = lo.graph_name AND gc.coordinate = lo.coordinate
+   AND s.consumed = s.segments - 1 AND gc.component = s.rest
+ WHERE (s.consumed = s.segments
+        OR (s.consumed = s.segments - 1
+            AND (gc.component IS NOT NULL
+                 OR EXISTS (SELECT 1 FROM graphitron_binding_claim bc
+                             WHERE bc.graph_name = lo.graph_name AND bc.coordinate = lo.element_coordinate
+                               AND bc.kind = 'NODE_ID'))))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_step d
+                    WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
+                      AND d.directive_name = s.directive_name AND d.ordinal = s.ordinal
+                      AND d.owner = s.owner AND d.target_name = s.target_name AND d.target_kind = s.target_kind
+                      AND d.call_coordinate = s.call_coordinate
+                      AND d.consumed > s.consumed);
+COMMENT ON VIEW graphitron_argmapping_landing_rule IS 'One row the argMapping landing rule computes, in the shape graphitron_argmapping_landing stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_landing, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.descends IS 'the descends of a row of this rule, which the stage writes into graphitron_argmapping_landing.descends';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.graph_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.coordinate IS 'the pair''s coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.directive_name IS 'the pair''s directive_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.ordinal IS 'the pair''s ordinal';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.owner IS 'the pair''s owner';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.target_name IS 'the pair''s target_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.call_coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.landing_coordinate';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.trailing_name IS 'the trailing_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.trailing_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.repeats_own_name IS 'the repeats_own_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.repeats_own_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.receives IS 'the receives of a row of this rule, which the stage writes into graphitron_argmapping_landing.receives';
 
 CREATE TABLE graphitron_edge (
   graph_name     VARCHAR   NOT NULL,

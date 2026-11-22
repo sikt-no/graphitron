@@ -6,4 +6,6 @@ The right-hand side of an `argMapping` entry names a GraphQL slot and then walks
 
 A name past an `ID` opens it only where the `ID` declares `@nodeId(typeName:)`, naming the node type whose key columns the name picks: `pFilmId: input.filmId.film_id` binds the `film_id` key column once `filmId` is `ID @nodeId(typeName: "Film")`. See xref:directives/nodeId.adoc#key-column-projection[Projecting one key column].
 
+A name past a scalar carrying `@generatedScalar` opens it only where the name is one of the components its kind decodes a value into: `text`, `startType`, `path` or `endType` for `SCHEMA_PATH`, `text` or `name` for `TYPE_NAME`. `pStart: input.sti.startType` binds the path's start type; `input.sti.startTyp` names nothing.
+
 At a `@routine` a parameter is resolved from the database catalog rather than by reflection, and `$source.<column>` binds a column of the row the routine is applied to. A bare name never binds a column; where it names one, write `$source.<column>`. A path stopping on an input object binds no IN parameter, which takes one value: bind a scalar field inside it.

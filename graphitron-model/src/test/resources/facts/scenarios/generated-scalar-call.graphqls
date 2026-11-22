@@ -1,0 +1,17 @@
+# A generated scalar taken at a call by its components: an argMapping names the component a
+# parameter takes, past the scalar, and the landing hands over that component rather than the value.
+# Query.startOf hands its path's start type to a service echoing what it is given. Generated for
+# graphitron's GeneratedScalarExecutionTest.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type Query {
+  "The start type of the path it is given, handed back by a service echoing its marker."
+  startOf(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "noDatabase", argMapping: "marker: path.startType"})
+}
+
+extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
+  call_coordinate, target_name, landing_coordinate,   trailing_name, receives
+  Query.startOf,   marker,      Query.startOf(path:), startType,     COMPONENT
+  """)
