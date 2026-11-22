@@ -2,4 +2,4 @@ Reported at the `argMapping` string, the detail naming the directive, `condition
 
 A generated scalar's component is handed to a parameter by the call that decodes the value, and the decode is generated for `@service` calls, root and child, and for a `@routine` that writes on the mutation root. A `@condition`, a `@routine` read on the query root, and a `@routine` step of a field's path are still rendered without that decode, so they cannot take a component yet.
 
-*Next step.* Take the component at a `@service`, or at a `@routine` on the mutation root, and leave the generated scalar out of the `@condition` or the `@routine` step.
+*Next step.* Take the component at a `@service`, or at a `@routine` on the mutation root, and leave the generated scalar out of the `@condition` or the `@routine` step. See xref:directives/generatedScalar.adoc#where-a-value-is-checked[Where a value is checked].

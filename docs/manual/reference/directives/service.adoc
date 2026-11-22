@@ -199,7 +199,10 @@ xref:nodeId.adoc[`@nodeId(typeName:)`] opens into the key columns of the node ty
 segment after it names a key column rather than a field of any SDL type; see
 xref:routine.adoc#node-id-key-projection[Projecting a key column out of a node id]. At a `@service`
 parameter a list of node ids opens the same way, the parameter taking a `List` of the column, one
-element per id; see xref:nodeId.adoc#key-column-projection[Projecting one key column]. Nothing else
+element per id; see xref:nodeId.adoc#key-column-projection[Projecting one key column]. A scalar
+carrying xref:generatedScalar.adoc[`@generatedScalar`] opens into the components its kind decodes a
+value into, so `start: input.sti.startType` hands the method the path's start type; the call decodes
+and checks the value first, and a component is the only way such a value reaches a call. Nothing else
 opens, and a segment on something that does not is a build error.
 
 The common case is a wrapper input, the shape a Relay-style mutation has: the field declares one
@@ -231,9 +234,9 @@ The rules:
   GraphQL argument of the field, or the input field itself for an input-field-level
   `@condition`. A head naming nothing in scope is a build error that lists the slots that are.
 * Each *subsequent* segment must name something the value at that depth opens into: a field on the
-  input-object type there, or a key column of the node type where that value is an `ID` carrying
-  `@nodeId(typeName:)`. A segment naming neither is a build error naming what it looked in and
-  suggesting the near miss.
+  input-object type there, a key column of the node type where that value is an `ID` carrying
+  `@nodeId(typeName:)`, or a component where it is a generated scalar. A segment naming none of
+  these is a build error naming what it looked in and suggesting the near miss.
 * A path may be any depth. `input.customer.id` walks two levels.
 * Reading is null-safe: if any level along the path is absent, the parameter receives `null`
   rather than an error.

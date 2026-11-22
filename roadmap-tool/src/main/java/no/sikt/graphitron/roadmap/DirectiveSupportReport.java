@@ -78,11 +78,9 @@ final class DirectiveSupportReport {
      * supported list with no migration note, because using them is neither an error nor
      * something a migrating consumer must remove; they are simply outside the v1 surface. See
      * roadmap item R400. Re-advertising one later is a one-line edit here.
-     * {@code @generatedScalar} and {@code @assertType} are declared and captured, and withheld until
-     * a value of a generated scalar is decoded and checked at the call that takes it.
      */
     static final java.util.Set<String> WITHHELD_FROM_V1 =
-        java.util.Set.of("experimental_constructType", "generatedScalar", "assertType");
+        java.util.Set.of("experimental_constructType");
 
     /**
      * CLI entry. Three positional args (legacy directives file, rewrite directives file,

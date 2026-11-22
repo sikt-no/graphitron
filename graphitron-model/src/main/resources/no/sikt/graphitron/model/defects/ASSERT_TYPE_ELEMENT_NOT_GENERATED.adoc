@@ -2,4 +2,4 @@ Reported at the `@assertType`, the detail naming the type of the argument or inp
 
 A requirement judges the types a generated scalar's value names: the value is decoded into its components where a call takes it, and each `@assertType` names one component and a condition its type must meet. An argument or input field of any other type, a plain `String` among them, is never decoded, so there is nothing for the requirement to judge and it would never run.
 
-*Next step.* Declare the element's type as a scalar carrying `@generatedScalar`, or remove the `@assertType`.
+*Next step.* Declare the element's type as a scalar carrying `@generatedScalar`, or remove the `@assertType`. See xref:directives/assertType.adoc[`@assertType`].

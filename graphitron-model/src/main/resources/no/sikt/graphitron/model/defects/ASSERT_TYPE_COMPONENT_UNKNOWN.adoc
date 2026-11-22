@@ -2,4 +2,4 @@ Reported at the `@assertType`, the detail naming the component as written.
 
 A generated scalar's value is decoded into a fixed set of components for its kind, and a requirement judges the type one of them names. A `SCHEMA_PATH` value has `text`, `startType`, `path` and `endType`; a `TYPE_NAME` value has `text` and `name`. A component the kind does not have names nothing to judge.
 
-*Next step.* Correct `component:` to one of the kind's components, usually `startType` or `endType` for a path and `name` for a type name.
+*Next step.* Correct `component:` to one of the kind's components, usually `startType` or `endType` for a path and `name` for a type name. See xref:directives/generatedScalar.adoc#kinds-and-components[Kinds and components].

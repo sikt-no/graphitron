@@ -1,0 +1,81 @@
+= @assertType
+:description: Require things of the types a generated scalar's value names, checked where a call decodes the value.
+:!toc:
+
+An argument or input field of a xref:generatedScalar.adoc[generated scalar] can require things of the types its value names. Each `@assertType` names one component of the value and a condition its type must meet; repeat the directive and every one must hold. The requirement is a statement about the argument, not the scalar, so one scalar serves arguments with different requirements.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @assertType(component: String!, type: TypeCondition!) repeatable
+    on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+input TypeCondition @oneOf {
+    is: String
+    implements: String
+    anyOf: [TypeCondition!]
+    allOf: [TypeCondition!]
+    not: TypeCondition
+}
+----
+
+[[parameters]]
+== Parameters
+
+[cols="1,1,3",options="header"]
+|===
+| Name | Type | Description
+| `component` | `String!` | The component of the value whose type the condition judges, one of its kind's: `startType` or `endType` for a `SCHEMA_PATH`, `name` for a `TYPE_NAME`.
+| `type` | `TypeCondition!` | The condition the component's type must meet.
+|===
+
+A condition sets exactly one field:
+
+[cols="1,3",options="header"]
+|===
+| Field | Holds when the type
+| `is` | is the named type (object, interface or union)
+| `implements` | implements the named interface, directly or through another interface
+| `anyOf` | meets at least one of the conditions
+| `allOf` | meets every one of the conditions
+| `not` | does not meet the condition
+|===
+
+== Canonical example
+
+[source,graphql]
+----
+mottakersti: Path!
+    @assertType(component: "startType", type: {implements: "Node"})
+    @assertType(component: "endType", type: {is: "Soker"})
+kontekststi: Path!
+    @assertType(component: "startType", type: {implements: "Hendelse"})
+    @assertType(component: "endType", type: {anyOf: [{is: "Sak"}, {is: "Soknad"}]})
+mottaker: Path! @assertType(component: "endType", type: {implements: "Utboksmottaker"})
+----
+
+== When it runs
+
+A requirement runs where the call that takes the value decodes it, right after the decode, against the schema the service serves. A value that fails one is answered like any wrong value, a client error at the argument naming the requirement, and nothing is called:
+
+[source,text]
+----
+input.mottakersti: the path's endType `Saksbehandler` is not `Soker`
+input.kontekststi: the path's endType `Sak` does not meet {anyOf: [{is: "Soknad"}, {is: "SoknadLevert"}]}
+----
+ A null value is not checked. Rules relating two arguments, a context path ending where a recipient path starts, stay in the function or method, written over the type names the components hand over.
+
+== Constraints
+
+Graphitron checks when it generates:
+
+* the element is of a generated scalar, else xref:../defects.adoc#assert-type-element-not-generated[`ASSERT_TYPE_ELEMENT_NOT_GENERATED`];
+* `component` is one of the value's components, else xref:../defects.adoc#assert-type-component-unknown[`ASSERT_TYPE_COMPONENT_UNKNOWN`];
+* `is` names an object, interface or union in this subgraph, else xref:../defects.adoc#assert-type-is-unknown[`ASSERT_TYPE_IS_UNKNOWN`];
+* `implements` names an interface in it, else xref:../defects.adoc#assert-type-implements-unknown[`ASSERT_TYPE_IMPLEMENTS_UNKNOWN`];
+* some call decodes the element, else xref:../defects.adoc#generated-scalar-undecoded[`GENERATED_SCALAR_UNDECODED`], so no requirement is silently skipped.
+
+A condition setting no field, or two, is refused by graphql-java when the schema is assembled.
+
+xref:../index.adoc[← Reference index]

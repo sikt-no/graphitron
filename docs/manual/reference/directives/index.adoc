@@ -12,6 +12,7 @@ a|
 * xref:accept.adoc[`@accept`] _(refused until generated)_
 * xref:asConnection.adoc[`@asConnection`]
 * xref:asFacet.adoc[`@asFacet`]
+* xref:assertType.adoc[`@assertType`]
 * xref:condition.adoc[`@condition`]
 * xref:defaultOrder.adoc[`@defaultOrder`]
 * xref:defaultTenant.adoc[`@defaultTenant`] _(no longer supported)_
@@ -21,6 +22,7 @@ a|
 * xref:error.adoc[`@error`]
 * xref:externalField.adoc[`@externalField`]
 * xref:field.adoc[`@field`]
+* xref:generatedScalar.adoc[`@generatedScalar`]
 * xref:index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
 * xref:issue.adoc[`@issue`]
 * xref:lookupKey.adoc[`@lookupKey`]
@@ -48,7 +50,7 @@ a|
 == By category
 
 *Mapping* +
-xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:scalarType.adoc[`@scalarType`], xref:record.adoc[`@record`] (deprecated, ignored)
+xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:scalarType.adoc[`@scalarType`], xref:generatedScalar.adoc[`@generatedScalar`], xref:assertType.adoc[`@assertType`], xref:record.adoc[`@record`] (deprecated, ignored)
 
 *Joining* +
 xref:reference.adoc[`@reference`], xref:referenceFor.adoc[`@referenceFor`]
