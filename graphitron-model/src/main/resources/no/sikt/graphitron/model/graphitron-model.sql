@@ -25257,7 +25257,26 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                                          AND st.depth < (SELECT MAX(st2.depth) FROM graphitron_occurrence_argument_step st2
                                                           WHERE st2.graph_name = st.graph_name
                                                             AND st2.coordinate = st.coordinate)
-                                       GROUP BY st.graph_name, st.coordinate HAVING COUNT(*) > 2))));
+                                       GROUP BY st.graph_name, st.coordinate HAVING COUNT(*) > 2))))
+UNION ALL
+-- An output field of a generated scalar reading a column jOOQ binds to another class than a string,
+-- at the field: the field hands back the stored text as it is, and such a column holds none. Only a
+-- column read is judged; a field a call answers reads no column. A declaration reached at several
+-- occurrences or landings is one site, reported once, the detail the column's class.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'GENERATED_SCALAR_COLUMN_NOT_TEXT', MIN(sc.binding_type), 'occurrence-bindings'
+  FROM graphitron_occurrence_column c
+  JOIN graphitron_occurrence o
+    ON o.graph_name = c.graph_name AND o.coordinate = c.coordinate AND o.kind = 'FIELD'
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_scalar_class gs
+    ON gs.graph_name = f.graph_name AND gs.type_name = f.named_type AND gs.source = 'GENERATED'
+  JOIN sql_column sc
+    ON sc.source_name = c.table_source_name AND sc.table_schema = c.table_schema
+   AND sc.table_name = c.table_name AND sc.column_name = c.column_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE sc.binding_type <> 'java.lang.String'
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
 -- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
@@ -32328,6 +32347,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An argument or input field of a @generatedScalar type is a list, or is read through one, and decoding a value per element is not supported yet: take one value.'),
   ('GENERATED_SCALAR_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_GENERATED_SCALAR_SITE_UNSUPPORTED',
    'A @generatedScalar component is bound at a call whose decode is not generated yet, a @condition or a @routine other than a mutation''s write: take the component at a @service or a mutation''s @routine.'),
+  ('GENERATED_SCALAR_COLUMN_NOT_TEXT', 'error', 'GRAPHITRON', 'GRAPHITRON_GENERATED_SCALAR_COLUMN_NOT_TEXT',
+   'An output field of a @generatedScalar type reads a column that holds no string, and the field hands back the stored text as it is: read a text column, or give the field another type.'),
   ('WRITE_TABLES_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_TABLES_DISAGREE',
    'A @mutation writes one table, and the tables it is read on are not one: the table its return or the fields re-reading the written rows bind, and the one @mutation(table:) names, disagree, so nothing says which table is written.'),
   ('CONDITION_ON_WRITE_RESULT', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_ON_WRITE_RESULT',

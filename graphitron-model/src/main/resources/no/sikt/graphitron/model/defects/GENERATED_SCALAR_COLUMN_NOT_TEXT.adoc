@@ -1,0 +1,5 @@
+Reported at the output field, the detail naming the Java class jOOQ binds the column to.
+
+A generated scalar is a string on the wire. As output, a field of one reads its column and hands back the stored text as it is, without checking, since a stored value may predate a schema change. A column jOOQ binds to another class than `String`, a number, a date or a UUID, holds no such text.
+
+*Next step.* Point the field at a text column, with `@field(name:)` where its name is not the column's, or give the field a type that matches the column. See xref:directives/generatedScalar.adoc#as-output[As output].

@@ -99,9 +99,10 @@ A null or absent value is not checked and hands every component as null.
 * A list of these scalars, or one read through a list of input objects, is not supported yet: xref:../defects.adoc#generated-scalar-list-unsupported[`GENERATED_SCALAR_LIST_UNSUPPORTED`].
 * A component bound at a xref:condition.adoc[`@condition`], at a `@routine` step of a field's path or at a `@routine` read on the query root is not supported yet: xref:../defects.adoc#generated-scalar-site-unsupported[`GENERATED_SCALAR_SITE_UNSUPPORTED`].
 
+[[as-output]]
 == As output
 
-A field of a generated scalar reads a string column, or a `@service` returning a `String`, and returns it as stored, without checking, since a stored value may predate a schema change.
+A field of a generated scalar reads a string column, or a `@service` returning a `String`, and returns it as stored, without checking, since a stored value may predate a schema change. A column jOOQ binds to another class than `String` holds no such text, so a field of the scalar reading one is xref:../defects.adoc#generated-scalar-column-not-text[`GENERATED_SCALAR_COLUMN_NOT_TEXT`]. A `@service` is judged by its method's return type, as any other.
 
 == Only this subgraph
 
