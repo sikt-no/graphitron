@@ -23,17 +23,22 @@ scalar Path @generatedScalar(kind: SCHEMA_PATH)
 scalar TypeName @generatedScalar(kind: TYPE_NAME)
 
 input OpprettAutomatiskUtsendingInput {
-    hendelsestype: TypeName! @require(component: "name", type: {implements: "Hendelse"})
-    kontekststi: Path!
+    kontekststi: Path! @require(component: "startType", type: {implements: "Hendelse"})
     mottakersti: Path!
         @require(component: "startType", type: {implements: "Node"})
         @require(component: "endType", type: {is: "Soker"})
 }
 
+type AutomatiskUtsending implements Node & Utsending {
+    hendelsestype: TypeName
+    kontekststi: Path
+    mottakersti: Path
+}
+
 type Mutation {
     opprettAutomatiskUtsending(input: OpprettAutomatiskUtsendingInput!): UtsendingPayload
         @routine(name: "opprett_automatisk_utsending", argMapping: """
-            pHendelsestype: input.hendelsestype.name,
+            pHendelsestype: input.kontekststi.startType,
             pKontekststi: input.kontekststi.path,
             pKontekstStart: input.kontekststi.startType,
             pKontekstSlutt: input.kontekststi.endType,
@@ -44,7 +49,7 @@ type Mutation {
 }
 ```
 
-With `mottakersti: "Sak.soker"` the function receives `'Sak.soker'`, `'Sak'` and `'Soker'`. With `"Sak.sokr"` the field answers `Sak has no field sokr` at `input.mottakersti`, with `"Sak.saksbehandler"` it answers that the path's end type `Saksbehandler` is not `Soker`, and with `hendelsestype: "Sak"` it answers that `Sak` does not implement `Hendelse`; in each case the function is not called, and an `@error` type on the payload receives the error. Rules relating two arguments (the context path ends where the recipient path starts) stay in the function, written over type names.
+The context path starts in the event type, so the event type is the path's start: with `kontekststi: "SoknadLevert.subjekt"` the function receives `'SoknadLevert'` as the event type and `'Soknad'` as the context type, and with `mottakersti: "Soknad.soker"` it receives `'Soknad'` and `'Soker'`. With `"Soknad.sokr"` the field answers `Soknad has no field sokr` at `input.mottakersti`, with `"Soknad.saksbehandler"` it answers that the path's end type `Saksbehandler` is not `Soker`, and with `kontekststi: "Sak.soker"` it answers that `Sak` does not implement `Hendelse`; in each case the function is not called, and an `@error` type on the payload receives the error. Rules relating two arguments (the context path ends where the recipient path starts) stay in the function, written over type names. On the read side, `TYPE_NAME` and `SCHEMA_PATH` fields return the names and paths stored in columns.
 
 ## User documentation (first-client check)
 
@@ -105,8 +110,10 @@ Draft for two new manual pages, `docs/manual/reference/directives/generatedScala
 > mottakersti: Path!
 >     @require(component: "startType", type: {implements: "Node"})
 >     @require(component: "endType", type: {is: "Soker"})
-> kontekststi: Path! @require(component: "endType", type: {anyOf: [{is: "Sak"}, {is: "Soknad"}]})
-> hendelsestype: TypeName! @require(component: "name", type: {implements: "Hendelse"})
+> kontekststi: Path!
+>     @require(component: "startType", type: {implements: "Hendelse"})
+>     @require(component: "endType", type: {anyOf: [{is: "Sak"}, {is: "Soknad"}]})
+> mottaker: Path! @require(component: "endType", type: {implements: "Utboksmottaker"})
 > ```
 >
 > Graphitron checks when it generates that `component` is one of the value's components, that `is` names a type and that `implements` names an interface in this subgraph. A value that fails a requirement is answered like any wrong value, with a message naming the requirement: "the path's endType `Saksbehandler` is not `Soker`".
