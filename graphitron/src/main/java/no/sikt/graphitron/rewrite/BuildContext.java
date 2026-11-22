@@ -397,6 +397,13 @@ class BuildContext {
      */
     java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> contextKeys = java.util.List.of();
 
+    /**
+     * The scalars the store states Graphitron generates, by name. The walk classifies each as the
+     * wire's string rather than deciding it, and leaves its registration to the store-rendered unit.
+     * Empty where the build was handed none.
+     */
+    java.util.Set<String> generatedScalars = java.util.Set.of();
+
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RunContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
         // is required because every classifier the BuildContext fans into reads at least one of

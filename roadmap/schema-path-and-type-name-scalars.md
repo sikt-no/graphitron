@@ -200,7 +200,7 @@ Two things on trunk stand in the way, and each is its own commit ahead of the fe
 * `RoutineCallEmitter.envArgumentRead`, blocker 2
 * `ProjectedKeyReads` and `ArgPathHelperRegistry` in `RoutineWriteEmitter`, blocker 2
 * the Mutation-root routine write's consumer of `KeyProjectionCommands` and `intent_resolved_node_key_projection`, blocker 2
-* the walk's two hand-offs, `TypeBuilder.classifyScalarType` handed the scalar's row and the walk's schema class referencing the store-rendered registration unit, each deleted when its tier flips
+* the walk's two hand-offs, each deleted when its tier flips: `TypeBuilder.classifyScalarType` handed the scalar's row (`BuildContext.generatedScalars`, read off `GeneratedScalarQuery`, and the `Synthesised` string it classifies one as), and the walk's schema class referencing the store-rendered registration unit (`GraphitronSchemaClassGenerator`'s skip of a generated scalar in its scalar loop and its `GeneratedScalars.register` call, with `rejectUnregisteredScalarReferences` counting the generated scalars registered)
 
 ## Other solutions we've considered
 

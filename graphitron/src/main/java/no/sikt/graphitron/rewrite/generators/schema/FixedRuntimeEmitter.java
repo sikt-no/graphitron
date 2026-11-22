@@ -24,10 +24,12 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
  * that issues or accepts vouchers adds the voucher runtime ({@link no.sikt.graphitron.emit.VoucherRuntime}),
  * whose gate is the store's.
  *
- * <p>Beside them it writes the one runtime class rendered from the store's facts rather than from
- * the package alone, {@code Connections}, the connection and edge classes every connection
- * producer builds, read by {@link ConnectionsQuery}; it is written exactly when the graph has a
- * connection type, and needs no plan either.
+ * <p>Beside them it writes the runtime classes rendered from the store's facts rather than from
+ * the package alone: {@code Connections}, the connection and edge classes every connection
+ * producer builds, read by {@link ConnectionsQuery}, written exactly when the graph has a
+ * connection type; and {@code GeneratedScalars}, the scalars Graphitron generates, read by
+ * {@link no.sikt.graphitron.emit.GeneratedScalarQuery}, written exactly when the graph declares
+ * one. Neither needs a plan.
  *
  * <p>The units it returns are the record of what was written, which the incremental compile graph
  * reads in place of a planned entry per class.
@@ -63,6 +65,11 @@ public final class FixedRuntimeEmitter {
         if (!issues.byCoordinate().isEmpty()) {
             add(out, GlobalUnitKind.VOUCHER_FETCHERS, new GeneratedUnits(outputPackage).vouchers(),
                 List.of(no.sikt.graphitron.emit.VoucherIssueEmitter.render(issues, outputPackage)));
+        }
+        var generated = no.sikt.graphitron.emit.GeneratedScalarQuery.read(store);
+        if (!generated.scalars().isEmpty()) {
+            add(out, GlobalUnitKind.GENERATED_SCALARS, new GeneratedUnits(outputPackage).generatedScalars(),
+                List.of(no.sikt.graphitron.emit.GeneratedScalarEmitter.render(generated, outputPackage)));
         }
         var shapes = ConnectionsQuery.read(store);
         if (!shapes.connections().isEmpty()) {

@@ -1,0 +1,28 @@
+# A generated scalar as output: a field of one returns the string it is handed, as stored, without
+# checking, since a stored value may predate a schema change. Film.title reads a string column through
+# Path, and Query.echo is a @service returning a String into Path. Both register through the
+# store-rendered GeneratedScalars unit rather than the schema class's scalar loop. Generated for
+# graphitron's GeneratedScalarExecutionTest.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+"A film, read from the film table."
+type Film @table(name: "film") {
+  "The film's key."
+  id: Int! @field(name: "film_id")
+  "The film's title, handed back as a path exactly as the column holds it."
+  title: Path
+}
+
+type Query {
+  "Every film."
+  films: [Film!]!
+  "The marker it is given, handed back by a service returning a String."
+  echo(marker: String!): Path
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "noDatabase"})
+}
+
+extend schema @expectEquals(relation: "graphitron_scalar_class", where: "type_name = 'Path'", rows: """
+  type_name, java_class,       source
+  Path,      java.lang.String, GENERATED
+  """)

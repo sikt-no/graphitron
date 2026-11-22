@@ -13,6 +13,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_VOUCHED_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_COMPONENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_FIELD;
@@ -33,8 +34,9 @@ import static org.jooq.impl.DSL.selectOne;
  * <p>Two statements at two grains: the minted voucher fields, and the components. Nothing here decides
  * anything: the members, their columns and their scalars are the voucher stage's rows, a vouched-for field is
  * its vouched-for row, and a graph with any refused part never reaches an emitter. The scalar constant is
- * a built-in's on {@code graphql.Scalars} or the one a scalar's {@code @scalarType} names, the two
- * ways a scalar is bound.
+ * a built-in's on {@code graphql.Scalars}, the one a scalar's {@code @scalarType} names, or for a
+ * scalar Graphitron generates {@code graphql.Scalars.GraphQLString}, a generated scalar being a
+ * string on the wire; the three ways a scalar is bound.
  *
  * <p>Cost: the population is the graph's issuing types and their members, small by
  * construction.
@@ -134,11 +136,13 @@ public final class VoucherIssueQuery {
         var cl = GRAPHITRON_VOUCHER_VOUCHED_FOR;
         var sd = GRAPHQL_DIRECTIVE_APPLICATION.as("sd");
         var se = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
+        var gs = GRAPHITRON_SCALAR_CLASS.as("gs");
         var vouchedFor = exists(selectOne().from(cl)
             .where(cl.GRAPH_NAME.eq(c.GRAPH_NAME), cl.TYPE_NAME.eq(c.TYPE_NAME), cl.FIELD_NAME.eq(c.FIELD_NAME)));
         var components = dsl.select(m.TYPE_NAME, v.COORDINATE, c.FIELD_NAME, col.COLUMN_NAME, col.JOOQ_NAME,
                 col.BINDING_TYPE, col.DATABASE_TYPE, t.JOOQ_NAME, s.TABLES_CLASS_FQN, c.SCALAR_NAME,
-                se.SCALAR_REF_CLASS_PART, se.SCALAR_REF_FIELD_PART, org.jooq.impl.DSL.field(vouchedFor))
+                se.SCALAR_REF_CLASS_PART, se.SCALAR_REF_FIELD_PART, org.jooq.impl.DSL.field(vouchedFor),
+                gs.TYPE_NAME)
             .from(c)
             .join(m).on(m.GRAPH_NAME.eq(c.GRAPH_NAME), m.TYPE_NAME.eq(c.TYPE_NAME), m.FIELD_NAME.eq(c.FIELD_NAME))
             .join(v).on(v.GRAPH_NAME.eq(m.GRAPH_NAME), v.TYPE_NAME.eq(m.TYPE_NAME))
@@ -151,6 +155,8 @@ public final class VoucherIssueQuery {
                 sd.DIRECTIVE_NAME.eq("scalarType"), sd.ORDINAL.eq(0))
             .leftJoin(se).on(se.GRAPH_NAME.eq(sd.GRAPH_NAME), se.SOURCE_NAME.eq(sd.SOURCE_NAME),
                 se.SOURCE_LINE.eq(sd.SOURCE_LINE), se.SOURCE_COLUMN.eq(sd.SOURCE_COLUMN))
+            .leftJoin(gs).on(gs.GRAPH_NAME.eq(c.GRAPH_NAME), gs.TYPE_NAME.eq(c.SCALAR_NAME),
+                gs.SOURCE.eq("GENERATED"))
             .where(c.GRAPH_NAME.eq(store.graphName()))
             .orderBy(m.TYPE_NAME, c.FIELD_NAME)
             .fetch();
@@ -163,12 +169,13 @@ public final class VoucherIssueQuery {
             String builtIn = BUILT_IN_CONSTANTS.get(scalarName);
             ScalarConstant scalar = builtIn != null
                 ? new ScalarConstant("graphql.Scalars", builtIn)
+                : r.get(gs.TYPE_NAME) != null ? new ScalarConstant("graphql.Scalars", "GraphQLString")
                 : r.get(se.SCALAR_REF_CLASS_PART) == null ? null
                 : new ScalarConstant(r.get(se.SCALAR_REF_CLASS_PART), r.get(se.SCALAR_REF_FIELD_PART));
             if (scalar == null) {
                 throw new IllegalStateException("the voucher component " + r.get(m.TYPE_NAME) + "."
                     + r.get(c.FIELD_NAME) + " has a scalar, " + scalarName
-                    + ", bound neither as a built-in nor by @scalarType");
+                    + ", bound neither as a built-in, by @scalarType nor by @generatedScalar");
             }
             componentsByIssue.computeIfAbsent(coordinate, k -> new ArrayList<>()).add(new Component(
                 r.get(c.FIELD_NAME),

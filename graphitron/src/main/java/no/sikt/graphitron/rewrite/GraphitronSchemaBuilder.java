@@ -229,6 +229,21 @@ public class GraphitronSchemaBuilder {
                                      java.util.Map<String, String> rowTenants,
                                      java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections,
                                      java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> contextKeys) {
+        return buildBundle(attributed, assembled, ctx, authoredTenants, rowTenants, serviceConnections,
+            contextKeys, java.util.Set.of());
+    }
+
+    /**
+     * {@link #buildBundle(AttributedRegistry, GraphQLSchema, RunContext, java.util.Set, java.util.Map, java.util.Map, java.util.List)},
+     * classifying each scalar {@code generatedScalars} names as the store states it, a string on the
+     * wire, rather than deciding it.
+     */
+    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx,
+                                     java.util.Set<String> authoredTenants,
+                                     java.util.Map<String, String> rowTenants,
+                                     java.util.Map<String, java.util.Set<no.sikt.graphitron.emit.ConnectionQuery.Outcome>> serviceConnections,
+                                     java.util.List<no.sikt.graphitron.emit.FillQuery.ContextKey> contextKeys,
+                                     java.util.Set<String> generatedScalars) {
         var registry = attributed.registry();
         boolean federationLink = attributed.federationLink();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
@@ -236,6 +251,7 @@ public class GraphitronSchemaBuilder {
         bctx.rowTenants = java.util.Map.copyOf(rowTenants);
         bctx.serviceConnections = java.util.Map.copyOf(serviceConnections);
         bctx.contextKeys = java.util.List.copyOf(contextKeys);
+        bctx.generatedScalars = java.util.Set.copyOf(generatedScalars);
         recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
@@ -781,6 +797,9 @@ public class GraphitronSchemaBuilder {
                 registered.add(entry.getKey());
             }
         }
+        // The generator's loop leaves a generated scalar to the store-rendered unit, which registers
+        // every one the store states; each is registered whatever the walk made of it.
+        registered.addAll(ctx.generatedScalars);
         var reported = new LinkedHashSet<String>();
         for (var entry : ctx.types.entrySet()) {
             String typeName = entry.getKey();

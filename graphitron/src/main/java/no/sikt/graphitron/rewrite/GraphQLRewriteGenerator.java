@@ -538,7 +538,8 @@ public class GraphQLRewriteGenerator {
             no.sikt.graphitron.emit.AuthoredTenantsQuery.read(store),
             no.sikt.graphitron.emit.RowTenantsQuery.read(store),
             no.sikt.graphitron.emit.ConnectionQuery.serviceOutcomes(store),
-            no.sikt.graphitron.emit.FillQuery.contextKeys(store));
+            no.sikt.graphitron.emit.FillQuery.contextKeys(store),
+            no.sikt.graphitron.emit.GeneratedScalarQuery.read(store).names());
         var schema = bundle.model();
         boolean federationLink = bundle.federationLink();
         var assembled = emittedSchema();
@@ -617,11 +618,19 @@ public class GraphQLRewriteGenerator {
             .filter(unit -> unit.kind() == no.sikt.graphitron.command.GlobalUnitKind.VOUCHER_FETCHERS)
             .map(unit -> com.palantir.javapoet.ClassName.get(unit.ref().packageName(), unit.ref().simpleName()))
             .findFirst().orElse(null);
+        // And the store-rendered generated scalars' registration, where the graph declares one; the
+        // schema class's own scalar loop leaves those scalars to it.
+        var generatedScalars = fixedRuntime.stream()
+            .filter(unit -> unit.kind() == no.sikt.graphitron.command.GlobalUnitKind.GENERATED_SCALARS)
+            .map(unit -> com.palantir.javapoet.ClassName.get(unit.ref().packageName(), unit.ref().simpleName()))
+            .findFirst().orElse(null);
+        var generatedScalarNames = no.sikt.graphitron.emit.GeneratedScalarQuery.read(store).names();
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
                     connectionKeyShape, federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
-                    plan.sessionIdentity(), connections, vouchers, voucherRoles,
+                    plan.sessionIdentity(), connections, vouchers, generatedScalars, generatedScalarNames,
+                    voucherRoles,
                     plan.outboxes().rows().stream().anyMatch(row -> !row.failureMessages().isEmpty())),
                 emittedThisRun);
         }
@@ -714,6 +723,8 @@ public class GraphQLRewriteGenerator {
                                         no.sikt.graphitron.emit.SessionIdentityRows sessionIdentity,
                                         com.palantir.javapoet.ClassName connections,
                                         com.palantir.javapoet.ClassName vouchers,
+                                        com.palantir.javapoet.ClassName generatedScalars,
+                                        java.util.Set<String> generatedScalarNames,
                                         no.sikt.graphitron.emit.VoucherRuntime.Roles voucherRoles,
                                         boolean failureMessages) {
         String outputPackage = ctx.outputPackage();
@@ -745,11 +756,12 @@ public class GraphQLRewriteGenerator {
                 voucherRoles.issues());
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME, VOUCHER_CODEC, VOUCHER_KEYS,
-                 VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION, VOUCHER_FETCHERS, CONNECTIONS -> throw new IllegalStateException(command.kind()
+                 VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION, VOUCHER_FETCHERS, GENERATED_SCALARS,
+                 CONNECTIONS -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage,
-                federationLink, connections, vouchers);
+                federationLink, connections, vouchers, generatedScalars, generatedScalarNames);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, connectionKeyShape);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity, vouches,

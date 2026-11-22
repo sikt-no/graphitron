@@ -1351,6 +1351,9 @@ class TypeBuilder {
      *       any other scalar. The resolver looks up the named class + field through
      *       {@link BuildContext#codegenLoader}, validates the field, and reflects on the
      *       {@code Coercing<I, O>} type parameters.</li>
+     *   <li><b>A generated scalar</b>, which the store states ({@link BuildContext#generatedScalars}),
+     *       is handed its fact: a {@link ScalarResolution.Synthesised} string, registered by the
+     *       store-rendered unit rather than the schema class's loop.</li>
      *   <li><b>Unresolved</b>: a hard validation error pointing at {@code @scalarType(scalar:)} as
      *       the fix.</li>
      * </ul>
@@ -1397,6 +1400,17 @@ class TypeBuilder {
                 return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, s, scalarType);
             }
             return new UnclassifiedType(name, location, asRejection(resolution, name));
+        }
+
+        if (ctx.generatedScalars.contains(name)) {
+            // The store owns a generated scalar: its class is the wire's string and its registration
+            // is the store-rendered unit's, so the walk is handed the fact rather than deciding it.
+            // The coercing named here is never borrowed, the schema class leaving the registration to
+            // that unit.
+            return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location,
+                new ScalarResolution.Synthesised(com.palantir.javapoet.ClassName.get(String.class), name,
+                    com.palantir.javapoet.ClassName.get("graphql", "Scalars"), "GraphQLString"),
+                scalarType);
         }
 
         if (hasDirective) {

@@ -314,7 +314,7 @@ public final class PlanCompileGraph {
                      CONNECTION_HELPER, PAGE_INFO, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, TABLE_ALIASES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
-                     ERROR_MAPPINGS, VOUCHER_KEYS -> { }
+                     ERROR_MAPPINGS, VOUCHER_KEYS, GENERATED_SCALARS -> { }
                 // Each arm of the request rejection extends the connection runtime's sealed base,
                 // which permits it.
                 case VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION ->
@@ -461,6 +461,8 @@ public final class PlanCompileGraph {
                     refOf(GlobalUnitKind.CONNECTIONS).ifPresent(c -> precise(schemaClass, c));
                     // The voucher fields register through the voucher fetchers.
                     refOf(GlobalUnitKind.VOUCHER_FETCHERS).ifPresent(v -> precise(schemaClass, v));
+                    // The generated scalars register through their store-rendered unit.
+                    refOf(GlobalUnitKind.GENERATED_SCALARS).ifPresent(g -> precise(schemaClass, g));
                 }
                 case QUERY_NODE_FETCHER -> {
                     var nodeFetcher = units.get(0);

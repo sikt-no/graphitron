@@ -320,6 +320,11 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "Connections");
     }
 
+    /** {@code <pkg>.schema.GeneratedScalars}: the store-rendered scalars Graphitron generates and their registration. */
+    public UnitRef generatedScalars() {
+        return unit(SUB_SCHEMA, no.sikt.graphitron.emit.GeneratedScalarEmitter.CLASS_NAME);
+    }
+
     /** The store-rendered voucher fields' fetchers and their registration. */
     public UnitRef vouchers() {
         return unit(SUB_FETCHERS, no.sikt.graphitron.emit.VoucherIssueEmitter.CLASS_NAME);

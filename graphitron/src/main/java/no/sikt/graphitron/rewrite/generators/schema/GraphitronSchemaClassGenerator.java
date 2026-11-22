@@ -110,12 +110,16 @@ public final class GraphitronSchemaClassGenerator {
      * one: it registers every connection and edge field itself, so the schema class calls its
      * {@code register} once. {@code null} for a run without a connection type. {@code vouchers} is
      * the store-rendered {@code Vouchers} class where the graph issues, registering every voucher
-     * field the same way; {@code null} otherwise.
+     * field the same way; {@code null} otherwise. {@code generatedScalars} is the store-rendered
+     * {@code GeneratedScalars} class where the graph declares a generated scalar: it registers
+     * {@code generatedScalarNames} itself, so the schema class calls its {@code register} once and its
+     * own scalar loop leaves those names to it; {@code null} and empty for a graph declaring none.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> rows,
                                           String outputPackage, boolean federationLink, ClassName connections,
-                                          ClassName vouchers) {
+                                          ClassName vouchers, ClassName generatedScalars,
+                                          java.util.Set<String> generatedScalarNames) {
         String schemaPackage = outputPackage + ".schema";
 
         boolean hasQuery = false, hasMutation = false, hasSubscription = false;
@@ -285,11 +289,13 @@ public final class GraphitronSchemaClassGenerator {
         // This filter is the registered set GraphitronSchemaBuilder's reference-closure guard
         // re-derives to check that every scalar the emitted forms reference lands here. Without a
         // registration command row to join against, the two agree by inspection: change one and
-        // change the other.
+        // change the other. A generated scalar is the store-rendered unit's to register, so the loop
+        // leaves it out and the unit's register call below adds it; the guard counts it registered.
         var scalarTypes = schema.types().values().stream()
             .filter(t -> t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType)
             .map(t -> (no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType) t)
             .filter(s -> !s.name().startsWith("_"))
+            .filter(s -> !generatedScalarNames.contains(s.name()))
             .sorted(Comparator.comparing(no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType::name))
             .toList();
         for (var scalar : scalarTypes) {
@@ -302,6 +308,9 @@ public final class GraphitronSchemaClassGenerator {
                 ? f : scalar.schemaType();
             String helper = sink.addScalar(scalar, form);
             body.addStatement("schemaBuilder.additionalType($L())", helper);
+        }
+        if (generatedScalars != null) {
+            body.addStatement("$T.register(schemaBuilder)", generatedScalars);
         }
         for (var dir : DirectiveDefinitionEmitter.definitions(assembled)) {
             if (DirectiveDefinitionEmitter.isSeededByGraphqlJava(dir)) {
