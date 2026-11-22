@@ -136,6 +136,9 @@ public final class FillEmitter {
         var helpers = new ArrayList<MethodSpec>();
         var built = new ArrayList<Result.Built>();
         var arguments = new ArrayList<CodeBlock>();
+        // The generated scalar arguments decoded so far: each once per call, however many of its
+        // components the call takes.
+        var decodedScalars = new java.util.HashSet<String>();
         for (var fill : row.fills()) {
             var type = SessionIdentityRows.typeOf(fill.parameterType());
             var local = local(fill);
@@ -168,6 +171,22 @@ public final class FillEmitter {
                 }
                 case "ARGUMENT" -> {
                     var landing = fill.landing().orElseThrow();
+                    if (landing.component().isPresent()) {
+                        // A generated scalar's component: the value is decoded and checked once, ahead
+                        // of the call, and the parameter takes the component off the record.
+                        var decode = landing.decode().orElseThrow(() -> unfilled(row, fill,
+                            "it takes component " + landing.component().get() + " of "
+                                + String.join(".", landing.path()) + ", which the store states no decode for"));
+                        var record = GeneratedScalarDecodeEmitter.local(decode);
+                        if (decodedScalars.add(decode.coordinate())) {
+                            statements.addAll(GeneratedScalarDecodeEmitter.statements(decode, record,
+                                generatedScalars(row, fill, runtime)));
+                        }
+                        statements.add(CodeBlock.of("$T $L = $L", type, local,
+                            GeneratedScalarDecodeEmitter.component(record, landing.component().get())));
+                        arguments.add(CodeBlock.of("$L", local));
+                        continue;
+                    }
                     if (unreadThroughList(landing, type)) {
                         throw unfilled(row, fill,
                             String.join(".", landing.path()) + " is read through a list, which only a scalar or an enum"
@@ -242,6 +261,33 @@ public final class FillEmitter {
             }
         }
         return new Result.Emitted(statements, arguments, helpers, built);
+    }
+
+    /**
+     * The decodes a child call's fetcher runs before it loads: every generated scalar argument
+     * {@code row}'s fills take a component of, once each, so a wrong value fails the field it was
+     * given on rather than the batch. Empty where the call takes no component.
+     */
+    public static CodeBlock decodeChecks(FillQuery.Row row, Runtime runtime) {
+        var decodes = new ArrayList<GeneratedScalarQuery.Decode>();
+        for (var fill : row.fills()) {
+            fill.landing().filter(landing -> landing.component().isPresent())
+                .ifPresent(landing -> decodes.add(landing.decode().orElseThrow(() -> unfilled(row, fill,
+                    "it takes component " + landing.component().get() + " of " + String.join(".", landing.path())
+                        + ", which the store states no decode for"))));
+        }
+        if (decodes.isEmpty()) {
+            return CodeBlock.of("");
+        }
+        return GeneratedScalarDecodeEmitter.checks(decodes, generatedScalars(row, row.fills().getFirst(), runtime));
+    }
+
+    /** The generated {@code GeneratedScalars} class, under the output package the decode runtime names. */
+    private static ClassName generatedScalars(FillQuery.Row row, FillQuery.Fill fill, Runtime runtime) {
+        if (runtime.decode() == null) {
+            throw unfilled(row, fill, "it takes a generated scalar's component, and the runtime names no output package");
+        }
+        return GeneratedScalarEmitter.className(runtime.decode().outputPackage());
     }
 
     /** A parameter of {@code row}'s call nothing here fills, and why. */

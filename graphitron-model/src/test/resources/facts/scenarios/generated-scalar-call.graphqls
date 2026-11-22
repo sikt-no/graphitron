@@ -1,17 +1,103 @@
 # A generated scalar taken at a call by its components: an argMapping names the component a
 # parameter takes, past the scalar, and the landing hands over that component rather than the value.
-# Query.startOf hands its path's start type to a service echoing what it is given. Generated for
-# graphitron's GeneratedScalarExecutionTest.
+# The call decodes the value once, checks it against the schema it serves and checks the
+# requirements its @assertType states, before anything is called. Query.along hands a path's four
+# components to a service, and each alongX field puts one kind of requirement in front of it;
+# Query.named takes a TYPE_NAME's name; Film.ends is a child service taking components, decoded in
+# its fetcher before it loads; Mutation.endorseAlong a routine write taking them. Query.occupants
+# reaches a union, which a path cannot step past. Generated for graphitron's
+# GeneratedScalarCallExecutionTest.
 
 scalar Path @generatedScalar(kind: SCHEMA_PATH)
+scalar TypeName @generatedScalar(kind: TYPE_NAME)
+
+interface Node { id: ID! }
+
+"A film, read from the film table."
+type Film implements Node @table(name: "film") @node {
+  "The film's node id."
+  id: ID!
+  "The film's key."
+  filmId: Int! @field(name: "film_id")
+  "The film's title."
+  title: String
+  "The start and end types of the path it is given, which must end at a film, by a child service."
+  ends(path: Path @assertType(component: "endType", type: {is: "Film"})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "alongForFilms", argMapping: "start: path.startType, end: path.endType"})
+}
+
+"An actor, read from the actor table."
+type Actor @table(name: "actor") {
+  "The actor's first name."
+  firstName: String @field(name: "first_name")
+}
+
+"A customer, one kind of occupant."
+type Customer @table(name: "customer") {
+  "The customer's first name."
+  firstName: String @field(name: "first_name")
+}
+
+"A member of staff, the other kind of occupant."
+type Staff @table(name: "staff") {
+  "The member of staff's first name."
+  firstName: String @field(name: "first_name")
+}
+
+"Whoever occupies an address."
+union Occupant = Customer | Staff
+
+"A film endorsement, read from the film_endorsement table."
+type FilmEndorsement @table(name: "film_endorsement") {
+  "What the endorsement says, here what the routine was handed."
+  note: String
+}
 
 type Query {
+  "The films, or the one with the key given."
+  films(filmId: Int @field(name: "film_id")): [Film!]!
+  "Every actor."
+  actors: [Actor!]!
+  "The occupants of the addresses chosen by key."
+  occupants(addressIds: [Int!] @field(name: "address_id")): [Occupant!]! @asConnection
   "The start type of the path it is given, handed back by a service echoing its marker."
   startOf(path: Path): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "noDatabase", argMapping: "marker: path.startType"})
+  "The four components of the path it is given."
+  along(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The components of a path starting at a node."
+  alongNode(path: Path @assertType(component: "startType", type: {implements: "Node"})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The components of a path ending at a film."
+  alongFilm(path: Path @assertType(component: "endType", type: {is: "Film"})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The components of a path ending at a film or an actor."
+  alongEither(path: Path @assertType(component: "endType", type: {anyOf: [{is: "Film"}, {is: "Actor"}]})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The components of a path starting anywhere but at a node."
+  alongNotNode(path: Path @assertType(component: "startType", type: {not: {implements: "Node"}})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The components of a path ending at a film or an actor, but not at an actor."
+  alongNested(path: Path @assertType(component: "endType", type: {allOf: [{anyOf: [{is: "Film"}, {is: "Actor"}]}, {not: {is: "Actor"}}]})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.GeneratedScalarService", method: "along", argMapping: "text: path.text, start: path.startType, steps: path.path, end: path.endType"})
+  "The type name it is given, handed back by a service echoing its marker."
+  named(type: TypeName): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "noDatabase", argMapping: "marker: type.name"})
 }
 
-extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
-  call_coordinate, target_name, landing_coordinate,   trailing_name, receives
-  Query.startOf,   marker,      Query.startOf(path:), startType,     COMPONENT
+type Mutation {
+  "Endorses a film with a note recording the components of the path it is given."
+  endorseAlong(film: Int!, path: Path): [FilmEndorsement!]!
+    @routine(name: "endorse_film_along_path", argMapping: "pEndorsedFilm: film, pText: path.text, pStart: path.startType, pPath: path.path, pEnd: path.endType")
+    @reference(path: [{table: "film_endorsement"}])
+}
+
+extend schema @assertContains(relation: "graphitron_argmapping_landing", rows: """
+  call_coordinate,       target_name, landing_coordinate,          trailing_name, receives
+  Query.startOf,         marker,      Query.startOf(path:),        startType,     COMPONENT
+  Query.along,           steps,       Query.along(path:),          path,          COMPONENT
+  Query.named,           marker,      Query.named(type:),          name,          COMPONENT
+  Film.ends,             end,         Film.ends(path:),            endType,       COMPONENT
+  Mutation.endorseAlong, pEnd,        Mutation.endorseAlong(path:), endType,      COMPONENT
   """)

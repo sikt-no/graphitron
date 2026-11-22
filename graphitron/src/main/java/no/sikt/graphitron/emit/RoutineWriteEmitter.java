@@ -45,8 +45,9 @@ import java.util.Set;
  *
  * <p>The routine's arguments are the store's fills, {@link RoutineWriteQuery.Argument}: each read
  * off the request along the path the store states, null-safe through the input objects on the way, a
- * list into an array where the parameter takes one, and a node id decoded into the one key column the
- * parameter takes, all ahead of the call and the write's transaction.
+ * list into an array where the parameter takes one, a node id decoded into the one key column the
+ * parameter takes, and a generated scalar decoded and checked once into the components its parameters
+ * take, all ahead of the call and the write's transaction.
  *
  * <p>Generated names (the body, the lift, the transaction provider) are the caller's, minted where
  * every other reference to them is.
@@ -161,11 +162,14 @@ public final class RoutineWriteEmitter {
             List<CodeBlock> reads, List<MethodSpec> helpers) {
         var call = row.call();
         var args = new ArrayList<CodeBlock>();
+        // The generated scalar arguments decoded so far: each once per call, however many of its
+        // components the routine takes.
+        var decodedScalars = new java.util.HashSet<String>();
         for (int position = 0; position < call.arguments().size(); position++) {
             var argument = call.arguments().get(position);
             var local = TAKEN.contains(argument.parameterName())
                 ? argument.parameterName() + "Parameter" : argument.parameterName();
-            reads.addAll(argumentRead(row, rows, argument, position, local, decode, helpers));
+            reads.addAll(argumentRead(row, rows, argument, position, local, decode, helpers, decodedScalars));
             args.add(CodeBlock.of("$L", local));
         }
         return CodeBlock.of("$T.$L($L)", CatalogRefs.className(call.routinesClassName()),
@@ -177,12 +181,14 @@ public final class RoutineWriteEmitter {
      * null wherever an input object on the way is absent; a list copied into an array of the
      * parameter's component type, in the list's order, graphql-java handing a list over as a
      * {@code java.util.List}, which the routine's array parameter does not take; or a node id read as
-     * it arrives and decoded into the key column the parameter takes, a malformed id a client error.
-     * A path read through a list above its last step, or a node id with no {@code KEY_VALUE} shape, is
-     * a shape the store refuses, so meeting one is a generator bug.
+     * it arrives and decoded into the key column the parameter takes, a malformed id a client error;
+     * or a generated scalar's component, the scalar's value decoded and checked once per call
+     * ({@link GeneratedScalarDecodeEmitter}), its argument added to {@code decodedScalars}, and the component
+     * read off the record. A path read through a list above its last step, or a node id with no
+     * {@code KEY_VALUE} shape, is a shape the store refuses, so meeting one is a generator bug.
      */
     private static List<CodeBlock> argumentRead(Row row, Rows rows, Argument argument, int position, String local,
-            NodeIdDecodeEmitter.Runtime decode, List<MethodSpec> helpers) {
+            NodeIdDecodeEmitter.Runtime decode, List<MethodSpec> helpers, Set<String> decodedScalars) {
         var coordinate = row.typeName() + "." + row.fieldName();
         var path = argument.pathNames();
         if (path.isEmpty()) {
@@ -195,6 +201,21 @@ public final class RoutineWriteEmitter {
                 + String.join(".", path) + ", which the build defers");
         }
         var type = CatalogRefs.decodeBindingType(argument.javaTypeName());
+        if (argument.component().isPresent()) {
+            var scalar = argument.scalar().orElseThrow(() -> new IllegalStateException(
+                "Graphitron generator bug (routine-write arguments): parameter " + argument.parameterName() + " of "
+                    + coordinate + " takes component " + argument.component().get() + " of " + String.join(".", path)
+                    + ", which the store states no decode for"));
+            var record = GeneratedScalarDecodeEmitter.local(scalar);
+            var out = new ArrayList<CodeBlock>();
+            if (decodedScalars.add(scalar.coordinate())) {
+                out.addAll(GeneratedScalarDecodeEmitter.statements(scalar, record,
+                    GeneratedScalarEmitter.className(decode.outputPackage())));
+            }
+            out.add(CodeBlock.of("$T $L = $L", type, local,
+                GeneratedScalarDecodeEmitter.component(record, argument.component().get())));
+            return out;
+        }
         if (argument.nodeId()) {
             if (argument.decode().isEmpty()) {
                 throw new IllegalStateException("Graphitron generator bug (routine-write arguments): parameter "

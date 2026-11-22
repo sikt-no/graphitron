@@ -190,6 +190,22 @@ public final class FrameEmitter {
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
                                     ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
                                     boolean bodyAnswersOutcome, Connection connection) {
+        return render(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome,
+            connection, CodeBlock.of(""));
+    }
+
+    /**
+     * {@link #render}, where a child frame runs {@code beforeLoad} in its fetcher ahead of handing its
+     * key to the loader: statements reading the fetch as {@code env}, such as the decode of the
+     * arguments its call takes, so what they throw fails this field alone, routed as a throw in the
+     * body is. A root frame's body runs in its fetcher already and takes none.
+     */
+    public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
+                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                    boolean bodyAnswersOutcome, Connection connection, CodeBlock beforeLoad) {
+        if (row.root() && !beforeLoad.isEmpty()) {
+            throw new IllegalArgumentException(row.coordinate() + ": only a child frame runs statements before it loads");
+        }
         if (row.root() && connection instanceof Connection.Inherited
                 || !row.root() && connection instanceof Connection.Routed) {
             throw new IllegalArgumentException(row.coordinate() + ": a root frame is routed and a child's"
@@ -201,7 +217,7 @@ public final class FrameEmitter {
         }
         return row.root()
             ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome, connection)
-            : child(row, methodName, valueType, bodyClass, body, runtime, connection);
+            : child(row, methodName, valueType, bodyClass, body, runtime, connection, beforeLoad);
     }
 
     private static MethodSpec root(FrameQuery.Row row, String methodName, TypeName valueType,
@@ -252,7 +268,8 @@ public final class FrameEmitter {
     }
 
     private static MethodSpec child(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime, Connection connection) {
+                                    ClassName bodyClass, String body, Runtime runtime, Connection connection,
+                                    CodeBlock beforeLoad) {
         var parent = row.parent().orElseThrow();
         if (parent.key().isEmpty()) {
             throw new IllegalArgumentException(row.coordinate() + "'s parent, a row of "
@@ -317,6 +334,8 @@ public final class FrameEmitter {
                 .addStatement("parent = success.value()")
                 .endControlFlow();
         }
+        // Inside the try, so what it throws is routed by the handler below with a throw reading the key.
+        method.addCode(beforeLoad);
         if (row.accessor().isPresent()) {
             // The key is the record the parent's member hands back; a parent handing back none has
             // no key, and its field is null.

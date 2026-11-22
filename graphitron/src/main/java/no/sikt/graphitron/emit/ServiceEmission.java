@@ -507,10 +507,16 @@ public final class ServiceEmission {
             written.addAll(written(outbox.get(), emitted.body(), framed, runtime.fetchersClass(), validates,
                 serviceControlled.contains(coordinate)));
         }
+        // A child call's generated scalar arguments are decoded in its fetcher too, before the key is
+        // loaded, so a wrong value fails the field it was given on; the batch decodes them again where
+        // it hands the components over.
+        var beforeLoad = frameKey.isPresent()
+            ? FillEmitter.decodeChecks(fills.get(coordinate), runtime.fill())
+            : CodeBlock.of("");
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
             framed, runtime.frame(),
             writesSuccess || needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
-            validates, connection(coordinate, fieldCoordinate, runtime));
+            validates, connection(coordinate, fieldCoordinate, runtime), beforeLoad);
         if (outbox.isPresent() && outbox.get().writesFailure()) {
             // Registered first thing, before the frame acquires a connection, so a failure to
             // acquire or mount is covered too.

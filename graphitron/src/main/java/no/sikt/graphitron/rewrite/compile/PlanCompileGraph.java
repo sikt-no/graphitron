@@ -314,7 +314,9 @@ public final class PlanCompileGraph {
                      CONNECTION_HELPER, PAGE_INFO, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, TABLE_ALIASES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
-                     ERROR_MAPPINGS, VOUCHER_KEYS, GENERATED_SCALARS -> { }
+                     ERROR_MAPPINGS, VOUCHER_KEYS -> { }
+                // A generated scalar's decoders refuse a wrong value with the client exception.
+                case GENERATED_SCALARS -> precise(units.get(0), require(GlobalUnitKind.CLIENT_EXCEPTION));
                 // Each arm of the request rejection extends the connection runtime's sealed base,
                 // which permits it.
                 case VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION ->
@@ -824,6 +826,15 @@ public final class PlanCompileGraph {
                 declared(fetchers, context);
                 declared(schemaClass, fetchers);
             }
+            // A call taking a generated scalar's component decodes the value through the generated
+            // scalars' decoders, in the call's fetchers unit. Declared: which fetchers decode follows
+            // the store's landings, and what a fetcher calls there, the records and decoders, is the
+            // same for every schema declaring one.
+            refOf(GlobalUnitKind.GENERATED_SCALARS).ifPresent(generated -> {
+                for (UnitRef fetchers : plan.typeUnits().fetchersUnits()) {
+                    declared(fetchers, generated);
+                }
+            });
             // A polymorphic connection field's fetcher builds the field's connection class with no
             // launcher row behind it, so the edge is the leaf's.
             refOf(GlobalUnitKind.CONNECTIONS).ifPresent(connections -> {

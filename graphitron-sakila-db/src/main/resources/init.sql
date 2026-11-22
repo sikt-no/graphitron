@@ -1209,6 +1209,24 @@ AS $$
     RETURNING film_endorsement.endorsement_id
 $$;
 
+-- Routine-write fixture for a generated scalar taken by its components: the endorsement's note
+-- records the four text values a path's components hand over, joined by bars, a null shown as
+-- <null>, so a test reads back what the function received.
+CREATE OR REPLACE FUNCTION public.endorse_film_along_path(
+    p_endorsed_film INTEGER,
+    p_text          TEXT,
+    p_start         TEXT,
+    p_path          TEXT,
+    p_end           TEXT
+) RETURNS TABLE(endorsement_id INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    INSERT INTO film_endorsement (endorsed_film, note)
+    VALUES (p_endorsed_film, coalesce(p_text, '<null>') || '|' || coalesce(p_start, '<null>') || '|'
+                             || coalesce(p_path, '<null>') || '|' || coalesce(p_end, '<null>'))
+    RETURNING film_endorsement.endorsement_id
+$$;
+
 -- R451 routine fixture: a scalar (non-table-valued) function pinning JooqCatalog's
 -- exists-but-not-table-valued resolution arm. jOOQ places it in the generated `routines`
 -- package (not `tables`), so @routine naming it must land the typed Deferred routed off
