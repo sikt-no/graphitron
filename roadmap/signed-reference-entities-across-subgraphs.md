@@ -232,10 +232,11 @@ the vouched subtree asks for it.
 ### One connection per vouched-for value
 
 An operation takes one vouched connection, for one vouched-for value. Vouchers carrying it, from a list
-of results or several parents' lists, share that connection. The first vouched-for value an operation presents, in representation order, is admitted;
-a representation carrying another fails on its own, answering `null` with an error at its own index that
-names the limit, and the rest resolve (slice 8g). The limit is never a request rejection, so it is not
-mistaken for a denial and never fails the lookup it occurs in. The limit lives in one place so it can be raised later.
+of results or several parents' lists, share that connection. The first vouched-for value an operation
+presents, in representation order, is admitted; a representation carrying another fails on its own,
+answering `null` with an error at its own index that names the limit and no value, and the rest resolve
+(slice 8g). The limit is never a request rejection, so it is not mistaken for a denial and never fails
+the lookup it occurs in. The limit lives in one place so it can be raised later.
 
 Every entity of the group reads through a connection mounted for that value, so a subtree is scoped to
 its entities by the graph it was reached through, and its reads to the value by RLS. Sharing the
@@ -684,7 +685,8 @@ Decisions the user made on this item; each is stated where it applies below.
   configuration. `<sessionState>` keeps only what it names, the handle class; a voucher marker no longer
   needs it (*Retired vocabulary*).
 * *Audit logging.* Graphitron logs the vouch id, scope and outcome at issue and on every redemption and
-  rejection, at a named level and logger the docs state. Nothing reads the vouch id otherwise.
+  rejection, and on every representation the one-value limit turns away, at a named level and logger
+  the docs state. Nothing reads the vouch id otherwise.
 * *Redaction.* The voucher is a credential: confirm generated code and the dispatcher never log
   representations, the token or its values, or echo the voucher in errors, and that
   `VoucherRejectedException`'s message names the check that failed and nothing from the token.
@@ -971,23 +973,47 @@ unmapped, `GraphqlHttpHandler` answers a redacted `500`, and the router nulls ev
 `vgsKompetanseoppnaelser`. Keeping an `_entities` lookup to one connection from the pool is wanted;
 failing the whole lookup to keep it there is not (Alf, 2026-11-18).
 
-* *Admission.* The limit stops admitting values instead of throwing. The first vouched-for value in
-  representation order is admitted, so which one wins never depends on loader dispatch order;
-  representations carrying it resolve as today, on its connection.
+* *Admission, at registration.* The limit stops admitting values instead of throwing. The first
+  vouched-for value in representation order is admitted, so which one wins never depends on loader
+  dispatch order; representations carrying it resolve as today, on its connection. That order exists
+  only where `fetchEntities` registers representations: its loop calls `loadSlot` once per
+  representation, synchronously, and the voucher arm builds the connection key there, before any loader
+  dispatches. So admission moves there, onto the carrier as an operation-scoped admit that answers
+  rather than throws. `admitVouched` in `entryFor` runs at acquisition, in dispatch order; once
+  registration filters, it only ever sees the admitted key, and stays as an invariant that throws
+  `IllegalStateException` if it sees another.
+* *Verified before admitted.* Every voucher is verified, past the limit or not, before the limit is
+  applied to it. A forged voucher behind a valid one still rejects the request rather than earning a
+  per-representation error.
 * *Each one past the limit fails alone.* It answers `null` with an error at its own `_entities` index,
-  which the router places at the parent's path, and the message names the limit and the value it
-  admitted in its place. The same holds for a vouched entity reached any other way in the operation.
+  through `ErrorRouter.clientErrorAt`, the path an unresolvable `__typename` already takes; the router
+  places it at the parent's path. It reaches no loader, so it takes no connection and fires no SQL. The
+  message names the limit and nothing of any voucher: not the admitted value, not its own. A
+  vouched-for value is an owner's identifier, and the error travels to the router and the client, so
+  naming it would break *Redaction* (Alf, 2026-11-22).
+* *Another `_entities` field in the operation.* Admission is per operation, on the carrier, so a second,
+  aliased `_entities` field sees the value the first admitted. Across fields "first" is the order the
+  fields execute in; representation order holds within one call.
+* *The error's type.* `VouchedValueLimitExceededException` leaves the sealed request-rejection type and
+  becomes the client exception the per-representation error carries, with the fixed message above. A
+  consumer catching it as a request rejection breaks, so the commit is `feat!` with a
+  `BREAKING-CHANGE:` footer, and `voucher-handover.adoc` and `accept.adoc`, which describe it as
+  rejecting the request, say which errors a consumer may see.
+* *Audit.* A representation past the limit is a third outcome beside redeemed and rejected, logged on
+  the voucher audit logger by vouch id, scope and outcome, so B can trace why an owner's rows came back
+  `null`.
 * *What stays a request rejection.* A voucher whose signature or expiry fails verification is a forged
   or stale token, not a capacity limit, and still rejects the request.
-* *Where.* The generated connection runtime (`ConnectionRuntimeClassGenerator`'s `admitVouched`) and the
-  entity dispatch (`EntityFetcherDispatch`'s batches). No store fact, SDL or consumer configuration
-  changes; `VouchedValueLimitExceededException` either goes or becomes the per-representation error's
-  carrier, and the voucher how-to says which errors a consumer may see.
+* *Where.* `EntityFetcherDispatchClassGenerator`'s voucher arm, `ConnectionRuntimeClassGenerator`
+  (`admitVouched` and the new admit) and `VoucherRuntime` (the exception). No store fact, SDL or consumer
+  configuration changes.
 * *Tests.* The emitted admission tested at the unit tier with the emitter harness (`testing.adoc`,
   "Every emitted unit runs at the unit tier"): representation order, a second and a third value, a
-  failed signature still rejecting. An execution test in sakila's federated fixture: an `_entities`
-  call with representations for two vouched-for values resolves the first value's entities and gives
-  each of the second's an error at its own index.
+  failed signature behind an admitted value still rejecting. An execution test in sakila's federated
+  fixture: an `_entities` call with representations for two vouched-for values resolves the first
+  value's entities and gives each of the second's an error at its own index that names neither value.
+  `VoucherAcceptExecutionTest.vouchersForTwoOwnersInOneRequestRejectItWithTheLimitNotNull` becomes that
+  test rather than being deleted.
 
 ## Tests
 
