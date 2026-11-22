@@ -5930,25 +5930,27 @@ COMMENT ON VIEW graphitron_binding_claim_rule IS 'One binding claim the rule com
 -- COMMENT ON COLUMN graphitron_binding_claim_rule.element_coordinate_ref IS 'the element, as the element reference';
 
 -- What each type's written directives claim it stands for: rows of a table from @table, an error
--- its handlers fill from an exception from @error. A claim is what was written, whether or not it
--- resolves. Neither directive repeats, so a type's one application of each is its ordinal 0,
+-- its handlers fill from an exception from @error, a scalar bound to a constant from @scalarType and
+-- a scalar Graphitron generates from @generatedScalar. A claim is what was written, whether or not it
+-- resolves. None of the four repeats, so a type's one application of each is its ordinal 0,
 -- whether written on its declaration or an extension; a refused schema repeating one still claims
 -- once.
 CREATE VIEW graphitron_type_claim_rule (graph_name, coordinate, kind, claimer, source_name,
                                         source_line, source_column, element_graph_ref,
                                         element_coordinate_ref) AS
 SELECT e.graph_name, e.coordinate,
-       CASE da.directive_name WHEN 'table' THEN 'TABLE_TYPE' ELSE 'ERROR_TYPE' END,
+       CASE da.directive_name WHEN 'table' THEN 'TABLE_TYPE' WHEN 'error' THEN 'ERROR_TYPE'
+                              WHEN 'scalarType' THEN 'SCALAR_TYPE' ELSE 'GENERATED_SCALAR' END,
        e.coordinate, da.source_name, da.source_line, da.source_column, e.graph_name, e.coordinate
   FROM graphitron_element e
   JOIN graphitron_directive_application da
     ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
-   AND da.directive_name IN ('table', 'error') AND da.ordinal = 0
+   AND da.directive_name IN ('table', 'error', 'scalarType', 'generatedScalar') AND da.ordinal = 0
  WHERE e.element_kind = 'NAMED_TYPE';
 COMMENT ON VIEW graphitron_type_claim_rule IS 'One type claim the rule computes, in the shape graphitron_claim stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_claim, at the priority and under the stage TypeClaims claims.';
 -- COMMENT ON COLUMN graphitron_type_claim_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_type_claim_rule.coordinate IS 'the type claimed for';
--- COMMENT ON COLUMN graphitron_type_claim_rule.kind IS 'TABLE_TYPE or ERROR_TYPE';
+-- COMMENT ON COLUMN graphitron_type_claim_rule.kind IS 'TABLE_TYPE, ERROR_TYPE, SCALAR_TYPE or GENERATED_SCALAR';
 -- COMMENT ON COLUMN graphitron_type_claim_rule.claimer IS 'the type itself';
 -- COMMENT ON COLUMN graphitron_type_claim_rule.source_name IS 'the file the first application was written in';
 -- COMMENT ON COLUMN graphitron_type_claim_rule.source_line IS 'its line';
@@ -31818,7 +31820,9 @@ INSERT INTO graphitron_claim_kind VALUES
   ('EXPRESSION', 'BINDING'),
   ('VOUCHER',    'BINDING'),
   ('TABLE_TYPE', 'TYPE'),
-  ('ERROR_TYPE', 'TYPE');
+  ('ERROR_TYPE', 'TYPE'),
+  ('SCALAR_TYPE', 'TYPE'),
+  ('GENERATED_SCALAR', 'TYPE');
 
 INSERT INTO graphitron_claim_inclusion VALUES
   ('LOOKUP', 'ROUTINE', 'ROUTINE_LOOKUP_DEFERRED');

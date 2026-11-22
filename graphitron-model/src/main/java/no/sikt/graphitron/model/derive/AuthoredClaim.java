@@ -7,7 +7,8 @@ package no.sikt.graphitron.model.derive;
  * per-position orders the classification walk's detector lists used to spell (service,
  * externalField, nodeId, routine at the child position; service, lookupKey, routine at the
  * query position; service, mutation at the mutation position; table, error at the type grain),
- * so a migrated conflict message names its directives byte-identically.
+ * so a migrated conflict message names its directives byte-identically. A scalar's two claims,
+ * scalarType then generatedScalar, come last, no walk list having named them.
  */
 public enum AuthoredClaim {
     SERVICE("service"),
@@ -17,7 +18,9 @@ public enum AuthoredClaim {
     ROUTINE("routine"),
     MUTATION("mutation"),
     TABLE("table"),
-    ERROR("error");
+    ERROR("error"),
+    SCALAR_TYPE("scalarType"),
+    GENERATED_SCALAR("generatedScalar");
 
     private final String directive;
 

@@ -1,0 +1,33 @@
+# A scalar takes @scalarType or @generatedScalar, not both: each claims what the scalar stands for,
+# a constant the author binds or a kind Graphitron generates, so a scalar carrying both is one
+# CLAIMS_CONFLICT at its declaration, with both claims under it, and has no class at all rather
+# than one of the two picked silently. Money and Path, each with one directive, are the near
+# misses: one claim, no defect, and a class.
+
+scalar Both
+  @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+  @generatedScalar(kind: SCHEMA_PATH)
+scalar Money @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type Query { ping: String }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_claim", rows: """
+  code,            coordinate, kind
+  CLAIMS_CONFLICT, Both,       GENERATED_SCALAR
+  CLAIMS_CONFLICT, Both,       SCALAR_TYPE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_claim", where: "coordinate IN ('Both', 'Money', 'Path')", rows: """
+  coordinate, kind
+  Both,       GENERATED_SCALAR
+  Both,       SCALAR_TYPE
+  Money,      SCALAR_TYPE
+  Path,       GENERATED_SCALAR
+  """)
+
+extend schema @expectEquals(relation: "graphitron_scalar_class", where: "type_name IN ('Both', 'Money', 'Path')", rows: """
+  type_name, java_class,           source
+  Money,     java.math.BigDecimal, SCALAR_TYPE
+  Path,      java.lang.String,     GENERATED
+  """)
