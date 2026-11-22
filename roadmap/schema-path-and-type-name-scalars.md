@@ -1,7 +1,7 @@
 ---
 id: R1204
 title: "A Path or TypeName argument is checked against the subgraph schema, and a routine binds the path's start and end types"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 1
 theme: mutation-write
@@ -227,3 +227,5 @@ Two things on trunk stand in the way, and each is its own commit ahead of the fe
 A reviewer probe, a scratch scenario and execution test not committed, showed the shape works today. An input object `{ sti: Path! @assertType(...) }`, bound as `input.sti.text/startType/path/endType` by a root `@service` and by a Mutation-root `@routine`, drew none of the generated-scalar defects. Both calls received the components, both refused a failing value with `input.sti: the path's ...`, and the routine wrote nothing.
 
 To satisfy this, pin that shape in `scenarios/generated-scalar-call`, and in `GeneratedScalarCallExecutionTest` for both call kinds: an accepted value, an `@assertType` refusal naming `input.<field>`, and the routine writing nothing on a refusal. Nothing else is owed. The interface-ending case, the `GENERATED_SCALAR_COLUMN_NOT_TEXT` defect and the `UNDECODED` stand-aside are in.
+
+*Response (E, 2026-11-22):* answered by `test(R1204): a generated scalar inside an input object is decoded, checked and refused at its own path`. `scenarios/generated-scalar-call` binds `input.p.*`, `input.t.name` and `input.inner.p.endType` at a root `@service` and a Mutation `@routine`, and `GeneratedScalarCallExecutionTest` pins, for both call kinds, an accepted value, an `@assertType` refusal naming `input.p`, and the routine writing nothing on a refusal.
