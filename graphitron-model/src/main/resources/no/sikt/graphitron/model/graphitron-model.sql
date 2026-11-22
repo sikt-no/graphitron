@@ -16032,7 +16032,8 @@ CREATE VIEW graphitron_occurrence_service_parameter_defect_rule
 -- what the argument delivers: a list where the parameter takes one value or one where it takes a
 -- list, a path stepping through a list delivering one, or a value graphitron_type_arrival says does
 -- not arrive as the parameter's class. Object takes any value whole. A node id decoded onto the parameter is the node id rules' to judge, a
--- scalar of no known class and an array parameter no one's.
+-- scalar of no known class and an array parameter no one's, and a generated scalar's component the
+-- arm below.
 SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
        'PARAMETER_MISMATCH'
   FROM graphitron_occurrence_call_parameter cp
@@ -16068,6 +16069,46 @@ SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position
                              OR ar.arrival_kind = 'ANY_NON_JDK'
                                 AND POSITION('.', COALESCE(mp.element_class, mp.erased_class, mp.parameter_type)) > 0
                                 AND COALESCE(mp.element_class, mp.erased_class, mp.parameter_type) NOT LIKE 'java.%')))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
+                     JOIN graphitron_argmapping_landing l
+                       ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
+                      AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
+                      AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name
+                      AND l.call_coordinate = pp.coordinate AND l.receives = 'COMPONENT'
+                    WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
+                      AND pp.call = cp.call AND pp.position = cp.position)
+UNION ALL
+-- A parameter of a service's call a generated scalar's component fills, by a pair's path past the
+-- scalar, that cannot take the component's class (graphitron_generated_scalar_component): the call
+-- hands over one value of that class, which only a parameter of the class or Object takes.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'PARAMETER_MISMATCH'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN graphitron_occurrence_call_parameter_pair pp
+    ON pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate AND pp.call = cp.call
+   AND pp.position = cp.position
+  JOIN graphitron_argmapping_landing l
+    ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
+   AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
+   AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name
+   AND l.call_coordinate = pp.coordinate AND l.receives = 'COMPONENT'
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = l.graph_name AND it.coordinate = l.landing_coordinate
+  JOIN graphql_directive_application gd
+    ON gd.graph_name = it.graph_name AND gd.coordinate = it.type_name
+   AND gd.directive_name = 'generatedScalar' AND gd.ordinal = 0
+  JOIN graphitron_ast_generated_scalar_entry ge
+    ON ge.graph_name = gd.graph_name AND ge.source_name = gd.source_name
+   AND ge.source_line = gd.source_line AND ge.source_column = gd.source_column
+  JOIN graphitron_generated_scalar_component gc ON gc.kind = ge.kind AND gc.component = l.trailing_name
+ WHERE cp.call_kind = 'SERVICE' AND cp.fill = 'ARGUMENT'
+   AND (mp.parameter_type LIKE '%[]' OR COALESCE(mp.delivery, '') = 'MANY'
+        OR COALESCE(mp.element_class, mp.erased_class, mp.parameter_type) NOT IN (gc.java_class, 'java.lang.Object'))
 UNION ALL
 -- Two written fills for one parameter of a service's call: nothing says which, so the rule takes
 -- neither.
@@ -17543,7 +17584,8 @@ COMMENT ON VIEW graphitron_occurrence_routine_parameter_rule IS 'One row the rou
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.fill IS 'the fill of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.fill';
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.landing_coordinate';
 
--- A root routine call's parameter nothing binds, where no pair names it. Written by
+-- A root routine call's parameter nothing binds, where no pair names it, and one a generated
+-- scalar's component fills that does not take the component's class. Written by
 -- occurrence-producers once the routine calls' fills are.
 CREATE VIEW graphitron_occurrence_routine_parameter_defect_rule
   (graph_name, coordinate, call, call_kind, position, parameter_name, code) AS
@@ -17563,7 +17605,38 @@ SELECT oc.graph_name, oc.coordinate, oc.call, oc.call_kind, sp.position, sp.jooq
                     WHERE pp.graph_name = oc.graph_name AND pp.coordinate = oc.application_coordinate
                       AND pp.directive_name = oc.application_directive
                       AND pp.ordinal = oc.application_ordinal
-                      AND pp.target_kind = 'NAME' AND pp.target_name = sp.jooq_name);
+                      AND pp.target_kind = 'NAME' AND pp.target_name = sp.jooq_name)
+UNION ALL
+-- A root routine call's parameter a generated scalar's component fills, by a pair's path past the
+-- scalar, whose binding type is not the component's class (graphitron_generated_scalar_component):
+-- the function takes one value of its parameter's own type. Only a component binding is judged
+-- here; a parameter bound to an argument or a key column is passed as it arrives, as before.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'PARAMETER_MISMATCH'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = cp.graph_name AND pr.coordinate = cp.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name AND sp.position = cp.position
+  JOIN graphitron_occurrence_call_parameter_pair pp
+    ON pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate AND pp.call = cp.call
+   AND pp.position = cp.position
+  JOIN graphitron_argmapping_landing l
+    ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
+   AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
+   AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name
+   AND l.call_coordinate = pp.coordinate AND l.receives = 'COMPONENT'
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = l.graph_name AND it.coordinate = l.landing_coordinate
+  JOIN graphql_directive_application gd
+    ON gd.graph_name = it.graph_name AND gd.coordinate = it.type_name
+   AND gd.directive_name = 'generatedScalar' AND gd.ordinal = 0
+  JOIN graphitron_ast_generated_scalar_entry ge
+    ON ge.graph_name = gd.graph_name AND ge.source_name = gd.source_name
+   AND ge.source_line = gd.source_line AND ge.source_column = gd.source_column
+  JOIN graphitron_generated_scalar_component gc ON gc.kind = ge.kind AND gc.component = l.trailing_name
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT' AND sp.binding_type <> gc.java_class;
 COMMENT ON VIEW graphitron_occurrence_routine_parameter_defect_rule IS 'One row the routine parameter defect rule computes, in the shape graphitron_occurrence_call_parameter_defect stores for a root routine''s call: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers writes this view''s rows for one graph into graphitron_occurrence_call_parameter_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_defect_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.coordinate';
@@ -32354,7 +32427,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('EXTERNAL_FIELD_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_EXTERNAL_FIELD_PATH_UNSUPPORTED',
    'An @externalField on a field that also writes a @reference path is not supported yet: the method takes the table the field''s values are rows of, and an expression at the path''s end is not bound. Remove the @reference and reach the joined table inside the method.'),
   ('PARAMETER_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_MISMATCH',
-   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
+   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar; or a @service or root @routine parameter an argMapping hands a generated scalar''s component, typed as another class than the component''s. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',

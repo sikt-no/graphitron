@@ -1,0 +1,44 @@
+# A parameter an argMapping hands a generated scalar's component takes the component's class, a
+# String for every component today, at a @service and at a root @routine. A service parameter of
+# another class, an int, a Long or a list of strings, is a mismatch, as is a routine parameter whose
+# SQL type is an integer. Near misses draw nothing: a String and an Object service parameter, a text
+# routine parameter, and a routine parameter bound to a plain argument of another type, which the
+# component rule does not judge.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type FilmEndorsement @table(name: "film_endorsement") { note: String }
+
+type Query {
+  asString(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.startType"})
+  asObject(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byAnything", argMapping: "value: path.endType"})
+  asInt(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byIntId", argMapping: "id: path.startType"})
+  asLong(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byLongId", argMapping: "id: path.text"})
+  asList(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitles", argMapping: "titles: path.endType"})
+}
+
+type Mutation {
+  endorseByStart(film: Int!, path: Path!): [FilmEndorsement!]!
+    @routine(name: "endorse_film", argMapping: "pEndorsedFilm: film, pNote: path.startType")
+    @reference(path: [{table: "film_endorsement"}])
+  endorseIntoInteger(path: Path!): [FilmEndorsement!]!
+    @routine(name: "endorse_film", argMapping: "pEndorsedFilm: path.startType, pNote: path.text")
+    @reference(path: [{table: "film_endorsement"}])
+  endorsePlain(film: String!, note: String!): [FilmEndorsement!]!
+    @routine(name: "endorse_film", argMapping: "pEndorsedFilm: film, pNote: note")
+    @reference(path: [{table: "film_endorsement"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_defect",
+    where: "code = 'PARAMETER_MISMATCH'", rows: """
+  coordinate,                  call_kind, parameter_name
+  Query.asInt,                 SERVICE,   id
+  Query.asLong,                SERVICE,   id
+  Query.asList,                SERVICE,   titles
+  Mutation.endorseIntoInteger, ROUTINE,   pEndorsedFilm
+  """)
