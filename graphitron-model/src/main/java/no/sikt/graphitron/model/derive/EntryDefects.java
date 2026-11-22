@@ -127,7 +127,10 @@ public final class EntryDefects {
     public static final Rule PARTICIPANTS =
         new Rule("occurrence-participants", GRAPHITRON_OCCURRENCE_PARTICIPANT_ENTRY_DEFECT_RULE);
 
-    /** The route defects' rule, {@link OccurrenceRoutes}. */
+    /**
+     * The route defects' rule, {@link OccurrenceRoutes}, and a generated scalar nothing decodes, read
+     * after the {@link #TENANTS} defects it stands aside for.
+     */
     public static final Rule ROUTES =
         new Rule("occurrence-routes", GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE);
 

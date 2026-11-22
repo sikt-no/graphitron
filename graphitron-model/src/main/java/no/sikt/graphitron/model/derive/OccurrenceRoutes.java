@@ -15,10 +15,11 @@ import static org.jooq.impl.DSL.val;
  * The {@code occurrence-routes} stage: the connection each producer of a database-per-tenant graph runs
  * on, into {@code graphitron_occurrence_connection}, the parts a routed key is made of, into
  * {@code graphitron_occurrence_connection_part}, and a defect for each root call it cannot say that for;
- * marked and swept.
+ * marked and swept. Its rule also raises {@code GENERATED_SCALAR_UNDECODED}, reading the defects
+ * {@link OccurrenceTenants} stored, so it stands aside where one of those already speaks.
  *
  * <p>Runs after {@link OccurrenceTenants}, off the tenant slots, the optional and list element
- * occurrences, the calls' fills and the producers' results.
+ * occurrences, the calls' fills, the producers' results and that stage's defects.
  */
 public final class OccurrenceRoutes {
 
