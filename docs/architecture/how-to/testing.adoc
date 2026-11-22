@@ -100,6 +100,15 @@ produces. Such a test reads a store, so it sits in the pipeline tier. A literal 
 input with no store origin: a stand-in for generated runtime code, or a shape the model or the
 generator refuses, which the test's javadoc says.
 
+*Every emitted unit runs at the unit tier (Alf, 2026-11-22).* A unit an emitter writes, a decoder, a
+check, a helper, a fill, gets a test that compiles the emitter's output and calls it: read the rows
+from a fact document, compile with `EmittedCodeHarness.compileFilesStrictly`, and invoke the compiled
+classes directly, with the stubs in `no.sikt.graphitron.emit.stub` standing in for generated runtime
+(`FillEmitterTest` is the canonical class). Its edge cases, a refused value, each arm, the message a
+client reads, are asserted there. A test that sends a GraphQL request reaches the same code as an
+integration test, and covers what needs a request: binding, wiring, error routing; it is no
+substitute for running the unit.
+
 == Pipeline tier
 
 An example captured into the store, and what the store holds for it.
