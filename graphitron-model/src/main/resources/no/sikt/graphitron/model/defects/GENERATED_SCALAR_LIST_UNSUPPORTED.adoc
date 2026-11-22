@@ -1,0 +1,5 @@
+Reported at the argument or input field, the detail naming the scalar.
+
+A generated scalar is decoded once per call, into one record of components, before the call runs. A list of them, or one read through a list of input objects, would need a decode and a check per element, which is not generated yet.
+
+*Next step.* Take one value per argument or input field. Until lists are supported, a call that needs several paths takes several arguments.

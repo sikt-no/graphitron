@@ -1,0 +1,5 @@
+Reported at the argument or input field.
+
+A generated scalar's value is decoded and checked where a call takes one of its components through `argMapping`, and only there. An argument or input field of one that no call takes is never decoded, so a wrong value is not refused, and any `@assertType` written on it never runs. Where it sits under a `@service` whose method resolved, `ARGUMENT_UNBOUND` already reports it, and this code stands aside.
+
+*Next step.* Bind the component a call needs, `pStart: path.startType`, or remove the argument.

@@ -1,0 +1,46 @@
+# A generated scalar's value reaches a call only as a component an argMapping names, which the call
+# decodes and checks. Every other binding hands over the unchecked string and is refused at the
+# argument or input field: a @service parameter filled by the argument's name or by its type, an
+# input object a parameter takes whole, a column a @mutation writes, an implicit filter comparing a
+# column, and an @outbox payload key. The near miss binds a component, path.startType, and draws
+# nothing.
+
+extend schema @withConfiguration(outboxTable: "outbox")
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type Film @table(name: "film") { title: String }
+
+input PathHolder { sti: Path }
+input FilmPathInput { title: Path }
+input FilmInput { title: String }
+
+type Query {
+  films(title: Path): [Film!]!
+  byName(title: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  byType(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  inObject(value: PathHolder): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byAnything"})
+  byComponent(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.startType"})
+}
+
+type Mutation {
+  createFilm(in: FilmPathInput!): Film @mutation(typeName: INSERT)
+  tagged(in: FilmInput!, sti: Path): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "sti: sti")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'GENERATED_SCALAR_%'", rows: """
+  code,                         coordinate
+  GENERATED_SCALAR_BOUND_WHOLE, Query.films(title:)
+  GENERATED_SCALAR_BOUND_WHOLE, Query.byName(title:)
+  GENERATED_SCALAR_BOUND_WHOLE, Query.byType(path:)
+  GENERATED_SCALAR_BOUND_WHOLE, PathHolder.sti
+  GENERATED_SCALAR_BOUND_WHOLE, FilmPathInput.title
+  GENERATED_SCALAR_BOUND_WHOLE, Mutation.tagged(sti:)
+  """)

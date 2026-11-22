@@ -20509,6 +20509,87 @@ directive (graph_name, coordinate, element_coordinate, call_coordinate, call, so
     JOIN graphitron_occurrence_call c
       ON c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate AND c.call_kind = 'SERVICE'
    WHERE da.directive_name = 'tenant'
+),
+-- Each argument or input-field occurrence of a generated scalar, with where its element is written.
+generated (graph_name, coordinate, element_coordinate, kind, type_name, source_name, source_line,
+           source_column) AS (
+  SELECT o.graph_name, o.coordinate, o.element_coordinate, o.kind, it.type_name, el.source_name,
+         el.source_line, el.source_column
+    FROM graphitron_occurrence o
+    JOIN graphitron_occurrence_input_type it ON it.graph_name = o.graph_name AND it.coordinate = o.coordinate
+    JOIN graphitron_scalar_class sc
+      ON sc.graph_name = it.graph_name AND sc.type_name = it.type_name AND sc.source = 'GENERATED'
+    JOIN graphql_ast_element_entry el
+      ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+),
+-- A generated scalar's component landing where a call is still rendered without the store, at the
+-- argMapping string naming it: a @condition's, and a @routine's that is not a mutation root's write,
+-- a child routine's step or a query's call. The detail is the directive.
+deferred_site (graph_name, coordinate, directive_name, source_name, source_line, source_column) AS (
+  SELECT l.graph_name, l.landing_coordinate, l.directive_name, pr.source_name, pr.source_line,
+         pr.source_column
+    FROM graphitron_argmapping_landing l
+    JOIN graphitron_argmapping_pair pr
+      ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
+     AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
+     AND pr.target_kind = l.target_kind AND pr.target_name = l.target_name
+   WHERE l.receives = 'COMPONENT'
+     AND (l.directive_name = 'condition'
+          OR l.directive_name = 'routine'
+             AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call c
+                               JOIN graphitron_occurrence co
+                                 ON co.graph_name = c.graph_name AND co.coordinate = c.coordinate
+                               JOIN graphitron_field cf
+                                 ON cf.graph_name = co.graph_name AND cf.coordinate = co.element_coordinate
+                               JOIN graphql_root_operation ro
+                                 ON ro.graph_name = cf.graph_name AND ro.type_name = cf.type_name
+                                AND ro.operation = 'MUTATION'
+                              WHERE c.graph_name = l.graph_name AND c.coordinate = l.call_coordinate
+                                AND c.call_kind = 'ROUTINE'))
+),
+-- The generated scalar occurrences the positive rule below judges: neither read through a list nor
+-- taken at a deferred site, each of which is its own deferral and wins over it.
+judged (graph_name, coordinate, element_coordinate, kind, source_name, source_line, source_column) AS (
+  SELECT g.graph_name, g.coordinate, g.element_coordinate, g.kind, g.source_name, g.source_line,
+         g.source_column
+    FROM generated g
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                      WHERE s.graph_name = g.graph_name AND s.coordinate = g.coordinate AND s.is_list)
+     AND NOT EXISTS (SELECT 1 FROM deferred_site d
+                      WHERE d.graph_name = g.graph_name AND d.coordinate = g.coordinate)
+),
+-- What binds a judged occurrence other than a call parameter handed one of its components, by the
+-- kind of binder: whatever else takes it (graphitron_occurrence_taken), a call parameter whose fill
+-- came from no pair landing on a component, a routine's pair landing on it whole, or a parameter, a
+-- member or a condition taking an input object above it whole.
+whole (graph_name, coordinate, binder) AS (
+  SELECT t.graph_name, t.coordinate, t.taken_by
+    FROM graphitron_occurrence_taken t
+   WHERE t.taken_by <> 'PARAMETER'
+  UNION ALL
+  SELECT bp.graph_name, bp.coordinate, 'PARAMETER'
+    FROM graphitron_occurrence_binding_parameter bp
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
+                       JOIN graphitron_argmapping_landing l
+                         ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
+                        AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal
+                        AND l.owner = pp.owner AND l.target_kind = pp.target_kind
+                        AND l.target_name = pp.target_name AND l.call_coordinate = pp.coordinate
+                        AND l.receives = 'COMPONENT'
+                      WHERE pp.graph_name = bp.graph_name AND pp.coordinate = bp.call_coordinate
+                        AND pp.call = bp.call AND pp.position = bp.position
+                        AND l.landing_coordinate = bp.coordinate)
+  UNION ALL
+  SELECT l.graph_name, l.landing_coordinate, 'PARAMETER'
+    FROM graphitron_argmapping_landing l
+   WHERE l.directive_name = 'routine' AND l.receives <> 'COMPONENT'
+  UNION ALL
+  SELECT s.graph_name, s.coordinate, t.taken_by
+    FROM graphitron_occurrence_argument_step s
+    JOIN graphitron_occurrence_taken t
+      ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+     AND t.taken_by IN ('PARAMETER', 'MEMBER', 'CONDITION')
+   WHERE s.step_coordinate <> s.coordinate
 )
 SELECT a.graph_name, a.source_name, a.source_line, a.source_column, 'TENANT_NAMED_TWICE',
        MIN(d.element_coordinate), 'occurrence-tenants'
@@ -20916,7 +20997,56 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
             AND EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
                          WHERE ch.graph_name = o.graph_name AND ch.coordinate = o.coordinate
                            AND ch.type_name = f.named_type))
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- A generated scalar's value reaches a call only as a component an argMapping names, which the call
+-- decodes and checks: an argument or input field of one bound any other way, at its declaration. The
+-- detail is the kind of binder, the first where several bind it.
+SELECT j.graph_name, j.source_name, j.source_line, j.source_column, 'GENERATED_SCALAR_BOUND_WHOLE',
+       MIN(w.binder), 'occurrence-tenants'
+  FROM judged j
+  JOIN whole w ON w.graph_name = j.graph_name AND w.coordinate = j.coordinate
+ GROUP BY j.graph_name, j.source_name, j.source_line, j.source_column
+UNION ALL
+-- An argument or input field of a generated scalar nothing takes, itself or above it, so no call
+-- decodes its value and no @assertType on it ever runs, at its declaration. It stands aside where
+-- ARGUMENT_UNBOUND speaks for it, under a @service whose method resolved or where an overriding
+-- condition stands in for its predicate.
+SELECT j.graph_name, j.source_name, j.source_line, j.source_column, 'GENERATED_SCALAR_UNDECODED',
+       CAST(NULL AS VARCHAR), 'occurrence-tenants'
+  FROM judged j
+  JOIN graphitron_occurrence o ON o.graph_name = j.graph_name AND o.coordinate = j.coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_taken t
+                    WHERE t.graph_name = j.graph_name AND t.coordinate = j.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM whole w WHERE w.graph_name = j.graph_name AND w.coordinate = j.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence a
+                     JOIN graphitron_occurrence_producer p
+                       ON p.graph_name = a.graph_name AND p.coordinate = a.parent_coordinate
+                      AND p.kind = 'SERVICE'
+                     JOIN graphitron_occurrence_call_method m
+                       ON m.graph_name = p.graph_name AND m.coordinate = p.coordinate AND m.call = 'producer'
+                    WHERE a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+ GROUP BY j.graph_name, j.source_name, j.source_line, j.source_column
+UNION ALL
+-- An argument or input field of a generated scalar read through a list, its own or an input
+-- object's above it, at its declaration: each element would be decoded and checked on its own,
+-- which is not supported yet. The detail is the scalar.
+SELECT g.graph_name, g.source_name, g.source_line, g.source_column, 'GENERATED_SCALAR_LIST_UNSUPPORTED',
+       MIN(g.type_name), 'occurrence-tenants'
+  FROM generated g
+ WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                WHERE s.graph_name = g.graph_name AND s.coordinate = g.coordinate AND s.is_list)
+ GROUP BY g.graph_name, g.source_name, g.source_line, g.source_column
+UNION ALL
+-- A generated scalar's component bound at a call the store does not emit yet, at the argMapping
+-- string: a @condition's, or a @routine's that is no mutation root's write. The detail is the
+-- directive.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'GENERATED_SCALAR_SITE_UNSUPPORTED',
+       MIN(d.directive_name), 'occurrence-tenants'
+  FROM deferred_site d
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column;
 COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_rule IS 'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.';
 
 -- The table a filter's argument or input field naming no column was looked for in, under its
@@ -32190,6 +32320,14 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An @assertType condition''s is names no object, interface or union type of this subgraph, or nothing at all, so no value could ever meet it: name a type this subgraph declares.'),
   ('ASSERT_TYPE_IMPLEMENTS_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_ASSERT_TYPE_IMPLEMENTS_UNKNOWN',
    'An @assertType condition''s implements names no interface of this subgraph, or nothing at all, so no value could ever meet it: name an interface this subgraph declares.'),
+  ('GENERATED_SCALAR_BOUND_WHOLE', 'error', 'GRAPHITRON', 'GRAPHITRON_GENERATED_SCALAR_BOUND_WHOLE',
+   'An argument or input field of a @generatedScalar type is bound some other way than as a component an argMapping names: by a parameter''s name or type, inside an input object a call takes whole, as a member, a column, a filter, a tenant or an @outbox key. Only a component binding decodes and checks the value, so name the component the parameter takes, as input.path.endType.'),
+  ('GENERATED_SCALAR_UNDECODED', 'error', 'GRAPHITRON', 'GRAPHITRON_GENERATED_SCALAR_UNDECODED',
+   'An argument or input field of a @generatedScalar type is taken by no call, so its value is never decoded or checked and no @assertType on it runs: bind a component of it in a call''s argMapping, or remove it.'),
+  ('GENERATED_SCALAR_LIST_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_GENERATED_SCALAR_LIST_UNSUPPORTED',
+   'An argument or input field of a @generatedScalar type is a list, or is read through one, and decoding a value per element is not supported yet: take one value.'),
+  ('GENERATED_SCALAR_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_GENERATED_SCALAR_SITE_UNSUPPORTED',
+   'A @generatedScalar component is bound at a call whose decode is not generated yet, a @condition or a @routine other than a mutation''s write: take the component at a @service or a mutation''s @routine.'),
   ('WRITE_TABLES_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_TABLES_DISAGREE',
    'A @mutation writes one table, and the tables it is read on are not one: the table its return or the fields re-reading the written rows bind, and the one @mutation(table:) names, disagree, so nothing says which table is written.'),
   ('CONDITION_ON_WRITE_RESULT', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_ON_WRITE_RESULT',

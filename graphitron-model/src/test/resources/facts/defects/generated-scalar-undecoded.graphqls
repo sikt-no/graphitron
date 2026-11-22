@@ -1,0 +1,25 @@
+# An argument or input field of a generated scalar no call takes is never decoded, so a wrong value
+# is never refused and an @assertType written on it never runs: Film.title's path argument, on a
+# field that makes no call, is refused at the argument. Under a @service whose method resolved,
+# ARGUMENT_UNBOUND already says the argument goes nowhere, as argument-unbound pins, and this code
+# stands aside. The near miss binds a component, so its @assertType runs, and draws nothing.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type Film @table(name: "film") {
+  title(path: Path @assertType(component: "endType", type: {is: "Film"})): String
+}
+
+type Query {
+  films: [Film!]!
+  ignored(id: Int!, path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byIntId"})
+  decoded(path: Path @assertType(component: "endType", type: {is: "Film"})): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.endType"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'GENERATED_SCALAR_%'", rows: """
+  code,                       coordinate
+  GENERATED_SCALAR_UNDECODED, Film.title(path:)
+  """)
