@@ -7,6 +7,7 @@ import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import no.sikt.graphitron.model.tables.GraphqlAstDirectiveApplicationEntry;
@@ -330,13 +331,18 @@ class GraphitronTypeEntriesTest {
     /**
      * The names applied at one site: the application entries whose index row gives them that
      * entry kind.
+     *
+     * <p>Not graphitron's own directives.graphqls, which every reading takes in and which applies
+     * {@code @oneOf} to an input type of its own: a case about what the author wrote asks about
+     * the author's documents.
      */
     private List<String> appliedAt(DSLContext dsl, EntryKind site) {
         var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         return dsl.select(applied.NAME)
             .from(applied)
             .join(GRAPHQL_AST_ENTRY).on(entryOf(applied, site))
-            .where(applied.GRAPH_NAME.eq(graph))
+            .where(applied.GRAPH_NAME.eq(graph),
+                applied.SOURCE_NAME.ne(SchemaLoader.DIRECTIVES_SOURCE_NAME))
             .orderBy(applied.NAME)
             .fetch(applied.NAME);
     }

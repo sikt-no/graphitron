@@ -18,6 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_GENERATED_SCALAR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
@@ -39,6 +40,7 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.lis
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.ofKind;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.token;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.tokenOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
@@ -52,7 +54,8 @@ import static org.jooq.impl.DSL.val;
  * key, so a row here is the decode of exactly one row there. Which declaration the directive was
  * written on, and in which file, is one join away rather than a column.
  *
- * <p>The type-site directives this writes are {@code @table}, {@code @scalarType}, {@code @enum},
+ * <p>The type-site directives this writes are {@code @table}, {@code @scalarType},
+ * {@code @generatedScalar}, {@code @enum},
  * {@code @error}, {@code @node}, {@code @discriminate}, {@code @discriminator} and
  * federation's {@code @key}. {@code @error}'s row carries its key and nothing else, its only
  * argument being the handler list; it is there for the handlers to hang off. A handler is one row
@@ -78,6 +81,7 @@ final class GraphitronTypeEntries {
                       List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
         tables(dsl, graph, touchedAt, wrote(applied(applications, "table"), "name"));
         scalarTypes(dsl, graph, touchedAt, wrote(applied(applications, "scalarType"), "scalar"));
+        generatedScalars(dsl, graph, touchedAt, token(applied(applications, "generatedScalar"), "kind"));
         enums(dsl, graph, touchedAt, naming(applied(applications, "enum"), "enumReference"));
         var errors = applied(applications, "error");
         errors(dsl, graph, touchedAt, errors);
@@ -118,7 +122,8 @@ final class GraphitronTypeEntries {
      * position another directive now occupies.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        GRAPHITRON_AST_TABLE_ENTRY, GRAPHITRON_AST_SCALAR_TYPE_ENTRY, GRAPHITRON_AST_ENUM_ENTRY,
+        GRAPHITRON_AST_TABLE_ENTRY, GRAPHITRON_AST_SCALAR_TYPE_ENTRY,
+        GRAPHITRON_AST_GENERATED_SCALAR_ENTRY, GRAPHITRON_AST_ENUM_ENTRY,
         GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY, GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_HANDLER_ENTRY, GRAPHITRON_AST_ERROR_ENTRY,
         GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY,
@@ -173,6 +178,25 @@ final class GraphitronTypeEntries {
                 .set(t.SCALAR_REF, excluded(t.SCALAR_REF))
                 .set(t.SCALAR_REF_CLASS_PART, excluded(t.SCALAR_REF_CLASS_PART))
                 .set(t.SCALAR_REF_FIELD_PART, excluded(t.SCALAR_REF_FIELD_PART)));
+    }
+
+    private static void generatedScalars(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                         List<Directive> applications) {
+        var t = GRAPHITRON_AST_GENERATED_SCALAR_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(token(application, "kind"), t.KIND)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.KIND)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.KIND, excluded(t.KIND)));
     }
 
     private static void enums(DSLContext dsl, String graph, LocalDateTime touchedAt,

@@ -1,0 +1,37 @@
+# A scalar Graphitron generates itself: Path a path through this schema, TypeName the name of one of
+# its types. The application states the kind and nothing else; the components each kind decodes a
+# value into are the store's own vocabulary, and the class every generated scalar is read as is the
+# wire's string. Opaque, a custom scalar with neither @generatedScalar nor @scalarType, is the near
+# miss: no entry and no class. Query.ping has no fetcher, a defect this document is not about; the
+# components are a constant of the store, so they are claimed as contained rather than whole.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+scalar TypeName @generatedScalar(kind: TYPE_NAME)
+scalar Opaque
+
+type Query { ping: String }
+
+extend schema @expectEquals(relation: "graphitron_ast_generated_scalar_entry", rows: """
+  source_line, kind
+  8,           SCHEMA_PATH
+  9,           TYPE_NAME
+  """)
+
+# Every kind's components, a constant of the store rather than of this graph.
+extend schema @assertContains(relation: "graphitron_generated_scalar_component", rows: """
+  kind,        component, java_class
+  SCHEMA_PATH, text,      java.lang.String
+  SCHEMA_PATH, startType, java.lang.String
+  SCHEMA_PATH, path,      java.lang.String
+  SCHEMA_PATH, endType,   java.lang.String
+  TYPE_NAME,   text,      java.lang.String
+  TYPE_NAME,   name,      java.lang.String
+  """)
+
+extend schema @expectEquals(relation: "graphitron_scalar_class",
+    where: "type_name IN ('Path', 'TypeName', 'Opaque', 'String')", rows: """
+  type_name, java_class,       source
+  Path,      java.lang.String, GENERATED
+  TypeName,  java.lang.String, GENERATED
+  String,    java.lang.String, BUILT_IN
+  """)

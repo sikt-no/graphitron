@@ -27,7 +27,9 @@ class DirectiveSupportTypesTest {
             "SortDirection",
             "MutationType",
             "OutboxOutcome",
-            "TransactionControl");
+            "TransactionControl",
+            "GeneratedScalarKind",
+            "TypeCondition");
     }
 
     @Test

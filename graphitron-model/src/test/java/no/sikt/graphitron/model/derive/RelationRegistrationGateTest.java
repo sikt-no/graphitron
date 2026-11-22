@@ -118,6 +118,7 @@ class RelationRegistrationGateTest {
             // application, so two documents binding one type have nothing to agree about here.
             // What pins them is GraphitronAstEntriesTest, over a corpus that binds one type twice.
             "graphitron_ast_table_entry", "graphitron_ast_scalar_type_entry",
+            "graphitron_ast_generated_scalar_entry",
             "graphitron_ast_enum_entry",
             "graphitron_ast_node_entry", "graphitron_ast_node_keycolumn_entry",
             "graphitron_ast_node_legacykeycolumn_entry",
@@ -737,6 +738,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argmapping_landing_entry_defect_pair_rule", Arm.DERIVED);
         registrations.put("graphitron_outbox_entry_defect_pair_rule", Arm.DERIVED);
         registrations.put("graphitron_claim_kind", Arm.UNSHADOWED);
+        registrations.put("graphitron_generated_scalar_component", Arm.UNSHADOWED);
         registrations.put("graphitron_claim_inclusion", Arm.UNSHADOWED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
         registrations.put("graphitron_occurrence_source_precedence", Arm.UNSHADOWED);

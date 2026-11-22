@@ -1956,6 +1956,28 @@ COMMENT ON COLUMN graphitron_ast_scalar_type_entry.scalar_ref IS 'the scalar arg
 COMMENT ON COLUMN graphitron_ast_scalar_type_entry.scalar_ref_class_part IS 'the class half of the written constant, or NULL where the string does not split; ConstantReferenceGrammar only cuts it';
 COMMENT ON COLUMN graphitron_ast_scalar_type_entry.scalar_ref_field_part IS 'the field half of the same';
 
+CREATE TABLE graphitron_ast_generated_scalar_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  kind          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (kind IN ('SCHEMA_PATH', 'TYPE_NAME'))
+);
+COMMENT ON TABLE graphitron_ast_generated_scalar_entry IS 'What a @generatedScalar application says: the kind of scalar Graphitron generates for the declaration it is written on. For example scalar Path @generatedScalar(kind: SCHEMA_PATH) gives one row reading SCHEMA_PATH.';
+COMMENT ON COLUMN graphitron_ast_generated_scalar_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_generated_scalar_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_generated_scalar_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_generated_scalar_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_generated_scalar_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_generated_scalar_entry.kind IS 'the kind argument, the GeneratedScalarKind token as written. Required by the definition and an enum, so only an application the definition admits is decoded and the CHECK names the same closed list; a new kind is a new enum value, a new token here and its rows in graphitron_generated_scalar_component';
+
 CREATE TABLE graphitron_ast_enum_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -9780,23 +9802,45 @@ COMMENT ON VIEW graphitron_type_schema_reach_rule IS 'One round of the type reac
 -- COMMENT ON COLUMN graphitron_type_schema_reach_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_type_schema_reach_rule.type_name IS 'the type reached, an object, interface or union type';
 
+CREATE TABLE graphitron_generated_scalar_component (
+  kind       VARCHAR NOT NULL,
+  component  VARCHAR NOT NULL,
+  java_class VARCHAR NOT NULL,
+  PRIMARY KEY (kind, component),
+  CHECK (kind IN ('SCHEMA_PATH', 'TYPE_NAME'))
+);
+COMMENT ON TABLE graphitron_generated_scalar_component IS 'One component a kind of generated scalar decodes a value into, with the Java class it is handed over as: one row per kind and component. For example SCHEMA_PATH has endType, a java.lang.String naming the type the path''s last field returns.';
+COMMENT ON COLUMN graphitron_generated_scalar_component.kind IS 'the GeneratedScalarKind token, as graphitron_ast_generated_scalar_entry.kind spells it';
+COMMENT ON COLUMN graphitron_generated_scalar_component.component IS 'the component''s name, what an argMapping names after the argument and what an @assertType''s component says; with the kind, the key. Every kind has text, the value as it was provided';
+COMMENT ON COLUMN graphitron_generated_scalar_component.java_class IS 'the class a parameter taking the component is handed, fully qualified; java.lang.String for every component today, stated per row so a component of another class is a row and not a rule';
+INSERT INTO graphitron_generated_scalar_component VALUES
+  ('SCHEMA_PATH', 'text',      'java.lang.String'),
+  ('SCHEMA_PATH', 'startType', 'java.lang.String'),
+  ('SCHEMA_PATH', 'path',      'java.lang.String'),
+  ('SCHEMA_PATH', 'endType',   'java.lang.String'),
+  ('TYPE_NAME',   'text',      'java.lang.String'),
+  ('TYPE_NAME',   'name',      'java.lang.String');
+
 CREATE TABLE graphitron_scalar_class (
   graph_name VARCHAR   NOT NULL,
   type_name  VARCHAR   NOT NULL,
   kind       VARCHAR   NOT NULL,
   java_class VARCHAR   NOT NULL,
+  source     VARCHAR   NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   -- A scalar, held there by the supertype's own key; a type that stops being one takes its class.
   FOREIGN KEY (graph_name, type_name, kind)
     REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
-  CHECK (kind = 'SCALAR')
+  CHECK (kind = 'SCALAR'),
+  CHECK (source IN ('BUILT_IN', 'SCALAR_TYPE', 'GENERATED'))
 );
-COMMENT ON TABLE graphitron_scalar_class IS 'The Java class a scalar''s values arrive as: one row per scalar whose class is known. For example Int arrives as java.lang.Integer, and scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing.';
+COMMENT ON TABLE graphitron_scalar_class IS 'The Java class a scalar''s values arrive as: one row per scalar whose class is known. For example Int arrives as java.lang.Integer, scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing, and scalar Path @generatedScalar(kind: SCHEMA_PATH) as java.lang.String.';
 COMMENT ON COLUMN graphitron_scalar_class.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_scalar_class.type_name IS 'the scalar; with the graph, the grain';
 COMMENT ON COLUMN graphitron_scalar_class.kind IS 'SCALAR, pinned so the foreign key holds the row to a type of that kind';
-COMMENT ON COLUMN graphitron_scalar_class.java_class IS 'the fully-qualified class graphql-java delivers a value as, boxed: a built-in''s by graphql-java''s own coercing, any other''s by the constant its @scalarType names among the graph''s classpath entries. Whether a parameter of a primitive or another type accepts it is the reader''s question, not this column''s';
+COMMENT ON COLUMN graphitron_scalar_class.java_class IS 'the fully-qualified class graphql-java delivers a value as, boxed: a built-in''s by graphql-java''s own coercing, a @scalarType scalar''s by the constant it names among the graph''s classpath entries, and a @generatedScalar scalar''s java.lang.String, which is what every generated scalar is on the wire; the record a generated value is decoded into is the emitter''s, not this column''s. Whether a parameter of a primitive or another type accepts it is the reader''s question, not this column''s';
+COMMENT ON COLUMN graphitron_scalar_class.source IS 'which source answered: BUILT_IN for the specification''s five, SCALAR_TYPE for a @scalarType constant, GENERATED for a @generatedScalar, whose kind is its graphitron_ast_generated_scalar_entry row. A scalar carrying both directives has no row, the two claims on it being the defect rather than a pick of one';
 COMMENT ON COLUMN graphitron_scalar_class.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
 -- A reader holding a parameter's type asks whether any scalar arrives as it.
 CREATE INDEX graphitron_scalar_class_java_ix ON graphitron_scalar_class (graph_name, java_class);
@@ -10091,11 +10135,13 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                                        AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR' AND x.arrival_class = c.erased_class)));
 COMMENT ON VIEW graphitron_code_reference_entry_defect_rule IS 'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.';
 
-CREATE VIEW graphitron_scalar_class_rule (graph_name, type_name, kind, java_class) AS
+CREATE VIEW graphitron_scalar_class_rule (graph_name, type_name, kind, java_class, source) AS
 -- A scalar whose candidates disagree has no class: the constant is named in two entries that
--- coerce differently, and nothing says which the generator is handed.
-SELECT graph_name, type_name, 'SCALAR', MIN(java_class)
-  FROM (SELECT t.graph_name, t.type_name, b.java_class
+-- coerce differently, and nothing says which the generator is handed. A scalar carrying both
+-- @scalarType and @generatedScalar has no class either: each arm stands aside where the other
+-- directive is applied, so neither is silently picked and the two claims are the defect.
+SELECT graph_name, type_name, 'SCALAR', MIN(java_class), MIN(source)
+  FROM (SELECT t.graph_name, t.type_name, b.java_class, 'BUILT_IN' AS source
           FROM graphitron_type t
           JOIN (VALUES ('ID', 'java.lang.String'), ('String', 'java.lang.String'),
                        ('Int', 'java.lang.Integer'), ('Float', 'java.lang.Double'),
@@ -10103,7 +10149,7 @@ SELECT graph_name, type_name, 'SCALAR', MIN(java_class)
             ON b.scalar = t.type_name
          WHERE t.kind = 'SCALAR'
         UNION ALL
-        SELECT t.graph_name, t.type_name, k.input_type
+        SELECT t.graph_name, t.type_name, k.input_type, 'SCALAR_TYPE'
           FROM graphql_directive_application da
           JOIN graphitron_ast_scalar_type_entry e
             ON e.graph_name = da.graph_name AND e.source_name = da.source_name
@@ -10115,7 +10161,22 @@ SELECT graph_name, type_name, 'SCALAR', MIN(java_class)
           JOIN code_scalar_constant k
             ON k.source_name = g.source_name AND k.class_name = g.class_name
            AND k.field_name = e.scalar_ref_field_part
-         WHERE da.directive_name = 'scalarType' AND da.ordinal = 0 AND k.input_type IS NOT NULL) c
+         WHERE da.directive_name = 'scalarType' AND da.ordinal = 0 AND k.input_type IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM graphql_directive_application g
+                            WHERE g.graph_name = da.graph_name AND g.coordinate = da.coordinate
+                              AND g.directive_name = 'generatedScalar')
+        UNION ALL
+        SELECT t.graph_name, t.type_name, 'java.lang.String', 'GENERATED'
+          FROM graphql_directive_application da
+          JOIN graphitron_ast_generated_scalar_entry e
+            ON e.graph_name = da.graph_name AND e.source_name = da.source_name
+           AND e.source_line = da.source_line AND e.source_column = da.source_column
+          JOIN graphitron_type t
+            ON t.graph_name = da.graph_name AND t.type_name = da.coordinate AND t.kind = 'SCALAR'
+         WHERE da.directive_name = 'generatedScalar' AND da.ordinal = 0
+           AND NOT EXISTS (SELECT 1 FROM graphql_directive_application s
+                            WHERE s.graph_name = da.graph_name AND s.coordinate = da.coordinate
+                              AND s.directive_name = 'scalarType')) c
  GROUP BY graph_name, type_name
 HAVING COUNT(DISTINCT java_class) = 1;
 COMMENT ON VIEW graphitron_scalar_class_rule IS 'One row the scalar class rule computes, in the shape graphitron_scalar_class stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_scalar_class, which is the name every reader spells.';
@@ -10123,6 +10184,7 @@ COMMENT ON VIEW graphitron_scalar_class_rule IS 'One row the scalar class rule c
 -- COMMENT ON COLUMN graphitron_scalar_class_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_scalar_class.type_name';
 -- COMMENT ON COLUMN graphitron_scalar_class_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_scalar_class.kind';
 -- COMMENT ON COLUMN graphitron_scalar_class_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_scalar_class.java_class';
+-- COMMENT ON COLUMN graphitron_scalar_class_rule.source IS 'the source of a row of this rule, which the stage writes into graphitron_scalar_class.source';
 
 CREATE TABLE graphitron_occurrence_input_type (
   graph_name VARCHAR   NOT NULL,
@@ -29434,6 +29496,10 @@ INSERT INTO meta_stated_relation VALUES
    'One kind of thing an element can claim, with the family it belongs to.',
    'For example SERVICE is a PRODUCER kind and NODE_ID a BINDING kind.',
    'The vocabulary every claim is in, declared once so a claim''s kind is a key and its family a join rather than a CHECK repeated per family. Which kinds exist and which question each answers is a property of this generator and not of anybody''s schema, graphitron_defect_type''s reason beside it.'),
+  ('graphitron_generated_scalar_component',
+   'One component a kind of generated scalar decodes a value into, with the Java class it is handed over as: one row per kind and component.',
+   'For example SCHEMA_PATH has endType, a java.lang.String naming the type the path''s last field returns.',
+   'Which components a kind has is a property of this generator and not of anybody''s schema: the kinds are the closed GeneratedScalarKind enum it declares, and the decode into each kind''s components is code it emits. Stated as rows so the readers asking whether a trailing name is a component, whether an @assertType names one, and whether a parameter takes its class read one list rather than each spelling it, and a new kind or component is rows here, not rules. The model names no decoded record class: which record a kind decodes into depends on the output package, which is the emitter''s.'),
   ('graphitron_connection_position',
    'One position of the connection shape: the field a connection, its edge, its page info, its facets type or a facet bucket fills it with, and what a type an author declared in place of the mint must hold there.',
    'For example TOTAL_COUNT is a connection''s totalCount and optional, and HAS_NEXT_PAGE the page info''s hasNextPage, which the Relay specification requires as Boolean!.',
@@ -33169,6 +33235,10 @@ INSERT INTO meta_relation VALUES
    'What a @scalarType application says: the constant holding the scalar this declaration is bound to, as written.',
    'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The payload columns are nullable where the directive definition marks the argument required: a required argument the author left out is a schema problem the toolchain reports, and refusing the row here would lose the transcription of what they did write. Whether the named class holds such a field is a question for the classpath census and belongs where the resolving happens.'),
+  ('graphitron_ast_generated_scalar_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @generatedScalar application says: the kind of scalar Graphitron generates for the declaration it is written on.',
+   'For example scalar Path @generatedScalar(kind: SCHEMA_PATH) gives one row reading SCHEMA_PATH.',
+   'A decode of one directive application, keyed by the application''s own position, so the scalar it was written on and the file are one join away rather than columns here, as for @scalarType beside it. The kind is the one fact the application states; which components a kind has is stated once in graphitron_generated_scalar_component rather than in each reader, and the class a generated scalar is read as is graphitron_scalar_class''s GENERATED arm over these rows.'),
   ('graphitron_code_reference_site', 'sdl-code-reference', 'graphitron',
    'Where one written Java code reference sits: the directive that wrote it, the element it is on, and the method it names once that site''s default applies.',
    'For example isEnglish: Boolean @externalField(reference: {className: "no.example.FilmExtensions"}) sits at Film.isEnglish under externalField and names isEnglish.',
@@ -34077,8 +34147,8 @@ INSERT INTO meta_relation VALUES
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_scalar_class', 'expanded-type', 'graphitron',
    'The Java class a scalar''s values arrive as: one row per scalar whose class is known.',
-   'For example Int arrives as java.lang.Integer, and scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing.',
-   'A subtype of graphitron_type pinned to SCALAR. The built-in classes and the @scalarType resolution were spelled out in three rules, each re-deriving them on every evaluation and none scoping the constant to the graph''s classpath entries; stored here, by the gatherer that holds the document, the catalog of constants and the graph''s sources, the rules join one keyed table. The class graphql-java delivers is the fact: what a parameter of a primitive or another type accepts stays each reader''s rule, so no reader''s leniency becomes the fact. A scalar whose class is unknown, or whose constant two entries coerce differently, has no row.'),
+   'For example Int arrives as java.lang.Integer, scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing, and scalar Path @generatedScalar(kind: SCHEMA_PATH) as java.lang.String.',
+   'A subtype of graphitron_type pinned to SCALAR. The built-in classes and the @scalarType resolution were spelled out in three rules, each re-deriving them on every evaluation and none scoping the constant to the graph''s classpath entries; stored here, by the gatherer that holds the document, the catalog of constants and the graph''s sources, the rules join one keyed table. The class graphql-java delivers is the fact: what a parameter of a primitive or another type accepts stays each reader''s rule, so no reader''s leniency becomes the fact. A scalar whose class is unknown, or whose constant two entries coerce differently, has no row. A @generatedScalar is a third source, read as java.lang.String, and the source column says which answered so a reader finding the generated scalars needs no relation of its own.'),
   ('graphitron_type_arrival', 'type-arrival', 'graphitron',
    'One class an input type''s value may be handed to a parameter or a member as: one row per type and class, or per type that may arrive as any class outside the JDK.',
    'For example Int arrives as java.lang.Integer, as int and untyped as Object, an enum as java.lang.String and as any non-JDK class, an input object as any non-JDK class or the Map.',

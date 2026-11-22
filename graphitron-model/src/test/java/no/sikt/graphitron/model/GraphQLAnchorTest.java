@@ -151,6 +151,9 @@ class GraphQLAnchorTest {
                     // directive definition, which the specification spells and which reached no
                     // relation while the applications were kept one per site.
                     tuple("@asConnection(connectionName:)", "deprecated", 0),
+                    // and the @oneOf on its TypeCondition input, a type-level application like
+                    // any the author writes.
+                    tuple("TypeCondition", "oneOf", 0),
                     tuple("Film", "mark", 0),
                     tuple("Film.title", "mark", 0),
                     tuple("FilmFilter.title", "mark", 0),

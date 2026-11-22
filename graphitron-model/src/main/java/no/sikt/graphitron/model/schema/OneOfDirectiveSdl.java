@@ -39,14 +39,21 @@ public final class OneOfDirectiveSdl {
     }
 
     /**
-     * True when at least one input object in {@code schema} applies {@code @oneOf}.
-     * graphql-java derives {@link GraphQLInputObjectType#isOneOf()} from the applied directive at
-     * build time, so this holds for both the SchemaGenerator-built assembled schema and the
-     * programmatically-built runtime schema.
+     * True when at least one input object in {@code schema} that the served schema can carry applies
+     * {@code @oneOf}. graphql-java derives {@link GraphQLInputObjectType#isOneOf()} from the applied
+     * directive at build time, so this holds for both the SchemaGenerator-built assembled schema and
+     * the programmatically-built runtime schema.
+     *
+     * <p>Graphitron's own strictly internal support types ({@link DirectiveSupportTypes}) do not
+     * count: the assembled schema holds them only so its build-time directive arguments type-check
+     * ({@code @assertType}'s {@code TypeCondition} is a {@code @oneOf} input, validated by
+     * graphql-java while the assembled schema is built), and they never reach the served schema, so
+     * the fact stays about the consumer's schema.
      */
     public static boolean usesOneOf(GraphQLSchema schema) {
         return schema.getAllTypesAsList().stream()
-            .anyMatch(t -> t instanceof GraphQLInputObjectType inputType && inputType.isOneOf());
+            .anyMatch(t -> t instanceof GraphQLInputObjectType inputType && inputType.isOneOf()
+                && !DirectiveSupportTypes.isStrictlyInternal(inputType.getName()));
     }
 
     /**

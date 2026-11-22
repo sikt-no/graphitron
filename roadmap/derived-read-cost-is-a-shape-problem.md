@@ -759,6 +759,9 @@ static method needs no holder.
   (`ArgmappingProjectionDefects.unemittableProjections`); and the other readers of `intent_resolved_node_key_projection`,
   the condition glue, the walk's Query-root and child routine launchers and `NodeIdDecodeCoverageFacts`. A composite id
   feeding two routine parameters is decoded twice in the store-fed routine write; one shared local is a later refinement.
+  Still reported twice until then: a primitive `@condition` parameter (Java `primitiveParameters` and the store's
+  `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`), and a bare composite or unknown key column at a routine (the intent view and
+  `ARGMAPPING_KEY_COLUMN_UNRESOLVED`).
 * **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
 * **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.

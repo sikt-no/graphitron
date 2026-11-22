@@ -52,6 +52,56 @@ type parameters, or the directive is applied to a GraphQL spec built-in (`Int`, 
 directive @scalarType(scalar: String!) on SCALAR
 
 """
+Asks Graphitron to generate the scalar itself, for a kind it knows, where `@scalarType` binds a
+scalar to a constant you write. The scalar's name is yours; `kind` says what it is. A scalar takes
+`@scalarType` or `@generatedScalar`, not both. On the wire every generated scalar is a string;
+inside the generated code a value is decoded into a record of its components, and a call takes the
+components it needs by naming them in `argMapping`.
+"""
+directive @generatedScalar(kind: GeneratedScalarKind!) on SCALAR
+
+"""The kinds of scalar Graphitron generates."""
+enum GeneratedScalarKind {
+  """
+  A path through this subgraph's schema: a type name followed by zero or more field names,
+  separated by dots (`Sak.soker`, `Soknad.saker.nodes`). Components `text`, `startType`, `path`
+  (the field steps alone, the empty string for none) and `endType`.
+  """
+  SCHEMA_PATH
+  """
+  The name of an object type in this subgraph, as `__typename` gives it. Components `text` and
+  `name`.
+  """
+  TYPE_NAME
+}
+
+"""
+Requires something of a type a generated scalar's value names. Names one component of the value
+and a condition its type must meet; repeat the directive and every one must hold. A value that
+fails a requirement is answered as an error on the argument, and nothing is called.
+"""
+directive @assertType(
+  """The component whose type the condition is about, one of the scalar kind's components."""
+  component: String!
+  """The condition the component's type must meet."""
+  type: TypeCondition!
+) repeatable on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""A condition on a type. Sets exactly one field."""
+input TypeCondition @oneOf {
+  """Holds when the type is the named type (object, interface or union)."""
+  is: String
+  """Holds when the type implements the named interface, directly or through another interface."""
+  implements: String
+  """Holds when the type meets at least one of the conditions."""
+  anyOf: [TypeCondition!]
+  """Holds when the type meets every one of the conditions."""
+  allOf: [TypeCondition!]
+  """Holds when the type does not meet the condition."""
+  not: TypeCondition
+}
+
+"""
 Names the underlying-binding target for the annotated GraphQL slot. The axis is determined by the
 directive site and the backing of the type it sits on:
 - On FIELD_DEFINITION / INPUT_FIELD_DEFINITION of a @table-backed type, the column to bind to.

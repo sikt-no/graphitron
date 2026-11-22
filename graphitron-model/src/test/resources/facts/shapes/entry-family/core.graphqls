@@ -54,6 +54,7 @@ extend schema @link(
 extend schema @composeDirective(name: "@nodeType")
 
 scalar Money @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
 
 type Query {
   films(
