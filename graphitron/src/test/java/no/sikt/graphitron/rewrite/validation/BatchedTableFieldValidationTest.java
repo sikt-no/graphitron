@@ -112,27 +112,6 @@ class BatchedTableFieldValidationTest {
                 TestFixtures.pcFor(T_CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
-        // plan-split-query-connection.md §1: Split + Connection with no ORDER BY is a build error.
-        // ROW_NUMBER() needs a total order to slice partitions deterministically; without one,
-        // cursor encoding hashes an empty tuple and pages silently non-deterministically.
-        TABLE_CONNECTION_EMPTY_ORDERBY_NONE("Table arm: Connection + OrderBySpec.None — build error, non-empty ORDER BY required",
-            new BatchedTableField("Film", "actors", null, T_RT_CONN,
-                T_FK_PATH,
-                List.of(), new OrderBySpec.None(), null, SourceShape.Table, T_SOURCE_KEY_CONN,
-                TestFixtures.fkColumnsLift(), T_LR_CONN, LookupResolution.None.INSTANCE,
-                TestFixtures.pcFor(T_FK_PATH, TestFixtures.filmTable())),
-            List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
-                + "(add @defaultOrder, @orderBy, or a primary key on the target table)")),
-
-        TABLE_CONNECTION_EMPTY_ORDERBY_FIXED("Table arm: Connection + empty OrderBySpec.Fixed — same rejection",
-            new BatchedTableField("Film", "actors", null, T_RT_CONN,
-                T_FK_PATH,
-                List.of(), new OrderBySpec.Fixed(List.of(), true), null, SourceShape.Table, T_SOURCE_KEY_CONN,
-                TestFixtures.fkColumnsLift(), T_LR_CONN, LookupResolution.None.INSTANCE,
-                TestFixtures.pcFor(T_FK_PATH, TestFixtures.filmTable())),
-            List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
-                + "(add @defaultOrder, @orderBy, or a primary key on the target table)")),
-
         // ---- Record-sourced arm ----
 
         RECORD_SINGLE_NO_PATH("Record arm: single cardinality, empty joinPath — emittable post-R61 (single-record-per-key arm)",
@@ -170,22 +149,6 @@ class BatchedTableFieldValidationTest {
             new BatchedTableField("FilmDetails", "films", null, R_RT_LIST,
                 R_FK_PATH,
                 List.of(), R_PK_ORDER, null, SourceShape.Record, R_SOURCE_KEY_LIST,
-                TestFixtures.fkColumnsLift(), R_LR_LIST, LookupResolution.None.INSTANCE,
-                TestFixtures.pcFor(R_FK_PATH, TestFixtures.filmTable())),
-            List.of()),
-
-        // Latent-bug guard: a list-valued re-fetch field with OrderBySpec.None (no
-        // @orderBy/@defaultOrder and a PK-less target, so OrderByResolver supplies no Fixed(PK)
-        // default) must VALIDATE, not be rejected for "list fields must have a deterministic order".
-        // A re-fetch field's visible order is locked to the source/target key correspondence (the
-        // ORDER BY idx scatter), so it is deterministic regardless of ordering spec. The retired
-        // OrderingOwnedByProducer marker never covered the record-sourced arm, so before the
-        // exemption was switched to requiresReFetch this PK-less list re-fetch would have been
-        // wrongly rejected.
-        RECORD_LIST_NO_ORDER_REFETCH_EXEMPT("Record arm: PK-less list re-fetch with OrderBySpec.None — exempt via requiresReFetch (R305 latent-bug guard)",
-            new BatchedTableField("FilmDetails", "films", null, R_RT_LIST,
-                R_FK_PATH,
-                List.of(), new OrderBySpec.None(), null, SourceShape.Record, R_SOURCE_KEY_LIST,
                 TestFixtures.fkColumnsLift(), R_LR_LIST, LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(R_FK_PATH, TestFixtures.filmTable())),
             List.of());

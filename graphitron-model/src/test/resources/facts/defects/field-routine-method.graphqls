@@ -84,8 +84,9 @@ extend schema @assertAbsent(relation: "graphitron_spelled_table", rows: """
 # rent_film, departs from films_for_actor's result and finds no value there for its parameters, the
 # same code at its own @routine; and
 # the two names that resolve to nothing are each a name claimed that does not exist, at the @routine
-# that claims it.
-extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+# that claims it. That each list here states no order is ordering-refusals' to pin.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code <> 'LIST_ORDER_UNDETERMINED'", rows: """
   code,               coordinate
   PARAMETER_UNFILLED, Query.films
   PARAMETER_UNFILLED, Query.chained

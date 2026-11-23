@@ -1,3 +1,3 @@
-A list or connection over a table with no primary key, read inside its parent's query, for which no order is stated: no `@defaultOrder`, and no `@orderBy` argument whose input type offers a choice.
+A list or connection over a table with no primary key, or over a table-valued function's result, for which no order is stated: no `@defaultOrder`, and no `@orderBy` argument whose input type offers a choice. It is read inside its parent's query, by a query of its own at the root or split from its parent, or as a `@routine`'s result, and over several types' tables each keyless one is reported. A lookup answers in its keys' order, and a `@service` or a write in the order it hands back, so neither is reported.
 
 include::_ordering.adoc[]

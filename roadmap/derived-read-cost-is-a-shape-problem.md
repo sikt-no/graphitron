@@ -89,8 +89,7 @@ The walk's read path is gone
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
-    ├── What an occurrence takes is a binding, claimed by C
-    └── Every list states its order or is refused, claimed by C
+    └── What an occurrence takes is a binding, claimed by C
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -936,13 +935,10 @@ static method needs no holder.
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
     argument, and the line closes with it. Whether an argument is compared at all is its row in
-    `graphitron_occurrence_filter_term`.
-  * **Every list states its order or is refused, claimed by C** `open`. `LIST_ORDER_UNDETERMINED` refuses an
-    inline list over a keyless table with no order; the walk refuses every SQL-generating list with
-    none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a
-    connection with none (`validatePaginationRequiresOrdering`), at the root, split and over several
-    participants too. The rule widens to those producers, each exemption stated as a fact, before the
-    root fetchers flip.
+    `graphitron_occurrence_filter_term`. A child `@routine`'s arguments are what the routine is called
+    with, not a filter narrowing its list, so the census counts the six child routine lists as
+    `NARROWED_LIST` only approximately; the node tells the two apart, a narrowing being a filter term
+    and a routine argument a call parameter.
   * **A `@pivot` is resolved against the catalog** `open`, off the critical path. The attribute table, its on and value
     columns as `sql_column` rows, and each slot's token, where today the entry holds the strings
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
@@ -958,10 +954,13 @@ static method needs no holder.
     `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
     the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
     then goes, after the flips.
-  * **The root query fetchers are emitted from the store** `blocked`, on "Every list states its order or is refused, claimed by C".
+  * **The root query fetchers are emitted from the store** `open`.
     A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
-    off its occurrence, and flips in the same pass as `$project` (Alf, 2026-11-08, 2026-11-13); the
+    off its occurrence, and flips on its own, piece by piece as the store states each piece whole, the
+    walk's `$project` called at the address and by the signature it is called by today (Alf,
+    2026-11-15, 2026-11-23); a root single read is null exactly when its read finds no row, so the
+    walk's collapse of an all-null subtree goes with the flip (Alf, 2026-11-23). The
     conditions flip ahead of it on their own, its condition call reading the store's glue by the
     name it calls today. The callers' condition signatures and `PlanCompileGraph`'s edges to the
     conditions classes still come off the walk's `ConditionCommand` rows, while the classes are
@@ -3367,6 +3366,15 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   passed as an array.
 
 ## Retired vocabulary
+
+**Every list states its order or is refused in the store** (2026-11-23). `LIST_ORDER_UNDETERMINED`
+refuses a list or connection with no stated order over a keyless table or a function's result,
+wherever it is read, a lookup, a service and a write exempt as stated facts, and a child handed a
+record over a keyless table already `NO_KEY_FROM_PARENT`'s, having no key to be re-read by;
+`ORDER_FIELDS_EMPTY` refuses an order naming no field. The walk's
+`GraphitronSchemaValidator.validateListRequiresOrdering`, `validatePaginationRequiresOrdering`,
+`listOrderingDiagnostic`, `routineResultTerminusOf` and the split-connection ORDER BY guard go, and
+`OutputField.requiresReFetch()` no longer exempts a list from the order rule.
 
 **The filter conditions are emitted from the store** (2026-11-23). Every `<Parent>Conditions` class is
 rendered by `ConditionUnitRenderer` from `ConditionQuery`'s rows at the address `GeneratedUnits` mints,

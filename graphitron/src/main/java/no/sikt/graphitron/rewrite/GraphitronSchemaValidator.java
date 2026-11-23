@@ -433,11 +433,6 @@ public class GraphitronSchemaValidator {
      *   <li>The reentry implementedness guard fires on no current leaf at any depth (the sealed
      *       hierarchy admits no such combination); running it uniformly is what keeps that true
      *       as new arms land, which is the guard's whole job.</li>
-     *   <li>{@link #validatePaginationRequiresOrdering} and {@link #validateListRequiresOrdering}
-     *       read {@link SqlGeneratingField#pagination()} / {@link SqlGeneratingField#orderBy()},
-     *       which nested {@code TableField} and {@code BatchedTableField} leaves genuinely carry:
-     *       a paginated nested leaf with no ordering encodes a cursor over nothing exactly as at
-     *       ordinary depth. The authoring surface exists at nested depth, so the check does.</li>
      * </ul>
      */
     private void validateVariantSpecific(GraphitronField field, GraphitronSchema schema,
@@ -527,110 +522,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.StoreOwnedField f -> {} // the store owns the field whole; its defects are the only refusals it has
         }
-        validatePaginationRequiresOrdering(field, errors);
-        validateListRequiresOrdering(field, errors);
         validateVariantIsImplemented(field, errors);
-    }
-
-    /**
-     * Cross-cutting check: any SQL-generating field that has pagination arguments must also have
-     * ordering. Keyset pagination without ordering is broken by definition — the cursor encodes
-     * ORDER BY column values, so there must be columns to encode.
-     */
-    private void validatePaginationRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
-        if (field instanceof SqlGeneratingField sgf
-                && sgf.pagination() != null
-                && sgf.orderBy() instanceof OrderBySpec.None) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.structural("Field '" + field.qualifiedName() + "': paginated fields must have ordering "
-                    + "(add @defaultOrder or @orderBy)"),
-                field.location()
-            ));
-        }
-    }
-
-    /**
-     * Cross-cutting check: any SQL-generating list field must have a deterministic order. The
-     * resolver lands on {@link OrderBySpec.None} only when no {@code @defaultOrder}/{@code @orderBy}
-     * is present and the target table has no primary key; in that case the generated SQL emits
-     * no {@code ORDER BY} clause and rows return in catalog order, producing visibly different
-     * results every run. Reject at build time rather than ship a latent non-determinism bug.
-     *
-     * <p>Gated on {@link FieldWrapper.List} (not {@link FieldWrapper#isList()}, which also covers
-     * connections) so the message stays disjoint from {@link #validatePaginationRequiresOrdering};
-     * connections always carry pagination and are caught there. Exempts
-     * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} fields: a
-     * re-fetch field's visible order is locked to the source/target key correspondence (the
-     * {@code ORDER BY idx} scatter re-keys the re-projected rows to the upstream source order), so
-     * the "list-shaped + {@code None}" signal does not imply non-determinism for them.
-     *
-     * <p>A routine-backed read is not exempt. Its rows arrive in the function's own result order,
-     * which is exactly the non-determinism this check exists to reject, and the surface to fix it
-     * with does ship: {@code @defaultOrder(fields:)} over the terminus. What a routine terminus
-     * lacks is a primary key for the fallback to find, so it gets its own message
-     * ({@link #listOrderingDiagnostic}) rather than the generic one, whose "add a primary key to
-     * the target table" advice is impossible on a function result.
-     */
-    private void validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
-        if (field instanceof SqlGeneratingField sgf
-                && !(field instanceof no.sikt.graphitron.rewrite.model.OutputField out && out.requiresReFetch())
-                && sgf.returnType().wrapper() instanceof FieldWrapper.List
-                && sgf.orderBy() instanceof OrderBySpec.None) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural(listOrderingDiagnostic(field)),
-                field.location()
-            ));
-        }
-    }
-
-    /**
-     * The deterministic-order message, forked on whether the read lands on a table-valued
-     * function result. Both arms state the same rule; they differ only in which remedies are
-     * reachable, since a function result has no primary key to add and no fallback to inherit.
-     */
-    private static String listOrderingDiagnostic(GraphitronField field) {
-        String routine = routineResultTerminusOf(field);
-        if (routine != null) {
-            return "Field '" + field.qualifiedName() + "': list fields must have a deterministic "
-                + "order, and these rows come from the table-valued function '" + routine
-                + "', whose result carries no primary key for the default order to fall back on. "
-                + "Add @defaultOrder(fields: [...]) naming the function's own result columns, or "
-                + "an @orderBy argument over them.";
-        }
-        return "Field '" + field.qualifiedName() + "': list fields must have a "
-            + "deterministic order. Add a primary key to the target table, or use "
-            + "@defaultOrder or @orderBy.";
-    }
-
-    /**
-     * The SQL name of the table-valued function a field's read terminates on, or {@code null}
-     * when the terminus is an ordinary catalog table. A root chain terminates on its routine
-     * exactly when no {@code @reference} hop follows it; a child chain carries the routine as a
-     * lateral hop, so its terminus is the routine when the last step targets the routine call.
-     */
-    private static String routineResultTerminusOf(GraphitronField field) {
-        if (field instanceof no.sikt.graphitron.rewrite.model.QueryField.QueryTableField qtf) {
-            // A root chain's hops all target the catalog (the chain constructor's own
-            // invariant), so the routine is the terminus exactly when no hop follows it.
-            return qtf.routine() instanceof no.sikt.graphitron.rewrite.model.RoutineResolution.Chain c
-                    && c.chain().hops().isEmpty()
-                ? c.chain().start().resultTable().tableName()
-                : null;
-        }
-        List<JoinStep> steps = switch (field) {
-            case ChildField.TableField tf -> tf.joinPath();
-            case ChildField.BatchedTableField btf -> btf.joinPath();
-            default -> null;
-        };
-        if (steps == null || steps.isEmpty()) {
-            return null;
-        }
-        return steps.getLast() instanceof JoinStep.Hop hop
-            && hop.target() instanceof no.sikt.graphitron.rewrite.model.TableExpr.RoutineCall call
-            ? call.resultTable().tableName()
-            : null;
     }
 
     /**
@@ -1116,29 +1008,8 @@ public class GraphitronSchemaValidator {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         if (field.lookup().isKeyed()) {
-            // The lookup-gated branch owns the Connection verdict outright: one located
-            // rejection, not the ORDER-BY guard stacked on top of it.
+            // The lookup-gated branch owns the Connection verdict outright: one located rejection.
             rejectLookupConnection(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-            return;
-        }
-        // Split+Connection partitions rows by parent key; without a total order, ROW_NUMBER() produces
-        // silently non-deterministic slicing. Require an explicit ordering (@defaultOrder, @orderBy,
-        // or a fixed list) at build time rather than letting the cursor encoder hash an empty tuple.
-        // Reachable only from the Table-sourced no-lookup arm: the leaf's ctor rejects the plain
-        // Record + Connection mint and the lookup branch above returns, so this guard needs no
-        // sourceShape gate.
-        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            var orderBy = field.orderBy();
-            boolean empty = orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.None
-                || (orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed f && f.entries().isEmpty());
-            if (empty) {
-                errors.add(new ValidationError(
-                    field.qualifiedName(),
-            Rejection.structural("Field '" + field.qualifiedName() + "': @splitQuery connections require a non-empty ORDER BY "
-                        + "(add @defaultOrder, @orderBy, or a primary key on the target table)"),
-                    field.location()
-                ));
-            }
         }
     }
 

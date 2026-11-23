@@ -76,7 +76,7 @@ What that leaves this item is a choice made deliberately rather than met in a fa
   halves are the row's existence and the absence of a violation; a lowering that lands upstream turns
   it into a failing test rather than a quietly empty population.
 * **If the shape is refused instead**, the arm gains its message and nothing else changes. R677's
-  body carries the draft: the write returns a list and delivers it in no defined order, the routine's
+  body, absorbed by R876 and read from git, carried the draft: the write returns a list and delivers it in no defined order, the routine's
   returned keys being captured and the rows re-read by key with neither step sorting, so the target
   table's primary key orders nothing here even though it is available; return a single object rather
   than a list. Turning it on is a **breaking change** for any consumer schema carrying a

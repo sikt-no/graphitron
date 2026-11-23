@@ -9886,6 +9886,20 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'ORDER_S
  WHERE da.directive_name IN ('defaultOrder', 'order')
    AND oe.surfaces_written <> 1
 UNION ALL
+-- A @defaultOrder or @order whose one surface is an empty fields list: it names nothing to sort by,
+-- so the read it orders would emit no ORDER BY at all.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'ORDER_FIELDS_EMPTY',
+       CAST(NULL AS VARCHAR), 'code-references'
+  FROM graphql_directive_application da
+  JOIN graphitron_ast_order_entry oe
+    ON oe.graph_name = da.graph_name AND oe.source_name = da.source_name
+   AND oe.source_line = da.source_line AND oe.source_column = da.source_column
+ WHERE da.directive_name IN ('defaultOrder', 'order')
+   AND oe.surface = 'FIELDS'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_order_field_entry fe
+                    WHERE fe.graph_name = oe.graph_name AND fe.source_name = oe.source_name
+                      AND fe.application_line = oe.source_line AND fe.application_column = oe.source_column)
+UNION ALL
 SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'ORDER_FIELD_SHAPE',
        CAST(NULL AS VARCHAR), 'code-references'
   FROM graphitron_ast_order_field_entry fe
@@ -24797,6 +24811,21 @@ SELECT DISTINCT graph_name, coordinate, schema_name || '.' || table_name, 'TABLE
        AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
                         WHERE pt.graph_name = o.graph_name AND pt.coordinate = o.coordinate)
     UNION ALL
+    -- A routine below the root whose type is no table's and has no participants: the function its
+    -- rows are the result of, as a root routine's are.
+    SELECT o.graph_name, o.coordinate, rr.table_source_name, rr.table_schema, rr.table_name
+      FROM graphitron_occurrence o
+      JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+      JOIN graphitron_routine_result rr
+        ON rr.graph_name = f.graph_name AND rr.type_name = f.type_name AND rr.field_name = f.field_name
+     WHERE o.kind = 'FIELD'
+       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                        WHERE p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.start = 'ROOT')
+       AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                        WHERE tt.graph_name = rr.graph_name AND tt.type_name = rr.target_type_name)
+       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
+                        WHERE pt.graph_name = o.graph_name AND pt.coordinate = o.coordinate)
+    UNION ALL
     -- An argument or input field no column or node id takes, where its need lands: an input object,
     -- whose fields filter there, or a scalar a @condition takes.
     SELECT l.graph_name, l.coordinate, l.source_name, l.schema_name, l.table_name
@@ -26857,6 +26886,15 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
                     WHERE p.graph_name = r.graph_name AND p.coordinate = r.coordinate)
 UNION ALL
+-- A list or connection whose rows graphitron reads with no order stated for a table they are on, at
+-- each such table: read inside its parent's query, by a select of its own at the root or split from
+-- its parent, or as a routine's result, one row per keyless participant table where the rows are
+-- several types'. A lookup answers in its keys' order, the index each row carries back being what it
+-- is scattered by, so it needs no ORDER BY; a service or a write answers in the order it hands back;
+-- a mutation's routine is a write, whose plural order ROUTINE_WRITE_PLURAL_UNORDERED owns. A child
+-- handed a record over a keyless table has no key to be re-read by, which is NO_KEY_FROM_PARENT's,
+-- so nothing here exempts it. An @orderBy whose input offers no choice is ORDER_INPUT_SHAPE's, not
+-- stacked here.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column, 'LIST_ORDER_UNDETERMINED',
        t.bound, 'occurrence-orderings'
   FROM graphitron_occurrence_binding_table t
@@ -26864,18 +26902,25 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON o.graph_name = t.graph_name AND o.coordinate = t.coordinate AND o.kind = 'FIELD'
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  LEFT JOIN graphitron_occurrence_producer p ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
  WHERE EXISTS (SELECT 1 FROM graphitron_field_many m
                 WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name)
+   AND (p.kind IS NULL OR p.kind = 'SELECT'
+        OR p.kind = 'ROUTINE'
+           AND EXISTS (SELECT 1 FROM graphitron_routine_result rr
+                        WHERE rr.graph_name = f.graph_name AND rr.type_name = f.type_name
+                          AND rr.field_name = f.field_name))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_order r
                     WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
-                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                     WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                       AND d.directive_name = 'defaultOrder')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table t2
-                    WHERE t2.graph_name = t.graph_name AND t2.coordinate = t.coordinate
-                      AND t2.bound <> t.bound)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence k
+                     JOIN graphql_directive_application ob
+                       ON ob.graph_name = k.graph_name AND ob.coordinate = k.element_coordinate
+                      AND ob.directive_name = 'orderBy'
+                    WHERE k.graph_name = o.graph_name AND k.parent_coordinate = o.coordinate
+                      AND k.kind = 'FIELD_ARGUMENT')
 UNION ALL
 -- A field below the root returning one object, looked up by keys covering no identifying key of its
 -- table, its keys' columns direct, a node id's own or carried back: several rows could match.
@@ -32928,6 +32973,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A field below the root returning one table-bound object is looked up by keys that cover no key identifying a row of its table, its primary key or a unique key whose columns refuse NULL, so several rows could match the one value it returns: key it by such a key, or return a list.'),
   ('LOOKUP_KEY_OFF_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_OFF_TABLE',
    'A @lookupKey argument is a node id of a node on another table than the one the field reads, or takes an input object with such a field that no one foreign key from the field''s table carries back to its columns, so it unpacks into no key of the field''s rows and there is nothing for it to narrow by: drop @lookupKey, which leaves the id a filter through the foreign key, put the id in an input object the field''s table points from, or key on the field''s own node.'),
+  ('ORDER_FIELDS_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELDS_EMPTY',
+   'A @defaultOrder or @order sorts by fields and names none, so the read it orders states no order: name at least one field, or write index or primaryKey: true instead.'),
   ('ORDER_SURFACES', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_SURFACES',
    'A @defaultOrder or @order writes other than exactly one of index, primaryKey: true and fields, so it does not say what to sort by: write one.'),
   ('ORDER_PRIMARY_KEY_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_PRIMARY_KEY_MISSING',
@@ -32941,7 +32988,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ORDER_CHOICE_ON_INLINE_LIST', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDER_CHOICE_ON_INLINE_LIST',
    'An @orderBy argument sits on a list read inside its parent''s query, and graphitron does not yet apply a client''s choice of order there, so the choice would be accepted and dropped: read the list in a query of its own with @splitQuery, or order it with @defaultOrder.'),
   ('LIST_ORDER_UNDETERMINED', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ORDER_UNDETERMINED',
-   'A list over a table with no primary key states no order, neither @defaultOrder nor an @orderBy argument, so its rows arrive in whatever order the database returns them, differently from run to run: add @defaultOrder, an @orderBy argument, or a primary key to the table.'),
+   'A list or connection over a table with no primary key, or over a table-valued function''s result, states no order, neither @defaultOrder nor an @orderBy argument, so its rows arrive in whatever order the database returns them, differently from run to run: add @defaultOrder, naming the function''s columns with fields: on a function''s result, an @orderBy argument, or a primary key to the table.'),
   ('LIST_ELEMENT_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_CONDITION',
    'An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object: put @condition(override: true) on the list field to take the whole list instead.'),
   ('LIST_ELEMENT_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NODE_ID',

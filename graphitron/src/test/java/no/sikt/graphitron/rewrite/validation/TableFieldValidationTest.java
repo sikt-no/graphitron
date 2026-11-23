@@ -120,20 +120,7 @@ class TableFieldValidationTest {
                     new PaginationSpec.PaginationArg("String", false),
                     null), LookupResolution.None.INSTANCE,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
-            List.of()),
-
-        PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
-            new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.Connection(true, 100)),
-                FK_PATH, List.of(),
-                new OrderBySpec.None(),
-                new PaginationSpec(
-                    new PaginationSpec.PaginationArg("Int", false),
-                    null,
-                    new PaginationSpec.PaginationArg("String", false),
-                    null), LookupResolution.None.INSTANCE,
-                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
-            List.of("Field 'Film.actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

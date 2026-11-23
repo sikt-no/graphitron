@@ -19,7 +19,7 @@ Java units the render fold emitted for them. Both conclusions exist only in memo
 so every consumer that wants them has to reproduce the tier that produced them. The language server
 and the MCP cannot answer "what code did this coordinate produce" without re-deriving planner
 logic, and a cross-tier invariant cannot be asked at all: the enforcement gap in
-`roadmap/list-ordering-invariant-enforcement.md` is precisely a question of the form "every
+R677, absorbed by R876's stored list-order rule, is precisely a question of the form "every
 coordinate the facts classify as list-shaped has a launcher row carrying an ordering", and its
 hardest case is a site that takes *no* launcher row, an absence no in-memory walk over existing
 rows can see but a relational anti-join between the fact stratum and a command record answers

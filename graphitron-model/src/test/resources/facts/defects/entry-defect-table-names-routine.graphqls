@@ -19,7 +19,8 @@ type Query {
              argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
 }
 
-extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code <> 'LIST_ORDER_UNDETERMINED'", rows: """
   code,                type_name, detail
   TABLE_NAMES_ROUTINE, Tilgang,   tilganger_for_feidebruker_med_fs_fiktivt_fnr
   """)

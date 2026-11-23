@@ -294,8 +294,8 @@ class EmissionCensusTest {
                 "HostLanguageNames.italianName", "Inventory.filmCardData", "Inventory.filmCardDataMaybeMissing",
                 "Inventory.filmRef", "PivotNestingHost.labelsComputed.nb", "PivotNestingHost.labelsComputed.nn",
                 "PivotNestingHost.labelsMixed.nb", "Store.location.occupantAddressId"))
-            .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Customer.addressByCondition",
-                "Film.Length", "Film.castActorsViaChain", "Film.castFilms", "Film.filmDetails.language",
+            .containsEntry("INLINE_CHILD", List.of("Customer.addressByCondition",
+                "Film.Length", "Film.castActorsViaChain", "Film.filmDetails.language",
                 "Film.inlineBundle.language", "Film.inlineBundle.languageFiltered", "Film.original.language",
                 "Film.sameRow", "Film.sameRowNested.row", "Film.spoken.language", "FilmActor.actor",
                 "FilmSameRow.film", "FilmSameRow.language", "HostLabelsWithFilms.languageFilms",
@@ -303,9 +303,10 @@ class EmissionCensusTest {
                 "Language.filmsInlineByOriginalLanguageDesc", "PivotNestingHost.labelsComputedRow",
                 "PivotNestingHost.labelsWithFilms", "PivotNestingHost.languageNames",
                 "PivotNestingHost.origin.language", "Store.customers"))
-            .containsEntry("NARROWED_LIST", List.of("Actor.recentFilms", "Actor.recentFilmsInferred",
+            .containsEntry("NARROWED_LIST", List.of("Actor.films", "Actor.filmsNested", "Actor.recentFilms",
+                "Actor.recentFilmsInferred",
                 "FanAlpha.details", "FanAlpha.marks", "FanBeta.details", "FanBeta.marks", "FanItem.details",
-                "Film.actors", "Film.actorsGenerated", "Film.castRecentFilms", "Film.filmDetails.actorsByLookup",
+                "Film.actors", "Film.actorsGenerated", "Film.castFilms", "Film.castRecentFilms", "Film.filmDetails.actorsByLookup",
                 "Film.inlineBundle.actorsByKey", "Film.inlineBundle.actorsByKeyViaJunctionCondition",
                 "Language.filmsByMixedFilter", "SessionStore.customersOfPrincipal",
                 "Store.customersByAddressDistrict", "Store.customersByFirstName", "Store.customersByNodeId",

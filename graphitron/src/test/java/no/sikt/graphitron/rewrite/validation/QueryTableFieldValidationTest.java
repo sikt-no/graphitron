@@ -97,18 +97,7 @@ class QueryTableFieldValidationTest {
                     null,
                     new PaginationSpec.PaginationArg("String", false),
                     null), LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE),
-            List.of()),
-
-        PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
-            new QueryTableField("Query", "films", null,
-                filmReturn(new FieldWrapper.Connection(true, 100)),
-                List.of(), new OrderBySpec.None(),
-                new PaginationSpec(
-                    new PaginationSpec.PaginationArg("Int", false),
-                    null,
-                    new PaginationSpec.PaginationArg("String", false),
-                    null), LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE),
-            List.of("Field 'Query.films': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

@@ -62,6 +62,19 @@ type Query {
     holders: [RoleHolder!]!
     actorsFullySorted(order: ActorFullOrderBy @orderBy): [Actor!]!
     actorsUndirected(order: ActorUndirectedOrderBy @orderBy): [Actor!]!
+    roleAssignments: [RoleAssignment!]!
+    roleAssignmentPage: [RoleAssignment!]! @asConnection
+    roleAssignmentsOrdered: [RoleAssignment!]! @defaultOrder(fields: [{name: "role_code"}])
+    roleAssignmentsByCode(roleCode: [String!]! @lookupKey @field(name: "role_code")): [RoleAssignment]!
+    stints: [Stint!]!
+    holdersSplit: [HolderSplit!]!
+    filmRows(actorId: Int!, minLength: Int!): [ActorFilm!]!
+        @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    filmRowsOrdered(actorId: Int!, minLength: Int!): [ActorFilm!]!
+        @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+        @defaultOrder(fields: [{name: "title"}])
+    actorsWithFilms: [ActorWithFilms!]!
+    search: [Searchable!]!
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
@@ -75,6 +88,15 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   36,          ORDER_CHOICE_ON_INLINE_LIST,
   47,          ORDER_VALUE_UNORDERED,
   64,          ORDER_INPUT_SHAPE,           ActorUndirectedOrderBy
+  65,          LIST_ORDER_UNDETERMINED,     public.role_assignment
+  66,          LIST_ORDER_UNDETERMINED,     public.role_assignment
+  69,          LIST_ORDER_UNDETERMINED,     public.stint
+  71,          LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  77,          LIST_ORDER_UNDETERMINED,     public.film_list
+  126,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  127,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  137,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  153,         ORDER_FIELDS_EMPTY,
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
@@ -86,4 +108,47 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kin
 
 input ActorUndirectedOrderBy {
     field: ActorFullSort!
+}
+
+# A list or connection whose rows a query of its own reads, at the root or split from its parent, or
+# a table-valued function's result, is held to the same rule: Query.roleAssignments and
+# roleAssignmentPage at the root, HolderSplit.rolesSplit and rolesPaged split from role_holder,
+# Query.stints over a table whose one unique key is no primary key, Query.filmRows and
+# ActorWithFilms.films over films_for_actor's result, and Query.search's keyless participant
+# film_list. The near misses draw nothing: the same reads ordered by a column, and
+# roleAssignmentsByCode, a lookup answering in its keys' order.
+
+type Stint @table(name: "stint") {
+    validFrom: String @field(name: "valid_from")
+}
+
+type HolderSplit @table(name: "role_holder") {
+    rolesSplit: [RoleAssignment!]! @splitQuery
+    rolesPaged: [RoleAssignment!]! @asConnection
+    rolesSplitOrdered: [RoleAssignment!]! @splitQuery @defaultOrder(fields: [{name: "role_code"}])
+}
+
+type ActorFilm {
+    filmId: Int @field(name: "film_id")
+    title: String
+}
+
+type ActorWithFilms @table(name: "actor") {
+    films(minLength: Int!): [ActorFilm!]
+        @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    filmsOrdered(minLength: Int!): [ActorFilm!]
+        @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+        @defaultOrder(fields: [{name: "title"}])
+}
+
+type FilmListEntry @table(name: "film_list") {
+    title: String
+}
+
+union Searchable = Film | FilmListEntry
+
+# An order naming no field names nothing to sort by, wherever the list is read: ORDER_FIELDS_EMPTY,
+# at the application, on a type nothing reaches as on any other.
+type HolderNamingNothing @table(name: "role_holder") {
+    rolesNamingNothing: [RoleAssignment!]! @defaultOrder(fields: [])
 }
