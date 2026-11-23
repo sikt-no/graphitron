@@ -57,15 +57,31 @@ validator or builder, follow the same pattern ; pass the relevant candidate list
 `JooqCatalog` to `candidateHint`, or produce the rejection through `Rejection.unknownName(...)` so
 the candidate list rides on the typed result.
 
-== Column value binding: `DSL.val(rawValue, col.getDataType())`
+== Column value binding: `ColumnValues.fromWire`, then `DSL.val(value, col.getDataType())`
 
 When emitting code that binds a raw GraphQL input value (from an input map or
-`env.getArgument(...)`) to a specific jOOQ column, always use the two-argument form:
+`env.getArgument(...)`) to a specific jOOQ column, coerce it at the column's `DataType` through
+the generated `ColumnValues.fromWire`, and bind the result with the two-argument `DSL.val`:
 
 [source,java]
 ----
-DSL.val(rawValue, table.COL.getDataType())
+DSL.val(ColumnValues.fromWire(table.COL.getDataType(), rawValue), table.COL.getDataType())
 ----
+
+`fromWire` is the column's own coercion, the one jOOQ applies, with `ColumnValues.inRange` asked
+first: a value `inRange` refuses is `null`, as is a value the coercion answers `null` for. Never
+hand a raw input value to jOOQ at a column's type any other way. jOOQ converts wherever it is
+handed one, in `DSL.val(rawValue, col.getDataType())` and in `Record.fromArray` alike, so each of
+those takes `fromWire`'s result rather than the raw value, and a typed Java value for a method
+parameter is `fromWire`'s result on its own.
+
+Do not spell the call at the emit site. `ColumnValuesRef.fromWire(outputPackage, dataType, value)`
+mints it in `render` and `emit`, and `ResolvedTableNames.fromWire(value, dataType)` in the fetcher
+generator, so the coercion has one spelling.
+
+Plain `DSL.val(value, col.getDataType())` on its own remains the bind for a value the server
+produced: a parent's key, a slot of a decoded node id (which `ColumnValues.exact` already read), a
+build-time constant.
 
 Do *not* use the one-argument form with a Java-side cast (`DSL.val((JavaType) rawValue)`):
 
@@ -75,8 +91,7 @@ Do *not* use the one-argument form with a Java-side cast (`DSL.val((JavaType) ra
   also throws.
 - The one-argument form ignores the column's registered jOOQ `Converter` entirely.
 
-The two-argument form hands `rawValue` to the column's `DataType` and its registered `Converter`
-at bind time. No SQL `CAST` is rendered; the coercion is purely Java-side, inside jOOQ. The one
+Coercing at the column's `DataType` hands `rawValue` to that type and its registered `Converter`. No SQL `CAST` is rendered; the coercion is purely Java-side, inside jOOQ. The one
 deliberate exception is a connection cursor's element for a column the database writes, which is
 not GraphQL input but the database's own text handed back to it, and binds as a cast to the
 column's type (see "Cursor encode/decode").
@@ -85,10 +100,11 @@ column's type (see "Cursor encode/decode").
 a typed Java value for a *condition/ordering method parameter* ; code paths where a
 developer-written method expects the column's Java type, not a jOOQ `Field<T>`. For inline jOOQ
 DSL expressions (INSERT `values(...)`, UPDATE `set(...)`, DELETE/UPDATE `where(...)` predicates),
-`DSL.val(rawValue, col.getDataType())` does the coercion inside jOOQ without any Java-side step,
-and no `CallSiteExtraction` switch is needed.
+`fromWire` at the column's `DataType` does the coercion through jOOQ with no further Java-side
+step, and no `CallSiteExtraction` switch is needed.
 
-Precedent: `LookupRows.addRowBuildingCore` (search for `DSL.val` with two arguments).
+Precedent: `LookupRows.slotValueExpr`, whose plain and composite slots go through
+`ColumnValuesRef.fromWire`.
 
 For DTO-parent batching ; where the parent's backing class is a plain POJO or Java record without
 a jOOQ FK to the child's `@table` ; see <<dto-parent-batching,DTO-parent batching>> below; a
@@ -98,8 +114,8 @@ can't supply one.
 [#column-to-column-comparison]
 == Column-to-column comparison: `ColumnComparison`
 
-The companion rule to the one above, on the other axis. Where `DSL.val(rawValue,
-col.getDataType())` covers "bind a value against a column", every comparison of *two catalog
+The companion rule to the one above, on the other axis. Where `ColumnValues.fromWire` and
+`DSL.val(value, col.getDataType())` cover "bind a value against a column", every comparison of *two catalog
 columns* goes through `no.sikt.graphitron.render.ColumnComparison` and none is spelled inline.
 
 The reason is that the two columns can disagree on their Java type while agreeing on their SQL

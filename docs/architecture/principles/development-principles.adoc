@@ -358,7 +358,7 @@ syntax.
 `graphitron-jakarta-rest`'s own `<release>17</release>` main compile (runtime category).
 
 The emitter-conventions catalogue (return types, selection-aware queries, error quality,
-`DSL.val` column binding, DTO-parent batching, helper-locality) is reference material for emitter
+`ColumnValues.fromWire` column value binding, DTO-parent batching, helper-locality) is reference material for emitter
 authors: xref:../reference/emitter-conventions.adoc[Emitter conventions].
 
 '''
