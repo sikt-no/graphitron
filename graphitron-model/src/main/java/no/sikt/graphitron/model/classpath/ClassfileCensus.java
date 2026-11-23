@@ -681,16 +681,27 @@ public final class ClassfileCensus {
                 declaredName(array.componentSignature(), name) + "[]";
             case Signature.TypeVarSig variable -> variable.identifier();
             case Signature.ClassTypeSig cls -> {
+                // A member of a parameterised class keeps its owner's arguments, Outer<A>$Inner, which
+                // the class's own name drops.
+                var display = cls.classDesc().displayName();
+                var base = cls.outerType().filter(ClassfileCensus::parameterised)
+                    .map(outer -> declaredName(outer, name) + "$" + display.substring(display.lastIndexOf('$') + 1))
+                    .orElseGet(() -> name.apply(cls.classDesc()));
                 if (cls.typeArgs().isEmpty()) {
-                    yield name.apply(cls.classDesc());
+                    yield base;
                 }
                 var arguments = new ArrayList<String>(cls.typeArgs().size());
                 for (var argument : cls.typeArgs()) {
                     arguments.add(declaredArgument(argument, name));
                 }
-                yield name.apply(cls.classDesc()) + "<" + String.join(", ", arguments) + ">";
+                yield base + "<" + String.join(", ", arguments) + ">";
             }
         };
+    }
+
+    /** Whether a class type, or a class it is a member of, carries type arguments. */
+    private static boolean parameterised(Signature.ClassTypeSig cls) {
+        return !cls.typeArgs().isEmpty() || cls.outerType().filter(ClassfileCensus::parameterised).isPresent();
     }
 
     /** One type argument in the form the author wrote it, wildcard bound included. */
