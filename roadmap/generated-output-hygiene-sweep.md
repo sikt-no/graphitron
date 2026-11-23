@@ -93,8 +93,7 @@ Verified byte-identical by hashing every copy:
 - `EntityFetcherDispatch` carries dead generality: `groups.computeIfAbsent(0, ...)` with a
   `switch (altIdx)` that only ever has `case 0`, and per-representation environments built but
   discarded (only the first is used). Emit the degenerate shape directly when one alternative
-  exists. `typenameForTypeId` also rebuilds `Map.ofEntries` per call in a local named `MAP`;
-  emit a `static final` field.
+  exists.
 - One emitted exception message uses an em dash and a Unicode "less than or equal" sign; reword
   in ASCII for log pipelines.
 
