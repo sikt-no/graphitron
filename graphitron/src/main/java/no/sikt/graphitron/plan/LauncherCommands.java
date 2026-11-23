@@ -14,7 +14,6 @@ import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
-import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.command.SortKeyMethod;
 import no.sikt.graphitron.command.UnitRef;
@@ -202,6 +201,10 @@ public final class LauncherCommands {
             ? no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections.empty()
             : no.sikt.graphitron.emit.ConnectionsQuery.byField(store);
         var units = new GeneratedUnits(outputPackage);
+        // The roots the store states whole, whose rows are read off it rather than off the walk.
+        var roots = store == null
+            ? java.util.Map.<String, no.sikt.graphitron.emit.RootQuery.Result>of()
+            : no.sikt.graphitron.emit.RootQuery.read(store);
         var rows = new ArrayList<LauncherCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
@@ -212,7 +215,10 @@ public final class LauncherCommands {
                 rows.add(switch (verdict) {
                     case NONE -> throw new IllegalStateException("unreachable: NONE is filtered above");
                     case DML_REENTRY -> dmlRowOf(schema, requireDmlCarrier(field), units);
-                    case ROOT_CATALOG -> rootCatalogRow(schema, field, conditions, units);
+                    case ROOT_CATALOG -> roots.get(field.qualifiedName())
+                        instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted
+                        ? storeRootRow(emitted, units)
+                        : rootCatalogRow(schema, field, conditions, units);
                     case BATCHED_CHILD_CATALOG -> batchedChildRow(schema, field, conditions, units);
                 });
             }
@@ -224,6 +230,40 @@ public final class LauncherCommands {
             rows.replaceAll(row -> row.withDslProjections(dslProjections));
         }
         return new LauncherRelation(rows, carrierDsl, connections);
+    }
+
+    /**
+     * A root the store states whole, read off its occurrence: the table its rows are of, projected by
+     * its type's unit, its condition method where its table has one, called as the store says it is
+     * defined, and a list in its default order or one record. A single record is null exactly when
+     * the read finds no row.
+     */
+    private static LauncherCommand storeRootRow(no.sikt.graphitron.emit.RootQuery.Emitted root,
+            GeneratedUnits units) {
+        var where = root.condition() == null ? null
+            : new GlueCall(units.conditionMethod(root.parentType(), root.fieldName()),
+                root.condition().takesContext(), root.condition().takesSession());
+        ResultShape result;
+        if (root.list()) {
+            var entries = root.order().stream()
+                .<OrderBySpec.OrderEntry>map(key -> new OrderBySpec.ColumnOrderEntry(key.column(), key.collation(),
+                    OrderBySpec.SortDirection.valueOf(key.direction()), key.nullable()))
+                .toList();
+            result = new ResultShape.RecordList(entries.isEmpty() ? null
+                : new Ordering.Columns(new OrderBySpec.Fixed(entries,
+                    entries.stream().allMatch(e -> e.direction() == OrderBySpec.SortDirection.ASC))));
+        } else {
+            result = new ResultShape.SingleRecord();
+        }
+        return new LauncherCommand(
+            units.launcherMethod(root.parentType(), root.fieldName()),
+            FieldCoordinates.coordinates(root.parentType(), root.fieldName()),
+            new LaunchSource.AnchorTable(root.table(), units.typeClass(root.returnType())),
+            where,
+            new Invocation.Direct(),
+            new TenantStrategy.Single(),
+            result,
+            units.selectionOccurrences());
     }
 
     /**
@@ -239,17 +279,15 @@ public final class LauncherCommands {
             case QueryField.QueryTableField qtf -> {
                 if (qtf.routine() instanceof RoutineResolution.Chain chain) {
                     yield routineRow(qtf, chain, whereOf(qtf, conditions),
-                        facetPlanOf(schema, qtf, conditions, units), units,
-                        RootPresence.of(schema, conditions));
+                        facetPlanOf(schema, qtf, conditions, units), units);
                 }
                 var mapping = keyedLookupOf(
                     schema.operationMembersOf(qtf.parentTypeName(), qtf.name()));
                 yield mapping != null
-                    ? lookupRow(qtf, mapping, whereOf(qtf.parentTypeName(), qtf.name(), conditions), units,
-                        RootPresence.of(schema, conditions))
+                    ? lookupRow(qtf, mapping, whereOf(qtf.parentTypeName(), qtf.name(), conditions), units)
                     : row(qtf, whereOf(qtf, conditions), units,
                         facetPlanOf(schema, qtf, conditions, units),
-                        tenancyOf(schema, qtf, units), RootPresence.of(schema, conditions));
+                        tenancyOf(schema, qtf, units));
             }
             case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
                 schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
@@ -333,7 +371,7 @@ public final class LauncherCommands {
                 reentryRow(field,
                     new LaunchSource.ProjectedReentry(units.typeClass(ps.returnTypeName()),
                         ps.reentryCorrelation()),
-                    new ResultShape.SingleRecord(new NullCheck.None()), units);
+                    new ResultShape.SingleRecord(), units);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
                 reentryRow(field,
                     new LaunchSource.ProjectedReentry(units.typeClass(pl.returnTypeName()),
@@ -343,7 +381,7 @@ public final class LauncherCommands {
                 reentryRow(field,
                     discriminatedReentrySource(schema, ds.interfaceName(), ds.discriminatorColumn(),
                         ds.knownDiscriminatorValues(), ds.participants(), ds.reentryCorrelation(), units),
-                    new ResultShape.SingleRecord(new NullCheck.None()), units);
+                    new ResultShape.SingleRecord(), units);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
                 reentryRow(field,
                     discriminatedReentrySource(schema, dl.interfaceName(), dl.discriminatorColumn(),
@@ -460,9 +498,6 @@ public final class LauncherCommands {
         }
         java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType =
             typeName -> fieldsByParentType.getOrDefault(typeName, List.of());
-        var rootPresence = presenceSchema != null
-            ? RootPresence.of(presenceSchema, units)
-            : RootPresence.handed(fieldsByParentType, units);
         for (var field : fields) {
             if (!(field instanceof OutputField out)) {
                 continue;
@@ -474,13 +509,12 @@ public final class LauncherCommands {
             rows.add(switch (field) {
                 case QueryField.QueryTableField qtf -> {
                     if (qtf.routine() instanceof RoutineResolution.Chain chain) {
-                        yield routineRow(qtf, chain, glueFromFilters(qtf, units), null, units, rootPresence);
+                        yield routineRow(qtf, chain, glueFromFilters(qtf, units), null, units);
                     }
                     var mapping = keyedLookupOf(OperationMembers.membersOf(qtf));
                     yield mapping != null
-                        ? lookupRow(qtf, mapping, glueFromFilters(qtf, units), units, rootPresence)
-                        : row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single(),
-                            rootPresence);
+                        ? lookupRow(qtf, mapping, glueFromFilters(qtf, units), units)
+                        : row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single());
                 }
                 // The residence split is a classified-schema fact; a schema-free assembly's
                 // joined participants carry no base slice and no detail fields, the same
@@ -564,7 +598,7 @@ public final class LauncherCommands {
      */
     private static LauncherCommand lookupRow(QueryField.QueryTableField qtf,
             no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping mapping, GlueCall where,
-            GeneratedUnits units, RootPresence presence) {
+            GeneratedUnits units) {
         var owner = units.fetchers(qtf.parentTypeName());
         return new LauncherCommand(
             units.lookupMethod(qtf.parentTypeName(), qtf.name()),
@@ -576,12 +610,12 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            cardinalityShape(qtf, () -> null, presence),
+            cardinalityShape(qtf, () -> null),
             units.selectionOccurrences());
     }
 
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,
-            FacetPlan facets, TenantStrategy tenancy, RootPresence presence) {
+            FacetPlan facets, TenantStrategy tenancy) {
         return new LauncherCommand(
             units.launcherMethod(qtf.parentTypeName(), qtf.name()),
             FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
@@ -590,7 +624,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             tenancy,
-            resultShapeOf(qtf, units, facets, presence),
+            resultShapeOf(qtf, units, facets),
             units.selectionOccurrences());
     }
 
@@ -605,8 +639,7 @@ public final class LauncherCommands {
      * FROM, not a different kind of read.
      */
     private static LauncherCommand routineRow(QueryField.QueryTableField qtf,
-            RoutineResolution.Chain chain, GlueCall where, FacetPlan facets, GeneratedUnits units,
-            RootPresence presence) {
+            RoutineResolution.Chain chain, GlueCall where, FacetPlan facets, GeneratedUnits units) {
         if (facets != null && facets.hasReachedGrouping()) {
             throw new IllegalStateException(
                 "routine-sourced coordinate '" + qtf.qualifiedName() + "' carries a @reference"
@@ -624,7 +657,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            resultShapeOf(qtf, units, facets, presence),
+            resultShapeOf(qtf, units, facets),
             units.selectionOccurrences());
     }
 
@@ -669,7 +702,7 @@ public final class LauncherCommands {
         }
         return qtif.returnType().wrapper().isList()
             ? new ResultShape.RecordList(ordering)
-            : new ResultShape.SingleRecord(new NullCheck.None());
+            : new ResultShape.SingleRecord();
     }
 
     /**
@@ -979,7 +1012,7 @@ public final class LauncherCommands {
             null,
             new Invocation.Batched(bpf.sourceKey(), bpf.loaderRegistration()),
             new TenantStrategy.Single(),
-            new ResultShape.SingleRecord(new NullCheck.None()),
+            new ResultShape.SingleRecord(),
             units.selectionOccurrences());
     }
 
@@ -1003,7 +1036,7 @@ public final class LauncherCommands {
                 btf.qualifiedName(), null, units);
         }
         return btf.emitsSingleRecordPerKey()
-            ? new ResultShape.SingleRecord(new NullCheck.None())
+            ? new ResultShape.SingleRecord()
             : new ResultShape.RecordList(
                 orderingOf(btf.orderBy(), btf.parentTypeName(), btf.name(), units));
     }
@@ -1016,7 +1049,7 @@ public final class LauncherCommands {
      * coordinate carries facets.
      */
     private static ResultShape resultShapeOf(QueryField.QueryTableField qtf, GeneratedUnits units,
-            FacetPlan facets, RootPresence presence) {
+            FacetPlan facets) {
         if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
             return connectionShape(conn, orderingOf(qtf, units), qtf.qualifiedName(), facets, units);
         }
@@ -1025,94 +1058,21 @@ public final class LauncherCommands {
                 "coordinate '" + qtf.qualifiedName() + "' carries facets but is not a connection;"
                 + " the classifier synthesises facet carriers only for @asConnection coordinates");
         }
-        return cardinalityShape(qtf, () -> orderingOf(qtf, units), presence);
+        return cardinalityShape(qtf, () -> orderingOf(qtf, units));
     }
 
     /**
      * The root table read's one cardinality fork over a non-connection coordinate: a list
      * wrapper fetches a record list under the source's ordering, anything else fetches one
-     * record under the field's {@link NullCheck}. Every root table source reads its shape
-     * through here, so a single return cannot be handed a list shape, or a different check, by
-     * one source while another mints the single one. The ordering is supplied lazily, because
-     * only the list arm reads it.
+     * record, null exactly when the read finds no row. Every root table source reads its shape
+     * through here, so a single return cannot be handed a list shape by one source while another
+     * mints the single one. The ordering is supplied lazily, because only the list arm reads it.
      */
     private static ResultShape cardinalityShape(QueryField.QueryTableField qtf,
-            java.util.function.Supplier<Ordering> listOrdering, RootPresence presence) {
-        if (qtf.returnType().wrapper().isList()) {
-            return new ResultShape.RecordList(listOrdering.get());
-        }
-        var check = presence.of().apply(qtf.returnType().returnTypeName())
-            .map(p -> NullChecks.of(qtf,
-                no.sikt.graphitron.rewrite.model.Presence.NullContract.of(qtf.returnType().wrapper(), p),
-                presence.glueOf()))
-            .orElseGet(NullCheck.None::new);
-        return new ResultShape.SingleRecord(check);
-    }
-
-    /**
-     * What a root single read's {@link NullCheck} is minted from: the presence of a type by name,
-     * empty when this walk does not know the type's fields, and a probe leaf's condition glue
-     * call. An empty answer mints {@link NullCheck.None}; an empty field list could not stand
-     * for it, since the presence fold over no fields collapses with no leaves. A type holding a
-     * field that did not classify as a child is not known either: the fold reads child fields
-     * only, so it would decide over a part of the type (an invalid schema the validator rejects,
-     * reached by a run that produces before validating).
-     */
-    private record RootPresence(
-            java.util.function.Function<String, java.util.Optional<
-                no.sikt.graphitron.rewrite.model.Presence.SubtreePresence>> of,
-            java.util.function.Function<no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe, GlueCall> glueOf) {
-
-        /** The schema walk's: every type is known, and probe glue is copied off the condition relation. */
-        static RootPresence of(GraphitronSchema schema, ConditionRelation conditions) {
-            return new RootPresence(typeName -> foldable(schema.fieldsOf(typeName))
-                    ? java.util.Optional.of(schema.presenceOf(typeName))
-                    : java.util.Optional.empty(),
-                probe -> whereOf(probe.field().parentTypeName(), probe.field().name(), conditions));
-        }
-
-        /**
-         * A schema-free walk over a run that does have a schema (a nesting-reached type's class):
-         * every type is known, and probe glue is minted from the leaf's filters.
-         */
-        static RootPresence of(GraphitronSchema schema, GeneratedUnits units) {
-            return new RootPresence(typeName -> foldable(schema.fieldsOf(typeName))
-                    ? java.util.Optional.of(schema.presenceOf(typeName))
-                    : java.util.Optional.empty(),
-                probe -> glueFromFilters(probe.field().parentTypeName(), probe.field().name(),
-                    probe.filters(), units));
-        }
-
-        /**
-         * A schema-free assembly's: it knows the types whose fields it was handed, decided by
-         * membership, and folds the presence rule over those fields alone.
-         */
-        static RootPresence handed(java.util.Map<String, List<GraphitronField>> fieldsByParentType,
-                GeneratedUnits units) {
-            no.sikt.graphitron.rewrite.model.Presence.TypeFields types =
-                typeName -> fieldsByParentType.getOrDefault(typeName, List.of());
-            return new RootPresence(
-                typeName -> fieldsByParentType.containsKey(typeName)
-                        && foldable(fieldsByParentType.get(typeName))
-                    ? java.util.Optional.of(no.sikt.graphitron.rewrite.model.Presence.SubtreePresence.over(
-                        fieldsByParentType.get(typeName).stream()
-                            .filter(RootPresence::presenceField)
-                            .toList(),
-                        types))
-                    : java.util.Optional.empty(),
-                probe -> glueFromFilters(probe.field().parentTypeName(), probe.field().name(),
-                    probe.filters(), units));
-        }
-
-        /** Whether the presence fold reads every one of {@code fields}: each a {@link #presenceField}. */
-        private static boolean foldable(List<? extends GraphitronField> fields) {
-            return !fields.isEmpty() && fields.stream().allMatch(RootPresence::presenceField);
-        }
-
-        /** A field the presence fold reads: a child, or a store-owned field, which blocks it. */
-        private static boolean presenceField(GraphitronField field) {
-            return ChildField.class.isInstance(field) || GraphitronField.StoreOwnedField.class.isInstance(field);
-        }
+            java.util.function.Supplier<Ordering> listOrdering) {
+        return qtf.returnType().wrapper().isList()
+            ? new ResultShape.RecordList(listOrdering.get())
+            : new ResultShape.SingleRecord();
     }
 
     /**

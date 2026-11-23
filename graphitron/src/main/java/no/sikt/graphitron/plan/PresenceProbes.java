@@ -17,8 +17,7 @@ import java.util.function.Function;
  * condition glue call; a {@link Presence.PresenceLeaf.Computed} becomes a null test of the
  * field's {@code @externalField} expression. Shared by the projection producer (the
  * nesting and inline multiset carriers) and the launcher producer (the batched rows
- * method's source and the root table read's {@link no.sikt.graphitron.command.NullCheck}), which
- * resolve glue calls differently but must mint the same probe.
+ * method's source), which resolve glue calls differently but must mint the same probe.
  */
 final class PresenceProbes {
 

@@ -51,6 +51,7 @@ class EmissionCensusTest {
     private static NodeIdDecodeQuery decodes;
     private static Map<BuildQuery.Root, BuildQuery.Result> builds;
     private static Map<String, ProjectionQuery.Unit> projections;
+    private static Map<String, RootQuery.Result> roots;
 
     @BeforeAll
     static void capture() throws Exception {
@@ -64,6 +65,7 @@ class EmissionCensusTest {
                 decodes = NodeIdDecodeQuery.read(handle);
                 builds = BuildQuery.read(handle);
                 projections = ProjectionQuery.read(handle);
+                roots = RootQuery.read(handle);
                 return null;
             });
     }
@@ -316,5 +318,103 @@ class EmissionCensusTest {
             .containsEntry("SCALAR_PATH", List.of("Customer.addressNodeId", "Customer.districtByCondition",
                 "Film.soleActorFirstName"))
             .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "PIVOT", "SCALAR_PATH");
+    }
+
+    /**
+     * Which of the example's root reads the store states whole, so their fetchers are read off it,
+     * and why each of the rest stays the walk's, by the stored fact that holds it back.
+     */
+    @Test
+    void theCensusOfTheExampleSchemasRootReads() {
+        var emitted = new ArrayList<String>();
+        var held = new TreeMap<String, List<String>>();
+        for (var result : roots.values()) {
+            switch (result) {
+                case RootQuery.Emitted e -> emitted.add(e.coordinate());
+                case RootQuery.NotYet n -> held.computeIfAbsent(n.reason().name(), k -> new ArrayList<>())
+                    .add(n.coordinate());
+            }
+        }
+        java.util.Collections.sort(emitted);
+        held.values().forEach(java.util.Collections::sort);
+        assertThat(emitted).as("the roots the store emits").containsExactly(
+            "Query.actorsByFilmFilter", "Query.actorsByFilmIds", "Query.addressesByCountryName",
+            "Query.addressesByCustomerIds", "Query.addressesByCustomerIdsInferred", "Query.allActors",
+            "Query.allFanOwners", "Query.allIndividuals", "Query.citiesByCountryFilter",
+            "Query.citiesByCountryName", "Query.computedTitleFilm", "Query.converterCampusTermByNodeId",
+            "Query.converterCampusTerms", "Query.converterCampusTermsByNodeIds", "Query.converterCampuses",
+            "Query.converterCampusesByOrgCode", "Query.converterCampusesByOrgCodes",
+            "Query.converterIdChangeByNodeId", "Query.converterIdChanges", "Query.converterOrgs",
+            "Query.customerByPk", "Query.customers", "Query.customersByAddressDistrict",
+            "Query.customersByAddressDistrictActive", "Query.customersByAddresses",
+            "Query.customersByCityFilter", "Query.customersByCityId", "Query.customersByConditionDistrict",
+            "Query.customersByDistrictBean", "Query.customersByMultiFieldFilter",
+            "Query.customersByNullableAddressIds", "Query.customersByTwoNames", "Query.customersOfPrincipal",
+            "Query.customersSeenByUser", "Query.divergedRefChildren", "Query.divergedRefOrgs",
+            "Query.endorsementsByNodeId", "Query.filmActorBySingularCompositeNodeId",
+            "Query.filmActorsByCompositeNodeIds", "Query.filmActorsByNullableNodeIds",
+            "Query.filmActorsByPairList", "Query.filmActorsByPairs", "Query.filmSameRows", "Query.films",
+            "Query.filmsByBridgedActorFirstName", "Query.filmsByCastNames",
+            "Query.filmsByEffectiveNullability", "Query.filmsByJunctionActorId", "Query.filmsByLanguagePairs",
+            "Query.filmsByNodeIdArg", "Query.filmsByNodeIdArgWithTitleFilter", "Query.filmsByNullableNodeIds",
+            "Query.filmsByOneOf", "Query.filmsByOptionalLanguage", "Query.filmsByOptionalLanguages",
+            "Query.filmsByOriginalLanguages", "Query.filmsByPlainInput", "Query.filmsByRentalRateBounds",
+            "Query.filmsByRentalRateRange", "Query.filmsByRentalRateRangeDefaulted",
+            "Query.filmsByRentalRateRangeExplicit", "Query.filmsBySameTableNodeId", "Query.filmsBySearchBean",
+            "Query.filmsByTitleBean", "Query.filmsByTitleBeans", "Query.filmsByTitlePrefix",
+            "Query.filmsNestedInput", "Query.filmsOuterOverrideFilterInput",
+            "Query.filmsOuterOverridePlainInput", "Query.filmsWithImplicitInput",
+            "Query.filmsWithImplicitInputOuterOverride", "Query.filmsWithInputFieldCondition",
+            "Query.filmsWithInputFieldOverride", "Query.filmsWithMultiImplicit",
+            "Query.filmsWithNestedImplicit", "Query.hostLabelRows", "Query.inventoryItemsByIds",
+            "Query.levelIntervals", "Query.namedCitiesByCountryName", "Query.pivotHosts",
+            "Query.presenceDetail", "Query.presenceDetailNode", "Query.presenceDetailRequired",
+            "Query.presenceHostRefs", "Query.presenceHosts", "Query.projectNotesByPlainFilter",
+            "Query.projectNotesByProject", "Query.projects", "Query.rentalsByInventoryItem",
+            "Query.roleHolders", "Query.secureNotes", "Query.sessionStores", "Query.splitFilterParents",
+            "Query.splitFilterParentsByTargetLabel", "Query.splitParents", "Query.studyLevels",
+            "Query.validityPeriodsByValidToDescList", "Query.xlatChildByParentId",
+            "Query.xlatChildrenByFilter", "Query.xlatChildrenByParentIds",
+            "Query.xlatCompChildrenByParentIds");
+        // Each line goes as its shape is stated; a root moving between lines is a change to look at,
+        // not to re-pin.
+        assertThat(held).as("the roots the walk keeps")
+            .containsEntry("CONNECTION", List.of(
+                "Query.actorsByFilmFilterConnection", "Query.citiesFaceted",
+                "Query.converterIdChangesConnection", "Query.filmActorsFaceted", "Query.filmsByLanguages",
+                "Query.filmsByLanguagesComposed", "Query.filmsByLatestStock", "Query.filmsByOriginalLanguage",
+                "Query.filmsByOriginalLanguageId", "Query.filmsByRateDescTitleAsc", "Query.filmsByRentalRate",
+                "Query.filmsConnection", "Query.filmsConnectionByOptionalIds",
+                "Query.filmsConnectionByRequiredIds", "Query.filmsConnectionDesc", "Query.filmsFaceted",
+                "Query.filmsOrderedByOneKeyConnection", "Query.filmsOrderedConnection",
+                "Query.projectNotesByPlainFilterConnection", "Query.squadMembers", "Query.stores",
+                "Query.validityPeriodsByValidTo", "Query.validityPeriodsByValidToDesc",
+                "Query.validityPeriodsOrdered"))
+            .containsEntry("LOOKUP", List.of(
+                "Query.categoryById", "Query.customerById", "Query.filmActorByNodeId",
+                "Query.filmActorsByKey", "Query.filmById", "Query.filmsByNodeIdArgWithLookupKey",
+                "Query.inventoryById", "Query.languageByKey", "Query.languageBySingleKey",
+                "Query.languagesByKeyFiltered", "Query.languagesByKeyGenerated", "Query.presenceDetailByKey",
+                "Query.storeById"))
+            .containsEntry("ORDER_ARGUMENT", List.of(
+                "Query.filmsByLanguagesComposedList", "Query.filmsByLanguagesList", "Query.filmsOrdered"))
+            .containsEntry("POLYMORPHIC", List.of(
+                "Query.allContent", "Query.allContentByFilmTitle", "Query.allContentConnection",
+                "Query.allContentConnectionByFilmTitle", "Query.allFanItems", "Query.allFanLabelled",
+                "Query.allParties", "Query.allPartiesConnection", "Query.allSubjects",
+                "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documents",
+                "Query.documentsConnection", "Query.fanItem", "Query.internalNode", "Query.node",
+                "Query.nodes", "Query.occupantById", "Query.occupantByOptionalId", "Query.occupantsByAddress",
+                "Query.occupantsByFilter", "Query.occupantsByIds", "Query.occupantsByIdsConnection",
+                "Query.occupantsByLastName", "Query.occupantsByMixedNamePrefix", "Query.occupantsByName",
+                "Query.occupantsByNameConnection", "Query.occupantsByNamePrefix",
+                "Query.occupantsByNullableIds", "Query.occupantsByStoreId",
+                "Query.occupantsByTypedNamePrefix", "Query.occupantsOrdered", "Query.occupantsOrderedByKey",
+                "Query.occupantsOrderedByList", "Query.occupantsOrderedConnection",
+                "Query.occupantsStartingWithM", "Query.pagedItems", "Query.pagedItemsByName", "Query.search",
+                "Query.searchConnection", "Query.stockByLanguage", "Query.stockByLanguageOverride"))
+            .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
+                "Query.filmsByOriginalLanguageDescList", "Query.filmsByOriginalLanguageList"))
+            .containsOnlyKeys("CONNECTION", "LOOKUP", "ORDER_ARGUMENT", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
     }
 }

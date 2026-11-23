@@ -8,7 +8,6 @@ import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ReservedAliases;
-import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
@@ -136,9 +135,9 @@ public final class RootLauncherRenderer {
                 switch (row.tenancy()) {
                     case TenantStrategy.Single ignored -> {
                         switch (row.result()) {
-                            case ResultShape.SingleRecord single -> builder.addCode(singleRecordBody(row, single,
+                            case ResultShape.SingleRecord single -> builder.addCode(singleRecordBody(
                                 ProjectionCall.fromLauncher(className(anchor.projection()), tableLocal, row),
-                                tableLocal, select -> selectChain(select, tableLocal, false, false)));
+                                select -> selectChain(select, tableLocal, false, false)));
                             case ResultShape.RecordList list -> {
                                 boolean ordered = list.ordering() != null;
                                 if (ordered) {
@@ -305,37 +304,12 @@ public final class RootLauncherRenderer {
     }
 
     /**
-     * A single arm's body over the select chain {@code chainOver} builds from a select
-     * expression. Under {@link NullCheck.None} the fetched record is returned as it is. Under
-     * {@link NullCheck.Collapses} the projection becomes a {@code selectFields} local, the check's
-     * columns are added off {@code correlatedAlias} (skipped when the projection already selects
-     * one) and its probe correlated on that alias, whatever the query selects; the fetched record
-     * is then returned only when {@link PresenceFragments#check} finds it holds something. A
-     * launcher serves one coordinate, so the check has no nullable and non-null site to keep
-     * apart, and the alias's writer and reader stay in one method.
+     * A single arm's body over the select chain {@code chainOver} builds from a select expression:
+     * the fetched record returned as it is, null exactly when the read finds no row.
      */
-    private static CodeBlock singleRecordBody(LauncherCommand row, ResultShape.SingleRecord single,
-            CodeBlock projection, String correlatedAlias,
+    private static CodeBlock singleRecordBody(CodeBlock projection,
             java.util.function.Function<CodeBlock, CodeBlock> chainOver) {
-        return switch (single.check()) {
-            case NullCheck.None ignored -> directReturn(chainOver.apply(projection));
-            case NullCheck.Collapses check -> {
-                var code = CodeBlock.builder();
-                code.addStatement("$T<$T<?>> selectFields = new $T<>($L)", LIST, FIELD, ARRAY_LIST, projection);
-                for (var column : check.columns()) {
-                    code.beginControlFlow("if (!selectFields.contains($L.$L))", correlatedAlias, column.javaName());
-                    code.addStatement("selectFields.add($L.$L)", correlatedAlias, column.javaName());
-                    code.endControlFlow();
-                }
-                check.probe().ifPresent(probe -> code.addStatement("selectFields.add($L)",
-                    PresenceProbeFragments.declare(code, probe, correlatedAlias, "",
-                        TableAliasFragments.tableAliasesBeside(row.selectionOccurrences()))));
-                code.add("$T row = $L;\n", RECORD, chainOver.apply(CodeBlock.of("selectFields")));
-                code.add("if (row == null) return null;\n");
-                code.add(PresenceFragments.check(CodeBlock.of("$L", correlatedAlias), check, "row"));
-                yield code.build();
-            }
-        };
+        return directReturn(chainOver.apply(projection));
     }
 
     /**
@@ -580,7 +554,7 @@ public final class RootLauncherRenderer {
      *
      * <p>The single arm needs none of it: one key has one slot, and an unmatched key is the
      * {@code null} that {@code fetchOne} already returns. It shares the other single arms'
-     * {@link #singleRecordBody}, so a matched row holding nothing collapses as theirs does.
+     * {@link #singleRecordBody}.
      */
     private static CodeBlock lookupBody(LauncherCommand row, LaunchSource.KeyedLookup lookup,
             String tableLocal) {
@@ -598,8 +572,8 @@ public final class RootLauncherRenderer {
             LookupRows.inputTableType(mapping, fieldName), DSL,
             LookupRows.aliasArgs(mapping, alias, fieldName));
         var projection = ProjectionCall.fromLauncher(className(lookup.projection()), tableLocal, row);
-        if (row.result() instanceof ResultShape.SingleRecord single) {
-            return code.add(singleRecordBody(row, single, projection, tableLocal, select -> CodeBlock.builder()
+        if (row.result() instanceof ResultShape.SingleRecord) {
+            return code.add(singleRecordBody(projection, select -> CodeBlock.builder()
                 .add("dsl\n")
                 .indent()
                 .add(".select($L)\n", select)
@@ -682,8 +656,7 @@ public final class RootLauncherRenderer {
         switch (row.result()) {
             case ResultShape.SingleRecord single -> {
                 String from = fromLocal;
-                code.add(singleRecordBody(row, single, projection, terminal,
-                    select -> selectChain(select, from, false, false)));
+                code.add(singleRecordBody(projection, select -> selectChain(select, from, false, false)));
             }
             case ResultShape.RecordList list -> {
                 boolean ordered = list.ordering() != null;

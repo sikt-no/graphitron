@@ -15,10 +15,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The null contract of a nullable root field returning one table object, against a real
- * PostgreSQL database: it resolves to {@code null} when the row it finds holds nothing, decided
- * over every field of the type whatever the query selects, anchored or {@code @lookupKey}, in the
- * one statement the read already issues. Fixture: {@code presence_detail} and
+ * The null contract of a root field returning one table object, against a real PostgreSQL
+ * database: it resolves to {@code null} exactly when its read finds no row, anchored or
+ * {@code @lookupKey}, and a row whose columns are all null is an object of nulls, in the one
+ * statement the read issues. Fixture: {@code presence_detail} and
  * {@code presence_host} as {@code init.sql} lays them out; detail 11 has both columns set, 12 none,
  * 14 only {@code city}, and there is no detail 13. Host 1 has a full detail row, host 2 a detail
  * row of nulls, host 3 none, host 4 one with {@code city} alone.
@@ -56,9 +56,9 @@ class RootNullContractExecutionTest {
     }
 
     @Test
-    void anchoredAndLookupKey_rowOfNulls_resolveToNull() {
+    void anchoredAndLookupKey_rowOfNulls_isAnObjectOfNulls() {
         for (var field : new String[] {"presenceDetail", "presenceDetailByKey"}) {
-            assertThat(root(field, "detailId: 12", "street city")).as(field).isNull();
+            assertThat(root(field, "detailId: 12", "street city")).as(field).isEqualTo(nulls("street", "city"));
         }
     }
 
@@ -74,7 +74,7 @@ class RootNullContractExecutionTest {
     }
 
     @Test
-    void anchoredAndLookupKey_missingRow_isNullAsBefore() {
+    void anchoredAndLookupKey_missingRow_isNull() {
         for (var field : new String[] {"presenceDetail", "presenceDetailByKey"}) {
             assertThat(root(field, "detailId: 13", "street")).as(field).isNull();
         }
@@ -83,7 +83,8 @@ class RootNullContractExecutionTest {
     @Test
     void typenameAlone_agreesWithTheFullSelection() {
         for (var field : new String[] {"presenceDetail", "presenceDetailByKey"}) {
-            assertThat(root(field, "detailId: 12", "__typename")).as(field).isNull();
+            assertThat(root(field, "detailId: 12", "__typename")).as(field)
+                .isEqualTo(Map.of("__typename", "PresenceDetail"));
             assertThat(root(field, "detailId: 14", "__typename")).as(field)
                 .isEqualTo(Map.of("__typename", "PresenceDetail"));
         }
@@ -101,11 +102,13 @@ class RootNullContractExecutionTest {
     }
 
     @Test
-    void rootOfReferences_collapsesWhenNoReferencedRowHoldsAValue() {
-        // Host 3 has no detail row; host 2's holds only nulls. The probe is correlated on the
-        // root's own table, and it decides whatever the query selects.
-        assertThat(root("presenceHostRefs", "hostId: 3", "__typename")).isNull();
-        assertThat(root("presenceHostRefs", "hostId: 2", "detail { city }")).isNull();
+    void rootOfReferences_isAnObjectWhileItsOwnRowExists() {
+        // Host 3 has no detail row; host 2's holds only nulls. Either way the host's own row is
+        // found, so the host is an object, and its detail answers by the child's own rule.
+        assertThat(root("presenceHostRefs", "hostId: 3", "__typename"))
+            .isEqualTo(Map.of("__typename", "PresenceHostRefs"));
+        assertThat(root("presenceHostRefs", "hostId: 3", "detail { city }"))
+            .isEqualTo(nulls("detail"));
         assertThat(root("presenceHostRefs", "hostId: 4", "__typename"))
             .isEqualTo(Map.of("__typename", "PresenceHostRefs"));
         assertThat(root("presenceHostRefs", "hostId: 1", "detail { city }"))

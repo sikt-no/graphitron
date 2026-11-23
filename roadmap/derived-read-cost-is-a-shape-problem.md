@@ -83,7 +83,7 @@ The walk's read path is gone
 └── The projection units are rendered from the store
     ├── A projection unit is emitted from the store, censused
     ├── An argument binds the call parameter it supplies
-    ├── The root query fetchers are emitted from the store
+    ├── The root query fetchers are emitted from the store, claimed by C
     ├── A child read inline is emitted from the store, claimed by E
     │   ├── A sort key's path is resolved at its occurrence
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
@@ -954,13 +954,19 @@ static method needs no holder.
     `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
     the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
     then goes, after the flips.
-  * **The root query fetchers are emitted from the store** `open`.
+  * **The root query fetchers are emitted from the store, claimed by C** `open`.
     A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
     off its occurrence, and flips on its own, piece by piece as the store states each piece whole, the
     walk's `$project` called at the address and by the signature it is called by today (Alf,
     2026-11-15, 2026-11-23); a root single read is null exactly when its read finds no row, so the
-    walk's collapse of an all-null subtree goes with the flip (Alf, 2026-11-23). Whether a type's
+    walk's collapse of an all-null subtree goes with the flip (Alf, 2026-11-23). The first slice
+    reads `RootQuery` off the store: a root `SELECT` over one untenanted table, a list in its default
+    order of columns or one record, with the condition method `graphitron_occurrence_condition_signature`
+    states, is the store's, and every other root stays the walk's under a reason the root census in
+    `EmissionCensusTest` pins (a lookup, an `@orderBy` choice, a connection, a polymorphic or
+    tenanted read, a pivot); the walk's root collapse went for every root at once. Lookups are the
+    next reason to close (FS main holds 5 root lookups), then `@orderBy` choices (3), then connections. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
     it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a
@@ -1719,13 +1725,13 @@ output package they are written to are settled.
     value source and the schema class's scalar form fail rather than fall back, ahead of the variants
     losing their forms.
 * **`TypeFetcherGenerator` reads the store, one family of field at a time** `open`. Root queries
-  (taken by "The root query fetchers are emitted from the store"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
+  (taken by "The root query fetchers are emitted from the store, claimed by C"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
   fields, pivots and the errors field each render from a query at the grain they emit, the
   launcher's routine row reading the facts R704 captured, with
   `ProjectionUnitRenderer` folded into the families that use them.
   * **A batched child's fetcher is emitted from the store, on its stated connection** `blocked`, G's,
     on "The projection units are rendered from the store" and
-    "The root query fetchers are emitted from the store". A split-query child reads its DataLoader and its connection off the store.
+    "The root query fetchers are emitted from the store, claimed by C". A split-query child reads its DataLoader and its connection off the store.
   * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
     `blocked`, F's, on the same two nodes. A connection field and its count and facet siblings read
     their query and connection off the store; it releases R1119's slice 8e.3 for connection-typed

@@ -22,15 +22,9 @@ public sealed interface ResultShape {
 
     /**
      * One record or null: the {@code fetchOne()} shape, unordered by construction. {@code null}
-     * means no row, or, under a {@link NullCheck.Collapses} {@link #check}, a row holding nothing
-     * to show. Only the root table read's launcher renders a collapsing check; the command
-     * constructor refuses it on every other source.
+     * means exactly that the read found no row; a row whose fields are all null is an object.
      */
-    record SingleRecord(NullCheck check) implements ResultShape {
-        public SingleRecord {
-            Objects.requireNonNull(check, "check");
-        }
-    }
+    record SingleRecord() implements ResultShape {}
 
     /**
      * A record list: the {@code fetch()} shape under {@link #ordering}. The slot is absent for

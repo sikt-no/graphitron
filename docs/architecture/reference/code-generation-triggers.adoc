@@ -489,6 +489,9 @@ A nullable single child is null exactly when its read finds no row: a table-boun
 there or not, and a reached row whose columns are all null is an object with null fields. A nesting
 field is its parent's row, so it is present wherever its parent is and never null on its own account
 (Alf, 2026-11-15). No presence is computed from a subtree's columns, expressions or probes.
+A root single read answers by the same rule: a field of `Query` returning one table-bound object is
+null exactly when its read finds no row (Alf, 2026-11-23), whether the store or the walk emits its
+fetcher.
 
 A single child below the root may be looked up by its `@lookupKey` arguments, read as the one row
 of its table they match or null (Alf, 2026-11-15). Its keys must cover an identifying key of that
