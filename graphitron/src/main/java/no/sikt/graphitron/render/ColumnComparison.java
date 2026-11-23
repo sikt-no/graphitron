@@ -65,7 +65,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * on its own, so wherever the receiver <em>is</em> the column the value came from the rule is
  * already satisfied: {@code receiver.eq(value)} binds through that column's converter with no
  * {@code DSL.val} anywhere. That is every generated filter: an argument bound to a column, compared against that
- * same column (see {@link ConditionGlueRenderer}).
+ * same column (see {@link no.sikt.graphitron.emit.ConditionEmitter}).
  *
  * <p>An explicit {@code DSL.val(value, col.getDataType())} appears exactly where the receiver is
  * not the column the value came from, which happens two ways. There may be no receiver at all: a

@@ -162,10 +162,11 @@ class EmissionCensusTest {
             "Query.converterCampusesByOrgCode converter_campus",
             "Query.converterCampusesByOrgCodes converter_campus",
             "Query.converterIdChangeByNodeId converter_id_change", "Query.customerByPk customer",
-            "Query.customers customer", "Query.customersByAddresses customer",
+            "Query.customers customer", "Query.customersByAddressDistrict customer",
+            "Query.customersByAddressDistrictActive customer", "Query.customersByAddresses customer",
             "Query.customersByCityFilter customer", "Query.customersByCityId customer",
             "Query.customersByConditionDistrict customer", "Query.customersByDistrictBean customer",
-            "Query.customersByNullableAddressIds customer", "Query.customersByTwoNames customer",
+            "Query.customersByMultiFieldFilter customer", "Query.customersByNullableAddressIds customer", "Query.customersByTwoNames customer",
             "Query.customersOfPrincipal customer", "Query.customersSeenByUser customer",
             "Query.endorsementsByNodeId film_endorsement", "Query.fanItem fan_base",
             "Query.filmActorBySingularCompositeNodeId film_actor", "Query.filmActorsByCompositeNodeIds film_actor",
@@ -210,21 +211,19 @@ class EmissionCensusTest {
             "Query.projectNotesByPlainFilterConnection project_note", "Query.projectNotesByProject project_note",
             "Query.rentalsByInventoryItem rental",
             "Query.splitFilterParentsByTargetLabel split_filter_parent", "Query.stockByLanguage film",
-            "Query.stockByLanguage inventory",
+            "Query.stockByLanguage inventory", "Query.stockByLanguageOverride film",
+            "Query.stockByLanguageOverride inventory",
             "Query.tilgangerAdmin tilganger_for_feidebruker_med_fs_fiktivt_fnr",
             "Query.xlatChildByParentId xlat_child",
             "Query.xlatChildrenByFilter xlat_child", "Query.xlatChildrenByParentIds xlat_child",
             "Query.xlatCompChildrenByParentIds xlat_comp_child", "SessionStore.customersOfPrincipal customer",
+            "Store.customersByAddressDistrict customer", "Store.customersByAddressDistrictSplit customer",
             "Store.customersByFirstName customer", "Store.customersByFirstNameSplit customer",
             "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer",
             "Store.customersSeenByUser customer");
-        // Each line goes as its shape is emitted from the store; a field moving between lines is a
-        // change to look at, not to re-pin.
+        // Every condition the example filters by is emitted from the store or has nothing to compare;
+        // a shape the store accepted and the emitter does not emit would be a generator bug.
         assertThat(census)
-            .containsEntry("AUTHORED_NODE_ID", List.of("Query.customersByAddressDistrict customer", "Query.customersByAddressDistrictActive customer",
-                "Query.customersByMultiFieldFilter customer", "Query.stockByLanguageOverride film",
-                "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
-                "Store.customersByAddressDistrictSplit customer"))
             .containsEntry("NOTHING", List.of("Film.actors actor", "Film.actorsBySplitLookup actor", "Film.actorsOrderedBySplitLookup actor",
                 "Film.filmDetails.actorsByLookup actor", "Film.info.castByKey actor",
                 "Film.inlineBundle.actorsByKey actor", "Film.inlineBundle.actorsByKeyViaJunctionCondition actor",
@@ -234,7 +233,7 @@ class EmissionCensusTest {
                 "Query.languageByKey language", "Query.languageBySingleKey language",
                 "Query.presenceDetailByKey presence_detail", "Query.storeById store",
                 "RoleHolder.rolesByCode role_assignment"))
-            .containsOnlyKeys("AUTHORED_NODE_ID", EMITTED, "NOTHING");
+            .containsOnlyKeys(EMITTED, "NOTHING");
     }
 
     /**

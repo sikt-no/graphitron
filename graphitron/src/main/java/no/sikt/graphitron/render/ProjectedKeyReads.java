@@ -39,8 +39,7 @@ import java.util.function.Function;
  * <p>The decode helper arrives from the host rather than being computed here. One generated class's
  * private-static method namespace is the host's to allocate: a {@code <Type>Fetchers} class may already
  * host a {@code decode<TypeName>Record} body for a jOOQ-record-typed input-bean member, and the resolver that
- * keeps those names collision-free across schema packages is the shell's, while a conditions class has
- * its own namespace and mints bodies on demand through {@link RecordDecodeHelperRegistry}. So the host
+ * keeps those names collision-free across schema packages is the shell's. So the host
  * hands in the function that reaches a decode and owns emitting the body, and this sink spells the
  * call.
  */

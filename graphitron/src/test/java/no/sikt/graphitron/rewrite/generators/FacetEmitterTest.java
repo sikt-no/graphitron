@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -24,44 +22,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class FacetEmitterTest {
 
-    private static final String FACETED = """
-        type Film @table(name: "film") { title: String }
-        input FilmFilter {
-            title: [String!] @field(name: "title") @asFacet
-            length: [Int] @field(name: "length") @asFacet
-            releaseYear: [Int!] @field(name: "release_year")
-        }
-        type Query {
-            films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
-        }
-        """;
-
-    private static final String UNFACETED = """
-        type Film @table(name: "film") { title: String }
-        input FilmFilter {
-            title: [String!] @field(name: "title")
-        }
-        type Query {
-            films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
-        }
-        """;
-
-    @Test
-    void facetedCarrier_emitsBaseAndPerFacetFragments() {
-        var conditions = queryConditions(TestSchemaHelper.buildSchema(FACETED));
-        assertThat(methodNames(conditions)).contains(
-            "filmsCondition", "filmsFacetBaseCondition",
-            "filmsFacet_titleCondition", "filmsFacet_lengthCondition");
-    }
-
-    @Test
-    void unfacetedCarrier_emitsNoFragments() {
-        var conditions = queryConditions(TestSchemaHelper.buildSchema(UNFACETED));
-        assertThat(methodNames(conditions))
-            .contains("filmsCondition")
-            .noneMatch(n -> n.contains("Facet"));
-    }
-
     @Test
     void connectionHelper_resolvesNoFacetColumnByNameAtRuntime() {
         // The launcher binds each facet's typed column, source and count key; the helper keeps its
@@ -69,13 +29,6 @@ class FacetEmitterTest {
         var helper = no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator
             .generate(DEFAULT_OUTPUT_PACKAGE).getFirst();
         assertThat(methodNames(helper)).contains("facetBuckets").doesNotContain("facetColumn");
-    }
-
-    private static TypeSpec queryConditions(GraphitronSchema schema) {
-        return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("QueryConditions"))
-            .findFirst().orElseThrow();
     }
 
     private static List<String> methodNames(TypeSpec spec) {

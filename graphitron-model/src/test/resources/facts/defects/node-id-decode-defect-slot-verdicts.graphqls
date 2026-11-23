@@ -41,6 +41,15 @@ input FilmActorIntoFilmRecordInput { film: ID @nodeId(typeName: "FilmActor") }
 "A composite id an argMapping path hands whole to a parameter, judged there as an argument's is; a one-column id is the column a path projects instead."
 input GreetingByPathInput { userId: ID @nodeId(typeName: "FilmActor") }
 
+# A one-column key, language_id, which a film reaches by its language key.
+type LanguageNode @table(name: "language") @node { name: String }
+
+"A language id whose own @condition takes the whole key into an Integer, as an argument's does."
+input FilmLanguagePick {
+  languageId: ID @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures", method: "filmsOfOptionalLanguage"}, override: true)
+}
+
 input PairingInput {
   title: String
   pairingId: ID @nodeId(typeName: "FilmActor")
@@ -137,6 +146,16 @@ type Query {
   # ... and another node's id into that member, of a record that is not its own.
   assignFilmActorIntoFilm(in: FilmActorIntoFilmRecordInput!): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignFilmRecord"})
+
+  # A @condition's parameter is judged as a @service's: a one-column key handed whole to an Integer is
+  # refused at an argument ...
+  filmsByWholeLanguage(languageId: ID @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures", method: "filmsOfOptionalLanguage"}, override: true)): [Film!]!
+  # ... and at an input field ...
+  filmsByLanguagePick(pick: FilmLanguagePick): [Film!]!
+  # ... which a pair projecting the column takes as the column's value.
+  filmsByProjectedLanguage(languageId: ID @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures", method: "filmsOfOptionalLanguage", argMapping: "languageId: languageId.language_id"}, override: true)): [Film!]!
   # An input field whose root argument feeds a parameter: the value lands inside the bean.
   echo(by: PairingInput): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
@@ -180,6 +199,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.untyped(ids:),            NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Query.untypedPairing(ids:),     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Mutation.rentFilmByName(pCustomerId:), NODE_ID_KEY_ARITY_EXCEEDS_SLOT, pCustomerId
+  Query.filmsByWholeLanguage(languageId:), NODE_ID_KEY_ARITY_EXCEEDS_SLOT, languageId
+  FilmLanguagePick.languageId,    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       languageId
   Query.rateFilmsByProjection,    NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.util.List<no.sikt.graphitron.rewrite.test.services.FilmRating>: Declare it List<Integer>"
   """)
 
@@ -199,6 +220,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", ro
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
   coordinate,                 bound,             decode_shape
   Query.filmByProjection(ref:), public.film,      KEY_VALUE
+  Query.filmsByProjectedLanguage(languageId:), public.language, KEY_VALUE
   Query.filmsByProjectedIds(ids:), public.film,  KEY_VALUE
   Film.copiesAtStores(units:), public.inventory, KEY_VALUE
   Query.assignByFilm(in.film:), public.film,       OWN_RECORD

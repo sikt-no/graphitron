@@ -6,8 +6,7 @@ import no.sikt.graphitron.rewrite.model.On;
 /**
  * The keyed join fragments condition rendering composes: the keyed join of a reach-path hop
  * and the correlation {@code WHERE} tying the first hop's alias back to the outer row. These
- * moved here from the legacy join emitter when the condition glue renderer became their first
- * render-side consumer; {@code JoinPathEmitter} delegates to them, so the emission keeps one
+ * moved here from the legacy join emitter; {@code JoinPathEmitter} delegates to them, so the emission keeps one
  * derivation across migrated and unmigrated hosts. Every entry point takes an already-narrowed
  * {@link On.ColumnPairs}, never a raw {@code On}: this is the below-narrowing layer, and the
  * per-hop dispatch on the {@code On} seal that decides which arm applies lives one level up, in

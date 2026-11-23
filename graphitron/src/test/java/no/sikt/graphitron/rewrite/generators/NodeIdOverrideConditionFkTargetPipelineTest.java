@@ -14,7 +14,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 
 /**
@@ -70,16 +69,6 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         assertThat(fkFilter.targetTable().tableName()).isEqualTo("baz");
         assertThat(fkFilter.joinPath()).hasSize(1);
         assertThat(fkFilter.methodName()).isEqualTo("argConditionTypeUnique");
-
-        // And the producer narrows the hop path and the renderer consumes the row without
-        // throwing (the correlated EXISTS arm).
-        assertThatCode(() -> no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-                .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE))
-            .doesNotThrowAnyException();
-
-        // The route resolving does not change who decodes: the glue does, on this arm as on the
-        // author-owned one, and the helper it hosts is the structural trace of that.
-        assertThat(decodeHelperNames(schema, "decodeBaz")).containsOnly("decodeBazKeyOrThrow");
     }
 
     @Test
@@ -118,28 +107,5 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
             .findFirst().orElseThrow();
         assertThat(fkFilter.targetTable().tableName()).isEqualTo("reordered_pk_parent");
         assertThat(fkFilter.keyColumns().size()).isGreaterThan(1);
-
-        // And the producer narrows the hop path and the renderer consumes the row without
-        // throwing (the composite correlated EXISTS arm).
-        assertThatCode(() -> no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-                .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE))
-            .doesNotThrowAnyException();
-
-        // A composite key decodes to a typed Row, which is what the fixture's parameter declares.
-        // That the Row is what reaches the method is a body fact, proven at the compile tier where
-        // a mismatched declaration would not compile; what stands here is that the decode happens.
-        assertThat(decodeHelperNames(schema, "decodeReorderedPkParent"))
-            .containsOnly("decodeReorderedPkParentRowOrThrow");
-    }
-
-    /** The decode helpers the rendered conditions classes host, by name prefix. */
-    private static List<String> decodeHelperNames(
-            no.sikt.graphitron.rewrite.GraphitronSchema schema, String prefix) {
-        return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .flatMap(spec -> spec.methodSpecs().stream())
-            .map(com.palantir.javapoet.MethodSpec::name)
-            .filter(name -> name.startsWith(prefix))
-            .toList();
     }
 }

@@ -8,7 +8,6 @@ import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import javax.lang.model.element.Modifier;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -55,7 +54,7 @@ class NodeIdReferenceFilterPipelineTest {
         """;
 
     @Test
-    void inlineReferenceField_mixedNodeIdAndConditionFilter_liftsDecodeHelperOntoGlueClass() {
+    void inlineReferenceField_mixedNodeIdAndConditionFilter_hostCarriesNoDecodeHelper() {
         var schema = TestSchemaHelper.buildSchema(MIXED_FILTER_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
@@ -65,15 +64,15 @@ class NodeIdReferenceFilterPipelineTest {
             type Query { baz: Baz }
             """, FIXTURE_CTX);
 
-        // The @nodeId decode is lifted to a per-class private static helper on the coordinate's
-        // glue class; the Baz type class emits only the glue call and carries no helper.
-        assertDecodeHelperOnGlueClassOnly(schema,
+        // The @nodeId decode lives with the coordinate's glue; the Baz type class emits only the
+        // glue call and carries no helper.
+        assertNoDecodeHelperOn(
             ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
                 .filter(t -> t.name().equals("Baz")).findFirst().orElseThrow());
     }
 
     @Test
-    void splitQueryReferenceField_mixedNodeIdAndConditionFilter_liftsDecodeHelperOntoGlueClass() {
+    void splitQueryReferenceField_mixedNodeIdAndConditionFilter_hostCarriesNoDecodeHelper() {
         var schema = TestSchemaHelper.buildSchema(MIXED_FILTER_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {
@@ -83,22 +82,13 @@ class NodeIdReferenceFilterPipelineTest {
             type Query { baz: Baz }
             """, FIXTURE_CTX);
 
-        // Same landing as the inline twin: one helper on the glue class, none on the rows
-        // method's host.
-        assertDecodeHelperOnGlueClassOnly(schema,
+        // Same as the inline twin: no helper on the rows method's host.
+        assertNoDecodeHelperOn(
             TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
                 .filter(t -> t.name().equals("BazFetchers")).findFirst().orElseThrow());
     }
 
-    private static void assertDecodeHelperOnGlueClassOnly(
-            no.sikt.graphitron.rewrite.GraphitronSchema schema, TypeSpec host) {
-        var bazConditions = no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("BazConditions")).findFirst().orElseThrow();
-        var helper = bazConditions.methodSpecs().stream()
-            .filter(m -> m.name().startsWith("decodeBar"))
-            .findFirst().orElseThrow();
-        assertThat(helper.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
+    private static void assertNoDecodeHelperOn(TypeSpec host) {
         assertThat(host.methodSpecs())
             .noneMatch(m -> m.name().startsWith("decodeBar"));
     }

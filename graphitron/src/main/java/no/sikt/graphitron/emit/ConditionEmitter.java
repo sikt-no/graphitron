@@ -1,7 +1,7 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.TableAliasFragments;
-import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
@@ -87,32 +87,52 @@ public final class ConditionEmitter {
     private static final Set<String> TAKEN = Set.of("table", "args", "conditions", "env", "dsl");
     private static final Pattern READ_LOCAL = Pattern.compile("[mles]\\d+");
 
-    /** Why an occurrence's condition is not emitted here yet. */
+    /**
+     * Why an occurrence's condition is not emitted here, each the shape of a stored defect: an accepted
+     * graph meets none, so one met when the glue is rendered is a generator bug, which names the codes
+     * that should have refused it.
+     */
     public enum Reason {
-        /** The field produces facets, whose condition is built term by term with each facet's. */
-        FACETS,
-        /** A {@code @condition} takes an input object as a bean, built from the map before the call. */
-        AUTHORED_BEAN,
+        /** A {@code @condition} takes an input object as a bean the store states no way to build. */
+        AUTHORED_BEAN("CONDITION_PARAMETER_RECORD", "BUILT_CLASS_UNBUILDABLE", "MEMBER_UNKNOWN", "MEMBER_UNFILLED",
+            "MEMBER_FILLED_TWICE", "GROUPING_LIST"),
         /**
-         * A {@code @condition} is applied to the table a node id identifies where the store states no
-         * join path from the row's table to it, or takes a node id's decoded key in a shape the store
-         * states none for at the parameter, or of several node types, or read through a list.
+         * A {@code @condition} is applied to a node id's table the store states no join path to, or
+         * takes a node id's decoded key in no one shape the store states at the parameter, or read
+         * through a list.
          */
-        AUTHORED_NODE_ID,
-        /** A {@code @condition} has a parameter nothing fills, its defect the store's. */
-        AUTHORED_UNFILLED,
-        /** A term reaches its column over a path the store states no steps for, or one calling a routine. */
-        REACHED,
-        /** A term is a node id the store cannot state a decode of into the table it lands on. */
-        NODE_ID,
+        AUTHORED_NODE_ID("NODE_ID_LANDS_ON_TABLE", "NODE_ID_SLOT_SHAPE_MISMATCH", "NODE_ID_KEY_ARITY_EXCEEDS_SLOT",
+            "NODE_ID_CONTAINER_NOT_AT_A_SLOT", "NODE_ID_TABLE_WITHOUT_RECORD", "LIST_CONDITION_BELOW_LIST"),
+        /** A {@code @condition} has a parameter nothing fills. */
+        AUTHORED_UNFILLED("PARAMETER_UNFILLED", "PARAMETER_NAMES_MISSING"),
+        /** A term's column is on another table than the row's, with no join path stated to it. */
+        REACHED("NO_ROUTE_TO_TARGET"),
+        /**
+         * A term is a node id the store cannot state a decode of on the row's table: no node of the id
+         * on it, no path from it landing on the id's one node, or a node table without a record.
+         */
+        NODE_ID("NODE_ID_LANDS_ON_TABLE", "NODE_ID_PARTICIPANT_WITHOUT_NODE", "NODE_ID_CONTAINER_NOT_AT_A_SLOT",
+            "NODE_ID_TABLE_WITHOUT_RECORD"),
         /**
          * A term is read through a list of input objects whose elements cannot be compared as rows: an
          * element field that is a list, under a second list, a node id or bound to no column, or element
          * fields reaching their columns by different paths; or a call's argument is read through one.
          */
-        THROUGH_LIST,
-        /** A term's column is of a Java type this emitter cannot spell. */
-        UNSPELLED_TYPE
+        THROUGH_LIST("LIST_ELEMENT_NODE_ID", "LIST_ELEMENT_NOT_ONE_VALUE", "LIST_ELEMENT_PATHS_DIFFER",
+            "LIST_CONDITION_BELOW_LIST"),
+        /** A parameter is of a Java type this emitter cannot spell. */
+        UNSPELLED_TYPE("PARAMETER_MISMATCH", "PARAMETER_TYPE_UNSPELLED");
+
+        private final List<String> refusedBy;
+
+        Reason(String... refusedBy) {
+            this.refusedBy = List.of(refusedBy);
+        }
+
+        /** The stored defect codes that refuse a graph holding this shape. */
+        public List<String> refusedBy() {
+            return refusedBy;
+        }
     }
 
     /** What the emitter makes of a row: the method, nothing to filter, or why it is not emitted yet. */
@@ -143,9 +163,6 @@ public final class ConditionEmitter {
     public static Result emit(ConditionQuery.Row row, String name, NodeIdDecodeQuery decodes,
                               FillEmitter.Runtime runtime, ClassName tableAliases,
                               Map<BuildQuery.Root, BuildQuery.Result> builds) {
-        if ("FACETS".equals(row.producerKind())) {
-            return new Result.NotYet(Reason.FACETS, row.coordinate());
-        }
         var terms = row.terms().stream().filter(term -> !term.lookupKey()).toList();
         if (terms.isEmpty() && row.calls().isEmpty()) {
             return new Result.Nothing();
@@ -209,9 +226,9 @@ public final class ConditionEmitter {
                 continue;
             }
             if (term.nodeId()) {
-                var decode = decodeOnto(row, term, decodes).orElseThrow();
-                var onOwn = decode.recordClass().equals(row.table().recordClassName());
-                var hops = onOwn ? List.<String>of() : hops(method, term.steps(), local, tableAliases);
+                var onto = decodeOnto(row, term, decodes).orElseThrow();
+                var decode = onto.decode();
+                var hops = onto.own() ? List.<String>of() : hops(method, term.steps(), local, tableAliases);
                 var alias = hops.isEmpty() ? "table" : hops.getLast();
                 var compare = nodeId(method, helpers, term, decode, name + "_" + local, local, alias, counter,
                     runtime.decode());
@@ -227,11 +244,20 @@ public final class ConditionEmitter {
             var hops = hops(method, term.steps(), local, tableAliases);
             var alias = hops.isEmpty() ? "table" : hops.getLast();
             var column = CodeBlock.of("$L.$L", alias, term.column().javaName());
-            var type = type(term.column().bindingType()).orElseThrow();
+            var type = type(term.column().bindingType());
             var read = read(term.names(), counter);
             CodeBlock compare;
             CodeBlock guard;
-            if (term.list()) {
+            if (arrayColumn(term.column())) {
+                // A list against an array column is the array, compared whole; a single value against one
+                // is FILTER_SCALAR_AGAINST_ARRAY_COLUMN's.
+                if (!term.list()) throw scalarAgainstArray(term);
+                var l = "l" + ++counter[0];
+                method.addStatement("$T $L = $T.fromWire($L.getDataType(), $L instanceof $T<?> $L ? $L.toArray() : null)",
+                    type, local, columnValues, column, read, LIST, l, l);
+                compare = CodeBlock.of("$L.eq($L)", column, local);
+                guard = CodeBlock.of("$L != null", local);
+            } else if (term.list()) {
                 var l = "l" + ++counter[0];
                 var e = "e" + ++counter[0];
                 method.addStatement("$T $L = $L instanceof $T<?> $L ? $L.stream().map($L -> $L).toList() : null",
@@ -265,24 +291,32 @@ public final class ConditionEmitter {
         for (var call : row.calls()) {
             // A call a node id applies to the table it identifies is called on that table, reached
             // over the node id's join path and aliased per call.
+            // A node id with no path from the row's table is an override applied to the row's own
+            // table, the node id's key handed to it: with no route, a call that is no override is
+            // NODE_ID_LANDS_ON_TABLE's.
             boolean onNode = "NODE_ID".equals(call.bindingKind());
-            var hops = onNode ? hops(method, call.steps(), fresh(call.path().names().getLast(), locals), tableAliases)
+            var hops = onNode && !call.steps().isEmpty()
+                ? hops(method, call.steps(), fresh(call.path().names().getLast(), locals), tableAliases)
                 : List.<String>of();
             var alias = hops.isEmpty() ? "table" : hops.getLast();
+            // The session is asked for by the field, not the occurrence: the method is one per field,
+            // its occurrences under several parents rendering it alike.
             var arguments = new ArrayList<CodeBlock>();
             for (var fill : call.fills()) {
-                arguments.add(argument(method, helpers, name, call, fill, alias, counter, runtime, row.coordinate(),
-                    builds, decodes));
+                arguments.add(argument(method, helpers, name, call, fill, alias, counter, runtime,
+                    row.parentType() + "." + row.fieldName(), builds, decodes));
             }
             var invoke = CodeBlock.of("$T.$L($L)", ClassName.bestGuess(call.className()), call.methodName(),
                 CodeBlock.join(arguments, ", "));
             if (!onNode) {
                 adds.addStatement("conditions.add($L)", invoke);
-            } else if (call.path().present()) {
-                adds.addStatement("conditions.add($L)", reached(call.steps(), hops, invoke));
             } else {
-                adds.addStatement("if ($L != null) conditions.add($L)", read(call.path().names(), counter),
-                    reached(call.steps(), hops, invoke));
+                var applied = hops.isEmpty() ? invoke : reached(call.steps(), hops, invoke);
+                if (call.path().present()) {
+                    adds.addStatement("conditions.add($L)", applied);
+                } else {
+                    adds.addStatement("if ($L != null) conditions.add($L)", read(call.path().names(), counter), applied);
+                }
             }
         }
         method.addStatement("$T<$T> conditions = new $T<>()", LIST, CONDITION, ARRAY_LIST);
@@ -293,7 +327,7 @@ public final class ConditionEmitter {
 
     /**
      * Why a list's element fields are not emitted yet: a field that is not one value bound to a column,
-     * fields reaching their columns by different paths, or a path or type every term is held to.
+     * fields reaching their columns by different paths, or a path every term is held to.
      */
     private static Optional<Reason> reasonFor(ConditionQuery.Row row, List<ConditionQuery.Term> elements) {
         var first = elements.getFirst();
@@ -302,12 +336,11 @@ public final class ConditionEmitter {
                     || !element.steps().equals(first.steps())) {
                 return Optional.of(Reason.THROUGH_LIST);
             }
-            boolean ownTable = element.column().tableSqlName().equals(row.table().sqlName());
-            if (element.steps().isEmpty() ? !ownTable : element.steps().stream()
-                    .anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
+            requireJoinable(element.coordinate(), element.steps());
+            if (arrayColumn(element.column())) throw scalarAgainstArray(element);
+            if (element.steps().isEmpty() && !element.column().tableSqlName().equals(row.table().sqlName())) {
                 return Optional.of(Reason.REACHED);
             }
-            if (type(element.column().bindingType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
         }
         return Optional.empty();
     }
@@ -344,7 +377,7 @@ public final class ConditionEmitter {
             var rows = rowsHelper(helper, tableClass, elements, at, counter, columnValues);
             helpers.add(rows);
             method.addStatement("$T $L = $L($L, $L)", ParameterizedTypeName.get(LIST, elements.size() == 1
-                ? type(first.column().bindingType()).orElseThrow().box() : ClassName.get("org.jooq", "RowN")),
+                ? type(first.column().bindingType()).box() : ClassName.get("org.jooq", "RowN")),
                 local, helper, wire, alias);
             compare = elements.size() == 1
                 ? CodeBlock.of("$L.$L.in($L)", alias, first.column().javaName(), local)
@@ -376,7 +409,7 @@ public final class ConditionEmitter {
                                          int at, int[] counter, ClassName columnValues) {
         boolean single = elements.size() == 1;
         var first = elements.getFirst();
-        TypeName row = single ? type(first.column().bindingType()).orElseThrow().box()
+        TypeName row = single ? type(first.column().bindingType()).box()
             : ClassName.get("org.jooq", "RowN");
         var returns = ParameterizedTypeName.get(LIST, row);
         var body = MethodSpec.methodBuilder(name)
@@ -445,7 +478,7 @@ public final class ConditionEmitter {
         var out = new ArrayList<String>();
         for (var element : elements) {
             var cell = "c" + (out.size() + 1);
-            var type = type(element.column().bindingType()).orElseThrow();
+            var type = type(element.column().bindingType());
             var column = CodeBlock.of("table.$L", element.column().javaName());
             var value = read("fields", element.names().subList(at + 1, element.names().size()), counter);
             body.addStatement("$T $L = $L", type.box(), cell, typed(element, type, value, column, counter, columnValues));
@@ -468,9 +501,9 @@ public final class ConditionEmitter {
      */
     private static Optional<Reason> reasonFor(ConditionQuery.Call call, Map<BuildQuery.Root, BuildQuery.Result> builds,
                                               NodeIdDecodeQuery decodes) {
-        if ("NODE_ID".equals(call.bindingKind()) && (call.path() == null || call.steps().isEmpty()
-                || call.steps().stream().anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null))) {
-            return Optional.of(Reason.AUTHORED_NODE_ID);
+        if ("NODE_ID".equals(call.bindingKind())) {
+            if (call.path() == null) return Optional.of(Reason.AUTHORED_NODE_ID);
+            requireJoinable(call.coordinate(), call.steps());
         }
         for (var fill : call.fills()) {
             switch (fill.fill()) {
@@ -502,9 +535,8 @@ public final class ConditionEmitter {
                 case "CONTEXT_KEY", "SESSION", "SESSION_MEMBER" -> {
                     if (javaType(fill.parameterType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
                 }
-                default -> {
-                    return Optional.of(Reason.UNSPELLED_TYPE);
-                }
+                default -> throw new IllegalStateException("Graphitron generator bug: " + call.coordinate()
+                    + " fills a parameter by " + fill.fill() + ", a fill the store writes for no @condition");
             }
         }
         return Optional.empty();
@@ -614,41 +646,66 @@ public final class ConditionEmitter {
             if (decodeOnto(row, term, decodes).isEmpty()) return Optional.of(Reason.NODE_ID);
             return Optional.empty();
         }
-        boolean ownTable = term.column().tableSqlName().equals(row.table().sqlName());
-        if (term.steps().isEmpty() ? !ownTable : term.steps().stream()
-                .anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
+        requireJoinable(term.coordinate(), term.steps());
+        if (term.steps().isEmpty() && !term.column().tableSqlName().equals(row.table().sqlName())) {
             return Optional.of(Reason.REACHED);
         }
-        if (type(term.column().bindingType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
         return Optional.empty();
     }
 
     /**
+     * Holds the invariant every term and call path is read under: each step joins on column pairs or a
+     * condition method. A routine step is taken only by a {@code @routine} element, which is declared on
+     * FIELD_DEFINITION alone and so never on an argument's or input field's path, and a condition step
+     * whose method resolved to no overload is refused as CONDITION_NO_OVERLOAD_FOR_PAIR or
+     * CONDITION_OVERLOAD_TIE.
+     */
+    private static void requireJoinable(String coordinate, List<ConditionQuery.Step> steps) {
+        for (var step : steps) {
+            if (step.routine()) {
+                throw new IllegalStateException("Graphitron generator bug: " + coordinate + " reaches "
+                    + step.to().sqlName() + " over a routine step, which only a @routine element takes, and"
+                    + " @routine is declared on FIELD_DEFINITION only");
+            }
+            if (step.pairs().isEmpty() && step.method() == null) {
+                throw new IllegalStateException("Graphitron generator bug: " + coordinate + " reaches "
+                    + step.to().sqlName() + " over a step with neither column pairs nor a condition method,"
+                    + " which CONDITION_NO_OVERLOAD_FOR_PAIR or CONDITION_OVERLOAD_TIE should have refused");
+            }
+        }
+    }
+
+    /** Where a node id term decodes: its decode, and whether it compares on the row's own table. */
+    private record Onto(NodeIdDecodeQuery.Decode decode, boolean own) {}
+
+    /**
      * Where a node id term's id decodes to: onto the condition's own table where the store states that
      * decode, the node's own key there or the one foreign key referencing it, so an id whose path is a
-     * single step over that key compares on the table itself; otherwise onto the table its path lands
-     * on, reached over the path's steps. Empty where neither decode is stated, or the path is longer
-     * than a step and lands on no table.
+     * single step over that key compares on the table itself; otherwise onto the node's own key on the
+     * table its path lands on, reached over the path's steps. Empty where neither decode is stated: the
+     * path lands off the node's table, or there is no path and the node is on another table.
      */
-    private static Optional<NodeIdDecodeQuery.Decode> decodeOnto(ConditionQuery.Row row, ConditionQuery.Term term,
-                                                                 NodeIdDecodeQuery decodes) {
-        if (term.steps().size() <= 1 && term.steps().stream().allMatch(step -> step.method() == null && !step.routine())
-                && decodes.bounds(term.coordinate()).size() == 1
-                && decodes.resolve(term.coordinate(), decodes.bounds(term.coordinate()).getFirst(),
-                        Optional.of(row.table().recordClassName()))
-                    instanceof NodeIdDecodeQuery.Resolution.Resolved own) {
-            return Optional.of(own.decode());
-        }
-        if (term.steps().isEmpty() || term.landingRecordClass() == null
-                || term.steps().stream().anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
-            return Optional.empty();
-        }
+    private static Optional<Onto> decodeOnto(ConditionQuery.Row row, ConditionQuery.Term term,
+                                             NodeIdDecodeQuery decodes) {
+        requireJoinable(term.coordinate(), term.steps());
         if (decodes.bounds(term.coordinate()).size() != 1) {
             return Optional.empty();
         }
-        return decodes.resolve(term.coordinate(), decodes.bounds(term.coordinate()).getFirst(),
-                Optional.of(term.landingRecordClass()))
-            instanceof NodeIdDecodeQuery.Resolution.Resolved landed ? Optional.of(landed.decode()) : Optional.empty();
+        var bound = decodes.bounds(term.coordinate()).getFirst();
+        if (term.steps().size() <= 1 && term.steps().stream().allMatch(step -> step.method() == null)
+                && decodes.resolve(term.coordinate(), bound, Optional.of(row.table().recordClassName()))
+                    instanceof NodeIdDecodeQuery.Resolution.Resolved own) {
+            return Optional.of(new Onto(own.decode(), true));
+        }
+        // On the table the path lands on the id is the node's own key there, whatever the path's
+        // steps carry back to the row's table, so a path that leaves the node's table and returns to
+        // it compares at the landing.
+        if (term.steps().isEmpty() || term.landingRecordClass() == null) {
+            return Optional.empty();
+        }
+        return decodes.resolveOnNode(term.coordinate(), bound) instanceof NodeIdDecodeQuery.Resolution.Resolved landed
+                && landed.decode().recordClass().equals(term.landingRecordClass())
+            ? Optional.of(new Onto(landed.decode(), false)) : Optional.empty();
     }
 
     /**
@@ -883,16 +940,32 @@ public final class ConditionEmitter {
         return !TAKEN.contains(name) && !READ_LOCAL.matcher(name).matches() && !locals.contains(name);
     }
 
-    /** The Java type a column's binding type names, where it can be spelled. */
-    private static Optional<TypeName> type(String bindingType) {
-        try {
-            if (bindingType.endsWith("[]")) {
-                var element = bindingType.substring(0, bindingType.length() - 2);
-                return Optional.of(ArrayTypeName.of("byte".equals(element) ? TypeName.BYTE : ClassName.bestGuess(element)));
-            }
-            return Optional.of(ClassName.bestGuess(bindingType));
-        } catch (IllegalArgumentException e) {
-            return Optional.empty();
+    /**
+     * Whether a column holds an array, as its binding type's {@code Class.getName()} spells one: any
+     * array but {@code byte[]}, which is one binary value.
+     */
+    private static boolean arrayColumn(ConditionQuery.Column column) {
+        return column.bindingType().startsWith("[") && !"[B".equals(column.bindingType());
+    }
+
+    /** The invariant a single value compared against an array column breaks. */
+    private static IllegalStateException scalarAgainstArray(ConditionQuery.Term term) {
+        return new IllegalStateException("Graphitron generator bug: " + term.coordinate() + " compares one value"
+            + " with the array column " + term.column().sqlName()
+            + ", which FILTER_SCALAR_AGAINST_ARRAY_COLUMN should have refused");
+    }
+
+    /**
+     * The Java type a column's binding type names. sql_column.binding_type is {@code Class.getName()},
+     * which {@link CatalogRefs#decodeBindingType} decodes whole, arrays and primitives included, so a
+     * name it cannot decode is a generator bug.
+     */
+    private static TypeName type(String bindingType) {
+        var type = CatalogRefs.decodeBindingType(bindingType);
+        if (type == null) {
+            throw new IllegalStateException("Graphitron generator bug: the column binding type '" + bindingType
+                + "' is no Class.getName() spelling");
         }
+        return type;
     }
 }

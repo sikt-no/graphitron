@@ -26,10 +26,8 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
  * Behaviour is pinned at the execution tier ({@code GraphQLQueryTest}); this pipeline tier pins
  * the structural consequence that keeps the {@code -Werror} consumer compile green: the argument
  * extraction (and any unchecked cast it needs) lives in the coordinate's condition glue method,
- * which carries {@code @SuppressWarnings("unchecked")} exactly when a binding local's declaration
- * casts to a non-reifiable target, while the {@code $project} host passes the map through and
- * stays unstamped. Asserts on the generated {@link MethodSpec}'s annotations, never on body
- * strings (banned at every tier).
+ * while the {@code $project} host passes the map through and stays unstamped. Asserts on the
+ * generated {@link MethodSpec}'s annotations, never on body strings (banned at every tier).
  *
  * <p>Most cases use the {@code nodeidfixture} jOOQ catalog so the composite-key {@code Bar} NodeType
  * (PK {@code (id_1, id_2)}, FK {@code bar_id_1_fkey} → {@code baz}) is reachable from SDL, matching
@@ -54,23 +52,6 @@ class InlineFilterArgumentSourcePipelineTest {
             names: [String!] @field(name: "name")
         }
         """;
-
-    // A scalar implicit column filter (bar.name = name) — a Direct extraction whose glue binding
-    // local casts to the reifiable String (checked), so its glue method needs no suppression.
-    private static final String SCALAR_FILTER_INPUT = """
-        input BarScalarFilter {
-            name: String @field(name: "name")
-        }
-        """;
-
-    private static MethodSpec glueMethod(String extraSdl, String className, String methodName) {
-        var schema = TestSchemaHelper.buildSchema(extraSdl, FIXTURE_CTX);
-        return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals(className)).findFirst().orElseThrow()
-            .methodSpecs().stream()
-            .filter(m -> m.name().equals(methodName)).findFirst().orElseThrow();
-    }
 
     private static MethodSpec fieldsMethod(TypeSpec type) {
         return type.methodSpecs().stream()
@@ -97,31 +78,13 @@ class InlineFilterArgumentSourcePipelineTest {
         """;
 
     @Test
-    void inlineReferenceFilter_listArg_stampsUncheckedSuppressionOnGlueMethod() {
+    void inlineReferenceFilter_listArg_projectHostStaysUnstamped() {
         // The (List<String>) binding-local cast is glue's, so the suppression is glue's; the
         // $project host only passes sf.getArguments() and must stay unstamped.
-        assertThat(stampsUncheckedSuppression(
-            glueMethod(LIST_FILTER_SDL, "BazConditions", "barsCondition"))).isTrue();
-
         var schema = TestSchemaHelper.buildSchema(LIST_FILTER_SDL, FIXTURE_CTX);
         var baz = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Baz")).findFirst().orElseThrow();
         assertThat(stampsUncheckedSuppression(fieldsMethod(baz))).isFalse();
-    }
-
-    @Test
-    void inlineReferenceFilter_scalarArgOnly_doesNotStampUncheckedSuppression() {
-        // A scalar binding local casts to a reifiable type (checked), so no suppression —
-        // pins that the glue stamp is per-method and not a blanket widening.
-        var method = glueMethod(SCALAR_FILTER_INPUT + """
-            type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
-            type Baz implements Node @table(name: "baz") @node {
-                id: ID! @nodeId
-                bars(filter: BarScalarFilter): [Bar!] @reference(path: [{key: "bar_id_1_fkey"}])
-            }
-            type Query { baz: Baz }
-            """, "BazConditions", "barsCondition");
-        assertThat(stampsUncheckedSuppression(method)).isFalse();
     }
 
     // A top-level JooqConvert+list filter arg: a direct [ID!] @field(name: "store_id") column arg on
@@ -139,9 +102,9 @@ class InlineFilterArgumentSourcePipelineTest {
         """;
 
     @Test
-    void inlineReferenceFilter_jooqConvertListArg_needsNoSuppressionInGlue() {
-        // The arg lowers to a top-level JooqConvert+list callParam (not a nested-input leaf) —
-        // pin that so the shape cannot silently degrade off the arm under test.
+    void inlineReferenceFilter_jooqConvertListArg_lowersToATopLevelListCallParam() {
+        // The arg lowers to a top-level JooqConvert+list callParam (not a nested-input leaf), so
+        // the shape cannot silently degrade off the arm the execution tier covers.
         var schema = TestSchemaHelper.buildSchema(JOOQ_CONVERT_LIST_SDL);
         var field = schema.field("Store", "customersByStoreId");
         assertThat(field).isInstanceOf(ChildField.TableField.class);
@@ -150,16 +113,6 @@ class InlineFilterArgumentSourcePipelineTest {
             assertThat(p.extraction()).isInstanceOf(CallSiteExtraction.JooqConvert.class);
             assertThat(p.list()).isTrue();
         });
-
-        // The glue's converter arm owns the runtime shape through an instanceof pattern plus
-        // DSL.val coercion (no cast at all), so the retired pre-lift's unchecked (List<String>)
-        // cast is gone and the glue method stays unstamped.
-        var method = no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("StoreConditions")).findFirst().orElseThrow()
-            .methodSpecs().stream()
-            .filter(m -> m.name().equals("customersByStoreIdCondition")).findFirst().orElseThrow();
-        assertThat(stampsUncheckedSuppression(method)).isFalse();
     }
 
     @Test

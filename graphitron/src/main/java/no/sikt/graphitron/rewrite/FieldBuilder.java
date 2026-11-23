@@ -1428,8 +1428,7 @@ class FieldBuilder {
      * self-contained {@code env.getArgument(outer) instanceof Map<?, ?> ...} traversal, so
      * {@link CallSiteExtraction.Direct}, {@link CallSiteExtraction.JooqConvert}, and
      * {@code NodeIdDecodeKeys} leaves are all admitted through the recursion. The
-     * condition glue renderer is extraction-agnostic, so the
-     * generated {@code <Participant>Conditions} method is identical whether the value arrives
+     * generated {@code <Participant>Conditions} method reads the value whether it arrives
      * top-level or Map-traversed.
      *
      * <p>Rejecting at classify time keeps the failure a clean build error rather than an emitter

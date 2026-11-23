@@ -57,7 +57,7 @@ public record CallParam(
      * either directly or as a nested extraction's leaf. This is the leaf fact behind the
      * env-appending glue signature: a condition row with any context-reading binding takes a
      * {@code DataFetchingEnvironment} parameter after the argument map, and every consumer of the
-     * fact (the producer, the glue renderer, each glue call site, the inline occurrence guard)
+     * fact (the producer, each glue call site, the inline occurrence guard)
      * reads this one predicate rather than re-deriving the extraction match.
      */
     public boolean readsRequestContext() {

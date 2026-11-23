@@ -95,8 +95,8 @@ public final class CompositeDecodeHelperRegistry {
      * only as a dangling {@code decode<Type>(...)} reference and a downstream consumer compile
      * error, not a generator failure.
      *
-     * <p>Used by {@link ConditionGlueRenderer} and the legacy fetcher-side hosts
-     * (the projection renderer, {@code TypeFetcherGenerator}); each owns the
+     * <p>Used by the legacy fetcher-side hosts (the projection renderer,
+     * {@code TypeFetcherGenerator}); each owns the
      * {@link TypeSpec.Builder} the helpers land on.
      */
     public static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,
@@ -183,16 +183,6 @@ public final class CompositeDecodeHelperRegistry {
     /** All collected helper specs in registration order. Empty when nothing was registered. */
     public Collection<MethodSpec> emit() {
         return helpers.values();
-    }
-
-    /**
-     * The Java type a decode helper returns for {@code (decode, list)}: the single key column's
-     * type at arity 1, the typed {@code Row<N><T1, ..., TN>} above, wrapped in {@code List} on
-     * the list axis. Exposed so a caller declaring a typed local for the helper's result derives
-     * the type from the same shape the helper body is built from.
-     */
-    public static TypeName decodedType(HelperRef.Decode decode, boolean list) {
-        return decode.decodedKeyType(list);
     }
 
     private static String helperName(String decodeMethod, Mode mode, boolean list, int arity) {

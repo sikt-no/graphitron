@@ -3771,7 +3771,8 @@ input LanguageStockFilter {
 input LanguageStockOverrideFilter {
     languageId: ID @nodeId(typeName: "LanguageNode") @condition(condition: {
         className: "no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures",
-        method: "stockByDecodedLanguageKey"}, override: true)
+        method: "stockByDecodedLanguageKey",
+        argMapping: "languageId: languageId.language_id"}, override: true)
 }
 
 type FilmsConnection {
@@ -4243,7 +4244,8 @@ input CustomerAddressNodeFilter {
     addressId: ID @nodeId(typeName: "Address")
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-            method: "addressDistrictAlberta"
+            method: "addressDistrictAlberta",
+            argMapping: "addressId: addressId.address_id"
         }, override: true)
 }
 
@@ -4278,7 +4280,8 @@ input CustomerMultiFieldNodeFilter {
     addressId: ID @nodeId(typeName: "Address")
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-            method: "addressDistrictAlberta"
+            method: "addressDistrictAlberta",
+            argMapping: "addressId: addressId.address_id"
         }, override: true)
 }
 

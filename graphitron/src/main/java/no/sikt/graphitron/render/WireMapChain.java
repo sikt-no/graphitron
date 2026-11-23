@@ -12,12 +12,10 @@ import java.util.Map;
  * a chain of {@code instanceof Map<?, ?>} ternaries from a root down to a named leaf, evaluating
  * to {@code null} at any level that is absent or is not a map.
  *
- * <p>The single home for that emission. Two call sites want it, the service-call argument list
- * ({@link no.sikt.graphitron.rewrite.generators.ArgCallEmitter}) and the condition glue's binding
- * locals ({@link ConditionGlueRenderer}), and they used to carry a private copy each. The copies
- * emitted the same characters, which is the tell: the shape is one decision about generated code
- * and not two, and two spellings of it are two places a fix has to land. The third emission of
- * this descent, {@link ArgPathHelperRegistry}, deliberately does not route here: it emits the
+ * <p>The single home for that emission, which the service-call argument list
+ * ({@link no.sikt.graphitron.rewrite.generators.ArgCallEmitter}) reads through: the shape is one
+ * decision about generated code, and two spellings of it are two places a fix has to land. The
+ * other emission of this descent, {@link ArgPathHelperRegistry}, deliberately does not route here: it emits the
  * statement form the development principles prefer, hoisted onto a named helper method, and
  * converging the two would be a change to what is emitted rather than to where it is spelled.
  *
@@ -85,15 +83,5 @@ public final class WireMapChain {
         }
         return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
             currentExpr, MAP, binding, at(next, path, depth + 1, leafType, null));
-    }
-
-    /**
-     * The erasure of a rendered Java type name, {@code List<Film>} down to {@code List}. Both call
-     * sites carry a declared type as a string at some point and need the raw head to build a cast
-     * target; the split lived beside each chain and follows it here.
-     */
-    public static String rawComponent(String typeName) {
-        int lt = typeName.indexOf('<');
-        return lt < 0 ? typeName : typeName.substring(0, lt);
     }
 }

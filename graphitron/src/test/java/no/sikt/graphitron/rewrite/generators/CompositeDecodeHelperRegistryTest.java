@@ -15,8 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Structural tests for {@link CompositeDecodeHelperRegistry}. The registry is the seam between
  * {@link ArgCallEmitter}'s NodeId-decode path (all arities) and the per-class helper emission on
- * the hosting classes ({@link no.sikt.graphitron.render.ConditionGlueRenderer}'s glue classes and
- * the fetcher-side hosts); these tests pin the dedup key
+ * the hosting fetcher-side classes; these tests pin the dedup key
  * shape and helper-naming matrix so a future refactor cannot silently break either guarantee.
  */
 @UnitTier

@@ -99,12 +99,11 @@ public final class ArgmappingProjectionDefects {
             GRAPHQL_ROOT_OPERATION));
 
     /**
-     * The sites whose emitters read a resolved key projection: a routine IN parameter and
-     * a {@code @condition} method parameter, both reading their column off a decoded record through
-     * {@code ProjectedKeyReads}, and a {@code @service} parameter, which the fetcher the store emits
-     * decodes into the node's record and reads the column off, one id or a list of them. The two
-     * condition sites are one emitter, the conditions class's glue, which is why they were wired
-     * together rather than one at a time. A {@code @service} field whose fetcher the store does not
+     * The sites whose emitters read a resolved key projection: a routine IN parameter, reading its
+     * column off a decoded record through {@code ProjectedKeyReads}, and a {@code @service} or
+     * {@code @condition} method parameter, which the fetcher or the conditions class the store emits
+     * decodes into the node's record and reads the column off, one id or a list of them. The three
+     * condition sites are one emitter, the conditions class, which is why they are wired together. A {@code @service} field whose fetcher the store does not
      * emit is refused by the generator, which is the one that knows.
      *
      * <p>Package-visible rather than private because a second reader narrows on it:
@@ -113,9 +112,8 @@ public final class ArgmappingProjectionDefects {
      * site joins this set. One declaration, two readers. The {@code @service} site it reads off the
      * store's decode shape instead, that emitter reading no walk-era projection.
      *
-     * <p>The input-field {@code @condition} stays out for a reason worth stating: its pair rows are keyed by the input type and input field, while
-     * the condition row rendering it is keyed by the consuming output field, so the projection relation's
-     * coordinate never matches and the lookup misses by construction rather than by omission.
+     * <p>The input-field {@code @condition} is wired with the other two: the conditions class the store
+     * emits reads a projection off the call's slot, wherever the @condition is written.
      *
      * <p>The set is keyed on the site and so says nothing about whether every <em>emitter</em> at a
      * wired site reads a projection. That second question is the plan's, asked as row presence in
@@ -125,7 +123,8 @@ public final class ArgmappingProjectionDefects {
      * see the directive a pair was spelled on.
      */
     static final Set<Site> EMITTING_SITES =
-        EnumSet.of(Site.ROUTINE, Site.SERVICE, Site.FIELD_CONDITION, Site.ARGUMENT_CONDITION);
+        EnumSet.of(Site.ROUTINE, Site.SERVICE, Site.FIELD_CONDITION, Site.INPUT_FIELD_CONDITION,
+            Site.ARGUMENT_CONDITION);
 
     /**
      * Where a mapping the projection relations read sits: each directive and element kind

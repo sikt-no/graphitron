@@ -16,10 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
@@ -39,14 +36,17 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAP
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FILTER_TERM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
@@ -223,14 +223,19 @@ public final class ConditionQuery {
      * coordinate order but those an {@code override: true} suppresses, the {@code @condition} calls
      * applied there in coordinate order, a condition on a node id's table among them, and whether a
      * call reads the request context or the session, which the emitted
-     * method then takes.
+     * method then takes; and the field the occurrence is of, its declaring type and name, and the
+     * participant type the table is the rows of where the field's rows may be several types' told
+     * apart by their tables, {@code null} otherwise, which together say where the condition's method is.
      */
     public record Row(String coordinate, String bound, String producerKind, LiftQuery.Table table,
-                      List<Term> terms, List<Call> calls, boolean takesEnv, boolean takesDsl) {
+                      List<Term> terms, List<Call> calls, boolean takesEnv, boolean takesDsl,
+                      String parentType, String fieldName, String participantType) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(bound, "bound");
             Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(parentType, "parentType");
+            Objects.requireNonNull(fieldName, "fieldName");
             terms = List.copyOf(terms);
             calls = List.copyOf(calls);
         }
@@ -246,13 +251,15 @@ public final class ConditionQuery {
          */
         public Row facetBase() {
             return new Row(coordinate, bound, producerKind, table,
-                terms.stream().filter(term -> term.facet() == null).toList(), calls, takesEnv, takesDsl);
+                terms.stream().filter(term -> term.facet() == null).toList(), calls, takesEnv, takesDsl,
+                parentType, fieldName, participantType);
         }
 
         /** The row reduced to one facet's term: the filter that facet's own value writes, and nothing else. */
         public Row facetOwn(String facet) {
             return new Row(coordinate, bound, producerKind, table,
-                terms.stream().filter(term -> facet.equals(term.facet())).toList(), List.of(), takesEnv, takesDsl);
+                terms.stream().filter(term -> facet.equals(term.facet())).toList(), List.of(), takesEnv, takesDsl,
+                parentType, fieldName, participantType);
         }
     }
 
@@ -307,11 +314,23 @@ public final class ConditionQuery {
         var rt = SQL_TABLE.as("rt");
         var rs = SQL_SCHEMA.as("rs");
         var rp = GRAPHITRON_OCCURRENCE_PRODUCER.as("rp");
+        // The field the occurrence is of, and the participant the row's table is the rows of where the
+        // field's rows are told apart by their tables: what names the condition's method. One at most,
+        // as PARTICIPANTS_SHARE_A_TABLE refuses two on one table, over the same fields: a node fetcher
+        // and a @service tell their rows apart otherwise, and name no participant's method.
+        var gf = GRAPHITRON_FIELD.as("gf");
+        var gp = GRAPHITRON_PRODUCER.as("gp");
+        var pt = GRAPHITRON_OCCURRENCE_PARTICIPANT;
+        var participantType = field(select(pt.PARTICIPANT_TYPE).from(pt)
+            .where(pt.GRAPH_NAME.eq(rbGraph), pt.COORDINATE.eq(rbCoordinate), pt.RECOGNIZED_BY.eq("TABLE"),
+                pt.TABLE_SOURCE_NAME.eq(rbSource), pt.TABLE_SCHEMA.eq(rbSchema), pt.TABLE_NAME.eq(rbTable),
+                notExists(selectOne().from(gp).where(gp.GRAPH_NAME.eq(gf.GRAPH_NAME),
+                    gp.TYPE_NAME.eq(gf.TYPE_NAME), gp.FIELD_NAME.eq(gf.FIELD_NAME),
+                    gp.KIND.eq("SERVICE").or(gp.KIND.eq("LOOKUP").and(gf.NAMED_TYPE.eq("Node")))))));
 
-        // The terms: each argument or input-field occurrence under the field read over the row's table,
-        // its own source, binding a column where its need lands or being a node id. Its need starts
-        // there, and its column is where that need's join path lands, the need's own landing on an
-        // empty path.
+        // The terms: each filter term of the field on the row's table binding a column where its need
+        // lands or being a node id. Its need starts there, and its column is where that need's join
+        // path lands, the need's own landing on an empty path.
         var o = GRAPHITRON_OCCURRENCE;
         var oc = GRAPHITRON_OCCURRENCE_COLUMN;
         var c = SQL_COLUMN;
@@ -321,7 +340,7 @@ public final class ConditionQuery {
         var p = GRAPHITRON_PATH;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
-        var st = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var st = GRAPHITRON_OCCURRENCE_FILTER_TERM;
         var pn = GRAPHITRON_PATH_NEED_TABLE;
         var jp = GRAPHITRON_JOIN_PATH;
         var lt = SQL_TABLE.as("lt");
@@ -345,10 +364,6 @@ public final class ConditionQuery {
         // itself, or every input field under it.
         var ao = GRAPHITRON_OCCURRENCE.as("ao");
         var le = GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
-        var bp = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER.as("bp");
-        var bc = GRAPHITRON_OCCURRENCE_BUILT_CLASS.as("bc");
-        var bcp = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER.as("bcp");
-        var sp = GRAPHITRON_JOIN_PATH_STEP_PARAMETER.as("sp");
         var listOccurrence = GRAPHITRON_OCCURRENCE.as("lo2");
         var argumentOccurrence = GRAPHITRON_OCCURRENCE.as("la2");
         var lists = multiset(select(le.LIST_COORDINATE, listOccurrence.DEPTH.minus(argumentOccurrence.DEPTH))
@@ -386,21 +401,8 @@ public final class ConditionQuery {
                 .leftJoin(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
                 .leftJoin(ty).on(ty.GRAPH_NAME.eq(o.GRAPH_NAME), ty.TYPE_NAME.eq(coalesce(a.NAMED_TYPE, f.NAMED_TYPE)))
                 .where(o.GRAPH_NAME.eq(rbGraph), o.FIELD_COORDINATE.eq(rbCoordinate),
-                    o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"),
                     st.TABLE_SOURCE_NAME.eq(rbSource), st.TABLE_SCHEMA.eq(rbSchema),
-                    st.TABLE_NAME.eq(rbTable), oc.COORDINATE.isNotNull().or(nodeId),
-                    // What the field's own call binds, itself or as part of the object its parent is
-                    // built into at the parameter, or a routine its path steps through reads, it takes
-                    // rather than filters by: an argument named like a column is no filter for it.
-                    notExists(selectOne().from(bp)
-                        .where(bp.GRAPH_NAME.eq(o.GRAPH_NAME), bp.COORDINATE.eq(o.COORDINATE),
-                            bp.CALL_COORDINATE.eq(rbCoordinate), bp.CALL.eq(inline("producer")))),
-                    notExists(selectOne().from(bc).join(bcp).on(bcp.GRAPH_NAME.eq(bc.GRAPH_NAME),
-                            bcp.COORDINATE.eq(bc.BUILT_AT), bcp.CALL_COORDINATE.eq(rbCoordinate),
-                            bcp.CALL.eq(inline("producer")))
-                        .where(bc.GRAPH_NAME.eq(o.GRAPH_NAME), bc.COORDINATE.eq(o.PARENT_COORDINATE))),
-                    notExists(selectOne().from(sp)
-                        .where(sp.GRAPH_NAME.eq(o.GRAPH_NAME), sp.ARGUMENT_COORDINATE.eq(o.COORDINATE))))
+                    st.TABLE_NAME.eq(rbTable), oc.COORDINATE.isNotNull().or(nodeId))
                 .orderBy(o.COORDINATE));
 
         // The calls: the field's own and its arguments' and input fields' applied to the row's table,
@@ -494,9 +496,10 @@ public final class ConditionQuery {
         var out = new ArrayList<Row>();
         store.dsl()
             .select(rbCoordinate, rp.KIND, rt.TABLE_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN, rt.JOOQ_NAME,
-                rt.RECORD_CLASS_FQN, terms, calls, rbBound)
+                rt.RECORD_CLASS_FQN, terms, calls, rbBound, gf.TYPE_NAME, gf.FIELD_NAME, participantType)
             .from(rb)
             .join(fo).on(fo.GRAPH_NAME.eq(rbGraph), fo.COORDINATE.eq(rbCoordinate), fo.KIND.eq("FIELD"))
+            .join(gf).on(gf.GRAPH_NAME.eq(fo.GRAPH_NAME), gf.COORDINATE.eq(fo.ELEMENT_COORDINATE))
             .join(rt).on(rt.SOURCE_NAME.eq(rbSource), rt.TABLE_SCHEMA.eq(rbSchema),
                 rt.TABLE_NAME.eq(rbTable))
             .join(rs).on(rs.SOURCE_NAME.eq(rt.SOURCE_NAME), rs.TABLE_SCHEMA.eq(rt.TABLE_SCHEMA))
@@ -535,7 +538,8 @@ public final class ConditionQuery {
                 out.add(new Row(r.value1(), r.value10(), r.value2(),
                     new LiftQuery.Table(r.value3(), r.value4(), r.value5(), r.value6(), r.value7()), written, made,
                     kinds.contains("CONTEXT_KEY"),
-                    kinds.contains("SESSION") || kinds.contains("SESSION_MEMBER")));
+                    kinds.contains("SESSION") || kinds.contains("SESSION_MEMBER"),
+                    r.value11(), r.value12(), r.value13()));
             });
         return out;
     }

@@ -241,20 +241,13 @@ class ArgmappingProjectionDefectsTest {
     }
 
     /**
-     * A projection that resolves at a site no emitter reads is not an author defect, and the build
-     * says so rather than emitting nothing or emitting the raw base64. A deferral rather than an
-     * author error is what carries that distinction into the report. The input-field
-     * {@code @condition} is the site this uses because it is the one that stays unwired: its head is
-     * the input field itself and its emitter reads no projection.
+     * An input-field {@code @condition} is wired with the other condition sites: the conditions class
+     * the store emits reads the projection off the call's slot, so a resolving projection there is
+     * emission rather than a report.
      */
     @Test
-    void aResolvingProjectionDefersWhileNoEmitterReadsIt() {
-        var violations = detect(UNWIRED_SITE_SDL);
-
-        assertThat(violations).hasSize(1);
-        assertThat(violations.getFirst().rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(violations.getFirst().message())
-            .contains("resolves a key column of 'Inventory', which no emitter reads at this site yet");
+    void aResolvingProjectionAtAnInputFieldConditionMintsNothing() {
+        assertThat(detect(INPUT_FIELD_CONDITION_SDL)).isEmpty();
     }
 
     /**
@@ -301,7 +294,8 @@ class ArgmappingProjectionDefectsTest {
     /**
      * A composite projection is one deferral per bound parameter, not one per key column of the
      * type. The projection relation's grain is the key column, so a read that did not collapse it
-     * would report a two-column key twice for one entry.
+     * would report a two-column key twice for one entry. A list of ids at a @condition is the
+     * deferral used, one column per decoded id being what no condition builds yet.
      */
     @Test
     void oneDeferralPerBoundParameterRatherThanPerKeyColumn() {
@@ -313,10 +307,10 @@ class ArgmappingProjectionDefectsTest {
             type Film @table(name: "film") { title: String }
             type Query { films(in: FilmPick!): [Film!]!, inventory: Inventory }
             input FilmPick {
-                inventoryId: ID! @nodeId(typeName: "Inventory") @condition(condition: {
+                inventoryIds: [ID!] @nodeId(typeName: "Inventory") @condition(condition: {
                     className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
                     method: "rentalRateRange",
-                    argMapping: "fra: inventoryId.inventory_id, til: inventoryId.store_id"
+                    argMapping: "fra: inventoryIds.inventory_id, til: inventoryIds.store_id"
                 })
             }
             """);
@@ -329,7 +323,7 @@ class ArgmappingProjectionDefectsTest {
     }
 
     /** An input-field {@code @condition} opening a {@code @nodeId} with its node type's key column. */
-    private static final String UNWIRED_SITE_SDL = """
+    private static final String INPUT_FIELD_CONDITION_SDL = """
         type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
             id: ID! @nodeId
         }

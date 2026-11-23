@@ -173,6 +173,19 @@ public final class NodeIdDecodeQuery {
      * record of {@code recordClass}, or of that node's own table where none is given.
      */
     public Resolution resolve(String coordinate, String bound, Optional<String> recordClass) {
+        return resolve(coordinate, bound, recordClass, true);
+    }
+
+    /**
+     * The decode of the node id at {@code coordinate}, as the node on table {@code bound}'s, into a
+     * record of that node's own table, its key loaded as itself: what an id compares at the table a
+     * path lands on, whatever the id's paths carry back to the table they leave.
+     */
+    public Resolution resolveOnNode(String coordinate, String bound) {
+        return resolve(coordinate, bound, Optional.empty(), false);
+    }
+
+    private Resolution resolve(String coordinate, String bound, Optional<String> recordClass, boolean followPaths) {
         var binding = bindings.getOrDefault(coordinate, List.of()).stream()
             .filter(b -> b.bound().equals(bound)).findFirst().orElse(null);
         if (binding == null) {
@@ -191,7 +204,8 @@ public final class NodeIdDecodeQuery {
                 "member type " + className.get() + " is not a jOOQ record a node id can decode into");
         }
         var targetKey = key(target.source(), target.schema(), target.name());
-        var path = paths.getOrDefault(coordinate, List.of()).stream()
+        var path = paths.getOrDefault(coordinate, List.<List<Step>>of()).stream()
+            .filter(steps -> followPaths)
             .filter(steps -> steps.getFirst().from().equals(targetKey) && steps.getLast().to().equals(nodeKey))
             .findFirst();
         List<String> targetColumns;

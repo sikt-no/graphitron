@@ -6,7 +6,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 /**
  * One parameter of a generated condition predicate, as seen from the body side. Carries what
  * the condition producer ({@link no.sikt.graphitron.plan.ConditionCommands}) needs to turn one
- * filter argument into a column term the glue renderer renders directly.
+ * filter argument into a column term.
  *
  * <p>{@link #nonNull()} is the effective runtime nullability at the call site: the AND of
  * the binding source's own declared nullability and every enclosing link's nullability
@@ -45,7 +45,7 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
      * ({@code FieldBuilder.javaTypeFor} answers {@code column.columnClass()} for every
      * column-bound extraction, and the row arms carry their typed {@code Row<N>} from the
      * columns). That is what lets
-     * {@link no.sikt.graphitron.render.ConditionGlueRenderer} emit a bare
+     * {@link no.sikt.graphitron.emit.ConditionEmitter} emit a bare
      * {@code receiver.eq(local)} and still bind at the receiving column's {@code DataType}, with
      * no explicit {@code DSL.val}. An arm answering a wire type instead would still compile there
      * and bind at the wrong type, silently.
@@ -193,8 +193,8 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
      * key columns, so the decoded key can only be compared on the target table. They differ in where
      * the bound value comes from, not in the SQL shape.
      *
-     * <p>{@link no.sikt.graphitron.render.ConditionGlueRenderer} emits this as a correlated
-     * {@code DSL.exists(...)} ANDed into the glue method's condition. The call-site extraction
+     * <p>{@link no.sikt.graphitron.emit.ConditionEmitter} emits this as a correlated
+     * {@code DSL.exists(...)} ANDed into the condition method's condition. The call-site extraction
      * and null / empty-list guards are identical to the {@link #inner} local predicate; only
      * the SQL shape differs, so every accessor delegates to {@code inner}.
      *

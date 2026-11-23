@@ -98,9 +98,38 @@ public final class CatalogRefs {
         if (named != null) {
             return named;
         }
+        if (bindingType.indexOf('$') < 0) {
+            try {
+                return ClassName.bestGuess(bindingType);
+            } catch (IllegalArgumentException notAGuess) {
+                // A name the guess cannot read, a class whose simple name starts lowercase among
+                // them, is still a binary name: read it as one below.
+            }
+        }
+        return binaryName(bindingType);
+    }
+
+    /**
+     * A {@code Class.getName()} binary name as a class: the package up to the last dot, the top-level
+     * class and each nested one split on {@code $}, so a nested class and a class whose name the
+     * guess cannot read are named exactly. Null where it is no binary name at all, a name with no
+     * package among them: a column's class always has one, and a fixture's placeholder never does.
+     */
+    private static ClassName binaryName(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) {
+            return null;
+        }
+        var simple = name.substring(dot + 1).split("\\$", -1);
+        for (var part : simple) {
+            if (part.isEmpty() || !Character.isJavaIdentifierStart(part.codePointAt(0))) {
+                return null;
+            }
+        }
         try {
-            return ClassName.bestGuess(bindingType);
-        } catch (IllegalArgumentException notAClassName) {
+            return ClassName.get(name.substring(0, dot), simple[0],
+                java.util.Arrays.copyOfRange(simple, 1, simple.length));
+        } catch (IllegalArgumentException notAName) {
             return null;
         }
     }

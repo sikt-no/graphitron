@@ -1,11 +1,10 @@
-# Which key column a parameter takes out of a node id. A path that stops on the @nodeId slot it opens
-# hands the parameter the whole decoded key; one naming a column past it, or descending through an
-# input object onto a @nodeId input field, projects one key column, named where it is written and
-# else the node's one-column key. filmsBySlot takes its slot by name, the whole key; filmsByNamed
-# names film_id past its slot; filmsByPicked descends through pick onto film, whose node has one key
-# column. A routine parameter takes one value, so a pair stopping on a node id at a @routine projects
-# one key column too: rentFilmBare's customerId is a Customer id, whose key is customer_id alone.
-# The projection is a fact of the argMapping landing, and each fill a pair wrote states it.
+# Which key column a parameter takes out of a node id. A path naming a column past the @nodeId slot it
+# opens, or descending through an input object onto a @nodeId input field, projects one key column,
+# named where it is written and else the node's one-column key. filmsByNamed names film_id past its
+# slot; filmsByPicked descends through pick onto film, whose node has one key column. A routine
+# parameter takes one value, so a pair stopping on a node id at a @routine projects one key column
+# too: rentFilmBare's customerId is a Customer id, whose key is customer_id alone. The projection is a
+# fact of the argMapping landing, and each fill a pair wrote states it.
 
 interface Node { id: ID! }
 
@@ -23,9 +22,6 @@ type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 input FilmPick { film: ID @nodeId(typeName: "Film") }
 
 type Query {
-  filmsBySlot(filmId: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
-      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-      method: "filmIdKeyEquals"}, override: true)
   filmsByNamed(id: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmIdKeyEquals", argMapping: "filmId: id.film_id"}, override: true)
@@ -48,7 +44,7 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing",
   Query.filmsByPicked, Query.filmsByPicked(pick.film:), ,              TRUE,     COLUMN
   """)
 
-# The key column each projecting landing takes; the whole slot takes none.
+# The key column each projecting landing takes.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column",
     where: "directive_name = 'condition'", rows: """
   call_coordinate,     landing_coordinate,              bound,       position
@@ -56,7 +52,7 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column"
   Query.filmsByPicked, Query.filmsByPicked(pick.film:), public.film, 0
   """)
 
-# The fills a written pair made state it; the one taken by name states none.
+# The fills a written pair made state it.
 extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair",
     where: "coordinate LIKE 'Query.films%'", rows: """
   coordinate,          call,                  position, target_name

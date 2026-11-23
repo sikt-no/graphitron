@@ -1,0 +1,51 @@
+# A field of a nesting type reached under two parents, whose @condition reads a member of the session
+# handle. CustomerShelf has no table of its own and is reached as Rental.shelf and Payment.shelf, so
+# CustomerShelf.customers has two occurrences, one under rental and one under payment, each reaching
+# customer over its parent's one foreign key to it. The field's filter is one conditions method, so
+# both occurrences compare first_name on customer and fill the condition's principal from
+# $session.principal alike.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord"
+)
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+}
+
+type CustomerShelf {
+  customers(firstName: String @field(name: "first_name")): [Customer!]!
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerOfPrincipal",
+      argMapping: "principal: $session.principal"})
+    @defaultOrder(primaryKey: true)
+}
+
+type Rental @table(name: "rental") {
+  shelf: CustomerShelf
+}
+
+type Payment @table(name: "payment") {
+  shelf: CustomerShelf
+}
+
+type Query {
+  rentals: [Rental!]!
+  payments: [Payment!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_row_input",
+    where: "field_coordinate LIKE '%.shelf.customers'", rows: """
+  coordinate,                                field_coordinate,         table_schema, table_name
+  Payment.shelf.customers(firstName:),       Payment.shelf.customers,  public,       customer
+  Rental.shelf.customers(firstName:),        Rental.shelf.customers,   public,       customer
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
+    where: "coordinate LIKE '%.shelf.customers' AND fill = 'SESSION_MEMBER'", rows: """
+  coordinate,               call,                     position, fill,           session_member
+  Payment.shelf.customers,  condition:public.customer, 1,       SESSION_MEMBER, principal
+  Rental.shelf.customers,   condition:public.customer, 1,       SESSION_MEMBER, principal
+  """)

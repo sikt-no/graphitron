@@ -11,27 +11,21 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 /**
  * The one body that turns a base64 node id into the target table's own {@code TableRecord}:
  * {@code private static <Record> decode<TypeName>Record(Object wire)}. Every host that decodes a node id into
- * a record emits this, and there are two families of them, which is why the derivation is here rather
- * than in either.
+ * a record emits this.
  *
  * <p>Two emitted forms come off the one body below: the client-error form, and the
  * null-returning form a polymorphic slot's per-candidate arm needs. Beside them sits the container
  * helper a polymorphic slot calls, which composes the null-returning form per candidate with the
  * multi-candidate failure {@link NodeIdDecodeFailure} spells.
  *
- * <p>A jOOQ-record-typed {@code @service} input-bean member decodes one on {@code <Type>Fetchers}; an
- * {@code argMapping} key-column projection decodes one wherever its consumer's glue lives, which for a
- * {@code @condition} is the {@code <Root>Conditions} class that {@link ConditionGlueRenderer} builds
- * and cannot reach the legacy emitter from. Copying the body into the second host would leave two
- * spellings of one emitted form, so it moved here and the unmigrated host delegates, the same
- * arrangement {@link FetcherResult} and {@link ErrorDispatchFragments} carry.
+ * <p>A jOOQ-record-typed {@code @service} input-bean member decodes one on {@code <Type>Fetchers}, the
+ * same arrangement {@link FetcherResult} and {@link ErrorDispatchFragments} carry.
  *
  * <p>Naming is deliberately <em>not</em> here. One generated class's private-static method namespace is
  * that class's to allocate: {@code <Type>Fetchers} allocates its {@code decode*} names across the node
- * types and the polymorphic containers it hosts together, and a conditions class has its own namespace
- * with its own occupants. Both spell this family from the node type's own name, which is what a decode
- * body is a function of, so one table backing two node types yields two bodies under two names. The
- * host passes the name in.
+ * types and the polymorphic containers it hosts together. It spells this family from the node type's
+ * own name, which is what a decode body is a function of, so one table backing two node types yields
+ * two bodies under two names. The host passes the name in.
  */
 public final class RecordDecodeFragments {
 

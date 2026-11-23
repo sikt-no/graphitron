@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
@@ -285,36 +284,6 @@ class NodeIdParticipantRoutePipelineTest {
     }
 
     // ===== The decoded handoff =====
-
-    /**
-     * The override escape decodes in the glue. Each branch's conditions class hosts the throw-mode
-     * decode helper for the leaf's node type, which is the structural trace of the decode the author
-     * used to be told to perform: on the shipped behaviour the arm emitted no decode at all, so the
-     * helper's presence is falsifiable rather than incidental.
-     *
-     * <p>That the authored call then receives the decoded local is a body fact, and it is proven
-     * where body facts are: the compile tier, where the sakila fixture declares an {@code Integer}
-     * parameter that only compiles if the glue passes one, and the execution tier, where a real
-     * encoded id round-trips and a plain key is refused.
-     */
-    @Test
-    void theOverrideEscapeHostsTheDecodeHelperOnEachBranch() {
-        var schema = TestSchemaHelper.buildSchema(LANGUAGE_FILM_INVENTORY + """
-            input StockFilter {
-                languageId: ID @nodeId(typeName: "Language")
-                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdDecodedKeyCondition"}, override: true)
-            }
-            type Query { stock(filter: StockFilter): [Stock!]! }
-            """);
-
-        var helperNames = ConditionRenderTestSupport
-            .renderCommittedConditions(schema, "no.example.generated").stream()
-            .flatMap(spec -> spec.methodSpecs().stream())
-            .map(MethodSpec::name)
-            .filter(name -> name.startsWith("decodeLanguage"))
-            .toList();
-        assertThat(helperNames).containsOnly("decodeLanguageKeyOrThrow");
-    }
 
     /**
      * The refusal that keeps the contract enforceable from the SDL. Declaring the parameter as the

@@ -7,8 +7,8 @@ import java.util.List;
 /**
  * The nested argument-map read the mutation emitters share ({@link #nestedMapValueExpr}). The
  * condition-method call surface this class once held retired with call-site convergence:
- * condition extraction renders inside the condition glue
- * ({@code no.sikt.graphitron.render.ConditionGlueRenderer}).
+ * condition extraction renders inside the conditions classes
+ * ({@link no.sikt.graphitron.emit.ConditionEmitter}).
  */
 public final class ArgCallEmitter {
 

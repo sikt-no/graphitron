@@ -11,8 +11,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * are grouped into this single filter; each argument becomes one {@link BodyParam} entry paired
  * positionally with its {@link CallParam} call-site view. Validation of column resolution, enum
  * value matching, and input type expansion happens in the builder before this record is
- * constructed. The condition producer turns the pairs into column terms the glue renderer
- * renders directly; no named method identity exists for the generated arm (the retired entity
+ * constructed. The condition producer turns the pairs into column terms; no named method identity exists for the generated arm (the retired entity
  * layer's {@code <ReturnType>Conditions} naming facts went with it).
  *
  * <p>{@link #tableRef()} is the resolved table of the field's return type, the table the

@@ -75,8 +75,8 @@ public sealed interface ParamSource
                 // Two representations of one descent, and folding the rewrap onto the path is blocked
                 // on a prior change rather than merely undone: MethodRef.callParams names a CallParam
                 // after the path's head, so a folded path would name every parameter of one nested
-                // condition after the same outer argument, and ConditionCommands.nameLocals would
-                // number them apart instead of using the names the author wrote. The parameter's own
+                // condition after the same outer argument, numbered apart instead of named as the
+                // author wrote them. The parameter's own
                 // name has to become the CallParam's before the path can carry the whole descent.
                 return extraction;
             }

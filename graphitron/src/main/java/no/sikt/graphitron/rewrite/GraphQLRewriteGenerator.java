@@ -637,12 +637,14 @@ public class GraphQLRewriteGenerator {
         for (var unit : fixedRuntime) {
             writeUnits("fixed runtime " + unit.kind(), List.of(unit.ref()), List.of(unit.spec()), emittedThisRun);
         }
-        // The condition command relation: every row renders glue at the address its ref commits,
-        // and every WHERE consumer calls it (call-site convergence closed the render-side dial).
+        // The conditions every WHERE consumer calls, rendered from the store at the addresses the
+        // consumers call them by.
+        var addresses = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var conditionUnits = no.sikt.graphitron.render.ConditionUnitRenderer.render(store, outputPackage,
+            conditionAddresses(addresses));
         writeUnits("condition glue",
-            plan.conditions().units(),
-            no.sikt.graphitron.render.ConditionGlueRenderer.render(plan.conditions().rows(), outputPackage,
-                plan.keyProjections()),
+            conditionUnits.stream().map(no.sikt.graphitron.render.ConditionUnitRenderer.Unit::ref).toList(),
+            conditionUnits.stream().map(no.sikt.graphitron.render.ConditionUnitRenderer.Unit::spec).toList(),
             emittedThisRun);
         // The projection command relation: one $project unit per row (anchor types, anchor-prefixed
         // nesting units, per-coordinate pivot units), each landing at the address its row committed.
@@ -951,6 +953,31 @@ public class GraphQLRewriteGenerator {
                 LOGGER.warn("warning: {}", w.message());
             }
         });
+    }
+
+    /** The plan's unit addresses as the conditions renderer asks for them. */
+    public static no.sikt.graphitron.render.ConditionUnitRenderer.Addresses conditionAddresses(
+            no.sikt.graphitron.plan.GeneratedUnits units) {
+        return new no.sikt.graphitron.render.ConditionUnitRenderer.Addresses() {
+            @Override public no.sikt.graphitron.command.UnitRef conditions(String parentType) {
+                return units.conditions(parentType);
+            }
+            @Override public no.sikt.graphitron.command.UnitMethodRef conditionMethod(String parentType, String fieldName) {
+                return units.conditionMethod(parentType, fieldName);
+            }
+            @Override public no.sikt.graphitron.command.UnitMethodRef participantConditionMethod(String parentType,
+                    String fieldName, String participantType) {
+                return units.participantConditionMethod(parentType, fieldName, participantType);
+            }
+            @Override public no.sikt.graphitron.command.UnitMethodRef facetBaseConditionMethod(String parentType,
+                    String fieldName) {
+                return units.facetBaseConditionMethod(parentType, fieldName);
+            }
+            @Override public no.sikt.graphitron.command.UnitMethodRef facetConditionMethod(String parentType,
+                    String fieldName, String facet) {
+                return units.facetConditionMethod(parentType, fieldName, facet);
+            }
+        };
     }
 
     /**

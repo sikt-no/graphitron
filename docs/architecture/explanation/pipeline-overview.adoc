@@ -72,7 +72,7 @@ The routine-write emitter has a different shape, and it is the direction of trav
 
 == Render: the shell folds
 
-`GraphQLRewriteGenerator.runPipeline` folds over each committed relation and hands every row to its renderer (`RootLauncherRenderer`, `ConditionGlueRenderer`, `ProjectionUnitRenderer`, and the schema, record and global emitters). The fold enforces closure in both directions: a renderer emitting a unit the plan never committed fails the run, and a committed unit no renderer emitted fails it too. The closure invariant over the emitted method call graph, and the oracles that pin it, are xref:fact-model.adoc[The fact model].
+`GraphQLRewriteGenerator.runPipeline` folds over each committed relation and hands every row to its renderer (`RootLauncherRenderer`, `ConditionUnitRenderer`, `ProjectionUnitRenderer`, and the schema, record and global emitters). The fold enforces closure in both directions: a renderer emitting a unit the plan never committed fails the run, and a committed unit no renderer emitted fails it too. The closure invariant over the emitted method call graph, and the oracles that pin it, are xref:fact-model.adoc[The fact model].
 
 == Write: the idempotency contract (unchanged)
 

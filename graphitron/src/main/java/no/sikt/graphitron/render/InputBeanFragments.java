@@ -19,12 +19,9 @@ import java.util.stream.Collectors;
 /**
  * The bodies that populate a consumer-authored Java bean from a GraphQL input-object {@code Map}:
  * {@code create<Bean>} / {@code create<Bean>List}, and the decode helpers a bean's {@code @nodeId}
- * members call. Two hosts emit them, and that is why they are here rather than in either: a
- * {@code <Type>Fetchers} class for an {@link CallSiteExtraction.InputBean} on a {@code @service}
- * parameter, and a {@code <Parent>Conditions} class ({@link ConditionGlueRenderer}) for one on a
- * {@code @condition} parameter. The generator side reaches these from its own emitter; the
- * conditions class cannot reach that emitter, and a second copy of each body would drift. The
- * arrangement is {@link RecordDecodeFragments}'s.
+ * members call, emitted on a {@code <Type>Fetchers} class for an
+ * {@link CallSiteExtraction.InputBean} on a {@code @service} parameter. The arrangement is
+ * {@link RecordDecodeFragments}'s.
  *
  * <p>Naming is not here. One generated class's private-static method namespace is that class's to
  * allocate, so the bodies take a {@link Names} and read every helper name, their own and the ones

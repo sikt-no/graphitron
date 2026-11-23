@@ -570,22 +570,6 @@ class FetcherPipelineTest {
             .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
 
-    @Test
-    void queryTableField_withArgument_generatesConditionsClass() {
-        // The condition glue is per parent type: a filtered root coordinate lands its method on
-        // QueryConditions (the retired entity layer's return-type-keyed FilmConditions is gone).
-        var schema = buildSchema("""
-            type Film @table(name: "film") { title: String, film_id: Int }
-            type Query { film(film_id: Int!): Film }
-            """);
-        var conditionsClasses = no.sikt.graphitron.rewrite.ConditionRenderTestSupport
-            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE);
-        assertThat(conditionsClasses).extracting(TypeSpec::name).containsExactly("QueryConditions");
-        var queryConditions = conditionsClasses.get(0);
-        assertThat(queryConditions.methodSpecs()).extracting(MethodSpec::name)
-            .contains("filmCondition");
-    }
-
     // ===== @splitQuery fields =====
 
     @Test

@@ -186,24 +186,6 @@ class MultiSchemaPipelineTest {
             .contains(ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
     }
 
-    @Test
-    void queryConditions_emitsAllThreeBackingTableClassesAsReachableClassNames() {
-        var schema = buildSchema();
-        var queryConditions = ConditionRenderTestSupport.renderCommittedConditions(schema, MULTI_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("QueryConditions"))
-            .findFirst()
-            .orElseThrow();
-
-        // The three Query roots span both schemas, so all three schema-segmented backing
-        // tables surface as method parameter types, picked up by the typed walk (no string
-        // scanning, no JavaPoet import-vs-inline coin-flip).
-        assertThat(referencedClassNames(queryConditions))
-            .contains(
-                ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"),
-                ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Event"),
-                ClassName.get(DEFAULT_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
-    }
-
     // ---- helpers ----
 
     private static TypeSpec typeClass(GraphitronSchema schema, String typeName) {
@@ -214,14 +196,11 @@ class MultiSchemaPipelineTest {
     }
 
     /**
-     * Every {@link TypeSpec} the fixture SDL produces across the two emit surfaces covered
-     * here (TypeClass + QueryConditions).
+     * Every {@link TypeSpec} the fixture SDL produces on the emit surface covered here
+     * (TypeClass).
      */
     private static List<TypeSpec> allEmittedTypeSpecs(GraphitronSchema schema) {
-        var out = new java.util.ArrayList<TypeSpec>();
-        out.addAll(ProjectionRenderTestSupport.renderProjections(schema, MULTI_OUTPUT_PACKAGE));
-        out.addAll(ConditionRenderTestSupport.renderCommittedConditions(schema, MULTI_OUTPUT_PACKAGE));
-        return out;
+        return ProjectionRenderTestSupport.renderProjections(schema, MULTI_OUTPUT_PACKAGE);
     }
 
     /**

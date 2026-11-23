@@ -21599,8 +21599,8 @@ SELECT pj.graph_name, COALESCE(site.source_name, ra.source_name),
  GROUP BY pj.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
           COALESCE(site.source_column, ra.source_column)
 UNION ALL
--- A single node's decoded id handed whole to a @service parameter or a bean member that cannot take
--- it, at the @nodeId: a place whose shape is not the id's, or a landing no decode shape fits, which
+-- A single node's decoded id handed whole to a @service or @condition parameter or a bean member that
+-- cannot take it, at the @nodeId: a place whose shape is not the id's, or a landing no decode shape fits, which
 -- graphitron_occurrence_node_id_shape decides. Which it is follows the key: a jOOQ tuple of the
 -- key's degree whose type arguments disagree with it, or any other class, a whole key landing only
 -- on its record or a tuple of it. The parameter or member is the detail, the least where uses
@@ -21640,14 +21640,14 @@ SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
                             WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
                               AND k2.bound <> k.bound)
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
-         -- A member of a built class, or a @service's parameter taking the whole key: the one named for
-         -- the argument, which no written pair fills, or one a pair fills without projecting a key
+         -- A member of a built class, or a @service's or @condition's parameter taking the whole key: the
+         -- one named for the argument, which no written pair fills, or one a pair fills without projecting a key
          -- column, an argument's or, along an argMapping path, an input field's. A root @routine's
          -- parameter named for the argument, which no pair fills, takes the whole key too, where a
          -- database function takes one value; a pair there always projects a key column, and one
          -- naming none is ARGMAPPING_KEY_COLUMN_UNRESOLVED's. A list at a routine is deferred, below.
          WHERE (s.kind = 'MEMBER'
-                OR o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND cp.call_kind = 'SERVICE'
+                OR o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND cp.call_kind IN ('SERVICE', 'CONDITION')
            AND CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
                                   WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
                                     AND pp.call = cp.call AND pp.position = cp.position)
@@ -33110,7 +33110,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('NODE_ID_SLOT_SHAPE_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SLOT_SHAPE_MISMATCH',
    'A @nodeId''s decoded value goes to a @service parameter whose shape is not the argument''s, a list where one id arrives, one value where a list does, or a collection other than java.util.List: declare the parameter in the argument''s shape.'),
   ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_ARITY_EXCEEDS_SLOT',
-   'A @nodeId''s decoded key goes whole to a @service parameter, or each element of one, that is neither the node''s record nor a tuple of its key, or to a @routine parameter named for the argument, which takes one value, and a whole key lands only on those: declare the parameter as the node''s record, or as a RecordN or RowN of the key''s columns'' types, or take one key column with argMapping.'),
+   'A @nodeId''s decoded key goes whole to a @service or @condition parameter, or each element of one, that is neither the node''s record nor a tuple of its key, or to a @routine parameter named for the argument, which takes one value, and a whole key lands only on those: declare the parameter as the node''s record, or as a RecordN or RowN of the key''s columns'' types, or take one key column with argMapping.'),
   ('NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT',
    'A @nodeId''s decoded key goes to a @service parameter typed as a jOOQ RecordN or RowN of the key''s degree whose type arguments are not the key columns'' types in key order: declare the tuple with the columns'' own types.'),
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',

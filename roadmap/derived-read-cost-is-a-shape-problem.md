@@ -82,8 +82,7 @@ utdanningsregisteret generate again. Additive, flip, subtract; the critical path
 The walk's read path is gone
 └── The projection units are rendered from the store
     ├── A projection unit is emitted from the store, censused
-    ├── The filter conditions are emitted from the store, claimed by C
-    │   └── An argument binds the call parameter it supplies
+    ├── An argument binds the call parameter it supplies
     ├── The root query fetchers are emitted from the store
     ├── A child read inline is emitted from the store, claimed by E
     │   ├── A sort key's path is resolved at its occurrence
@@ -754,9 +753,11 @@ static method needs no holder.
   Mutation-root routine write off the view; the view and the author arms of `ArgmappingProjectionDefects` retire here,
   with the store counterparts still missing for them: `NODE_ID_TARGET_UNRESOLVED`'s "nothing to take the node from"
   arm is `SERVICE`-only, so an untyped `@nodeId` at a routine or a condition has none; a keyless node type; the
-  typing of a child routine's parameters; the list and unwired-site deferrals
+  typing of a child routine's parameters; the list deferral
   (`ArgmappingProjectionDefects.unemittableProjections`); and the other readers of `intent_resolved_node_key_projection`,
-  the condition glue, the walk's Query-root and child routine launchers and `NodeIdDecodeCoverageFacts`. A composite id
+  the walk's Query-root and child routine launchers and `NodeIdDecodeCoverageFacts`. Since the conditions are emitted
+  from the store, `EMITTING_SITES` holds every `Site`, so the unwired-site disjunct and its message branch are dead,
+  and go with the class. A composite id
   feeding two routine parameters is decoded twice in the store-fed routine write; one shared local is a later refinement.
   Still reported twice until then: a primitive `@condition` parameter (Java `primitiveParameters` and the store's
   `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`), and a bare composite or unknown key column at a routine (the intent view and
@@ -930,7 +931,7 @@ static method needs no holder.
     own node's decoded through `NodeIdDecodeEmitter` from the projection query's own read, one
     carried back from another table's node read from `graphitron_occurrence_node_id_carried`;
     closes before the flip.
-  * **A narrowed inline list is emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by C".
+  * **A narrowed inline list is emitted from the store** `open`.
     An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
@@ -953,61 +954,20 @@ static method needs no holder.
     than each spelling its own `instanceof Map` ladder over the wire (Alf, 2026-11-08). A node id
     decodes through one method per node type and policy beside `NodeIdEncoder`, strict or
     not-this-participant, rather than through private copies in every class that reads one.
-  * **The filter conditions are emitted from the store, claimed by C** `open`, the generated predicates first,
-    the authored calls on the `@condition` call node. One condition per field occurrence and table it
-    filters, named and aliased from its coordinate, composing the generated predicates, the authored
-    `@condition` calls and the path steps' conditions with `override:` read as written, its behaviour
-    today's; a faceted condition is built term by term, the full condition the base and every facet's
-    term, its facet sources reusing the condition's paths, and facets back off to a node of their own
-    if that proves hard. Additive and uncalled until the flip, which moves every caller at once, the
-    root, split and batched fetchers, the facets and `$project`'s multisets, so the old glue goes in
-    it; pinned by tests that compile the emitted code and run it against the database, and by
-    `EmissionCensusTest.theCensusOfTheExampleSchemasConditions`, whose reasons are what is left (Alf, 2026-11-08).
-    Every reason closes before the flip, which keeps no fallback to the classified model per
-    occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
-    `NOTHING` fields are checked against the old glue for a filter it emits today.
-    `Query.actorFilmsFiltered` joined the emitted conditions once a root routine's result was a
-    binding: the walk binds `actorRef` and `minLength` to `films_for_actor`'s call and puts `title`
-    in the WHERE clause as an equality on the result (`RoutineFieldExecutionTest`
-    `aSurvivingInputLeafNarrowsTheRoutineResult`), and the store's row is meant as that filter,
-    the bound leaves being no filter term; the flip's run of that test is what confirms it.
-    An authored call on a node id's table and one taking its key as a tuple or a projected column are
-    emitted, and so is every reason but one: the census's `AUTHORED_NODE_ID` line, five rows a
-    one-column key goes whole to a parameter of the column's type (`customersByAddressDistrict` and
-    its siblings) and two `stockByLanguageOverride` rows whose node id reaches neither participant's
-    table by any path. A participant's node ids are dispatched by the type id each carries, each
-    participant decoding only its own (`code-generation-triggers.adoc`, Alf 2026-11-14); an id naming
-    no participant, or one whose type id does not read, is false on every branch, so its client error
-    is the fetcher's to raise at the flip, the walk's guard raising it until then.
-    The flip swaps what renders the condition glue at its one render point,
-    `GraphQLRewriteGenerator`'s `writeUnits("condition glue", ...)`: every WHERE consumer keeps its
-    `ConditionGlueCall`, `<Parent>Conditions.<field>Condition(alias, args[, env][, dsl])` at the
-    `GeneratedUnits` address, and `ConditionEmitter` writes each unit's method from the store's row,
-    the main, participant, facet base and facet fragment methods alike, a row with nothing to
-    filter as `DSL.noCondition()`, no unit falling back to the classified model; a parity test holds
-    the store's methods and signatures to `plan.conditions()` until the walk's `ConditionCommands`
-    goes, and `ConditionGlueRenderer` and its render-only helpers go with it. Conditions flip on
-    their own, ahead of the root fetchers and the projection units, whose call sites the fixed
-    contract leaves unchanged (Alf, 2026-11-13: piece by piece, as the store states each piece
-    whole). Branch `c-conditions-flip` holds, unbuilt, the facet fragments (`3c4ee1d764`,
-    `ConditionQuery` stating each term's facet and a row's `facetBase()` and `facetOwn(facet)`) and
-    then the record-or-tuple rule at a `@condition` (`c40e0f55a5`, Alf 2026-11-14, `feat!`, 15
-    FS-plattform sites each fixed by one `argMapping` projection). The swap is next, and that rule
-    is squashed into it as one `feat!`: the rule writes the projected form only the store emits, so
-    without the swap the walk defers it, and without the rule the swap meets the five
-    `AUTHORED_NODE_ID` rows it cannot emit. The swap's last gap is `ConditionEmitter` emitting a
-    node-id call with an empty path on the row's own table, its key projected per the rule
-    (`stockByLanguageOverride`).
-    * **An argument binds the call parameter it supplies** `open`. Each `ARGUMENT` fill is also a
-      `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
-      the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
-      then goes, after the flips.
-  * **The root query fetchers are emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by C" and "Every list states its order or is refused".
+  * **An argument binds the call parameter it supplies** `open`. Each `ARGUMENT` fill is also a
+    `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
+    the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
+    then goes, after the flips.
+  * **The root query fetchers are emitted from the store** `blocked`, on "Every list states its order or is refused".
     A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
     off its occurrence, and flips in the same pass as `$project` (Alf, 2026-11-08, 2026-11-13); the
     conditions flip ahead of it on their own, its condition call reading the store's glue by the
-    name it calls today.
+    name it calls today. The callers' condition signatures and `PlanCompileGraph`'s edges to the
+    conditions classes still come off the walk's `ConditionCommand` rows, while the classes are
+    rendered from the store; both move onto the store's rows here. Until then the generated
+    compiles guard the signatures, and the edges, which drive only the incremental compile, are
+    trusted: a wrong one shows as a missed recompile in a dev loop, never in a clean build.
 * **A root's tenant is the input binding its table's tenant column, stated per producer** `open`, E's, off the critical path. A root's tenant is the argument or input field binding its table's
   tenant column (Alf, 2026-11-15), so the store derives it, for a root query as for a root
   service, and an author names `$tenant` only where nothing binds it: a plain value a service
@@ -1023,7 +983,7 @@ static method needs no holder.
   list is cast where a scalar one is converted by `valueOf`, untested beyond `G`, and a top-level enum
   list argument on an enum column emits glue that does not compile. Each gets a test
   first, then a fix or a stated breaking change, after the flip, which keeps them as they are.
-* **A list of input objects compares what the old emitter could not** `blocked`, on "The filter conditions are emitted from the store, claimed by C", off the critical path.
+* **A list of input objects compares what the old emitter could not** `open`, off the critical path.
   The list-of-input filter's refusals that guarded the old emitter's single row, rather than a rule an
   author meets, are lifted once the flip has moved every caller onto `ConditionEmitter`, each a
   capability with an execution test first and its glossary entry and reference page changed with it.
@@ -1175,7 +1135,7 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
-* **A $context pair on @condition fills its parameter** `blocked` on "The filter conditions are emitted from the store, claimed by C": the walk's `@condition` parse (`ArgMappingSigil.scan` at `Site.CONDITION`, read by `BuildContext.readConditionDirective`) rejects every `$context` pair, its errors on a condition are not silenced, and where `ConditionEmitter` defers the walk emits the condition with a context argument read by parameter name, so a pair keyed apart from its parameter has no walk equivalent. Once the walk stops judging and emitting conditions the node is one commit of two store changes. First, in `graphitron_occurrence_condition_parameter_rule` the `CONTEXT_KEY` rule's `NOT EXISTS paired` passes over a pair bound to `$context.%`, and its "no element has its name" condition holds only for `contextArguments` keys (`graphitron_call_context_key.origin` `CONTEXT_ARGUMENTS`), a written pair outranking an element of its name as `$session` does; `paired` keeps the pair, so the element and by-type rules stay off that parameter. Second, `CONTEXT_SITE_UNSUPPORTED`, in both rules that raise it, exempts `directive_name` `condition` with `owner` `condition` beside `@service`, a reference step's condition staying refused; its statement and the manual follow. `ConditionEmitter` already emits a `CONTEXT_KEY` fill.
+* **A $context pair on @condition fills its parameter** `open`: the walk's `@condition` parse (`ArgMappingSigil.scan` at `Site.CONDITION`, read by `BuildContext.readConditionDirective`) rejects every `$context` pair, its errors on a condition are not silenced, and where `ConditionEmitter` defers the walk emits the condition with a context argument read by parameter name, so a pair keyed apart from its parameter has no walk equivalent. Once the walk stops judging and emitting conditions the node is one commit of two store changes. First, in `graphitron_occurrence_condition_parameter_rule` the `CONTEXT_KEY` rule's `NOT EXISTS paired` passes over a pair bound to `$context.%`, and its "no element has its name" condition holds only for `contextArguments` keys (`graphitron_call_context_key.origin` `CONTEXT_ARGUMENTS`), a written pair outranking an element of its name as `$session` does; `paired` keeps the pair, so the element and by-type rules stay off that parameter. Second, `CONTEXT_SITE_UNSUPPORTED`, in both rules that raise it, exempts `directive_name` `condition` with `owner` `condition` beside `@service`, a reference step's condition staying refused; its statement and the manual follow. `ConditionEmitter` already emits a `CONTEXT_KEY` fill.
 * **A stub node at a root @service is routed by its key, or refused, as Alf rules** `open`, off the
   critical path. A stub node type whose key holds the tenant column mints a tenant slot at a root
   `@service` taking its record, so the call is routed; the walk refused the same shape as the stub
@@ -1754,13 +1714,12 @@ output package they are written to are settled.
   (taken by "The root query fetchers are emitted from the store"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
   fields, pivots and the errors field each render from a query at the grain they emit, the
   launcher's routine row reading the facts R704 captured, with
-  `ConditionGlueRenderer` and `ProjectionUnitRenderer` folded into the families that use them.
+  `ProjectionUnitRenderer` folded into the families that use them.
   * **A batched child's fetcher is emitted from the store, on its stated connection** `blocked`, G's,
-    on "The projection units are rendered from the store",
-    "The filter conditions are emitted from the store, claimed by C" and
+    on "The projection units are rendered from the store" and
     "The root query fetchers are emitted from the store". A split-query child reads its DataLoader and its connection off the store.
   * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
-    `blocked`, F's, on the same three nodes. A connection field and its count and facet siblings read
+    `blocked`, F's, on the same two nodes. A connection field and its count and facet siblings read
     their query and connection off the store; it releases R1119's slice 8e.3 for connection-typed
     fields below a vouched entity.
 * **The undecided fact documents are sorted** `open`. Each document under `undecided` becomes a
@@ -3322,6 +3281,18 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   (added 2026-11-09, after the check this entry first rested on) takes `List<String>`: it asks for the
   column with `argMapping: "larestedIder: larestedIder.<key column>"`, which a `@service` parameter
   takes as a list since the entry below. Alf held releases until it could (2026-11-13).
+* **Breaking: a `@condition`'s parameter takes a whole node id as a `@service`'s does** ("a
+  @condition's parameter takes a whole node id only as a record or a tuple"). The rule above holds at a
+  `@condition`'s parameter too, at an argument or an input field: a parameter of the one key column's
+  type is `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`, and the column is asked for with an `argMapping` entry
+  projecting it. Used in FS-plattform main (946fc4aa20) at 15 sites, each fixed by one projection
+  such as tilgangsstyring's `ApplikasjonerFilterInput.miljoer: [ID!] @nodeId(typeName: "Miljo")`,
+  whose `ApplikasjonerFilterConditions.miljoer` takes `List<String>`, adding
+  `argMapping: "miljoer: miljoer.<key column>"` (Alf, 2026-11-14: "We break tilgangsstyring"): in
+  tilgangsstyring the `miljoer`, `organisasjoner`, `roller` and `hjemmeorganisasjoner` filters of
+  applikasjoner, testpersoner, brukeradmin and personbruker (12), and
+  `Query.mineTildelbareTilgangsroller`'s pairs `organisasjonskode: filter.organisasjonId` and
+  `miljokode: filter.miljoId` (2); in opptak `SakFilterValuesInput.gskGrunnlagstypeIder` (1).
 * **Breaking: the generated node-id decode takes no parse classes or label** ("a node id decodes
   through a converter-backed key column, its text parsed as the column says"). The generated
   `NodeIdEncoder.decodeColumns(typeId, id, columns...)`, `decodeInto(record, typeId, id, columns...)` and
@@ -3396,6 +3367,21 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   passed as an array.
 
 ## Retired vocabulary
+
+**The filter conditions are emitted from the store** (2026-11-23). Every `<Parent>Conditions` class is
+rendered by `ConditionUnitRenderer` from `ConditionQuery`'s rows at the address `GeneratedUnits` mints,
+one method per field and table, a participant's where the field's rows are told apart by their tables,
+and a faceted field's base and facet fragments beside it. Whether an argument or input field is read
+under a field's rows is `graphitron_occurrence_row_input`, and whether its filter compares it is the
+subtype `graphitron_occurrence_filter_term`; `graphitron_occurrence_taken`'s `COMPARED` reads the
+latter beside what a write compares. `ConditionGlueRenderer` goes, with `InputBeanHelperRegistry`,
+`ElementRowsHelperRegistry`, `RecordDecodeHelperRegistry`, `Predicate`, `PresenceGuard`, `OuterLift`,
+`AuthoredMethodRef`, `MatchKind` and `ArgBinding`, and `ConditionCommand`'s predicates, lifts and
+bindings. `ConditionCommand` keeps its coordinate, table, glue and facets, and states
+`readsRequestContext`, `readsSession` and `decodesNodeId` as stored booleans rather than deriving them
+from its predicates, until the callers and `PlanCompileGraph` read the store's rows. A whole node id at a
+`@condition` parameter of a key column's type is refused (`NODE_ID_KEY_ARITY_EXCEEDS_SLOT`); the column
+is projected with `argMapping`.
 
 **A parameter's table fit is held only for a method a call names** (2026-11-16). Which catalog tables a
 parameter can be handed is `graphitron_call_parameter_table`, keyed by the graph and written by the

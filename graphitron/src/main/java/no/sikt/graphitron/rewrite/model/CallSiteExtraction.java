@@ -184,8 +184,8 @@ public sealed interface CallSiteExtraction
 
         /**
          * Every cell required: every element carries every cell, so the list reads as one row per
-         * element, {@code List<Row<N><T1, ..., TN>>} built by a per-class helper
-         * ({@code ElementRowsHelperRegistry}), or {@code List<T>} for a one-cell element, and the
+         * element, {@code List<Row<N><T1, ..., TN>>} built by a per-class helper, or
+         * {@code List<T>} for a one-cell element, and the
          * predicate is {@code DSL.row(c1, ..., cN).in(rows)} or {@code c1.in(values)}. Rides
          * {@link BodyParam.RowIn} at two or more cells and {@link BodyParam.In} at one.
          *
@@ -207,8 +207,8 @@ public sealed interface CallSiteExtraction
          * At least one cell optional: an element constrains only the cells it carries, so it reads as
          * the conjunction of those cells' comparisons and the list as the disjunction over its
          * elements. A left-out cell matches every row, including rows whose column is {@code NULL};
-         * an element carrying no cell matches every row. A per-class match helper
-         * ({@code ElementRowsHelperRegistry}) builds the finished {@code Condition}. Rides
+         * an element carrying no cell matches every row. A per-class match helper builds the
+         * finished {@code Condition}. Rides
          * {@link BodyParam.PartialRowIn} at any arity.
          */
         record Partial(List<Cell> cells) implements ElementRows {

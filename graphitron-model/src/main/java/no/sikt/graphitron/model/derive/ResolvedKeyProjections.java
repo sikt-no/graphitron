@@ -120,8 +120,9 @@ public final class ResolvedKeyProjections {
                 p.NODE_TYPE_NAME, p.COLUMN_NAME)
             .from(p)
             // A @service parameter's projection is read by the fetcher the store emits, off the slot,
-            // and so is a routine write's on the mutation root, off the store's fills.
-            .where(p.GRAPH_NAME.eq(graphName), p.DIRECTIVE_NAME.ne("service"),
+            // a @condition's by the conditions class the store emits, off the same slot, and a routine
+            // write's on the mutation root off the store's fills.
+            .where(p.GRAPH_NAME.eq(graphName), p.DIRECTIVE_NAME.ne("service"), p.DIRECTIVE_NAME.ne("condition"),
                 p.DIRECTIVE_NAME.ne("routine").or(notExists(selectOne().from(r)
                     .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.TYPE_NAME.eq(p.TYPE_NAME),
                         r.OPERATION.eq("MUTATION")))))

@@ -4,7 +4,6 @@ import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.ProjectionCommand;
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.render.ConditionGlueRenderer;
 import no.sikt.graphitron.render.ProjectionUnitRenderer;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -17,8 +16,8 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The plan and render half of a session-reading {@code @condition}: the condition row's glue takes
- * the statement's {@code dsl}, the projection relation marks the units whose {@code $project} must
+ * The plan and render half of a session-reading {@code @condition}: the condition row reads the
+ * session, so its glue takes the statement's {@code dsl}, the projection relation marks the units whose {@code $project} must
  * take it (the unit calling the glue and, transitively, every unit calling one of those, across a
  * cycle), and the renderers append the argument for exactly those callees.
  *
@@ -57,7 +56,7 @@ class SessionConditionPlanPipelineTest {
     }
 
     @Test
-    void conditionRow_readsTheSession_andItsGlueTakesDslAfterTheArguments() {
+    void conditionRow_readsTheSession() {
         var schema = schema();
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
 
@@ -65,12 +64,6 @@ class SessionConditionPlanPipelineTest {
             .filter(r -> r.coordinate().getFieldName().equals("customers")).findFirst().orElseThrow();
         assertThat(row.readsSession()).isTrue();
         assertThat(row.readsRequestContext()).isFalse();
-
-        var glue = ConditionGlueRenderer.render(conditions.rows(), DEFAULT_OUTPUT_PACKAGE,
-                no.sikt.graphitron.command.KeyProjectionRelation.empty()).stream()
-            .flatMap(t -> t.methodSpecs().stream())
-            .filter(m -> m.name().equals(row.glue().methodName())).findFirst().orElseThrow();
-        assertThat(glue.parameters()).extracting(p -> p.name()).containsExactly("table", "args", "dsl");
     }
 
     @Test

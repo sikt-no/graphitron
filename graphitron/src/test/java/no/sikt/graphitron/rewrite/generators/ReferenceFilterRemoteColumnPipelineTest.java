@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.command.Predicate;
 import no.sikt.graphitron.command.ReachPath;
-import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.model.config.RunContext;
@@ -35,8 +33,8 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
  * </ul>
  *
  * <p>Assertions are at the model level (the {@link GeneratedConditionFilter}'s body params), per the
- * design principles; the EXISTS body shape itself is locked at the unit tier in
- * the glue renderer's per-arm tests, and semantic correctness at the execution tier in
+ * design principles; the reach dispatch is locked at the unit tier in {@code PathFragmentsTest},
+ * and semantic correctness at the execution tier in
  * {@code GraphQLQueryTest}. The discrimination guard (a <em>direct</em> nodeId FK-target stays
  * local), the element-less {@code path: []} degenerate case on both surfaces, and condition-join
  * hops in every position (hop 0, terminal, and mixed with FK hops in both orders) round out the
@@ -347,21 +345,12 @@ class ReferenceFilterRemoteColumnPipelineTest {
     // ===== helpers =====
 
     /**
-     * The lowered reach of the coordinate's single remote term: the command-tier view of the
-     * classified path, which is what the renderer consumes. Asserting it here rather than the
-     * generated body keeps this tier's grain (rows, not code strings).
+     * The reach of the coordinate's single remote body param, its classified path narrowed to hops.
+     * Asserting it here rather than the generated body keeps this tier's grain (the model, not code
+     * strings).
      */
     private static ReachPath reachOf(GraphitronSchema schema, String queryFieldName) {
-        var rows = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE).rows();
-        var row = rows.stream()
-            .filter(r -> r.coordinate().getFieldName().equals(queryFieldName))
-            .findFirst().orElseThrow(() -> new AssertionError("no condition row for " + queryFieldName));
-        var generated = row.predicates().stream()
-            .filter(Predicate.Generated.class::isInstance)
-            .map(Predicate.Generated.class::cast)
-            .findFirst().orElseThrow(() -> new AssertionError("no generated predicate on " + queryFieldName));
-        assertThat(generated.terms()).hasSize(1);
-        return generated.terms().get(0).reach();
+        return ReachPath.narrow(onlyRemotePredicate(schema, queryFieldName).joinPath(), queryFieldName);
     }
 
     private static List<BodyParam> bodyParams(GraphitronSchema schema, String queryFieldName) {
