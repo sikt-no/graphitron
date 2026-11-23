@@ -110,12 +110,12 @@ both as an `ID`. A client that wants the result's `id` gets it from B, through t
 
 ### Where it stands
 
-Slices 1 to 8f are on trunk: A issues vouchers end to end, B verifies them and reads the vouched
+Slices 1 to 8g are on trunk, 8e.3 aside: A issues vouchers end to end, B verifies them and reads the vouched
 entity and every field below it on the vouched connection, except a connection-typed field, which
 `VOUCHER_ACCEPT_NOT_GENERATED` still refuses below an accepting type; and both markers sit on the type,
-with the voucher field minted (*Rulings*, 2026-11-18). What remains is 8e.3, connection-typed fields,
-which waits on R876's node for their fetchers, and 8g, a rework: the one-value limit fails per
-representation rather than failing the whole lookup. See *Slices*.
+with the voucher field minted (*Rulings*, 2026-11-18); and a lookup whose vouchers carry more than one
+vouched-for value resolves the first value's representations and fails each other one alone (8g). What
+remains is 8e.3, connection-typed fields, which waits on R876's node for their fetchers. See *Slices*.
 
 The *Implementation* text below the *Rulings* was written for the field markers and describes some
 mechanisms in that form (the membership's `issuing_field`, the claim read off a field-level
@@ -719,7 +719,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8e.2. The walk reads the handed-down key | A split query and a polymorphic field below a vouched entity read on the key it hands down | `c0f511d`, `420ba54` |
 | 8e.3. Connection-typed fields | Pending on R876; below | |
 | 8f. Markers on the type | `@issue` and `@accept` on the type, `internalGraphitronVoucher` minted on both sides | see *Slice 8f* |
-| 8g. The limit fails per representation | Rework: a representation past the one-value limit fails alone; below | |
+| 8g. The limit fails per representation | A representation past the one-value limit fails alone at its index, naming no value; admission at registration; `VouchedValueLimitExceededException` retired | `0c5ed78` |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -963,7 +963,7 @@ Independent of 8e.3. As built:
   both sides and the double marker, and that neither collision mints. The execution tests pass unchanged
   in substance, the representation now `{internalGraphitronVoucher}`.
 
-**Slice 8g, the limit fails per representation (rework, Alf 2026-11-22).** Moved here from R1199,
+**Slice 8g, the limit fails per representation (rework, Alf 2026-11-22), shipped at `0c5ed78`.** Moved here from R1199,
 whose options for more than one value per lookup it is the floor of. Today `admitVouched` throws
 `VouchedValueLimitExceededException`, a request rejection, as soon as a second vouched-for value is
 presented. A federation router batches every representation bound for a subgraph into one `_entities`
