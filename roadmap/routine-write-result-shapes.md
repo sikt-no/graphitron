@@ -80,23 +80,30 @@ the call:
 - The returned row says `publisert`.
 - A join or nested select in the same statement still reads `a` and `gammel`.
 
-**A read routine can be a typed row source.** `DSL.table(Field)` over the value form throws, because it
-goes through `unnest` and a composite is no array. Wrapping the value form in a one-element array makes it
-one:
+**A one-row routine can be a typed table of `T`.** `DSL.table(Field)` over the value form throws, because
+it goes through `unnest` and a composite is no array. jOOQ generates a table class only for a `SETOF`
+function. The same class can be written for a function returning one row of `T`:
 
-- `unnest(array(Routines.utsendingHent(1))).as("u")` is a table whose fields jOOQ types from the
-  routine's return `DataType` (`"u"."utsending_id"` is an `Integer`).
+- It is a `TableImpl<TRecord>` built with the public constructor jOOQ's own generated tables use, with
+  the routine's name and schema, the call's arguments as parameters, and `TableOptions.function()`.
+- Its fields are created from `T`'s fields, and its record type is `T`'s record class.
+
+It renders the bare call:
+
+    select "u"."utsending_id", "u"."tittel", "u"."organisasjonskode" from "k"."utsending_hent"(1) as "u"
+
+What it gives:
+
+- `selectFrom` fetches `Result<UtsendingRecord>`.
+- `T`'s own generated fields are looked up on it (`u.field(UTSENDING.TITTEL)`), so the selection is
+  written against `T`.
+- A nested multiset over generated tables correlates on `u.field(UTSENDING.UTSENDING_ID)` in the same
+  statement.
+- Under a parent, it is `cross join lateral "k"."utsending_hent"("p"."utsending_id") as "u2"`.
 - The routine runs once.
-- A nested multiset correlated on `"u"."utsending_id"` runs in the same statement:
 
-      ... from unnest(array["k"."utsending_hent"("p_id" := 1)]) as "u" ("utsending_id", "tittel", "organisasjonskode")
-
-- Under a parent, it is a lateral row source:
-
-      cross join lateral unnest(array["k"."utsending_hent"("p_id" := "p"."utsending_id")]) as "u2" (...)
-
-A plain-SQL template, `table("{0}", <value form>)`, renders the bare call in `FROM` as well, but jOOQ knows
-none of its fields.
+`unnest(array(<value form>))` is typed too, but renders a one-element array around the call, and a
+plain-SQL template knows no fields.
 
 **What the store holds today.**
 
@@ -178,11 +185,14 @@ the same join, with no name matching. Name matching stays only for `RETURNS TABL
 **In a query:**
 
 - At the root, a field over a one-row routine of `T` has the routine as its producer's row source, in
-  `FROM` as `unnest(array(<value form>))`.
+  `FROM` as a typed table of `T` over the call. This is one generic `TableImpl` class, emitted once into
+  the generated sources (it must compile at Java 17) and parameterized by the routine's name, schema,
+  arguments and `T`. It needs no runtime dependency and no class per routine.
 - Under a parent, a child `@routine` is never a producer but a step on its query's path
   (`code-generation-triggers.adoc`, "Bind"). It is a `LATERAL` step that lands on `T`, its arguments
   correlated on the parent's columns.
-- jOOQ types its columns from the routine's return type, which is `T`'s.
+- Its fields are `T`'s, so the emitted selection reads `T`'s generated fields off it, as it does off
+  `T` itself.
 - A routine that finds no row returns a NULL composite, which is one row with every column null. The row
   source takes it only where `T`'s key is not null.
 - The selection joins onward from it in the same statement, with no waterfall.
