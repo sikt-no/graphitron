@@ -994,19 +994,27 @@ failing the whole lookup to keep it there is not (Alf, 2026-11-18).
 * *Another `_entities` field in the operation.* Admission is per operation, on the carrier, so a second,
   aliased `_entities` field sees the value the first admitted. Across fields "first" is the order the
   fields execute in; representation order holds within one call.
-* *The error's type.* `VouchedValueLimitExceededException` leaves the sealed request-rejection type and
-  becomes the client exception the per-representation error carries, with the fixed message above. A
-  consumer catching it as a request rejection breaks, so the commit is `feat!` with a
-  `BREAKING-CHANGE:` footer, and `voucher-handover.adoc` and `accept.adoc`, which describe it as
-  rejecting the request, say which errors a consumer may see.
+* *The error's type.* `VouchedValueLimitExceededException` is retired, with its arm of the sealed
+  request rejection and its generated unit. The generated `GraphitronClientException` is `final`, and
+  the error never leaves the dispatch as an exception a consumer could catch: the arm returns a failed
+  future carrying `GraphitronClientException` with `VoucherRuntime.LIMIT_MESSAGE`, and `loadSlot`
+  places it at the representation's index, the one path a slot's client error takes, so the configured
+  `clientErrorMessage` rewording applies to it as to every client error. A consumer catching the old
+  exception breaks, so the commit is `feat!` with a `BREAKING-CHANGE:` footer, and
+  `voucher-handover.adoc`, `accept.adoc` and `runtime-extension-points.adoc` say which errors a
+  consumer may see.
 * *Audit.* A representation past the limit is a third outcome beside redeemed and rejected, logged on
   the voucher audit logger by vouch id, scope and outcome, so B can trace why an owner's rows came back
   `null`.
 * *What stays a request rejection.* A voucher whose signature or expiry fails verification is a forged
   or stale token, not a capacity limit, and still rejects the request.
-* *Where.* `EntityFetcherDispatchClassGenerator`'s voucher arm, `ConnectionRuntimeClassGenerator`
-  (`admitVouched` and the new admit) and `VoucherRuntime` (the exception). No store fact, SDL or consumer
-  configuration changes.
+* *Where.* `EntityFetcherDispatchClassGenerator`'s voucher arm, `ConnectionRuntimeClassGenerator` and
+  `VoucherRuntime`. The carrier's public `admitVouched` is the one site that decides and writes the
+  admitted key; `entryFor` only reads it, throwing `IllegalStateException` for a key with vouched-for
+  parts that is not the admitted one, so a future caller that skips registration fails rather than
+  admitting on its own. The admission runs before the redemption is audited, so a representation the
+  limit turns away is logged once, as not admitted. No store fact, SDL or consumer configuration
+  changes.
 * *Tests.* The emitted admission tested at the unit tier with the emitter harness (`testing.adoc`,
   "Every emitted unit runs at the unit tier"): representation order, a second and a third value, a
   failed signature behind an admitted value still rejecting. An execution test in sakila's federated
@@ -1167,6 +1175,9 @@ want to see the plan.
   `VOUCHER_ISSUE_NOT_GENERATED` and `VOUCHER_ACCEPT_NOT_GENERATED`, and the "refused for now" sentences
   of their reference pages and directive definitions.
 * `VOUCHER_ISSUE_TWICE`, folded into `VOUCHER_FIELD_REPEATED` in slice 7.
+* `VouchedValueLimitExceededException`, its arm of the sealed `RequestRejectedException`,
+  `GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION` and `VoucherRuntime.LIMIT`: the one-value limit fails a
+  representation alone since slice 8g, as a client error.
 * The hardcoded `id` field and `NODE` role of `graphitron_key_field_binding_rule`'s minted arm, which
   reads the minted key's own field set from slice 7.
 * The caller: the voucher's caller field, `Reason.CALLER`, the caller parameter of `SessionState.of` and
