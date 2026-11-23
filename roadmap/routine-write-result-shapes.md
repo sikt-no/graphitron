@@ -156,19 +156,23 @@ has for a service then answers for a routine too. That arm joins `code_method.re
 A `SETOF <table>` function's execute form delivers `T`'s record, many, so its rows are rows of `T` by
 the same join, with no name matching. Name matching stays only for `RETURNS TABLE(...)`.
 
-**In a mutation:**
+**In a mutation** (Alf, 2026-11-23, written into `code-generation-triggers.adoc`, "Producer"):
 
-- The routine's statement is the call alone, and nothing else is read in it, since that statement would
-  see the old rows.
-- The result is a single record of `T`, and the payload's data field is that record, handed over.
+- The routine's statement is the call alone, through the execute form, and nothing else is read in it.
+  That statement would see the old rows.
+- The call returns the routine's record, and that record is the answer. The payload's data field is
+  the record, handed over whole: no projection of the selected columns, and no re-read of `T`. The
+  routine prepared the row, and it is just a row.
+- The row stands as the routine returned it, under the routine's read policy and not the caller's.
+  `routine.adoc`'s post-commit re-read, and the nullable data field it justifies by row-level security,
+  change for this shape in the same commit, with every emitter site that relies on the old rule.
 - The record carries `T`'s whole row, unlike a record a DML write or a `@service` hands back, which
-  carries only its key. The producer result states this as a fact, and the data field reads its
-  columns off the record without re-reading `T`.
-- This reverses the documented rule that a write's data field is re-read by key after the call
-  (`code-generation-triggers.adoc`, "Producer", and `routine.adoc` on the post-commit re-read). Both
-  pages, and every emitter site that relies on the rule, change in the same commit.
-- A field under the data field that needs more than the record's columns, such as `Utsending.innhold`,
-  is fetched after the call from the record's key, through the lift's `key_constraint`.
+  guarantees only its key. The producer result states this as a fact, so readers branch on what it
+  says and not on `kind = 'ROUTINE'`. A foreign key read off the record is therefore as good as the
+  row's own.
+- A field under the data field that needs more than the row's columns, such as `Utsending.innhold`,
+  starts a query of its own after the call, from the record's key, through the lift's
+  `key_constraint`.
 - A record whose key columns are all null is no row, and the data field is then `null`.
 
 **In a query:**
@@ -278,10 +282,6 @@ column arms), 3 and 4. Slice 4 does not block 1 to 3, since opptak's slice write
 
 - **opptak's utfylling data model** may change how kontekster reach the routine, and so the shape of
   slice 2's parameter. That is Alf's ruling.
-- **The returned row and read policy.** Today a write's data field is re-read under the caller's
-  identity, so row-level security can hide the row the routine just wrote (`routine.adoc`, the nullable
-  data field). Reading the payload off the returned record skips that read policy. opptak's routines
-  are `SECURITY DEFINER`. Alf decides whether that is accepted.
 - **`RETURNS TABLE(...)` writes.** With `SETOF <table>` served as rows of `T`, name matching is left only
   for `RETURNS TABLE(...)`. Are routine writes over those still wanted? If not, the name-matched write
   and its reader of `sql_name_matched_key_column` could go, as a deliberate breaking change. A recommends
