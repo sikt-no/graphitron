@@ -1147,13 +1147,15 @@ static method needs no holder.
   tenant part and its children inheriting that, where the walk refused the child as having no tenant
   established. Which verdict stands is Alf's; the chosen one is pinned in `tenant-slots` with its
   near miss.
-* **A @reference written beside a child @service is judged as Alf rules** `open`, off the critical
-  path. `Film.language: Language @service(...) @reference(path: [{key: "film_language_id_fkey"}])`,
+* **A @reference written beside a child @service is refused under a code of its own** `open`, off
+  the critical path. `Film.language: Language @service(...) @reference(path: [{key: "film_language_id_fkey"}])`,
   the service handing back language records, was accepted by the walk, which walked the key from
   film. The store refuses it as `NO_ROUTE_TO_TARGET`: a child whose own service hands back its
   target's records starts where they land, on language, and the written key has no route from there.
-  Whether the path is meaningless beside a service, and so refused under a code saying that, or
-  walked from the parent's table as the walk did, is Alf's. FS main writes neither on one field.
+  Alf, 2026-11-23: refuse it, under a code that says the path has no meaning beside a service, not
+  `NO_ROUTE_TO_TARGET`. A new code raises it at the `@reference`, a fact document pins it with the
+  near miss of a `@reference` on a field with no `@service`, and `NO_ROUTE_TO_TARGET` stops firing
+  there. FS main writes neither on one field.
 * **A batched child @service reads the session handle through its guard, pinned by a test** `open`,
   off the critical path. The store states the batched child's `SESSION_MEMBER` fill
   (`occurrence-call-parameter`, `Film.sessionLabel`), but the guarded accessor `ArgCallEmitter` emits
@@ -1164,13 +1166,15 @@ static method needs no holder.
   projection `ProjectionCommands` derives from it lost its test with the walk's service tests;
   `ServiceKeyProjectionTest` covers the nesting case only. A plan-tier case for a direct table-parent
   child, `Film.titleUppercase`, asserts the projection is exactly `film_id`.
-* **An object type handed back as two classes by two services is judged in the store** `open`, off
+* **An object type handed back as two compatible classes by two services is served** `open`, off
   the critical path. `FilmShelf` returned by one service as a bean and by another as a
   `FilmLookupPayload` record, both offering `title`, is one OBJECT result with two result-class rows
   and no defect; only the deprecated `intent_type_backing_conflict` counts it. The walk refused it as a
-  domain-type disagreement. Whether it is refused, or served with each class judged by
-  `MEMBER_UNRESOLVED` on its own, is Alf's to say; the store states that verdict at the type, with a
-  fact document and a near miss.
+  domain-type disagreement. Alf, 2026-11-23: serve it as long as the classes are compatible, each
+  judged on its own by `MEMBER_UNRESOLVED` ("this is where our occurrence model gives us a leg up").
+  A fact document pins the two classes served and the near miss of one class missing a member the
+  type reads, refused by `MEMBER_UNRESOLVED` at that class's field alone; the walk's refusal goes
+  with the flip of the fetchers that read it.
 * **A removed `@multitableReference` is refused in the store** `open`, off the critical path.
   `FieldBuilder.classifyFieldInner` refuses it as no longer supported; the store reads nothing of it.
 * **A list field over an accessor returning one record is refused in the store** `open`, off the
