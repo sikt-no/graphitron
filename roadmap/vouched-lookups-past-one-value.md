@@ -1,13 +1,13 @@
 ---
 id: R1199
 title: "An _entities lookup with vouchers for several values resolves on one connection"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 3
 theme: service
 depends-on: [signed-reference-entities-across-subgraphs]
 created: 2026-11-18
-last-updated: 2026-11-18
+last-updated: 2026-11-23
 ---
 
 # An _entities lookup with vouchers for several values resolves on one connection
@@ -19,6 +19,13 @@ An accepting subgraph answers a router's `_entities` call whose vouchers carry s
 one vouched connection from the pool. How a lookup past the limit fails is settled in R1119's slice 8g:
 each representation past it fails alone and the rest resolve. This item is about raising the limit
 itself, so a list of several owners resolves whole.
+
+The same limit blocks a second shape, reported in
+[GitHub issue 584](https://github.com/sikt-no/graphitron/issues/584): a voucher per entity, where the
+vouched-for value is the entity's own key (a `Sak`'s id, with B's policies testing `sak_id`). There, a list
+of N rows always presents N values. Raising the limit makes that shape useful. The shape also needs one
+refusal lifted, `VOUCHER_VOUCHED_FOR_IN_KEY`, so that the vouched-for fields may be B's key (see
+*The per-entity voucher*).
 
 ## Why
 
@@ -80,6 +87,69 @@ The recommendation so far is 2, with 3 as the fallback for a consumer that needs
   how-to states.
 * Vouchers sharing one value no longer share a connection across operations in practice, since a set
   key rarely repeats between requests.
+
+## The per-entity voucher (GitHub issue 584)
+
+A consumer has an event-log subgraph B, whose access should follow A's row-level security on `Sak`. B
+stores events keyed by the sak's id. The wanted supergraph shape is a list of saker, each with its
+events below it (`hendelser: [Sakshendelse]`, as `@asConnection` eventually). The timeline is testable
+by 2026-12-10 and in production by 2027-02-01; otherwise the consumer falls back to replicating the data.
+
+*What it needs from this item.* The vouched-for value is the sak id, so every row in the list is a
+distinct value, and the router batches them into one `_entities` call. Under the one-value limit, only
+the first sak resolves. Option 2 settles it: one connection whose session holds the set of sak ids, B's
+policy `sak_id = ANY(...)`, and one SELECT. Option 3 would lease one connection per row, which grows with
+the list. So this case favours option 2, and the cap's default must be sized to a list or page length,
+not to "a few owners"; the how-to says so. The precision option 2 gives up is smallest here, since each
+value is one entity.
+
+*The refusal it lifts.* `VOUCHER_VOUCHED_FOR_IN_KEY` refuses a vouched-for field that is also a field of
+the key the voucher decodes to, "so the two parts never share a value". That rule is R1119's slice
+decision, not one of its rulings. The proposed framing, which does not conflict with the 2026-11-16 ruling
+(the vouched-for values are the access decision, the lookup part navigation only): when the vouched-for
+fields are exactly B's authored key, the lookup section is empty, and the voucher decodes onto that key
+from the vouched-for values. `@issue` with no absorbed fields beyond the vouched-for ones is then legal,
+and the codec's check "the lookup section names exactly B's key fields" becomes "the lookup section is
+empty and the vouched-for fields are the key". A partial overlap stays refused. *Needs a ruling from Alf
+or Filip.*
+
+With that, the consumer's shape uses existing vocabulary only, provided B owns a `sak(sak_id)` table
+that its events reference:
+
+```graphql
+# Subgraph A: the issuer. Sak itself cannot issue (it is a node, keyed, and a root field returns it),
+# so the voucher sits on a type reached through a field on Sak.
+type Sak @table(name: "sak") @key(fields: "id") {
+  id: ID! @nodeId
+  hendelseLogg: SakHendelseLogg      # same row, read as the issuing type
+}
+type SakHendelseLogg @table(name: "sak") @issue(scope: "sakshendelser", ttl: "PT5M", vouchesFor: "sakId") {
+  sakId: ID! @field(name: "sak_id")
+}
+
+# Subgraph B: the vouched-for field is the key; the lookup part is empty.
+type SakHendelseLogg @table(name: "sak") @key(fields: "sakId")
+    @accept(scope: "sakshendelser", vouchesFor: "sakId") {
+  sakId: ID! @inaccessible
+  hendelser: [Sakshendelse!]! @reference(path: [{key: "sakshendelse_sak_fkey"}])
+}
+```
+
+*Outside this item.*
+
+* The extra hop (`Sak.hendelseLogg.hendelser` rather than `Sak.hendelser`) is the voucher itself: the
+  router hands B a voucher only by jumping on a type keyed by it, and `Sak` cannot be that type
+  without publishing a key that bypasses the voucher (`VOUCHER_ISSUE_ON_KEYED_TYPE`,
+  `VOUCHER_ISSUE_ON_NODE`, `VOUCHER_ISSUE_ON_ROOT_TYPE`). Removing the hop means reopening those
+  refusals, a question for Alf and Filip that this item does not take.
+* An accepted entity with no table of its own in B, whose "row" is just its vouched-for values (the
+  issue's point 2 taken literally). It contradicts how an entity is resolved
+  (`docs/manual/reference/federation.adoc`, "selecting its row from its table") and three `@accept`
+  refusals, and Graphitron has no way today for children to bind to an entity's values rather than its
+  row. If the `sak` table above is not acceptable to the consumer, it becomes its own item, depending on
+  this one.
+* `@asConnection` below an accepting type is R1119's slice 8e.3; a plain list is the first target.
+* When the `internalGraphitronVoucher` rename reaches a release candidate is a release question.
 
 ## Smaller items from the same trace
 
