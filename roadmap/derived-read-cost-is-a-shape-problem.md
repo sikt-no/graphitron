@@ -90,7 +90,7 @@ The walk's read path is gone
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
     ├── What an occurrence takes is a binding, claimed by C
-    └── Every list states its order or is refused
+    └── Every list states its order or is refused, claimed by C
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -937,7 +937,7 @@ static method needs no holder.
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
     argument, and the line closes with it. Whether an argument is compared at all is its row in
     `graphitron_occurrence_filter_term`.
-  * **Every list states its order or is refused** `open`. `LIST_ORDER_UNDETERMINED` refuses an
+  * **Every list states its order or is refused, claimed by C** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a
     connection with none (`validatePaginationRequiresOrdering`), at the root, split and over several
@@ -958,7 +958,7 @@ static method needs no holder.
     `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
     the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
     then goes, after the flips.
-  * **The root query fetchers are emitted from the store** `blocked`, on "Every list states its order or is refused".
+  * **The root query fetchers are emitted from the store** `blocked`, on "Every list states its order or is refused, claimed by C".
     A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
     off its occurrence, and flips in the same pass as `$project` (Alf, 2026-11-08, 2026-11-13); the
