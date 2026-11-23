@@ -6,18 +6,13 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecor
 /**
  * Compilation / execution-tier fixtures: a jOOQ {@link CustomerRecord} bound directly as a
  * {@code @service} input param, populated from <em>nested</em> grouping inputs that flatten onto the one
- * customer table. The generated {@code createCustomerRecord} helper decodes the
- * {@code identity.customerId} {@code @nodeId} into {@code customer_id} and loads the
- * {@code details.firstName} / {@code details.lastName} {@code @field} columns from the nested
- * {@code details} group, descending through each enclosing {@code Map} null-safely.
+ * customer table: the {@code identity.customerId} {@code @nodeId} decodes into {@code customer_id},
+ * and the {@code details.firstName} / {@code details.lastName} {@code @field} columns load from the
+ * nested {@code details} group, each enclosing {@code Map} descended null-safely.
  *
- * <p>{@code CustomerRecord} backs these fixtures rather than {@code FilmRecord} so the
- * {@code createCustomerRecord} helper does not collide with {@code ModifyFilmRecordInput}'s
- * {@code createFilmRecord} on the per-record-class helper dedup on {@code QueryFetchers}.
- *
- * <p>{@link #describeCustomerUpsert} reports the constructed record's jOOQ {@code touched}-flags and
- * values without writing, the only tier that can observe the transparent-unpack contract on the
- * column axis: an omitted nested leaf stays {@code changed=false}; a present-{@code null} nested leaf
+ * <p>{@link #describeCustomerUpsert} reports the jOOQ {@code touched}-flags and values of the record
+ * the service receives, without writing, so the execution tier reads the transparent-unpack contract
+ * on the column axis: an omitted nested leaf stays {@code changed=false}; a present-{@code null} nested leaf
  * writes {@code NULL} ({@code changed=true}) whatever else the input sends, a decoded identity or a
  * value for the sibling leaf, on {@code first_name} and {@code last_name} though both are
  * {@code NOT NULL}; a {@code null} / omitted nullable group leaves every column under it
