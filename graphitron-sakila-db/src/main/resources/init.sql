@@ -823,6 +823,10 @@ CREATE TABLE describe_hub_leaf (
     hub_id  integer NOT NULL,
     CONSTRAINT describe_hub_leaf_hub_fkey FOREIGN KEY (hub_id) REFERENCES describe_hub(hub_id)
 );
+-- Leaves two keys from a project, so a project's node id filters them through a composite key.
+INSERT INTO describe_hub (hub_id, hub_code, org_id, project_id, label) VALUES
+    (1, 'atlas-hub', 1, 100, 'Atlas hub'), (2, 'cipher-hub', 2, 100, 'Cipher hub');
+INSERT INTO describe_hub_leaf (leaf_id, hub_id) VALUES (10, 1), (11, 1), (20, 2);
 
 -- R338 execution-tier fixture: a parent referenced through a *non-PK unique key*, plus a child
 -- whose FK targets that unique column (split_parent_tag.parent_code -> split_parent.parent_code,

@@ -1,0 +1,87 @@
+# Filters whose conditions class has a shape of its own to get right, beside the filter itself.
+#
+# Query.hubLeaves compares a project's node id two keys from its rows: a describe_hub_leaf reaches
+# its project over describe_hub, and the project's key is two columns, so the id binds a pair of
+# columns at the far end of the path.
+#
+# Query.films and Query.aliasFilms take the id of one of two node types over film, Film and
+# FilmAlias, each projecting film_id into the same @condition method: each decodes its own type's
+# id and refuses the other's.
+#
+# Query.eventsA and Query.eventsB filter two tables named event in two schemas, multischema_a and
+# multischema_b, so their conditions take two table classes of one simple name.
+#
+# FilmMeta.languages filters on a field of a nesting type with no table of its own, its conditions
+# class being the nesting type's.
+
+interface Node { id: ID! }
+
+type Project implements Node @table(name: "project") @node(typeId: "P") {
+    id: ID!
+}
+
+type DescribeHubLeaf @table(name: "describe_hub_leaf") {
+    leafId: Int! @field(name: "leaf_id")
+}
+
+input HubLeafFilter {
+    projectIds: [ID!] @nodeId(typeName: "Project")
+        @reference(path: [{key: "describe_hub_leaf_hub_fkey"}, {key: "describe_hub_project_fkey"}])
+}
+
+type Film implements Node @table(name: "film") @node(typeId: "F", keyColumns: ["film_id"]) {
+    id: ID!
+    title: String
+    meta: FilmMeta
+}
+
+type FilmAlias implements Node @table(name: "film") @node(typeId: "FA", keyColumns: ["film_id"]) {
+    id: ID!
+    title: String
+}
+
+input FilmPick { filmId: ID! @nodeId(typeName: "Film") }
+input FilmAliasPick { filmId: ID! @nodeId(typeName: "FilmAlias") }
+
+type Language @table(name: "language") { name: String }
+
+type FilmMeta {
+    languages(name: String @field(name: "name")): [Language!]!
+        @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type EventA @table(name: "multischema_a.event") { name: String }
+type EventB @table(name: "multischema_b.event") { code: String }
+
+type Query {
+    hubLeaves(in: HubLeafFilter): [DescribeHubLeaf!]!
+    films(in: FilmPick!): [Film!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmIdKeyEquals",
+        argMapping: "filmId: in.filmId.film_id"
+    })
+    aliasFilms(in: FilmAliasPick!): [Film!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmIdKeyEquals",
+        argMapping: "filmId: in.filmId.film_id"
+    })
+    eventsA(name: String): [EventA!]!
+    eventsB(code: String): [EventB!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id",
+    where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate,                        bound,          position, node_type_name, column_name
+  Query.aliasFilms(in.filmId:),      public.film,    0,        FilmAlias,      film_id
+  Query.films(in.filmId:),           public.film,    0,        Film,           film_id
+  Query.hubLeaves(in.projectIds:),   public.project, 0,        Project,        org_id
+  Query.hubLeaves(in.projectIds:),   public.project, 1,        Project,        project_id
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_table",
+    where: "coordinate IN ('Query.eventsA', 'Query.eventsB', 'FilmMeta.languages', 'Film.meta.languages')", rows: """
+  coordinate,          table_schema,  table_name
+  Query.eventsA,       multischema_a, event
+  Query.eventsB,       multischema_b, event
+  Film.meta.languages, public,        language
+  """)
