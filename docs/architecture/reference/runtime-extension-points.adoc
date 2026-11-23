@@ -175,8 +175,10 @@ its arms are the build's:
 * `VoucherRejectedException`, in a build that accepts vouchers: a voucher failed
   a check. Its `reason()` names the check, and its message carries nothing from
   the token.
-* `VouchedValueLimitExceededException`, in a build that accepts vouchers: the
-  request presented vouchers for more than one vouched-for value.
+
+A representation whose voucher vouches for a second value is not a request
+rejection: it fails alone, at its own index, as a client error naming the limit
+and no value, and the rest of the request is answered.
 
 [source,java]
 ----
@@ -186,7 +188,7 @@ try {
 } catch (RequestRejectedException rejected) {
     // Graphitron.requestRejection(rejected) is the source's own exception for a
     // failed acquisition (map an identity fault to 401, an outage to 503) and the
-    // rejection itself for a voucher check or the limit (usually 401 or 403).
+    // rejection itself for a voucher check (usually 401 or 403).
     return answer(Graphitron.requestRejection(rejected).orElseThrow());
 }
 ----

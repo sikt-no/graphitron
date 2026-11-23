@@ -317,9 +317,9 @@ public final class PlanCompileGraph {
                      ERROR_MAPPINGS, VOUCHER_KEYS -> { }
                 // A generated scalar's decoders refuse a wrong value with the client exception.
                 case GENERATED_SCALARS -> precise(units.get(0), require(GlobalUnitKind.CLIENT_EXCEPTION));
-                // Each arm of the request rejection extends the connection runtime's sealed base,
-                // which permits it.
-                case VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION ->
+                // The voucher arm of the request rejection extends the connection runtime's sealed
+                // base, which permits it.
+                case VOUCHER_REJECTED_EXCEPTION ->
                     runtimeUnit(no.sikt.graphitron.emit.VoucherRuntime.REQUEST_REJECTED)
                         .ifPresent(r -> declared(units.get(0), r));
                 // The codec signs with the keys and throws the rejection.
@@ -396,7 +396,6 @@ public final class PlanCompileGraph {
                             declared(a, x);
                         });
                         refOf(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION).ifPresent(v -> declared(x, v));
-                        refOf(GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION).ifPresent(v -> declared(x, v));
                     });
                     // The response's clientErrorMessage takes the client exception.
                     fetcherErrorResponse.ifPresent(l -> refOf(GlobalUnitKind.CLIENT_EXCEPTION)
@@ -418,9 +417,8 @@ public final class PlanCompileGraph {
                         source.ifPresent(x -> declared(t, x));
                         keyNotPermitted.ifPresent(x -> declared(t, x));
                         acquisitionFailed.ifPresent(x -> declared(t, x));
-                        // The carrier's one slot holds the request rejection, the limit among its arms.
+                        // The carrier's one slot holds the request rejection.
                         requestRejected.ifPresent(x -> declared(t, x));
-                        refOf(GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION).ifPresent(x -> declared(t, x));
                         // The fan-out failure path hands its throw to the consumer's log through
                         // the router's shared guard.
                         fetcherErrorLog.ifPresent(l -> declared(t, l));

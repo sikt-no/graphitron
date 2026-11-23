@@ -49,9 +49,12 @@ import java.util.List;
  *       loader for the authored key the voucher decodes onto, under that key, reusing that key's batch
  *       and SELECT. A voucher that fails any check, or carries a value no column takes, rejects the
  *       request through the carrier's one rejection slot; registration happens before any loader
- *       dispatches, so nothing is acquired after it. Every redemption and rejection is logged on
- *       {@value #VOUCHER_AUDIT_LOGGER} at INFO by vouch id, scope and outcome, never the token, its
- *       values or the connection key.</li>
+ *       dispatches, so nothing is acquired after it. A verified voucher whose vouched-for value is not
+ *       the one the request admitted ({@code OwnedConnections.admitVouched}, the first in
+ *       representation order) fails its own slot alone with the generated client exception, naming the
+ *       limit and no value, and takes no connection. Every redemption, rejection and representation the
+ *       limit turns away is logged on {@value #VOUCHER_AUDIT_LOGGER} at INFO by vouch id, scope and
+ *       outcome, never the token, its values or the connection key.</li>
  *   <li>{@code batch<TypeName>Alt<N>(keys, batchEnv, key)}: the loader's batch, acquiring through
  *       {@code OwnedConnections.dslForIfPermitted} (a key the source refuses answers every slot
  *       {@code null} with no error) and running {@code select<TypeName>Alt<N>}; a throw fails only
@@ -680,7 +683,8 @@ public final class EntityFetcherDispatchClassGenerator {
          * each lookup and vouched-for value is coerced to its column through the column's
          * {@code DataType}, the connection key is built from the vouched-for values, and the lookup
          * columns load into the loader for the authored key the voucher decodes onto, under that key. A
-         * failed check, or a value no column takes, rejects the request ({@code rejectVoucher}). The
+         * failed check, or a value no column takes, rejects the request ({@code rejectVoucher}); a value
+         * past the one-value limit fails this representation alone. The
          * per-type data (scope, the fields each section names, their columns) is read off the voucher
          * alternative and the authored key it pairs with by identity, the one list the SELECT also reads.
          */
@@ -748,6 +752,15 @@ public final class EntityFetcherDispatchClassGenerator {
             arm.add("// The vouched-for values key the connection; the lookup part is navigation only.\n");
             arm.addStatement("$T key = $T.forVouchedFor($L)", connectionKey, connectionKey,
                 CodeBlock.join(parts, ", "));
+            arm.add("// The one-value limit, applied here while representations register, in their order, and\n");
+            arm.add("// only once the voucher verified: one past it fails alone, naming no value, and takes no\n");
+            arm.add("// connection.\n");
+            arm.beginControlFlow("if (!$T.of(env).admitVouched(key))", ownedConnections);
+            arm.addStatement("VOUCHER_AUDIT.info($S, token.vouchId(), $S)",
+                "Voucher not admitted: vouch id {}, scope {}, reason LIMIT", voucher.scope());
+            arm.addStatement("return $T.failedFuture(new $T($S))", CF, clientException,
+                no.sikt.graphitron.emit.VoucherRuntime.LIMIT_MESSAGE);
+            arm.endControlFlow();
             arm.addStatement("VOUCHER_AUDIT.info($S, token.vouchId(), $S)", "Voucher redeemed: vouch id {}, scope {}",
                 voucher.scope());
             arm.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()", ENV, ENV_IMPL);

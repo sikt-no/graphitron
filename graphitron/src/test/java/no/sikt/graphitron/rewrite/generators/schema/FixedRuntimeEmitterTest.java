@@ -31,16 +31,14 @@ class FixedRuntimeEmitterTest {
     }
 
     @Test
-    void theVoucherRuntimeIsFourClassesUnderTheSchemaPackage() {
+    void theVoucherRuntimeIsThreeClassesUnderTheSchemaPackage() {
         assertThat(FixedRuntimeEmitter.renderVoucherRuntime("com.example.gen"))
             .extracting(FixedRuntimeEmitter.Unit::kind, unit -> unit.ref().fqcn(), unit -> unit.spec().name())
             .containsExactly(
                 tuple(GlobalUnitKind.VOUCHER_CODEC, "com.example.gen.schema.VoucherCodec", "VoucherCodec"),
                 tuple(GlobalUnitKind.VOUCHER_KEYS, "com.example.gen.schema.VoucherKeys", "VoucherKeys"),
                 tuple(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION, "com.example.gen.schema.VoucherRejectedException",
-                    "VoucherRejectedException"),
-                tuple(GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION,
-                    "com.example.gen.schema.VouchedValueLimitExceededException", "VouchedValueLimitExceededException"));
+                    "VoucherRejectedException"));
     }
 
     /**

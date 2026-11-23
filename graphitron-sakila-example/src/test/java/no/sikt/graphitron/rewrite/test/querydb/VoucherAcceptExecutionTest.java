@@ -6,7 +6,6 @@ import no.sikt.graphitron.generated.accepting.Graphitron;
 import no.sikt.graphitron.generated.accepting.schema.ConnectionKey;
 import no.sikt.graphitron.generated.accepting.schema.ConnectionSource;
 import no.sikt.graphitron.generated.accepting.schema.ConnectionSources;
-import no.sikt.graphitron.generated.accepting.schema.VouchedValueLimitExceededException;
 import no.sikt.graphitron.generated.accepting.schema.VoucherCodec;
 import no.sikt.graphitron.generated.accepting.schema.VoucherKeys;
 import no.sikt.graphitron.generated.accepting.schema.VoucherRejectedException;
@@ -282,13 +281,26 @@ class VoucherAcceptExecutionTest {
     }
 
     @Test
-    void vouchersForTwoOwnersInOneRequestRejectItWithTheLimitNotNull() {
-        var mixed = new ArrayList<>(vouchers(1));
-        mixed.addAll(vouchers(2));
-        assertThatThrownBy(() -> present(ENTITIES, representations(mixed)))
-            .isInstanceOf(VouchedValueLimitExceededException.class)
-            .hasMessageContaining("more than one vouched-for value");
-        assertThat(RELEASED).containsExactlyInAnyOrderElementsOf(LEASED);
+    @SuppressWarnings("unchecked")
+    void vouchersForTwoOwnersInOneLookupResolveTheFirstOwnersAndFailEachOfTheSecondsAtItsIndex() {
+        var first = vouchers(1);
+        var second = vouchers(2);
+        var mixed = new ArrayList<>(first);
+        mixed.addAll(second);
+        var result = present(ENTITIES, representations(mixed));
+        var found = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("_entities");
+        assertThat(found).hasSize(mixed.size());
+        assertThat(found.subList(0, first.size())).extracting(e -> e.get("id"))
+            .containsExactlyInAnyOrder("1", "2");
+        assertThat(found.subList(first.size(), mixed.size())).containsOnlyNulls();
+        assertThat(result.getErrors()).hasSize(second.size()).allSatisfy(error -> {
+            assertThat(error.getMessage()).doesNotContain("olivia").doesNotContain("peter").contains("one vouched-for value");
+            assertThat(error.getPath()).first().isEqualTo("_entities");
+        });
+        assertThat(result.getErrors()).extracting(error -> error.getPath().get(1))
+            .containsExactlyElementsOf(java.util.stream.IntStream.range(first.size(), mixed.size()).boxed().toList());
+        assertThat(LEASED).singleElement().satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(RELEASED).containsExactlyElementsOf(LEASED);
     }
 
     @Test

@@ -756,7 +756,7 @@ public class GraphQLRewriteGenerator {
                 voucherRoles.issues());
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME, VOUCHER_CODEC, VOUCHER_KEYS,
-                 VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION, VOUCHER_FETCHERS, GENERATED_SCALARS,
+                 VOUCHER_REJECTED_EXCEPTION, VOUCHER_FETCHERS, GENERATED_SCALARS,
                  CONNECTIONS -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);

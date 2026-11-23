@@ -96,8 +96,6 @@ public final class FixedRuntimeEmitter {
             units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.KEYS), specs.subList(1, 2));
         add(out, GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.REJECTED), specs.subList(2, 3));
-        add(out, GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION,
-            units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.LIMIT), specs.subList(3, 4));
         return List.copyOf(out);
     }
 

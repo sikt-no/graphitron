@@ -9,10 +9,10 @@ import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.Graphitron;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.ConnectionKey;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.ConnectionSource;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.KeyNotPermitted;
-import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.VouchedValueLimitExceededException;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.VoucherCodec;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.VoucherKeys;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.VoucherRejectedException;
+import no.sikt.graphitron.emit.VoucherRuntime;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
 import org.junit.jupiter.api.AfterEach;
@@ -42,7 +42,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * what the test reads is which key the dispatch built. A voucher the codec decodes and checks, and
  * whose values the dispatcher coerces to their columns, is read on a key carrying its vouched-for
  * value; one that fails any check rejects the request before any key is asked for, among plain-key and
- * valid representations alike; a second vouched-for value rejects it with the limit.
+ * valid representations alike; a representation whose vouched-for value is not the first one presented
+ * fails alone, at its own index, naming the limit and no value.
  */
 @UnitTier
 class VoucherDispatchTest {
@@ -183,14 +184,33 @@ class VoucherDispatchTest {
     }
 
     @Test
-    void vouchersForTwoValuesRejectTheRequestWithTheLimit_whateverTheirOrder() {
-        for (var owners : List.of(List.of("olivia", "peter"), List.of("peter", "olivia"))) {
+    void theFirstVouchedForValueInRepresentationOrderIsAdmitted_eachOtherFailsAloneAtItsIndex() {
+        for (var owners : List.of(List.of("olivia", "peter", "anna"), List.of("peter", "olivia", "anna"))) {
             asked.clear();
-            assertThatThrownBy(() -> present(List.of(rep(valid(owners.get(0), "1")), rep(valid(owners.get(1), "3")))))
-                .isInstanceOf(VouchedValueLimitExceededException.class)
-                .hasMessageContaining("more than one vouched-for value");
-            assertThat(asked).hasSize(1);
+            var result = present(List.of(rep(valid(owners.get(0), "1")), rep(valid(owners.get(1), "3")),
+                rep(valid(owners.get(0), "2")), plain("4"), rep(valid(owners.get(2), "5"))));
+            assertThat(result.getErrors()).as(owners.toString()).hasSize(2).allSatisfy(error -> {
+                assertThat(error.getMessage()).isEqualTo(VoucherRuntime.LIMIT_MESSAGE);
+                assertThat(error.getMessage()).doesNotContain("olivia").doesNotContain("peter").doesNotContain("anna");
+            });
+            assertThat(result.getErrors()).extracting(error -> error.getPath())
+                .containsExactly(List.of("_entities", 1), List.of("_entities", 4));
+            @SuppressWarnings("unchecked")
+            var entities = (List<Object>) ((Map<String, Object>) result.getData()).get("_entities");
+            assertThat(entities).hasSize(5);
+            assertThat(asked).as("only the admitted value's key and the plain one are asked for")
+                .containsExactlyInAnyOrder(ConnectionKey.forVouchedFor(owners.get(0)), ConnectionKey.defaultSource());
         }
+    }
+
+    @Test
+    void aFailedCheckBehindAnAdmittedAndANotAdmittedValueStillRejectsTheRequest() {
+        var good = valid("olivia", "1");
+        var tampered = good.substring(0, good.length() - 4) + "AAAA";
+        assertThatThrownBy(() -> present(List.of(rep(good), rep(valid("peter", "3")), rep(tampered))))
+            .isInstanceOfSatisfying(VoucherRejectedException.class,
+                e -> assertThat(e.reason()).isEqualTo(VoucherRejectedException.Reason.SIGNATURE));
+        assertThat(asked).isEmpty();
     }
 
     @Test
@@ -210,6 +230,11 @@ class VoucherDispatchTest {
             Map.of("eierId", "olivia"), Map.of("id", "one"))))));
         assertThat(auditLines()).singleElement().asString()
             .matches("Voucher rejected: vouch id [0-9a-f-]{36}, scope " + SCOPE + ", reason VALUE");
-        assertThat(String.join("\n", auditLines())).doesNotContain(good).doesNotContain("olivia").doesNotContain("one,");
+        audit.list.clear();
+        present(List.of(rep(valid("olivia", "1")), rep(valid("peter", "3"))));
+        assertThat(auditLines()).hasSize(2).last().asString()
+            .matches("Voucher not admitted: vouch id [0-9a-f-]{36}, scope " + SCOPE + ", reason LIMIT");
+        assertThat(String.join("\n", auditLines())).doesNotContain(good).doesNotContain("olivia").doesNotContain("peter")
+            .doesNotContain("one,");
     }
 }

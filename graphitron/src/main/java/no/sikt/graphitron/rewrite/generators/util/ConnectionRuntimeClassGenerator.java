@@ -42,7 +42,7 @@ import java.util.Optional;
  * the field that asked answers with an error, and an entity or node lookup with {@code null}. Any
  * other throw becomes an {@code AcquisitionFailedException}, one arm of the sealed
  * {@code RequestRejectedException}: the carrier remembers the first rejection in its one slot (a failed
- * voucher check and a second vouched-for value are the other arms), acquires nothing after it, and the
+ * voucher check is the other arm), acquires nothing after it, and the
  * instrumentation throws it out of {@code GraphQL.execute} in place of the result. What the lease's connection carries (identity,
  * role, row-level security settings) is the source's business; the ready-made
  * {@code ConnectionSources.mounting} keeps the mount, unmount and PostgreSQL reset Graphitron used to
@@ -98,7 +98,7 @@ public final class ConnectionRuntimeClassGenerator {
     public static final String ACQUISITION_FAILED_CLASS_NAME = "AcquisitionFailedException";
     /**
      * The sealed request rejection: a failed acquisition, and in a build with the voucher runtime a
-     * failed voucher check and a second vouched-for value. The carrier's one slot holds it.
+     * failed voucher check. The carrier's one slot holds it.
      */
     public static final String REQUEST_REJECTED_CLASS_NAME = no.sikt.graphitron.emit.VoucherRuntime.REQUEST_REJECTED;
 
@@ -314,8 +314,7 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(ownedConnections(ownedConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, identity, tenantColumn, errorRouter, columnValues, acquisitionFailed,
             keyNotPermitted, connectionSource, keyType, connectionKey, failureMessages, requestRejected,
-            shape.vouchedFor().isEmpty() ? null
-                : ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.LIMIT),
+            !shape.vouchedFor().isEmpty(),
             shape.vouchedFor().isEmpty() ? null
                 : ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)));
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
@@ -327,7 +326,7 @@ public final class ConnectionRuntimeClassGenerator {
     /**
      * The sealed {@code RequestRejectedException} and its {@code AcquisitionFailedException} arm, as the
      * connection runtime writes them into {@code <outputPackage>.schema}; where {@code voucherArms}, the
-     * base also permits the voucher runtime's two arms, which that runtime writes. For a harness that
+     * base also permits the voucher runtime's arm, which that runtime writes. For a harness that
      * compiles the voucher runtime on its own.
      */
     public static List<TypeSpec> requestRejection(String outputPackage, boolean voucherArms) {
@@ -336,8 +335,7 @@ public final class ConnectionRuntimeClassGenerator {
         var acquisitionFailed = ClassName.get(schemaPackage, ACQUISITION_FAILED_CLASS_NAME);
         return List.of(
             requestRejected(requestRejected, acquisitionFailed, voucherArms
-                ? List.of(ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.REJECTED),
-                    ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.LIMIT))
+                ? List.of(ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.REJECTED))
                 : List.of()),
             acquisitionFailed(acquisitionFailed, requestRejected));
     }
@@ -1212,7 +1210,7 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName acquisitionFailed, ClassName keyNotPermitted,
                                               ClassName connectionSource, TypeName keyType,
                                               ClassName connectionKey, boolean failureMessages,
-                                              ClassName requestRejected, ClassName vouchedValueLimit,
+                                              ClassName requestRejected, boolean accepts,
                                               ClassName voucherCodec) {
         TypeName handleType = identity.handleType().orElse(null);
         boolean handled = handleType != null;
@@ -1249,17 +1247,16 @@ public final class ConnectionRuntimeClassGenerator {
                 "firstRejection", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", ATOMIC_REFERENCE)
             .addJavadoc("The operation's first request rejection, set once ({@code compareAndSet}, so concurrent\n"
-                + "rejections resolve to one winner): a failed acquisition, a failed voucher check or a second\n"
-                + "vouched-for value. Once it is set the carrier acquires nothing more: every later acquisition\n"
+                + "rejections resolve to one winner): a failed acquisition or a failed voucher check. Once it\n"
+                + "is set the carrier acquires nothing more: every later acquisition\n"
                 + "on any key rethrows it rather than asking the source again, and the request is rejected as\n"
                 + "a whole.\n")
             .build();
         var vouchedKeyField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, keyType),
                 "vouchedKey", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", ATOMIC_REFERENCE)
-            .addJavadoc("The one key with vouched-for parts this request acquires by, set by the first such\n"
-                + "acquisition. A request reads on one vouched connection: another key with vouched-for parts\n"
-                + "rejects it ({@link #admitVouched}).\n")
+            .addJavadoc("The one key with vouched-for parts this request reads on, set by the first such key\n"
+                + "the dispatch admits ({@link #admitVouched}). A representation carrying another fails alone.\n")
             .build();
         var keyIndexesField = FieldSpec.builder(ParameterizedTypeName.get(MAP, keyType, ClassName.get(Integer.class)),
                 "keyIndexes", Modifier.PRIVATE, Modifier.FINAL)
@@ -1359,10 +1356,15 @@ public final class ConnectionRuntimeClassGenerator {
             .beginControlFlow("if (rejected != null)")
             .addStatement("throw rejected")
             .endControlFlow();
-        if (vouchedValueLimit != null) {
+        if (accepts) {
             entryForBuilder
-                .addComment("One vouched connection per request: a second key with vouched-for parts rejects it.")
-                .addStatement("admitVouched(key)");
+                .addComment("One vouched connection per request. The dispatch admits the key while it registers")
+                .addComment("representations, and nothing else builds a key with vouched-for parts, so any other")
+                .addComment("one here is a generator fault, not a request to refuse.")
+                .beginControlFlow("if (key.hasVouchedFor() && !key.equals(vouchedKey.get()))")
+                .addStatement("throw new $T($S)", IllegalStateException.class,
+                    "A key with vouched-for parts reached acquisition without being admitted")
+                .endControlFlow();
         }
         entryForBuilder
             .beginControlFlow("if (closed)")
@@ -1601,9 +1603,9 @@ public final class ConnectionRuntimeClassGenerator {
         if (multiTenant) {
             carrier.addMethod(dslFor);
         }
-        if (vouchedValueLimit != null) {
+        if (accepts) {
             carrier.addField(vouchedKeyField)
-                .addMethod(admitVouched(keyType, vouchedValueLimit));
+                .addMethod(admitVouched(keyType));
         }
         if (voucherCodec != null) {
             var verifier = voucherCodec.nestedClass("Verifier");
@@ -2295,26 +2297,27 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code private void admitVouched(ConnectionKey key)}: the one-vouched-value limit, in an accepting
-     * build. The first key with vouched-for parts a request acquires by is its vouched key; another
-     * rejects the request with the limit's rejection, whatever order the loaders dispatch in. The limit
-     * lives here and nowhere else, so raising it is one change.
+     * {@code public boolean admitVouched(ConnectionKey key)}: the one-vouched-value limit, in an accepting
+     * build. The first key with vouched-for parts the dispatch presents is the request's vouched key, and
+     * answers {@code true} again for the same key; any other answers {@code false}, and the dispatch fails
+     * that representation alone. The dispatch asks while it registers representations, in their order,
+     * so which value wins never depends on loader dispatch order. The limit lives here and nowhere else,
+     * so raising it is one change.
      */
-    private static MethodSpec admitVouched(TypeName keyType, ClassName vouchedValueLimit) {
+    private static MethodSpec admitVouched(TypeName keyType) {
         return MethodSpec.methodBuilder("admitVouched")
-            .addModifiers(Modifier.PRIVATE)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(boolean.class)
             .addParameter(keyType, "key")
             .beginControlFlow("if (!key.hasVouchedFor())")
-            .addStatement("return")
+            .addStatement("return true")
             .endControlFlow()
-            .addStatement("$T admitted = vouchedKey.updateAndGet(current -> current == null ? key : current)", keyType)
-            .beginControlFlow("if (!admitted.equals(key))")
-            .addStatement("throw reject(new $T())", vouchedValueLimit)
-            .endControlFlow()
-            .addJavadoc("Admits {@code key}'s vouched-for value, or rejects the request: one request reads on one\n"
-                + "vouched connection, so a second distinct key with vouched-for parts rejects it with the\n"
-                + "limit's rejection. A key without vouched-for parts is admitted unchecked.\n"
-                + "@param key the key about to be acquired\n")
+            .addStatement("return vouchedKey.updateAndGet(current -> current == null ? key : current).equals(key)")
+            .addJavadoc("Admits {@code key}'s vouched-for value if it is the request's first, or the same one\n"
+                + "again: one request reads on one vouched connection. A key without vouched-for parts is\n"
+                + "admitted unchecked.\n"
+                + "@param key the key a representation is about to load under\n"
+                + "@return whether the representation may load under it; {@code false} fails it alone\n")
             .build();
     }
 
@@ -3809,7 +3812,7 @@ public final class ConnectionRuntimeClassGenerator {
                 + "rejection and acquires nothing after it, the error router never logs or claims it per field,\n"
                 + "and {@code Graphitron.requestRejection} answers what rejected the request. Its arms are the\n"
                 + "build's: a failed acquisition always, and where the build issues or accepts vouchers a failed\n"
-                + "voucher check and a second vouched-for value in one request.\n")
+                + "voucher check. A second vouched-for value is not one: it fails only its own representation.\n")
             .addField(FieldSpec.builder(long.class, "serialVersionUID",
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("1L")

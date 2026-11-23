@@ -42,9 +42,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
 
 /**
  * The voucher runtime a vouching build writes into its {@code schema} package: the codec that owns the
- * token format, the key provider it signs and verifies with, and the two arms of the request rejection a
- * voucher can fail the request with, a failed check and a second vouched-for value in one request. What
- * the four classes say depends on nothing but the package they land in, so they are rendered whole;
+ * token format, the key provider it signs and verifies with, and the request rejection's arm a failed
+ * voucher check fails the request with. What the three classes say depends on nothing but the package they land in, so they are rendered whole;
  * whether a build writes them is the store's question, answered by {@link #roles}: a build that issues or
  * accepts writes them.
  *
@@ -71,13 +70,17 @@ public final class VoucherRuntime {
     public static final String ISSUERS = "Issuers";
     /** The rejection's simple name. */
     public static final String REJECTED = "VoucherRejectedException";
-    /** The simple name of the rejection a second vouched-for value in one request fails it with. */
-    public static final String LIMIT = "VouchedValueLimitExceededException";
-    /** The simple name of the sealed request rejection both arms extend, in the connection runtime. */
+    /** The simple name of the sealed request rejection the voucher arm extends, in the connection runtime. */
     public static final String REQUEST_REJECTED = "RequestRejectedException";
-    /** What the limit's rejection says: the limit, and nothing of any voucher. */
+    /**
+     * What a representation past the one-value limit answers at its own index, carried by the generated
+     * client exception: the limit, and nothing of any voucher, neither its own value nor the one the
+     * request admitted, since a vouched-for value is an owner's identifier and the error reaches the
+     * client.
+     */
     public static final String LIMIT_MESSAGE =
-        "The request presents vouchers for more than one vouched-for value; a request may carry vouchers for one";
+        "This representation's voucher vouches for another value than the one this request reads; "
+            + "a request reads vouchers for one vouched-for value";
 
     /** The token format version this runtime writes and the only one it reads. */
     public static final int VERSION = 2;
@@ -141,9 +144,9 @@ public final class VoucherRuntime {
     }
 
     /**
-     * The four classes, each landing in {@code <outputPackage>.schema}: the codec, the keys, the failed
-     * check's rejection and the limit's. Both rejections extend the connection runtime's sealed
-     * {@code RequestRejectedException}, which permits them in a build that writes this runtime.
+     * The three classes, each landing in {@code <outputPackage>.schema}: the codec, the keys and the failed
+     * check's rejection, which extends the connection runtime's sealed {@code RequestRejectedException},
+     * which permits it in a build that writes this runtime.
      */
     public static List<TypeSpec> render(String outputPackage) {
         String pkg = outputPackage + ".schema";
@@ -151,23 +154,7 @@ public final class VoucherRuntime {
         var rejected = ClassName.get(pkg, REJECTED);
         var requestRejected = ClassName.get(pkg, REQUEST_REJECTED);
         return List.of(codec(ClassName.get(pkg, CODEC), keys, rejected), keys(keys),
-            rejected(rejected, requestRejected), limit(ClassName.get(pkg, LIMIT), requestRejected));
-    }
-
-    private static TypeSpec limit(ClassName self, ClassName requestRejected) {
-        return TypeSpec.classBuilder(self)
-            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .superclass(requestRejected)
-            .addJavadoc("A request presented vouchers for more than one vouched-for value: one request reads on one\n"
-                + "vouched connection. It rejects the request as a whole, so the limit is never mistaken for\n"
-                + "a denial; the message names the limit and nothing of any voucher.\n")
-            .addField(FieldSpec.builder(long.class, "serialVersionUID", Modifier.PRIVATE, Modifier.STATIC,
-                Modifier.FINAL).initializer("1L").build())
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addStatement("super($S)", LIMIT_MESSAGE)
-                .build())
-            .build();
+            rejected(rejected, requestRejected));
     }
 
     private static TypeSpec rejected(ClassName self, ClassName requestRejected) {

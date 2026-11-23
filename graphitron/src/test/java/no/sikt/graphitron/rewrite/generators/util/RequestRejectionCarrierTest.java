@@ -43,10 +43,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The one request rejection in the runtime of a build that accepts vouchers, compiled at Java 17: the
- * sealed {@code RequestRejectedException} and its three arms, the carrier's one slot that acquires
- * nothing once a rejection is remembered, the one-vouched-value limit whatever order the keys arrive
- * in, the error router declining every arm, and a {@code ConnectionKey} whose {@code toString} names
- * its parts and never their values.
+ * sealed {@code RequestRejectedException} and its two arms, the carrier's one slot that acquires
+ * nothing once a rejection is remembered, the one-vouched-value limit as an admission that answers
+ * rather than rejects, with acquisition refusing a vouched key nothing admitted, the error router
+ * declining every arm, and a {@code ConnectionKey} whose {@code toString} names its parts and never
+ * their values.
  */
 @UnitTier
 class RequestRejectionCarrierTest {
@@ -58,7 +59,6 @@ class RequestRejectionCarrierTest {
     private static Class<?> keyClass;
     private static Class<?> rejectedClass;
     private static Class<?> voucherRejected;
-    private static Class<?> limit;
     private static Class<?> acquisitionFailed;
 
     private final List<Object> asked = Collections.synchronizedList(new ArrayList<>());
@@ -92,7 +92,6 @@ class RequestRejectionCarrierTest {
         keyClass = harness.load(SCHEMA_PACKAGE + ".ConnectionKey");
         rejectedClass = harness.load(SCHEMA_PACKAGE + "." + VoucherRuntime.REQUEST_REJECTED);
         voucherRejected = harness.load(SCHEMA_PACKAGE + "." + VoucherRuntime.REJECTED);
-        limit = harness.load(SCHEMA_PACKAGE + "." + VoucherRuntime.LIMIT);
         acquisitionFailed = harness.load(SCHEMA_PACKAGE + ".AcquisitionFailedException");
     }
 
@@ -109,13 +108,13 @@ class RequestRejectionCarrierTest {
     // --- the sealed rejection ----------------------------------------------------------------------
 
     @Test
-    void theRequestRejectionIsSealedOverItsThreeArms() {
+    void theRequestRejectionIsSealedOverItsTwoArms() {
         assertThat(rejectedClass.isSealed()).isTrue();
         assertThat(Modifier.isAbstract(rejectedClass.getModifiers())).isTrue();
         assertThat(rejectedClass.getSuperclass()).isEqualTo(RuntimeException.class);
         assertThat(Arrays.asList(rejectedClass.getPermittedSubclasses()))
-            .containsExactlyInAnyOrder(acquisitionFailed, voucherRejected, limit);
-        assertThat(List.of(acquisitionFailed, voucherRejected, limit))
+            .containsExactlyInAnyOrder(acquisitionFailed, voucherRejected);
+        assertThat(List.of(acquisitionFailed, voucherRejected))
             .allSatisfy(arm -> assertThat(rejectedClass.isAssignableFrom(arm)).isTrue());
     }
 
@@ -125,18 +124,15 @@ class RequestRejectionCarrierTest {
         var sourceFault = new java.sql.SQLException("pool exhausted");
         Throwable acquisition = (Throwable) acquisitionFailed.getConstructor(Throwable.class).newInstance(sourceFault);
         Throwable voucher = voucherRejection("SIGNATURE");
-        Throwable limited = (Throwable) limit.getConstructor().newInstance();
         var carrier = harness.load(SCHEMA_PACKAGE + ".OwnedConnections");
-        for (Throwable arm : List.of(acquisition, voucher, limited)) {
+        for (Throwable arm : List.of(acquisition, voucher)) {
             assertThat((boolean) invoke(() -> carrier.getMethod("isRequestRejection", Throwable.class)
                 .invoke(null, new RuntimeException("wrapped", arm)))).as(arm.getClass().getSimpleName()).isTrue();
         }
         assertThat(rejectionCause(acquisition)).contains(sourceFault);
         assertThat(rejectionCause(voucher)).containsSame(voucher);
-        assertThat(rejectionCause(limited)).containsSame(limited);
         assertThat(rejectionCause(new IllegalStateException("not a rejection"))).isEmpty();
         assertThat(voucher.getMessage()).isEqualTo("voucher rejected: the voucher's signature does not verify for this entity type");
-        assertThat(limited.getMessage()).isEqualTo(VoucherRuntime.LIMIT_MESSAGE);
     }
 
     @Test
@@ -145,8 +141,7 @@ class RequestRejectionCarrierTest {
         var sourceFault = new java.sql.SQLException("pool exhausted");
         for (Throwable arm : List.of(
                 (Throwable) acquisitionFailed.getConstructor(Throwable.class).newInstance(sourceFault),
-                voucherRejection("EXPIRED"),
-                (Throwable) limit.getConstructor().newInstance())) {
+                voucherRejection("EXPIRED"))) {
             var answered = (DataFetcherResult<?>) invoke(() -> router
                 .getMethod("surfaceClientErrorOrRedact", Throwable.class, DataFetchingEnvironment.class)
                 .invoke(null, arm, env()));
@@ -167,7 +162,7 @@ class RequestRejectionCarrierTest {
         Object remembered = invoke(() -> carrier.getClass().getMethod("reject", rejectedClass).invoke(carrier, rejection));
         assertThat(remembered).isSameAs(rejection);
         Object later = invoke(() -> carrier.getClass().getMethod("reject", rejectedClass)
-            .invoke(carrier, limit.getConstructor().newInstance()));
+            .invoke(carrier, voucherRejection("EXPIRED")));
         assertThat(later).as("the first rejection wins").isSameAs(rejection);
 
         assertThatThrownBy(() -> dslFor(carrier, defaultKey())).isSameAs(rejection);
@@ -178,23 +173,38 @@ class RequestRejectionCarrierTest {
     }
 
     @Test
-    void oneVouchedKeyPerRequest_aSecondRejectsWithTheLimit_whateverTheOrder() throws Throwable {
+    void oneVouchedKeyPerRequest_theFirstAdmitted_aSecondAnsweredNotAdmitted_andNothingRejected() throws Throwable {
         for (var order : List.of(List.of("olivia", "peter"), List.of("peter", "olivia"))) {
             asked.clear();
             var carrier = carrier();
             Object first = vouchedKey(order.get(0), 1);
             Object second = vouchedKey(order.get(1), 1);
+            assertThat(admitVouched(carrier, defaultKey())).as("a key without vouched-for parts").isTrue();
+            assertThat(admitVouched(carrier, first)).isTrue();
+            assertThat(admitVouched(carrier, first)).as("the admitted key again").isTrue();
+            assertThat(admitVouched(carrier, second)).isFalse();
+            assertThat(admitVouched(carrier, vouchedKey(order.get(0), 2))).as("another value of a second part").isFalse();
+            assertThat(asked).as("admission acquires nothing").isEmpty();
             dslFor(carrier, defaultKey());
             dslFor(carrier, first);
-            dslFor(carrier, first);
-            assertThatThrownBy(() -> dslFor(carrier, second)).isInstanceOf(limit);
-            assertThatThrownBy(() -> dslFor(carrier, defaultKey()))
-                .as("the limit rejects the request, so nothing more is acquired")
-                .isInstanceOf(limit);
             assertThat(asked).containsExactly(defaultKey(), first);
-            assertThat(requestRejection(carrier)).get().isInstanceOf(limit);
+            assertThat(requestRejection(carrier)).as("the limit is never a request rejection").isEmpty();
             releaseAll(carrier);
         }
+    }
+
+    @Test
+    void acquisitionRefusesAVouchedKeyNothingAdmitted_asAGeneratorFault() throws Throwable {
+        var carrier = carrier();
+        Object olivia = vouchedKey("olivia", 1);
+        assertThatThrownBy(() -> dslFor(carrier, olivia)).as("nothing admitted yet")
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(admitVouched(carrier, olivia)).isTrue();
+        assertThatThrownBy(() -> dslFor(carrier, vouchedKey("peter", 1))).as("another key than the admitted one")
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(asked).isEmpty();
+        assertThat(requestRejection(carrier)).isEmpty();
+        releaseAll(carrier);
     }
 
     // --- the key ------------------------------------------------------------------------------------
@@ -291,6 +301,10 @@ class RequestRejectionCarrierTest {
                 case "toString" -> "Connection";
                 default -> null;
             });
+    }
+
+    private static boolean admitVouched(Object carrier, Object key) throws Throwable {
+        return (boolean) invoke(() -> carrier.getClass().getMethod("admitVouched", keyClass).invoke(carrier, key));
     }
 
     private static void dslFor(Object carrier, Object key) throws Throwable {

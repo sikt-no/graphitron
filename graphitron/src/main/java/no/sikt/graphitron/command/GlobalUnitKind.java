@@ -9,10 +9,10 @@ package no.sikt.graphitron.command;
  * {@link #FACETS})
  * are absent when their producer-side membership predicate excludes them.
  *
- * <p>Fourteen kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
+ * <p>Thirteen kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
  * {@link #CONSTRAINT_VIOLATIONS}, {@link #CLIENT_EXCEPTION}, {@link #ZERO_ROWS_MATCHED_EXCEPTION},
  * {@link #ERROR_ROUTER}, {@link #OUTCOME}, {@link #CONNECTIONS} and the voucher runtime's {@link #VOUCHER_CODEC},
- * {@link #VOUCHER_KEYS}, {@link #VOUCHER_REJECTED_EXCEPTION}, {@link #VOUCHED_VALUE_LIMIT_EXCEPTION} and
+ * {@link #VOUCHER_KEYS}, {@link #VOUCHER_REJECTED_EXCEPTION} and
  * {@link #VOUCHER_FETCHERS}, and {@link #GENERATED_SCALARS}, are written by {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter}, which keys
  * what it wrote by these constants so the compile graph's wiring for them stays one switch.
  *
@@ -63,8 +63,6 @@ public enum GlobalUnitKind {
     VOUCHER_KEYS,
     /** Written exactly when the graph issues or accepts: the rejection a failed voucher check throws. */
     VOUCHER_REJECTED_EXCEPTION,
-    /** Written exactly when the graph issues or accepts: the rejection a second vouched-for value throws. */
-    VOUCHED_VALUE_LIMIT_EXCEPTION,
     /** Written exactly when the graph issues: every voucher field's fetcher and its registration. */
     VOUCHER_FETCHERS,
     /** Written exactly when the graph declares a generated scalar: each one's type and their registration. */

@@ -152,7 +152,6 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("AcquisitionFailedException", "emitted: per-app rejection a throwing connection source becomes");
         exempt.put("RequestRejectedException", "emitted: per-app sealed rejection of a request as a whole");
         exempt.put("VoucherRejectedException", "emitted: per-app rejection a voucher failing a check becomes");
-        exempt.put("VouchedValueLimitExceededException", "emitted: per-app rejection of a second vouched-for value");
 
         // module: a real reactor type in a module this test tier does not depend on.
         exempt.put("BundledLibraryLookup", "module: graphitron-lsp");
