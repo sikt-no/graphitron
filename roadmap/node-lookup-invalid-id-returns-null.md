@@ -1,7 +1,7 @@
 ---
 id: R1146
 title: "An invalid id to a Node-returning lookup returns null with no error"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: nodeid
@@ -434,6 +434,44 @@ multi-tenant one (`nodes(ids: [ID!]!): [Node]!`).
   where 9 failed the field for an unknown type id.
 
 Provenance: found by the kreg Graphitron 10 port session (kreg branch `worktree-kreg-g10` at `0d9997fd39`), replaying recorded Graphitron 9 requests against 10.0.0-RC46, RC47 and a trunk snapshot (`claude/graphitron-rewrite` at `06d71b62b`), 2026-11-03; identical on all three.
+
+## Implementation notes
+
+Where the delivery departs from the plan above, and why. `principles-architect` was consulted at
+pickup and before handover; each departure below is one it raised or confirmed.
+
+* **The judgement calls the encoder's per-node helper.** The emitted `typenameOf` (rendered by
+  `NodeIdJudgement`, beside `NodeQuery` in `no.sikt.graphitron.emit`) refuses a served node's id
+  where `NodeIdEncoder.decode<TypeName>(id)` answers `null`, rather than spelling
+  `decodeColumns(<typeId>, id, <Tables constants>)` again. That helper is exactly that call over the
+  same `graphitron_node_keycolumn` rows, its name minted once (`NodeIdHelperNames.decode`), so the
+  judgement and every other reader of a node's ids still cannot drift, and `QueryNodeFetcher` names
+  no `Tables` class. `NodeQuery.Node` therefore carries the type name and type id only, and its
+  pipeline test asserts those; the key columns are for R876 to add when the node fetcher loads by
+  the decoded key.
+* **`NodeQuery` adds no population cut of its own.** It reads `graphitron_node_served_by_id` as
+  stored. A served node over a schema with no `Tables` class has no `decode<TypeName>` helper, but
+  such a graph cannot generate at all: the entity dispatch refuses it first, having no class to name
+  its columns through.
+* **The relation's claim has a document of its own,** `scenarios/node-served-by-id`, which holds a
+  node served by id, one under a declared type id, a `@node(resolvable: false)` stub and a resolvable
+  node whose `id` carries `@field`. `synthesized-node-type-id`'s subject is the synthesised type id,
+  and its claim would not have read the same with the `@field` node added.
+* **`kind` is generated.** `graphitron_node_served_by_id.kind` is `GENERATED ALWAYS AS ('NODE_ID')`,
+  so the stage writes the same columns the rule view states and the foreign key to the id's binding
+  still names the kind, with no `CHECK` repeating it.
+* **The multi-tenant `nodes` loads judged representations.** `getNodes` judges each id by its index
+  and completes a malformed one with the error at its position and an unserved one with `null`, as
+  the shape without a tenant column does; the loader is keyed by the representation
+  `{__typename, id}`, so `rowsNodes` only dispatches what it is handed and judges nothing.
+* **A test the plan did not name:** `NodeIdJudgementTest` compiles the emitted `typenameOf` with the
+  generated encoder over the fact document and runs each arm (undecodable, empty type id, a served
+  node's malformed key, a stub's id, a `@field`-id node's id, an undeclared type id, a declared type
+  id).
+* **For the next reader, not done here:** `EmitPlan` still decides whether `QueryNodeFetcher` is
+  emitted from the classified model (`NodeType` and `resolvable()`), which also counts a node whose
+  `id` carries `@field`; a graph can therefore emit a fetcher whose judgement serves no node. It is
+  harmless, and it is the next thing `graphitron_node_served_by_id` lets go.
 
 ## Reviewer findings
 
