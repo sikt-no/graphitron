@@ -24,19 +24,23 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * {@code GraphqlHttpHandler} bounds the numbers in a request's {@code variables} and
- * {@code extensions}: one whose plain decimal form has more than a thousand digits is a {@code 422}
- * request error on either verb, answered before the engine coerces anything, while ordinary
- * integer, decimal and exponent values execute as before.
+ * {@code extensions}, and the integer and float tokens of its document: one whose plain decimal form
+ * has more than a thousand digits is a {@code 422} request error on either verb, answered before the
+ * engine parses or coerces anything, while ordinary integer, decimal and exponent values execute as
+ * before.
  *
  * <p>The out-of-bound cases use exponents far past the bound and run under a preemptive timeout,
  * so a regression shows as a failed case rather than a stalled build. The boundary cases sit
  * either side of the bound with exponents small enough to coerce cheaply, and tell the handler's
  * refusal from the engine's own by its message.
  *
- * <p>Numeric text is not a JSON number, so the handler passes it, in a string variable and in a
- * document literal alike, and the sink bounds it: a column-bound {@code ID} coerces through
+ * <p>Numeric text is not a number to the handler, so it passes, in a string variable and in a
+ * string literal alike, and the sink bounds it: a column-bound {@code ID} coerces through
  * {@code ColumnValues.fromWire}, which answers an over-large value as no value of the column, so
- * the filter matches nothing, promptly, while an ordinary key still matches.
+ * the filter matches nothing, promptly, while an ordinary key still matches; and a scalar declared
+ * with {@code @scalarType} is registered behind the generated schema's {@code BoundedCoercing},
+ * which refuses a number past the bound as a coercion error before the scalar's own coercing parses
+ * it, however the client wrote it.
  */
 @QuarkusTest
 @QuarkusTestResource(SmokeTestPostgresResource.class)
@@ -171,8 +175,9 @@ class RequestNumberBoundsTest {
             .statusCode(200)
             .body("errors", nullValue())
             .body("data.occupantsByStoreId", hasSize(0));
-        // An ID literal written as an integer reaches the column as its text too.
-        String digits = "7".repeat(5_000);
+        // An ID literal written as an integer reaches the column as its text too, where the token
+        // is within the handler's bound on a document number.
+        String digits = "7".repeat(1_000);
         promptly(() -> post(body("{ occupantsByStoreId(storeId: [" + digits + "]) { __typename } }", null, null),
                 GRAPHQL_RESPONSE_JSON))
             .statusCode(200)
@@ -196,6 +201,120 @@ class RequestNumberBoundsTest {
             .statusCode(200)
             .body("errors", nullValue())
             .body("data.occupantsByStoreId", not(hasSize(0)));
+    }
+
+    // ===== a number in the document is bounded as a JSON number is =====
+
+    @Test
+    @DisplayName("An integer or float token of the document far out of bounds is a prompt 422.")
+    void longDocumentNumberIsRefused() {
+        // Long enough that the engine's parser, unbounded, spends seconds building the number.
+        String digits = "7".repeat(400_000);
+        for (String document : new String[] {
+                "{ occupantsByStoreId(storeId: [" + digits + "]) { __typename } }",
+                "{ occupantsByStoreId(storeId: [-" + digits + "]) { __typename } }",
+                "{ films(maxRentalRate: " + digits + ".5) @skip(if: true) { title } }",
+                "{ films(maxRentalRate: 0." + digits + ") @skip(if: true) { title } }",
+                "{ films(maxRentalRate: 1e999999999) @skip(if: true) { title } }",
+                "{ films(maxRentalRate: 1E-999999999) @skip(if: true) { title } }",
+                "query($r: Float = " + digits + ".5) { films(maxRentalRate: $r) @skip(if: true) { title } }"}) {
+            promptly(() -> post(body(document, null, null), GRAPHQL_RESPONSE_JSON))
+                .statusCode(422)
+                .body("errors[0].message", containsString(REFUSAL));
+        }
+        promptly(() -> post(body("{ occupantsByStoreId(storeId: [" + digits + "]) { __typename } }", null, null),
+                APPLICATION_JSON))
+            .statusCode(200)
+            .body("errors[0].message", containsString(REFUSAL));
+    }
+
+    @Test
+    @DisplayName("A thousand digits in a document number is within the bound; a thousand and one is not, on both verbs.")
+    void documentBoundIsAThousandDigits() {
+        String within = "{ occupantsByStoreId(storeId: [" + "7".repeat(1_000) + "]) { __typename } }";
+        String beyond = "{ occupantsByStoreId(storeId: [" + "7".repeat(1_001) + "]) { __typename } }";
+        post(body(within, null, null), GRAPHQL_RESPONSE_JSON)
+            .statusCode(200)
+            .body("errors", nullValue());
+        get(within, null, null)
+            .statusCode(200)
+            .body("errors", nullValue());
+        post(body(beyond, null, null), GRAPHQL_RESPONSE_JSON)
+            .statusCode(422)
+            .body("errors[0].message", containsString(REFUSAL));
+        get(beyond, null, null)
+            .statusCode(422)
+            .body("errors[0].message", containsString(REFUSAL));
+        // The same on the exponent's side: a 1 and 999 zeros passes the handler, and the engine
+        // refuses it as no Float with its own message; one zero more is the handler's to refuse.
+        post(body("{ films(maxRentalRate: 1e999) @skip(if: true) { title } }", null, null), GRAPHQL_RESPONSE_JSON)
+            .body("errors[0].message", not(containsString(REFUSAL)));
+        post(body("{ films(maxRentalRate: 1e1000) @skip(if: true) { title } }", null, null), GRAPHQL_RESPONSE_JSON)
+            .statusCode(422)
+            .body("errors[0].message", containsString(REFUSAL));
+    }
+
+    @Test
+    @DisplayName("Digits in a string, a block string, a comment or a name of the document are not a number.")
+    void digitsThatAreNoDocumentNumberPass() {
+        String digits = "7".repeat(1_500);
+        // The newline that ends the comment is written as its JSON escape, since body() escapes quotes only.
+        String document = "# " + digits + "\\n"
+            + "{ a" + digits + ": occupantsByStoreId(storeId: [\"" + digits + "\", \"\"\"" + digits + "\"\"\"])"
+            + " { __typename } }";
+        post(body(document, null, null), GRAPHQL_RESPONSE_JSON)
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.a" + digits, hasSize(0));
+    }
+
+    // ===== a custom scalar is handed no number past the bound, however it is written =====
+
+    @ParameterizedTest(name = "text {index}")
+    @ValueSource(strings = {"1e999999999", "-1e999999999", "1e-999999999", " 1E+999999999 "})
+    @DisplayName("Exponent text in a string variable for a custom scalar is a prompt coercion error.")
+    void exponentTextForACustomScalarIsRefused(String text) {
+        promptly(() -> post(body(BIG_DECIMAL_QUERY,
+                "{\"f\":{\"rentalRateRange\":{\"fra\":\"" + text + "\",\"til\":\"3.00\"}}}", null), GRAPHQL_RESPONSE_JSON))
+            .body("data", nullValue())
+            .body("errors[0].message", containsString(REFUSAL));
+    }
+
+    @Test
+    @DisplayName("A long run of digits in a string variable for a custom scalar is a prompt coercion error.")
+    void longDigitTextForACustomScalarIsRefused() {
+        promptly(() -> post(body(BIG_DECIMAL_QUERY,
+                "{\"f\":{\"rentalRateRange\":{\"fra\":\"" + MANY_DIGITS + "\",\"til\":\"3.00\"}}}", null),
+                GRAPHQL_RESPONSE_JSON))
+            .body("data", nullValue())
+            .body("errors[0].message", containsString(REFUSAL));
+    }
+
+    @Test
+    @DisplayName("The same text in a string literal of the document is refused before the scalar parses it.")
+    void numericTextInALiteralForACustomScalarIsRefused() {
+        // The engine quotes the refused literal in its error, so the answer is as long as the literal.
+        String document = "{ filmsByRentalRateRange(filter: {rentalRateRange: {fra: \"" + MANY_DIGITS + "\", til: \"3.00\"}})"
+            + " { title } }";
+        ValidatableResponse response = assertTimeoutPreemptively(PROMPTLY,
+            () -> post(body(document, null, null), GRAPHQL_RESPONSE_JSON));
+        response.body("data", nullValue())
+            .body("errors[0].message", containsString(REFUSAL));
+    }
+
+    @Test
+    @DisplayName("Ordinary numbers written as text still reach a custom scalar that reads them.")
+    void ordinaryTextForACustomScalarStillCoerces() {
+        post(body(BIG_DECIMAL_QUERY, "{\"f\":{\"rentalRateRange\":{\"fra\":\"2.00\",\"til\":\"3.00\"}}}", null),
+                GRAPHQL_RESPONSE_JSON)
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.filmsByRentalRateRange", notNullValue());
+        post(body("{ filmsByRentalRateRange(filter: {rentalRateRange: {fra: \"2.00\", til: 3.00}}) { title } }",
+                null, null), GRAPHQL_RESPONSE_JSON)
+            .statusCode(200)
+            .body("errors", nullValue())
+            .body("data.filmsByRentalRateRange", notNullValue());
     }
 
     // ===== ordinary values coerce as before =====

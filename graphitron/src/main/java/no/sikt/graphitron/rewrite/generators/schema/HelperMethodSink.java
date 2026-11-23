@@ -50,6 +50,8 @@ final class HelperMethodSink {
 
     private int appliedDirectiveSeq = 0;
     private final List<MethodSpec> methods = new ArrayList<>();
+    /** Whether a scalar factory was added, each of which wraps its coercing in the nested {@code BoundedCoercing}. */
+    private boolean scalarAdded = false;
 
     String addAppliedDirective(GraphQLAppliedDirective applied) {
         String name = "appliedDirective_" + appliedDirectiveSeq++;
@@ -66,6 +68,7 @@ final class HelperMethodSink {
     String addScalar(GraphitronType.ScalarType scalar, GraphQLScalarType form) {
         String name = "scalar_" + sanitise(scalar.name());
         methods.add(buildScalarMethod(name, scalar, form, this));
+        scalarAdded = true;
         return name;
     }
 
@@ -91,12 +94,17 @@ final class HelperMethodSink {
         for (var m : methods) {
             classBuilder.addMethod(m);
         }
+        if (scalarAdded) {
+            classBuilder.addType(BoundedCoercingGenerator.build());
+        }
     }
 
     /**
      * The factory for one name-bound scalar: the head picks where the scalar's name and coercing
      * come from (a copy of the resolved constant, or a fresh scalar under the SDL name borrowing
-     * the constant's coercing), the tail carries the SDL declaration, read off {@code form}: its
+     * the constant's coercing), either way wrapped in the nested {@code BoundedCoercing}
+     * ({@link BoundedCoercingGenerator}), which bounds the numbers the consumer's coercing is handed;
+     * the tail carries the SDL declaration, read off {@code form}: its
      * description (replacing a copied constant's own, so the runtime scalar describes itself as the
      * emitted SDL does), its {@code @specifiedBy} URL and its surviving applied directives.
      */
@@ -104,13 +112,17 @@ final class HelperMethodSink {
                                                 GraphQLScalarType form, HelperMethodSink sink) {
         var body = CodeBlock.builder();
         switch (scalar.resolution()) {
-            case ScalarResolution.Resolved r ->
+            case ScalarResolution.Resolved r -> {
                 body.addStatement("$T.Builder b = $T.newScalar($T.$L)",
                     SCALAR_TYPE, SCALAR_TYPE, r.scalarConstantOwner(), r.scalarConstantField());
+                body.addStatement("b.coercing($T.of($T.$L.getCoercing()))", BoundedCoercingGenerator.NESTED,
+                    r.scalarConstantOwner(), r.scalarConstantField());
+            }
             case ScalarResolution.Synthesised s -> {
                 body.addStatement("$T.Builder b = $T.newScalar()", SCALAR_TYPE, SCALAR_TYPE);
                 body.addStatement("b.name($S)", s.sdlName());
-                body.addStatement("b.coercing($T.$L.getCoercing())", s.coercingSourceOwner(), s.coercingSourceField());
+                body.addStatement("b.coercing($T.of($T.$L.getCoercing()))", BoundedCoercingGenerator.NESTED,
+                    s.coercingSourceOwner(), s.coercingSourceField());
             }
         }
         var description = form.getDescription();

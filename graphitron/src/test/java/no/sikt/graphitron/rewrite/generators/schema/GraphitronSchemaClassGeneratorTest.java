@@ -643,7 +643,21 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(body).doesNotContain(".additionalType(graphql.scalars.ExtendedScalars.Date)");
         // The helper registers under the SDL name and borrows the Date constant's coercing.
         assertThat(body).contains("b.name(\"LocalDate\")");
-        assertThat(body).contains("b.coercing(graphql.scalars.ExtendedScalars.Date.getCoercing())");
+        assertThat(body).contains("b.coercing(BoundedCoercing.of(graphql.scalars.ExtendedScalars.Date.getCoercing()))");
+    }
+
+    @Test
+    void scalarRegistration_resolvedConstant_wrapsItsCoercingToo() {
+        // A scalar registered under its constant's own name is a copy of the constant, and the copy's
+        // coercing sits behind the same bound as an aliased one's.
+        var body = buildBody("""
+            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+            type Query { d: BigDecimal, s: String }
+            """);
+        assertThat(body).contains(".additionalType(scalar_BigDecimal())");
+        assertThat(body).contains("newScalar(graphql.scalars.ExtendedScalars.GraphQLBigDecimal)");
+        assertThat(body).contains(
+            "b.coercing(BoundedCoercing.of(graphql.scalars.ExtendedScalars.GraphQLBigDecimal.getCoercing()))");
     }
 
     @Test

@@ -102,6 +102,7 @@ The graphitron LSP completes `@scalarType(scalar: |)` on a `scalar X` declaratio
 == Constraints
 
 * `@scalarType` is only valid on `scalar` declarations. Applying it to a spec built-in (`Int`, `Float`, `String`, `Boolean`, `ID`) is a directive-conflict validation error: the GraphQL spec and graphql-java already bind these names.
+* Your coercing is never handed a number of more than a thousand digits written out in full. The registered scalar refuses one as a coercion error before `parseValue` or `parseLiteral` runs, whether it arrives as a number, as an integer or float literal, or as text that is a number and nothing else; see xref:../reference/directives/scalarType.adoc[`@scalarType`]. Text that is not a number reaches your coercing as it was written.
 * The SDL `scalar <Name>` declaration is what makes the name resolvable in the SDL; the `@scalarType(scalar:)` directive is what makes the *reference* resolvable in the built schema. When the SDL name matches the constant's own `name()` the constant is registered directly; when it differs, the scalar registers under the SDL name borrowing the constant's coercing (an aliasing declaration).
 * The referenced class must be on the codegen classpath (consumer module's `target/classes`, any reactor sibling's `target/classes`, or a declared dependency). Plugin-classpath visibility does not count.
 * The referenced field must be `public static`, non-null at code generation, and assignable to `graphql.schema.GraphQLScalarType`.
