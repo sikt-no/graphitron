@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1146` | An invalid id to a Node-returning lookup returns null with no error | In Progress | 2026-11-23 <sub>created 2026-11-03</sub> | [plan](node-lookup-invalid-id-returns-null.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
-| `R1199` | An _entities lookup with vouchers for several values resolves on one connection <sub>blocked by: [signed-reference-entities-across-subgraphs](signed-reference-entities-across-subgraphs.md)</sub> | Spec | 2026-11-23 <sub>created 2026-11-18</sub> | [plan](vouched-lookups-past-one-value.md) |
+| `R1199` | An _entities lookup with vouchers for several values resolves on one connection | Spec | 2026-11-23 <sub>created 2026-11-18</sub> | [plan](vouched-lookups-past-one-value.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-11-03 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
@@ -561,7 +561,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R1199` [**An _entities lookup with vouchers for several values resolves on one connection**](vouched-lookups-past-one-value.md) — Spec, feature, blocked by [signed-reference-entities-across-subgraphs](signed-reference-entities-across-subgraphs.md)
+- `R1199` [**An _entities lookup with vouchers for several values resolves on one connection**](vouched-lookups-past-one-value.md) — Spec, feature
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
 - `R1119` [**Signed voucher handover: one subgraph vouches, another grants through RLS**](signed-reference-entities-across-subgraphs.md) — In Progress, feature
