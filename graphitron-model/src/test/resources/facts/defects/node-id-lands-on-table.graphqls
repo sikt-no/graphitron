@@ -2,8 +2,12 @@
 # none, the slot's own table must be the node's or reach it by exactly one foreign key, in either
 # direction. film declares two keys to language, inventory one to film, and nothing joins film to
 # actor directly; category's one key is to itself.
-# An id handed to a call by argMapping or under a @service binds no predicate and owes no route,
-# unless its input object is built into a jOOQ record, whose columns the id is decoded into.
+# An id under a @service binds no predicate and owes no route, unless its input object is built into a
+# jOOQ record, whose columns the id is decoded into. One a @condition's argMapping hands to its method
+# is still compared, the condition adding to the filter unless it overrides it, so filmsMapped's
+# languageId owes film a route to language as any filter's does.
+# A bare @nodeId over a union binds the nodes among its participants, here CustomerRow alone, and
+# StaffPlain's staff, which no foreign key joins to customer, has no route to it.
 # An argument's or input field's own written path is judged as an output field's, so filmsByActor,
 # ending on language for a node on actor, lands on the wrong table. With no path written, the one key
 # joining the slot's table and the node's infers the path there, whichever table declares it; none or
@@ -46,6 +50,10 @@ type Category implements Node @table(name: "category") @node { id: ID! }
 type Store implements Node @table(name: "store") @node { id: ID! }
 
 type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+
+type CustomerRow implements Node @table(name: "customer") @node { id: ID! }
+type StaffPlain @table(name: "staff") { staffId: Int! @field(name: "staff_id") }
+union CustomerOrStaff = CustomerRow | StaffPlain
 
 "A film_actor id built into a film record, reached only by the key film_actor declares to film."
 input FilmRecordPairInput { title: String @field(name: "title"), pairing: ID @nodeId(typeName: "FilmActor") }
@@ -117,6 +125,7 @@ type Query {
   filmsMapped(where: LanguageFilter): [Film!]!
     @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.FilmConditions",
                            method: "byLanguage", argMapping: "languageId: where.languageId"})
+  customersOrStaff(ids: [ID] @nodeId): [CustomerOrStaff!]!
   filmsServed(languageId: ID @nodeId(typeName: "Language")): [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
   countRecordLanguages(in: [FilmRecordLanguageInput!]!): FilmDraftsCountedPayload @service(service: {
@@ -149,6 +158,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Film.languageId,           NODE_ID_LANDS_ON_TABLE, public.film
   Film.wrongLanding,         NODE_ID_LANDS_ON_TABLE, public.language
   FilmFilter.languageId,     NODE_ID_LANDS_ON_TABLE, public.film
+  LanguageFilter.languageId, NODE_ID_LANDS_ON_TABLE, public.film
+  Query.customersOrStaff(ids:), NODE_ID_LANDS_ON_TABLE, public.staff
   FilmRecordLanguageInput.languageId, NODE_ID_LANDS_ON_TABLE, public.film
   FilmRecordPairInput.pairing,    NODE_ID_LANDS_ON_TABLE, public.film
   FilmRecordRefsInput.storeId,    NODE_ID_LANDS_ON_TABLE, public.film

@@ -1,0 +1,43 @@
+# A filter argument or input field bound to an array column compares a list with the array whole. One
+# value is no value of an array: holdersByTag's tag, one String against tags (text[]), and
+# HolderFilter.flags, one Boolean against flags (boolean[]), are FILTER_SCALAR_AGAINST_ARRAY_COLUMN at
+# their declarations, the detail naming the column.
+#
+# The near misses draw nothing: holdersByTags takes a list, compared with the array whole;
+# holdersByLabel compares a plain varchar; and blobsByKey compares cursor_blob_a.blob_key, a bytea jOOQ
+# binds to byte[], which is one binary value rather than an array.
+
+type ArrayHolder @table(name: "array_holder") {
+    id: Int!
+    label: String
+}
+
+type CursorBlobA @table(name: "cursor_blob_a") {
+    rowId: Int! @field(name: "row_id")
+}
+
+input HolderFilter {
+    flags: Boolean
+}
+
+type Query {
+    holdersByTag(tag: String @field(name: "tags")): [ArrayHolder!]!
+    holdersByFilter(filter: HolderFilter): [ArrayHolder!]!
+    holdersByTags(tags: [String!]): [ArrayHolder!]!
+    holdersByLabel(label: String): [ArrayHolder!]!
+    blobsByKey(blobKey: String @field(name: "blob_key")): [CursorBlobA!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'FILTER_SCALAR_AGAINST_ARRAY_COLUMN'", rows: """
+  coordinate,                      code,                               detail
+  HolderFilter.flags,              FILTER_SCALAR_AGAINST_ARRAY_COLUMN, public.array_holder.flags
+  Query.holdersByTag(tag:),        FILTER_SCALAR_AGAINST_ARRAY_COLUMN, public.array_holder.tags
+  """)
+
+extend schema @assertContains(relation: "sql_column", rows: """
+  table_name,    column_name, binding_type
+  array_holder,  tags,        [Ljava.lang.String;
+  array_holder,  flags,       [Ljava.lang.Boolean;
+  cursor_blob_a, blob_key,    [B
+  """)

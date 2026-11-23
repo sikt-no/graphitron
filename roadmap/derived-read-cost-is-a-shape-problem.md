@@ -90,7 +90,6 @@ The walk's read path is gone
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
-    ├── A leaf a filter compares is stated once, claimed by C
     ├── What an occurrence takes is a binding, claimed by C
     └── Every list states its order or is refused
 ```
@@ -935,16 +934,8 @@ static method needs no holder.
     An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
-    argument, and the line closes with it.
-  * **A leaf a filter compares is stated once, claimed by C** `open`. Whether an argument or input-field occurrence sits under a
-    field that reads, looks up or counts rows is derived again by `graphitron_occurrence_list_element_defect_rule` (twice), by the
-    `INPUT_CYCLE_EXPANDED` filter arm and by `ConditionQuery`'s lookup-key test, and "A narrowed
-    inline list is emitted from the store" asks it too. Stored at the occurrence by the first stage
-    holding its inputs, row presence the fact, the wider population: each reader joins it and keeps
-    its own exceptions, the list rule and `ConditionQuery` a `@lookupKey` argument and an override,
-    the cycle arm none (principles review, 2026-11-18).
-    `ConditionQuery`'s implicit column filter, an argument or input field landing on the row's
-    table with no producer, build or routine taking it, is a fourth reader of the same question.
+    argument, and the line closes with it. Whether an argument is compared at all is its row in
+    `graphitron_occurrence_filter_term`.
   * **Every list states its order or is refused** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a

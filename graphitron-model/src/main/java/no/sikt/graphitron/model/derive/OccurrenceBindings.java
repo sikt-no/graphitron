@@ -35,6 +35,7 @@ public final class OccurrenceBindings {
         OccurrenceVouchers.write(dsl, graph, touchedAt);
         OccurrenceExpressions.write(dsl, graph, touchedAt);
         OccurrenceTables.write(dsl, graph, touchedAt);
+        OccurrenceFilterTerms.write(dsl, graph, touchedAt);
         OccurrenceConditions.write(dsl, graph, touchedAt);
         // The lifts need no sweep: their writer clears what this reading did not mark before it writes.
         OccurrenceConditions.sweep(dsl, graph, touchedAt);
@@ -46,6 +47,7 @@ public final class OccurrenceBindings {
         OccurrenceVouchers.sweep(dsl, graph, touchedAt);
         OccurrenceExpressions.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
+        OccurrenceFilterTerms.sweep(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS);
         EntryDefectKeyColumns.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS.stage());
     }

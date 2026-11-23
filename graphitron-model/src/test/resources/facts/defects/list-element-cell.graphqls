@@ -14,7 +14,13 @@
 # An element is compared as one row over the one path its fields share, so FilmMixedPathCell's
 # length, on film, beside its languageName, reached over film_language_id_fkey, is
 # LIST_ELEMENT_PATHS_DIFFER at both, where FilmLanguagePathCell's two fields share that path and
-# draw nothing.
+# draw nothing. FilmLanguageKeyCell's two fields both reach language, one over film_language_id_fkey
+# and one over film_original_language_id_fkey: one table at one position, joined on other columns, so
+# they differ too.
+#
+# A list field inside an element is itself a list, so FilmCellGroup.cells, read per element of
+# groups, is LIST_ELEMENT_NOT_ONE_VALUE; the fields of its own elements, under two lists, draw nothing
+# of their own.
 
 interface Node { id: ID! }
 
@@ -54,6 +60,19 @@ input FilmLanguagePathCell {
     languageUpdate: String @field(name: "last_update") @reference(path: [{key: "film_language_id_fkey"}])
 }
 
+input FilmLanguageKeyCell {
+    languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+    originalName: String @field(name: "name") @reference(path: [{key: "film_original_language_id_fkey"}])
+}
+
+input FilmNestedCell {
+    length: Int @field(name: "length")
+}
+
+input FilmCellGroup {
+    cells: [FilmNestedCell]
+}
+
 input FilmPlainInput {
     filmId: ID @nodeId(typeName: "Film")
     lengths: [Int!] @field(name: "length")
@@ -66,6 +85,8 @@ type Query {
     filmsByPlain(filter: FilmPlainInput): [Film!]!
     filmsByMixedCells(cells: [FilmMixedPathCell]): [Film!]!
     filmsByLanguageCells(cells: [FilmLanguagePathCell]): [Film!]!
+    filmsByLanguageKeyCells(cells: [FilmLanguageKeyCell]): [Film!]!
+    filmsByCellGroups(groups: [FilmCellGroup]): [Film!]!
     filmsUnderOverride(filter: FilmCellFilter): [Film!]! @condition(condition: {
         className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
         method: "outerOverrideMethod"}, override: true)
@@ -78,6 +99,9 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   LIST_ELEMENT_NOT_ONE_VALUE, FilmCellInput.lengths
   LIST_ELEMENT_PATHS_DIFFER,  FilmMixedPathCell.length
   LIST_ELEMENT_PATHS_DIFFER,  FilmMixedPathCell.languageName
+  LIST_ELEMENT_PATHS_DIFFER,  FilmLanguageKeyCell.languageName
+  LIST_ELEMENT_PATHS_DIFFER,  FilmLanguageKeyCell.originalName
+  LIST_ELEMENT_NOT_ONE_VALUE, FilmCellGroup.cells
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
@@ -89,6 +113,7 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   FilmPlainInput.lengths
   FilmLanguagePathCell.languageName
   FilmLanguagePathCell.languageUpdate
+  FilmNestedCell.length
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_list_element_defect", rows: """
@@ -102,6 +127,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_list_element_defect
   LIST_ELEMENT_CONDITION,     Query.filmsUnderOverride(filter.cells.titlePrefix:)
   LIST_ELEMENT_PATHS_DIFFER,  Query.filmsByMixedCells(cells.length:)
   LIST_ELEMENT_PATHS_DIFFER,  Query.filmsByMixedCells(cells.languageName:)
+  LIST_ELEMENT_PATHS_DIFFER,  Query.filmsByLanguageKeyCells(cells.languageName:)
+  LIST_ELEMENT_PATHS_DIFFER,  Query.filmsByLanguageKeyCells(cells.originalName:)
+  LIST_ELEMENT_NOT_ONE_VALUE, Query.filmsByCellGroups(groups.cells:)
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_overridden",

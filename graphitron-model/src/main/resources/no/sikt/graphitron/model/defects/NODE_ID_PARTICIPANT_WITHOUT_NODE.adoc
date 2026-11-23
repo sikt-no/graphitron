@@ -1,0 +1,5 @@
+Reported at the `@nodeId`, or at the argument or input field where the id is read without one; the detail names the participant's table. Valid: an id filter on a field over several tables is meaningful where a participant has no node of the id, and matches none of that participant's rows.
+
+A bare `@nodeId` on an argument of a field returning a union or an interface with no table of its own binds one node per participant table, and each participant decodes only the ids carrying its own node's type id. A participant whose table has no node of the id has no type id to keep and no key to compare, and graphitron does not yet write the filter that answers none of its rows when an id is given.
+
+*Instead.* Make the participant a node with `@node`, filter the field on a type with a node of its own, or take the id with a `@condition` written with `override: true` and decide in your own method what it matches. See xref:directives/nodeId.adoc[`@nodeId`].

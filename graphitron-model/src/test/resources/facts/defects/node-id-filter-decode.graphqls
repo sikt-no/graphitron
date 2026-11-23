@@ -1,0 +1,31 @@
+# A bare @nodeId a filter compares over a multitable field binds one node per participant that is one,
+# and each table the field's rows are on decodes the id onto its own node. occupantsAndStores binds
+# Customer and Staff, and StoreRow's table, store, has none: NODE_ID_PARTICIPANT_WITHOUT_NODE, the
+# detail that table. The near miss draws nothing: occupantsByIds, every participant a node.
+
+interface Node { id: ID! }
+
+type Customer implements Node @table(name: "customer") @node { id: ID! }
+type Staff implements Node @table(name: "staff") @node { id: ID! }
+type StoreRow @table(name: "store") { storeId: Int! @field(name: "store_id") }
+
+union Occupant = Customer | Staff
+union OccupantOrStore = Customer | Staff | StoreRow
+
+type Query {
+    occupantsByIds(ids: [ID] @nodeId): [Occupant!]!
+    occupantsAndStores(ids: [ID] @nodeId): [OccupantOrStore!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id",
+    where: "coordinate = 'Query.occupantsAndStores(ids:)'", rows: """
+  coordinate,                      bound,           node_type_name
+  Query.occupantsAndStores(ids:),  public.customer, Customer
+  Query.occupantsAndStores(ids:),  public.staff,    Staff
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'NODE_ID_%'", rows: """
+  coordinate,                      code,                             detail
+  Query.occupantsAndStores(ids:),  NODE_ID_PARTICIPANT_WITHOUT_NODE, public.store
+  """)

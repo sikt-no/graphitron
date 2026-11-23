@@ -32,4 +32,9 @@ public final class FilmRecordDraftService {
     public static FilmDraftsCountedPayload countKeyed(FilmRecord in) {
         return new FilmDraftsCountedPayload(1, List.of());
     }
+
+    /** Hands the records back as the films saved, a mutation answering rows of film. */
+    public static List<FilmRecord> saveAll(List<FilmRecord> drafts) {
+        return drafts;
+    }
 }

@@ -1,0 +1,5 @@
+Reported at the argument or input field; the detail names the array column. Valid: comparing one value with an array column, for example as membership, is meaningful.
+
+A filter argument or input field bound to a column compares its value with the column's. An array column holds an array, so a list argument is compared with it whole, element for element, and a single value has no array to equal. Graphitron does not yet write a membership test of one value against an array column. A `bytea` column, which jOOQ binds to `byte[]`, is one binary value rather than an array, and is compared as any other column.
+
+*Instead.* Declare the argument or input field a list, to match rows whose array equals it, or write a `@condition` on it with `override: true` that compares the value as you mean it, for example with the database's array containment operator.

@@ -1,0 +1,77 @@
+# The arguments and input fields read under a field's rows that its own call does not take, per table
+# its rows are on, and among them the terms its filter compares, those binding a column or a node id.
+# Query.films compares its title and the fields of its filter object; Film.inventories, a child field
+# with no producer of its own, compares its store too. A @lookupKey argument is a term, its reader
+# telling it apart as the lookup's key. Query.films' filter object and its @orderBy argument, with the
+# fields under it, are read under its rows and compare nothing.
+#
+# Nothing taken is compared: Mutation.saveFilmDrafts hands its list of drafts to its @service, built
+# into film records, so neither the list nor its elements' node id and title are terms, though the
+# mutation answers rows of film. Query.filmsByService's argument binds its service's parameter.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node(typeId: "F") {
+    id: ID!
+    title: String
+    inventories(storeId: Int @field(name: "store_id")): [Inventory!]!
+}
+
+type Inventory @table(name: "inventory") {
+    inventoryId: Int! @field(name: "inventory_id")
+}
+
+input FilmTitleFilter {
+    title: String
+    length: Int
+}
+
+input FilmOrderBy {
+    field: FilmOrderField!
+    direction: SortDirection
+}
+
+enum FilmOrderField {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+input FilmRecordDraftInput {
+    title: String @field(name: "title")
+    filmId: ID @nodeId(typeName: "Film")
+}
+
+type Query {
+    films(title: String, filter: FilmTitleFilter, order: [FilmOrderBy] @orderBy): [Film!]!
+    filmsByKey(film_id: [Int!] @lookupKey): [Film]!
+    filmsByService(ids: [Int!]!): [Film!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+}
+
+type Mutation {
+    saveFilmDrafts(in: [FilmRecordDraftInput!]!): [Film!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "saveAll",
+        argMapping: "drafts: in"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_row_input", rows: """
+  coordinate,                        field_coordinate, table_name
+  Film.inventories(storeId:),        Film.inventories, inventory
+  Query.films(filter.length:),       Query.films,      film
+  Query.films(filter.title:),        Query.films,      film
+  Query.films(filter:),              Query.films,      film
+  Query.films(order.direction:),     Query.films,      film
+  Query.films(order.field:),         Query.films,      film
+  Query.films(order:),               Query.films,      film
+  Query.films(title:),               Query.films,      film
+  Query.filmsByKey(film_id:),        Query.filmsByKey, film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_filter_term", rows: """
+  coordinate,                        table_name
+  Film.inventories(storeId:),        inventory
+  Query.films(filter.length:),       film
+  Query.films(filter.title:),        film
+  Query.films(title:),               film
+  Query.filmsByKey(film_id:),        film
+  """)

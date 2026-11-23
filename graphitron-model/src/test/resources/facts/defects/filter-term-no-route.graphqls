@@ -1,0 +1,38 @@
+# A filter argument compares on the table its field's rows are on. Addressable has a table of its own,
+# address, and its member StoreRow is on store, so an argument of a root field returning it starts on
+# address and lands on each member's table, and no join is inferred for an argument. storeId binds
+# store.store_id, a column address does not have, so the filter on address has no route to it:
+# NO_ROUTE_TO_TARGET at the argument, the detail naming the two tables.
+#
+# The near miss draws nothing: district binds address.district, on the table the filter compares on,
+# and store has no column of that name to land on.
+
+interface Addressable @table(name: "address") {
+    lastUpdate: String @field(name: "last_update")
+}
+
+type AddressRow implements Addressable @table(name: "address") {
+    lastUpdate: String @field(name: "last_update")
+}
+
+type StoreRow implements Addressable @table(name: "store") {
+    lastUpdate: String @field(name: "last_update")
+}
+
+type Query {
+    addressablesByStore(storeId: Int @field(name: "store_id")): [Addressable!]!
+    addressablesByDistrict(district: String): [Addressable!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_row_input",
+    where: "coordinate LIKE 'Query.addressablesBy%(%'", rows: """
+  coordinate,                            field_coordinate,             table_name
+  Query.addressablesByDistrict(district:), Query.addressablesByDistrict, address
+  Query.addressablesByStore(storeId:),     Query.addressablesByStore,    address
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'NO_ROUTE_TO_TARGET'", rows: """
+  coordinate,                          code,               detail
+  Query.addressablesByStore(storeId:), NO_ROUTE_TO_TARGET, public.address to public.store
+  """)
