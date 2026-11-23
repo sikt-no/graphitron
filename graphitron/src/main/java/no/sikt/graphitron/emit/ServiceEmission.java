@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCEPT_VOUCHED_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL;
@@ -32,6 +33,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 
 /**
  * A {@code @service} fetcher emitted from the store, composed of the parts' emitters: the frame
@@ -126,6 +128,8 @@ public final class ServiceEmission {
     private final Map<String, ConnectionQuery.Row> connections;
     /** The tenant column's Java type, in a database-per-tenant graph whose tables agree on one. */
     private final Optional<String> tenantType;
+    /** The services the store states no connection for by design; see {@link #unkeyed(StoreHandle)}. */
+    private final Set<String> unkeyed;
 
     private ServiceEmission(boolean stored, Set<String> owned, Set<String> fetched,
                             Set<String> silenced,
@@ -135,7 +139,8 @@ public final class ServiceEmission {
                             Set<String> validating, Set<String> serviceControlled,
                             Map<String, DiscriminatedQuery.Row> discriminated,
                             Set<String> toldApart,
-                            Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
+                            Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType,
+                            Set<String> unkeyed) {
         this.stored = stored;
         this.owned = owned;
         this.fetched = fetched;
@@ -152,6 +157,7 @@ public final class ServiceEmission {
         this.toldApart = toldApart;
         this.connections = connections;
         this.tenantType = tenantType;
+        this.unkeyed = unkeyed;
     }
 
     /**
@@ -161,7 +167,7 @@ public final class ServiceEmission {
     public static ServiceEmission none() {
         return new ServiceEmission(false, Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Set.of(),
             Map.of(),
-            Set.of(), Map.of(), Optional.empty());
+            Set.of(), Map.of(), Optional.empty(), Set.of());
     }
 
     /** Reads every part's rows for the graph once. */
@@ -196,7 +202,28 @@ public final class ServiceEmission {
             DiscriminatedQuery.read(store, targets),
             toldApart(store),
             ConnectionQuery.read(store),
-            tenantType(store));
+            tenantType(store),
+            unkeyed(store));
+    }
+
+    /**
+     * The service occurrences the store states no connection for by design, which run on the request's
+     * own: every one in a graph whose connection key has no part, and the roots of a graph that
+     * accepts vouchers, a vouched key only ever being handed down. None in a graph with a tenant
+     * column, where a service the store states no connection for is one it refuses.
+     */
+    private static Set<String> unkeyed(StoreHandle store) {
+        var tc = STORE_GRAPH_TENANT_COLUMN;
+        if (store.dsl().fetchExists(tc, tc.GRAPH_NAME.eq(store.graphName()))) {
+            return Set.of();
+        }
+        var av = GRAPHITRON_ACCEPT_VOUCHED_FOR;
+        boolean accepting = store.dsl().fetchExists(av, av.GRAPH_NAME.eq(store.graphName()));
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        return Set.copyOf(store.dsl().select(p.COORDINATE).from(p)
+            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"),
+                accepting ? p.START.eq("ROOT") : org.jooq.impl.DSL.noCondition())
+            .fetch(p.COORDINATE));
     }
 
     /** The tenant column's Java type, where the graph's tenant columns agree on one. */
@@ -667,12 +694,21 @@ public final class ServiceEmission {
 
     /**
      * The connection {@code coordinate}'s frame runs on, as the store states it: the request's own where
-     * the store states none, as in a graph whose connection key has no part, else the routed, inherited
-     * or unscoped key; an accepting graph's child services inherit the key the vouched entity hands down. An outcome the store gains later fails to compile here rather than falling into a known arm.
+     * the store states none by design ({@link #unkeyed(StoreHandle)}), as in a graph whose connection
+     * key has no part, else the routed, inherited or unscoped key; an accepting graph's child services
+     * inherit the key the vouched entity hands down. A service with no stated connection anywhere else is one the store
+     * refuses, and is never run on the request's own connection instead: generation fails. An outcome
+     * the store gains later fails to compile here rather than falling into a known arm.
      */
     private FrameEmitter.Connection connection(String coordinate, String fieldCoordinate, Runtime runtime) {
         var row = connections.get(coordinate);
         if (row == null) {
+            if (!unkeyed.contains(coordinate)) {
+                throw new IllegalStateException("Graphitron generator bug: @service " + fieldCoordinate
+                    + " has no stored connection in a graph whose connection key has a part, so nothing"
+                    + " says which connection it runs on; the store refuses such a service, so reaching"
+                    + " it is a generator bug");
+            }
             return new FrameEmitter.Connection.Request();
         }
         var routing = runtime.routing();

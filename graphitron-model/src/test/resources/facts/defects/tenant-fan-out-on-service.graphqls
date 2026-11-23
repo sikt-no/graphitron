@@ -1,0 +1,57 @@
+# @tenantFanOut on a field a @service answers, under the tenant column film_id: the marker reads every
+# tenant the request may see with a statement graphitron writes, and a service is one call on one
+# connection, so each marked service is refused at its marker, wherever its call would have run.
+# Query.fannedByIds names its tenant per element and Film.fannedServedBy runs on the key its parent
+# hands down, so the marker is all either breaks. Language.fannedFilms answers a tenant's rows below
+# language rows, which no tenant column scopes, by a key naming no tenant: the marker states no route
+# for a service, so it is unrouted as well, which defects/unrouted-child pins.
+#
+# The near misses draw nothing: Language.films is fanned out and read by graphitron, and
+# Film.servedBy is a service with no marker.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") {
+  title: String
+  servedBy: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+    method: "servedBy"})
+  fannedServedBy: String @tenantFanOut
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+      method: "servedBy"})
+}
+
+type Language @table(name: "language") {
+  name: String
+  films: [Film] @reference(path: [{key: "film_language_id_fkey"}]) @tenantFanOut
+  fannedFilms: [Film] @tenantFanOut
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+      method: "languageFilms"})
+}
+
+type Query {
+  films: [Film!]!
+  languages: [Language!]!
+  fannedByIds(ids: [Int!]!): [Film!]! @tenantFanOut
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds", argMapping: "ids: ids, $tenant: ids"})
+}
+
+# The marked fields are service producers like any other; the marker changes no kind.
+extend schema @expectEquals(relation: "graphitron_producer",
+    where: "field_name IN ('servedBy', 'fannedServedBy', 'fannedFilms', 'fannedByIds') OR type_name = 'Language'", rows: """
+  type_name, field_name,     kind
+  Film,      servedBy,       SERVICE
+  Film,      fannedServedBy, SERVICE
+  Language,  films,          SELECT
+  Language,  fannedFilms,    SERVICE
+  Query,     fannedByIds,    SERVICE
+  """)
+
+# Each marker on a service, and none of the near misses.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'TENANT_FAN_OUT_ON_SERVICE'", rows: """
+  code,                      coordinate
+  TENANT_FAN_OUT_ON_SERVICE, Query.fannedByIds
+  TENANT_FAN_OUT_ON_SERVICE, Film.fannedServedBy
+  TENANT_FAN_OUT_ON_SERVICE, Language.fannedFilms
+  """)

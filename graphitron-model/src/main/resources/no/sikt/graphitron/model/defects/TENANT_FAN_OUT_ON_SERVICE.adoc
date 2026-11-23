@@ -1,0 +1,5 @@
+Reported at the `@tenantFanOut` on a field a `@service` answers, a root field or one under an object.
+
+xref:directives/tenantFanOut.adoc[`@tenantFanOut`] reads every tenant the request may see by running a statement graphitron writes once per tenant. A service is your own code, called once on one connection, and graphitron does not generate a call per tenant for it yet, so the marker would name a route the service does not run on.
+
+*Instead.* Remove the marker and let the service run where its field is routed, or read the rows with a field graphitron fetches and mark that field. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers how a service call is routed.

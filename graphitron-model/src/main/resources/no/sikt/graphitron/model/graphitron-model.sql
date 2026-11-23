@@ -13519,6 +13519,19 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE s.graph_name = tf.graph_name AND s.coordinate = tf.element_coordinate
                       AND s.directive_name IN ('splitQuery', 'service'))
 UNION ALL
+-- A @tenantFanOut on a field a @service answers, at the marker, root or child and whatever the graph
+-- configures: the marker reads every tenant the request may see with a statement graphitron writes,
+-- and a service is one call on one connection, which no frame runs once per tenant yet. Refused so
+-- the marker is never taken as a route a service does not run on.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'TENANT_FAN_OUT_ON_SERVICE', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f
+    ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_producer p
+    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
+ WHERE da.directive_name = 'tenantFanOut' AND p.kind = 'SERVICE'
+UNION ALL
 -- A paginated return on an insert, update or delete, at its @mutation: the write's rows are re-read
 -- by the keys it returned, which is not a page, as a @routine write's are.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
@@ -24560,8 +24573,10 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
 UNION ALL
 -- A child producer of a graph with a tenant column that no connection is stated for, at the field: it
 -- answers a tenant's rows under a table no tenant column scopes, by a key naming no tenant, so nothing
--- says which tenant's database to read. A field marked @tenantFanOut says so itself, reading every
--- tenant the request may see, a route the connection does not state yet.
+-- says which tenant's database to read. A field graphitron reads with a statement of its own and
+-- marked @tenantFanOut says so itself, reading every tenant the request may see, a route the
+-- connection does not state yet. The marker says nothing for any other producer, a @service among
+-- them, which is called once and fans out over nothing.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
        'UNROUTED_CHILD', CAST(NULL AS VARCHAR), 'occurrence-routes'
   FROM graphitron_occurrence_producer p
@@ -24573,9 +24588,10 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
  WHERE p.start = 'CHILD'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_connection c
                     WHERE c.graph_name = p.graph_name AND c.coordinate = p.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application fo
-                    WHERE fo.graph_name = f.graph_name AND fo.coordinate = f.coordinate
-                      AND fo.directive_name = 'tenantFanOut')
+   AND NOT (p.kind = 'SELECT'
+            AND EXISTS (SELECT 1 FROM graphitron_directive_application fo
+                         WHERE fo.graph_name = f.graph_name AND fo.coordinate = f.coordinate
+                           AND fo.directive_name = 'tenantFanOut'))
 UNION ALL
 -- A tenant an author named for a root call whose result is a global table's, at the @tenant or the
 -- $tenant pair: a global table's rows are read on the key with an empty tenant part, there being no
@@ -33058,6 +33074,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A field under a table that no tenant column scopes reads rows a tenant''s database holds by a key that names no tenant, so nothing says which tenant''s database to read: follow a key landing on the tenant column, or read the rows from a field under a tenant''s rows.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',
    'A child @service under a global table reads a tenant''s rows by a key landing on the tenant column, so its parents would be grouped by the tenant each names, which is not generated for a service yet: read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds.'),
+  ('TENANT_FAN_OUT_ON_SERVICE', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_ON_SERVICE',
+   'A @tenantFanOut marks a field a @service answers: the marker reads every tenant the request may see with a statement graphitron writes, and a service is called once, on one connection, which is not generated once per tenant yet. Remove the marker, or read the rows with a field graphitron fetches and mark that.'),
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
    'An argMapping names $tenant, or @tenant marks an argument or input field, where nothing routes by it yet: the tenant is named for a root @service''s call, so write $tenant in that @service''s argMapping, or mark a value it reads. A child service runs on its parent''s tenant, and a query binds it through @field(name:) on the tenant column.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',

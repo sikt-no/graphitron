@@ -3,6 +3,8 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["
 "Subgraph B: the results themselves, resolved by their own key and by the voucher A signs, the details read in the same SELECT on the connection your source leases for the vouched-for owner."
 type Query {
   results: [VgsResultat!]!
+  resultCount: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService",
+    method: "filmCount"})
 }
 
 type VgsResultat @table(name: "vouched_result") @key(fields: "id") @accept(scope: "vgs-resultater", vouchesFor: "eierId") {
@@ -32,8 +34,8 @@ extend schema @expectEquals(relation: "graphitron_accept_vouched_for", rows: """
   VgsResultat, eierId
   """)
 
-# The child service inherits the connection the vouched entity hands down; the root reads on the
-# request's own, so it has no row.
+# The child service inherits the connection the vouched entity hands down; the roots, the root
+# service among them, run on the request's own, so they have no row.
 extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
   coordinate,                  outcome
   VgsResultat.servicedDetails, INHERIT

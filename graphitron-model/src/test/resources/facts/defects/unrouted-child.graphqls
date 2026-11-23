@@ -2,7 +2,9 @@
 # naming no tenant: language carries no film_id, and film is the tenant's, so nothing says which
 # tenant's database Language.films reads, whether a @service answers it or a split query reads it
 # down film_language_id_fkey. Language.fannedFilms says which tenants itself, every one the request
-# may see, with @tenantFanOut, and is not refused.
+# may see, with @tenantFanOut, and is not refused. Language.servedFannedFilms carries the marker on a
+# @service, which is called once and fanned out over nothing, so the marker states no route for it
+# and it is refused as Language.films is.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
@@ -16,6 +18,9 @@ type Language @table(name: "language") {
     method: "languageFilms"})
   splitFilms: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
   fannedFilms: [Film] @reference(path: [{key: "film_language_id_fkey"}]) @tenantFanOut
+  servedFannedFilms: [Film] @tenantFanOut
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+      method: "languageFilms"})
 }
 
 type Query {
@@ -27,4 +32,5 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "co
   code,           coordinate
   UNROUTED_CHILD, Language.films
   UNROUTED_CHILD, Language.splitFilms
+  UNROUTED_CHILD, Language.servedFannedFilms
   """)
