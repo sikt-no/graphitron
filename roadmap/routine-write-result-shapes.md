@@ -80,17 +80,23 @@ the call:
 - The returned row says `publisert`.
 - A join or nested select in the same statement still reads `a` and `gammel`.
 
-**A read routine can be a row source.** For a `STABLE` read routine returning one row,
-`table("{0}", Routines.utsendingHent(1)).as("u")` puts it in `FROM`, with its columns typed from the
-table's own data types. A nested multiset correlated on `"u"."utsending_id"` runs in the same statement:
+**A read routine can be a typed row source.** `DSL.table(Field)` over the value form throws, because it
+goes through `unnest` and a composite is no array. Wrapping the value form in a one-element array makes it
+one:
 
-    ... from "k"."utsending_hent"("p_id" := 1) as "u"
+- `unnest(array(Routines.utsendingHent(1))).as("u")` is a table whose fields jOOQ types from the
+  routine's return `DataType` (`"u"."utsending_id"` is an `Integer`).
+- The routine runs once.
+- A nested multiset correlated on `"u"."utsending_id"` runs in the same statement:
 
-Under a parent, it is a lateral row source:
+      ... from unnest(array["k"."utsending_hent"("p_id" := 1)]) as "u" ("utsending_id", "tittel", "organisasjonskode")
 
-    cross join lateral "k"."utsending_hent"("p_id" := "p"."utsending_id") as "u2"
+- Under a parent, it is a lateral row source:
 
-`DSL.table(Field)` over the value form throws, because it goes through `unnest`.
+      cross join lateral unnest(array["k"."utsending_hent"("p_id" := "p"."utsending_id")]) as "u2" (...)
+
+A plain-SQL template, `table("{0}", <value form>)`, renders the bare call in `FROM` as well, but jOOQ knows
+none of its fields.
 
 **What the store holds today.**
 
@@ -168,11 +174,13 @@ the same join, with no name matching. Name matching stays only for `RETURNS TABL
 **In a query:**
 
 - At the root, a field over a one-row routine of `T` has the routine as its producer's row source, in
-  `FROM` as `table("{0}", <value form>)`.
+  `FROM` as `unnest(array(<value form>))`.
 - Under a parent, a child `@routine` is never a producer but a step on its query's path
   (`code-generation-triggers.adoc`, "Bind"). It is a `LATERAL` step that lands on `T`, its arguments
   correlated on the parent's columns.
-- Its columns are typed from `T`'s `sql_column` rows, which the join supplies.
+- jOOQ types its columns from the routine's return type, which is `T`'s.
+- A routine that finds no row returns a NULL composite, which is one row with every column null. The row
+  source takes it only where `T`'s key is not null.
 - The selection joins onward from it in the same statement, with no waterfall.
 - This is the Mikado node "A routine's result is an object of its function's record class", for the case
   where the routine returns a bound type and so gives a row of that table.
