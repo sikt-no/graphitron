@@ -7,7 +7,7 @@ priority: 3
 theme: service
 depends-on: []
 created: 2026-10-28
-last-updated: 2026-11-18
+last-updated: 2026-11-23
 ---
 
 # Signed voucher handover: one subgraph vouches, another grants through RLS
@@ -57,7 +57,7 @@ key carrying vouched-for values, a connection whose session sets them for the po
 | *Voucher* | A signed token Graphitron computes for one row in A and verifies in B. It is Graphitron's own format, decoded the way a node id is. |
 | *Issuing type* | The type in A marked `@issue`. |
 | *Accepting type* | The type in B marked `@accept`. |
-| *Voucher field* | `internalGraphitronVoucher`, the field Graphitron mints on an issuing or accepting type (slice 8f): `String!` on A, which signs one for every row, and `String` on B, which never computes one. Its name is fixed, so A and B cannot disagree on it; it is `@inaccessible` and the minted key's one field. |
+| *Voucher field* | `internalGraphitronVoucher`, the field Graphitron mints on an issuing or accepting type (slice 8f): `String` on both A and B (slice 8h), since A has none for a row whose values it cannot sign and B never computes one. Its name is fixed, so A and B cannot disagree on it; it is `@inaccessible` and the minted key's one field. |
 | *Absorbed fields* | Every field the author wrote on the issuing type. Their values are sealed inside the voucher, and A does not publish them. |
 | *Vouched-for fields* | The absorbed fields named by `vouchesFor:` on both markers. They say whose rows are vouched for, and they are the access decision. In the first client's case this is the owner's id number, a different person from the user the request is for. |
 | *Lookup part* | The other absorbed fields: the key of the vouched row in B. Navigation only. |
@@ -110,12 +110,14 @@ both as an `ID`. A client that wants the result's `id` gets it from B, through t
 
 ### Where it stands
 
-Slices 1 to 8g are on trunk, 8e.3 aside: A issues vouchers end to end, B verifies them and reads the vouched
+Slices 1 to 8h are on trunk, 8e.3 aside: A issues vouchers end to end, B verifies them and reads the vouched
 entity and every field below it on the vouched connection, except a connection-typed field, which
 `VOUCHER_ACCEPT_NOT_GENERATED` still refuses below an accepting type; and both markers sit on the type,
 with the voucher field minted (*Rulings*, 2026-11-18); and a lookup whose vouchers carry more than one
-vouched-for value resolves the first value's representations and fails each other one alone (8g). What
-remains is 8e.3, connection-typed fields, which waits on R876's node for their fetchers. See *Slices*.
+vouched-for value resolves the first value's representations and fails each other one alone (8g); and
+the voucher field is nullable on both sides, a null voucher in a representation being no voucher (8h).
+What remains is 8e.3, connection-typed fields, which waits on R876's node for their fetchers. See
+*Slices*.
 
 The *Implementation* text below the *Rulings* was written for the field markers and describes some
 mechanisms in that form (the membership's `issuing_field`, the claim read off a field-level
@@ -262,7 +264,7 @@ per value.
 ### What each side publishes, and why A withholds the absorbed fields
 
 Both subgraphs' published shape is derived, not written. On a type marked `@issue` or `@accept`
-Graphitron mints the field `internalGraphitronVoucher @inaccessible`, `String!` in A and `String` in B, and `@key(fields: "internalGraphitronVoucher")` (slice 8f;
+Graphitron mints the field `internalGraphitronVoucher: String @inaccessible` in both (slice 8h; `String!` in A until then), and `@key(fields: "internalGraphitronVoucher")` (slice 8f;
 until then the author writes the field, marks it, and the key names it). In A the key is
 `resolvable: false` and is the type's only key; in B it is `resolvable: true` and sits beside the authored
 key. Both are minted applications, the mechanism that gives a node type its `@key(fields: "id")`, so the
@@ -372,6 +374,9 @@ Decisions the user made on this item; each is stated where it applies below.
 * The markers go on the type and Graphitron mints the voucher field (2026-11-18): `@issue` and `@accept`
   are applied to an object type, not to a field the author writes, and Graphitron mints the voucher
   field on both sides, with a fixed name and type, so A and B cannot disagree on them. Slice 8f.
+* The voucher field is `String` on both sides (2026-11-23, in
+  `docs/architecture/explanation/fact-model.adoc`): a nullability that differs between subgraphs earns a
+  composition hint on every schema check that sees both. Slice 8h.
 
 ## Implementation
 
@@ -720,6 +725,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8e.3. Connection-typed fields | Pending on R876; below | |
 | 8f. Markers on the type | `@issue` and `@accept` on the type, `internalGraphitronVoucher` minted on both sides | see *Slice 8f* |
 | 8g. The limit fails per representation | A representation past the one-value limit fails alone at its index, naming no value; admission at registration; `VouchedValueLimitExceededException` retired | `0c5ed78` |
+| 8h. Nullable on both sides | `internalGraphitronVoucher` is `String` on an issuing type too; a null voucher in a representation is no voucher | see *Slice 8h* |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -919,7 +925,7 @@ Independent of 8e.3. As built:
 
 * *Directives.* Both definitions' location is `OBJECT`, and their descriptions say Graphitron adds
   `internalGraphitronVoucher`, `String!` on an issuing type and `String` on an accepting one, since B never computes a
-  voucher for a row it reads by another route (Alf, 2026-11-18). Capture admits an application only at
+  voucher for a row it reads by another route (Alf, 2026-11-18; superseded by slice 8h, `String` on both). Capture admits an application only at
   its declared location, so the decode moved
   from the field site to the type site, in a class of its own (`GraphitronVoucherEntries`). The entries
   are keyed by the application's written position and did not change; every join that went from the
@@ -1023,6 +1029,48 @@ failing the whole lookup to keep it there is not (Alf, 2026-11-18).
   `VoucherAcceptExecutionTest.vouchersForTwoOwnersInOneRequestRejectItWithTheLimitNotNull` becomes that
   test rather than being deleted.
 
+**Slice 8h, the voucher field nullable on both sides (*Rulings*, 2026-11-23).** Slice 8f minted
+`internalGraphitronVoucher` as `String!` on A and `String` on B. Composition takes the nullable one for
+the supergraph, but reports the difference as `INCONSISTENT_BUT_COMPATIBLE_FIELD_TYPE` on every schema
+check that sees both subgraphs, which reviewers read as a fault (seen on a consumer's merge request with
+`opptak` issuing and `kreg` accepting). The `!` changes nothing on the router path: the supergraph already
+takes `String`, the field is `@inaccessible`, and a nullable key field composes, as B's already does. Its
+one effect is graphql-java's non-null check inside A, and there it overstated what A delivers: `sign`
+throws for a number text past `MAX_NUMBER_TEXT` or a token past `MAX_TOKEN`, so such a row has no
+voucher, and the `!` took the row's parent with it.
+
+* *The mint.* `graphitron_field_minted`'s voucher arm states `String`, not null, for either role, so its
+  `CASE` on the role dissolves. The `ISSUE` and `ACCEPT` keys, the binding and the walk read nothing of
+  the field's nullability, so nothing else in the store moves. On A a row it cannot sign now answers
+  with a `null` voucher and an error at the voucher's path, and keeps its place.
+* *A null voucher is none.* With A nullable, a router may hand B a representation whose voucher is
+  `null`. The voucher arm read it as present, since the alternative matches on `rep.containsKey`, and
+  rejected a non-`String` as `MALFORMED`, so one row A could not sign would reject B's whole `_entities`
+  request. The arm now answers a `null` voucher with a `null` slot before any check: nothing is verified,
+  acquired or audited, and the request is not rejected. That is the rule every alternative already
+  follows, a key value that is null matching no row (`federation.adoc`, *How an entity is resolved*),
+  and, like those, it does not fall through to another alternative, so a representation carrying a
+  voucher field is still never resolved past it by plain key fields and `matchCondition` is unchanged.
+  It grants nothing: the slot is `null`. A voucher that is there and is not a `String`, or fails any
+  check, still rejects the request. What a router does with a `null` key field has not been observed;
+  this holds whether it forwards the representation or drops it. Not a ruling: the implementer's call
+  with the principles architect, open to redirect at review. What a null key value means is written
+  nowhere as a rule of its own, which is a question for a ruling in `federation.adoc`.
+* *Where.* The SQL view, `EntityFetcherDispatchClassGenerator`'s voucher arm, the `@issue` description in
+  `directives.graphqls`, `issue.adoc`, `accept.adoc`, `federation.adoc` (whose two sentences still
+  described the field markers of before 8f), the how-to's *What a client sees*,
+  `runtime-extension-points.adoc` beside the request rejections, and the ruling's paragraph in
+  `fact-model.adoc`.
+* *Tests.* `voucher-issue-subgraph` claims `String, FALSE`; `VoucherPublishedShapeTest` reads a nullable
+  `String` off the emitted schema; `VoucherDispatchTest` presents a `null` voucher among a valid one and
+  a plain key, which answers a `null` slot with no error and no rejection, and a `null` voucher beside the
+  authored key's field, which answers `null` and asks for no key. `42` still rejects as `MALFORMED`. No
+  test drives A's generated `Vouchers` fetcher into a failed `sign`; the nullable field's effect there is
+  graphql-java's, pinned by the published type.
+* *Release note.* Not breaking: an issuing subgraph's published field widens from `String!` to
+  `String`, which composes against every accepting subgraph, old or new, and B reads what it read
+  before for every voucher that is there. A `feat`, as the published SDL changes.
+
 ## Tests
 
 **Codec.**
@@ -1123,6 +1171,14 @@ want to see the plan.
   a `graphitron_voucher_field` row, against the ruling that a stage decides once in its relation's rule
   (`defects-as-facts.adoc` § Ownership). A refactor that changes no behaviour; folded in with the
   question above, since the double marker's mint is what keeps it from being a pure absence.
+* A null absorbed value (found writing slice 8h, 2026-11-23). A's fetcher serializes each absorbed
+  column through its field's scalar before `sign` sees it, and nothing refuses a nullable column. For
+  `String` and `ID`, graphql-java's `serialize(null)` returns the text `"null"`, so a row whose vouched-for
+  column is null is signed a voucher vouching for the owner `"null"`, and B sets that value on the
+  connection; a null lookup value over an integer key fails B's coercion as `VALUE`, rejecting B's whole
+  request. For `Int`, `Float` and `Boolean`, `serialize(null)` throws, so the row gets no voucher. Either
+  a null absorbed value is refused at the build, or the fetcher answers `null` for such a row before
+  serializing; for Alf and Filip.
 * `<sessionState>`: once it only names the handle class, whether it keeps its name.
 * Key provider shape and default: Ed25519 over JDK keys, with the public key distributed to B; whether the
   default also reads PEM or only takes key objects.
