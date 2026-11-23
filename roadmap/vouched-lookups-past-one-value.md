@@ -511,3 +511,76 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
   cause belongs in graphitron-jakarta-rest. Its own item if wanted.
 * Fields below a vouched entity with fetchers of their own hold the vouched lease to the operation's end.
   Releasing it earlier is R1192's per-worker release, unchanged by this item.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, revisions requested (session_a75e11ee-4af6-4577-afbe-0ef4ebf3fdd5, 2026-11-23)
+
+The set key passes both questions on its own. Its goal reads without the phase list: an accepting
+subgraph answers a batched `_entities` call whose vouchers carry several vouched-for values with every
+entity, on one vouched connection, and the consumer's source reads a set off `ConnectionKey` while its
+policies test membership. It extends the shapes already in the tree (the one admission site
+`admitVouched`, the one alternative cascade, the generated key record, the carrier's single vouched
+key) rather than standing a mechanism beside them, and I would hand that half to an implementer as it
+is. Every symbol, relation, doc section, test and fixture the spec names exists as named. The item as a
+whole does not pass, because the second half is a design still open.
+
+1. **The spec says it is not Ready, and no ruling has arrived (question 2).** *The per-entity voucher*
+   ends "Needs a ruling from Alf or Filip before Ready" on narrowing `VOUCHER_VOUCHED_FOR_IN_KEY`,
+   the superset case included, and no ruling is recorded in the body or under `docs/architecture`.
+   *The cap* leaves its home "open for Alf and Filip at review"; the runtime placement is well argued
+   and needs only their nod, not a revision. Satisfied when the narrowing's ruling is recorded where
+   CLAUDE.md puts rulings and the body states it, or when the narrowing leaves this item (finding 3).
+
+2. **The goal promises a change the plan does not build (question 1).** The Goal's second bullet and
+   *What a consumer sees* ("the `@requires` guard does change what both sides write and what Graphitron
+   mints") promise the second iteration, but *Implementation*, *Tests* and *Retired vocabulary* hold
+   nothing that mints `@external` or `@requires`, stores the guarded fields, lifts the three
+   `VOUCHER_ISSUE_ON_*` refusals or retires absorbing and withholding. *Guarding with `@requires`*
+   leaves its shape open across the voucher as a key or not, type-level `@accept` against a field-level
+   `@requiresVoucher`, which fields are guarded, whether the lookup part goes, composition of
+   `@external` on a key field and the pass-through of an authored `@requires`, behind a router proof
+   that cannot run in the sandbox. A reader cannot say what an author writes in A and B once this item
+   lands. Satisfied when the Goal and the plan describe the same change.
+
+3. **Scope, which the spec hands to this review: the second iteration leaves this item (question 2).**
+   * *The set key does not need it.* The per-entity voucher is usable today without the narrowing.
+     `VOUCHER_VOUCHED_FOR_IN_KEY`'s rule in `graphitron-model.sql` matches vouched-for fields to key
+     fields by field name, so a second field reading the key's column passes it. That is how the FS
+     consumer behind *Why* is written: kreg's `VgsKompetanseoppnaelserForSokerGittNasjonalId` keys by
+     `nasjonalId` and vouches for `nasjonalIdForVoucher`, both reading `NASJONAL_ID`. The Goal's "Usable
+     once ... one refusal, `VOUCHER_VOUCHED_FOR_IN_KEY`, is narrowed" overstates: the narrowing drops
+     the duplicate field, it does not enable the shape. Issue 584's consumer can take the same form on
+     the set key alone, within its timeline.
+   * *The open directions break the shape the set key is for.* That consumer's failing test
+     (fs-plattform MR 6936, `vouchereForToNasjonaleIderGirKompetanseoppnaelserForBegge`) posts
+     `{__typename, internalGraphitronVoucher}` and nothing else, issued by opptak's dedicated type that
+     withholds `nasjonalId`, and it matches B's minted resolvable voucher key (`graphitron_minted_key`,
+     role `ACCEPT`). Dropping B's voucher key, the voucher no longer being a key and retiring
+     withholding together leave that representation matching no alternative, and the spec plans no
+     migration for a first-form consumer.
+   * *The narrowing is entangled with the lookup part.* If the lookup part goes, the refusal it
+     narrows goes with it, so ruling one before the other risks building the narrowing twice.
+
+   Satisfied when this item is the set key and the cap, with the narrowing only if it is ruled and
+   stands independent of the lookup-part question, and the `@requires` iteration (with the narrowing if
+   it goes there, the retirement of the first form and the first-form consumer's migration) is filed as
+   its own Backlog item depending on this one, carrying its open questions and the router proof. If Alf
+   or Filip want it kept here instead, the open forks are ruled and the plan gains *Implementation*,
+   *Tests* and *Retired vocabulary* entries for it.
+
+4. **The per-entity execution test is conditional on the narrowing (question 2).** "An execution test
+   of the per-entity shape" sits inside the "*Pipeline tier*, if the refusal narrows" bullet, so it
+   leaves the plan if the narrowing does. It is the shape the item exists for, and per finding 3 it
+   works without the narrowing. Satisfied when it is an unconditional execution-tier test:
+   representations carrying only a voucher, for distinct vouched-for values, each answering its own
+   rows on one lease.
+
+Not blocking:
+
+* `load<Type>` is also reached from `Query.node` and `Query.nodes` through `load` and `loadKeyed`, and
+  the pending load the voucher arm answers relies on `fetchEntities` closing the set. A node id's
+  representation never carries the voucher field, so the path is unreachable; the dispatch bullet could
+  say so, so the implementer adds no close there.
+* *How it works* point 3: when the first `_entities` field presents no voucher, say whether the set
+  closes empty and fails every voucher in a second aliased field.
