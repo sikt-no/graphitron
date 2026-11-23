@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
+import no.sikt.graphitron.model.derive.NodesServedById;
 import no.sikt.graphitron.model.derive.OccurrenceBindings;
 import no.sikt.graphitron.model.derive.OccurrenceLookupKeys;
 import no.sikt.graphitron.model.derive.OccurrenceOrderings;
@@ -213,6 +214,8 @@ public final class GraphitronAssemblyCapture {
         // The member each occurrence with an object source reads, off the accessor paths above.
         new AnchorStage("occurrence-values", OccurrenceValues.class,
             OccurrenceValues::derive),
+        // The nodes this subgraph fetches by their id, off the node id bindings stated above.
+        new AnchorStage("nodes-served-by-id", NodesServedById.class, NodesServedById::derive),
         // The federation @key refusals, off how each key field binds at its entity's table, which the
         // two stages above state between them.
         new AnchorStage("entity-key-alternatives", EntityKeyAlternatives.class,

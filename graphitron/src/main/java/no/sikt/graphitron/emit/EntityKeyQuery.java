@@ -16,7 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_KEY_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_SERVED_BY_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -34,7 +34,8 @@ import static org.jooq.impl.DSL.selectOne;
  * The entity dispatch's query: each entity a graph resolves by selecting its row from its table, with
  * the key alternatives a representation of it may carry, in the order the dispatch tries them. One row
  * per table-bound object type that carries a {@code @key} application, authored or minted, or is a
- * resolvable node, which {@code Query.node} resolves the same way in a graph with no federation at all.
+ * node this subgraph serves by its id ({@code graphitron_node_served_by_id}), which {@code Query.node}
+ * resolves the same way in a graph with no federation at all.
  *
  * <p>The alternatives are the type's {@code @key} applications in ordinal order, so the authored keys
  * come first and a minted one after them. A key whose fields bind columns of the type's own table
@@ -199,12 +200,7 @@ public final class EntityKeyQuery {
         var nc = SQL_COLUMN.as("nc");
         var t = SQL_TABLE;
         var sc = SQL_SCHEMA;
-        var b = GRAPHITRON_OCCURRENCE_BINDING;
-        // A node this subgraph resolves by its id: resolvable, and its id binding the node id at its
-        // table, which an id carrying @field does not, reading the column instead.
-        var servedById = n.RESOLVABLE.isTrue().andExists(selectOne().from(b)
-            .where(b.GRAPH_NAME.eq(n.GRAPH_NAME), b.COORDINATE.eq(n.TYPE_NAME.concat(inline(".id"))),
-                b.BOUND.eq(tt.TABLE_SCHEMA.concat(inline(".")).concat(tt.TABLE_NAME)), b.KIND.eq("NODE_ID")));
+        var s = GRAPHITRON_NODE_SERVED_BY_ID;
 
         // A key's fields in position order, each COLUMN field with the column it reads.
         var fields = multiset(
@@ -263,7 +259,8 @@ public final class EntityKeyQuery {
                     ae.SOURCE_LINE.eq(ak.SOURCE_LINE), ae.SOURCE_COLUMN.eq(ak.SOURCE_COLUMN))
                 .where(amk.GRAPH_NAME.eq(tt.GRAPH_NAME), amk.TYPE_NAME.eq(tt.TYPE_NAME), amk.ROLE.eq("ACCEPT")))
             .convertFrom(r -> r.map(Records.mapping(RawAccept::new)));
-        // The type as a node this subgraph resolves, with its type id and key columns in key order.
+        // The type as a node this subgraph serves by its id, with its type id and key columns in key
+        // order.
         var node = multiset(
             select(n.TYPE_ID, multiset(
                     select(nk.COLUMN_NAME, nc.JOOQ_NAME, nc.BINDING_TYPE, nc.DATABASE_TYPE)
@@ -273,8 +270,9 @@ public final class EntityKeyQuery {
                         .where(nk.GRAPH_NAME.eq(n.GRAPH_NAME), nk.TYPE_NAME.eq(n.TYPE_NAME))
                         .orderBy(nk.POSITION))
                     .convertFrom(r -> r.map(Records.mapping(Column::new))))
-                .from(n)
-                .where(n.GRAPH_NAME.eq(tt.GRAPH_NAME), n.TYPE_NAME.eq(tt.TYPE_NAME), servedById))
+                .from(s)
+                .join(n).on(n.GRAPH_NAME.eq(s.GRAPH_NAME), n.TYPE_NAME.eq(s.TYPE_NAME))
+                .where(s.GRAPH_NAME.eq(tt.GRAPH_NAME), s.TYPE_NAME.eq(tt.TYPE_NAME)))
             .convertFrom(r -> r.map(Records.mapping(RawNode::new)));
 
         var out = new ArrayList<Entity>();
@@ -288,8 +286,8 @@ public final class EntityKeyQuery {
             .where(tt.GRAPH_NAME.eq(store.graphName()), tt.NAMED_TYPE_KIND.eq("OBJECT"))
             .and(exists(selectOne().from(a).where(a.GRAPH_NAME.eq(tt.GRAPH_NAME),
                     a.COORDINATE.eq(tt.TYPE_NAME), a.DIRECTIVE_NAME.eq("key")))
-                .or(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(tt.GRAPH_NAME),
-                    n.TYPE_NAME.eq(tt.TYPE_NAME), servedById))))
+                .or(exists(selectOne().from(s).where(s.GRAPH_NAME.eq(tt.GRAPH_NAME),
+                    s.TYPE_NAME.eq(tt.TYPE_NAME)))))
             .orderBy(tt.TYPE_NAME)
             .forEach(r -> entity(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(),
                 r.value7().isEmpty() ? null : r.value7().getFirst(), r.value8(),

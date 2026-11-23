@@ -981,22 +981,45 @@ class TenantDivinedRoutingExecutionTest {
     private static final String TENANT_SLOT_ABC = NodeIdEncoder.encode("FilmActor", 10, "abc");
 
     @Test
-    void node_tenantSlotThatDoesNotDecode_answersNull_withoutAConnection() {
+    void node_tenantSlotThatDoesNotDecode_isTheMalformedIdError_withoutAConnection() {
         var result = execute("{ node(id: \"" + TENANT_SLOT_ABC + "\") { id } }");
-        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage()).isEqualTo(
+                "Invalid node id \"" + TENANT_SLOT_ABC + "\" for this argument: not a valid FilmActor id");
+            assertThat(error.getPath()).containsExactly("node");
+        });
         assertThat(((Map<String, Object>) result.getData()).get("node")).isNull();
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
     }
 
     @Test
-    void nodes_tenantSlotThatDoesNotDecode_nullsThatSlot_andTheRestResolves() {
+    void nodes_tenantSlotThatDoesNotDecode_nullsThatSlotWithTheError_andTheRestResolves() {
         var result = execute("{ nodes(ids: [\"" + TENANT_SLOT_ABC + "\", \""
             + NodeIdEncoder.encodeFilmActor(20, 2) + "\"]) { ... on FilmActor { actorId } } }");
-        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage()).isEqualTo(
+                "Invalid node id \"" + TENANT_SLOT_ABC + "\" for this argument: not a valid FilmActor id");
+            assertThat(error.getPath()).containsExactly("nodes", 0);
+        });
         assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("nodes"))
+            .as("nodes is [Node]!: one bad id nulls its own element, not the field")
             .extracting(m -> m == null ? null : m.get("actorId"))
             .containsExactly(null, 20);
         assertThat(TENANT_1_OPENED.get()).as("the refused id names no tenant to open").isZero();
+    }
+
+    @Test
+    void nodes_anUndecodableId_nullsItsElementWithTheError_andTheRestResolves() {
+        var result = execute("{ nodes(ids: [\"" + NodeIdEncoder.encodeFilmActor(20, 2)
+            + "\", \"ikke-en-id\"]) { ... on FilmActor { actorId } } }");
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage()).isEqualTo(
+                "Invalid node id \"ikke-en-id\" for this argument: not a valid node id");
+            assertThat(error.getPath()).containsExactly("nodes", 1);
+        });
+        assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("nodes"))
+            .extracting(m -> m == null ? null : m.get("actorId"))
+            .containsExactly(20, null);
     }
 
     @Test

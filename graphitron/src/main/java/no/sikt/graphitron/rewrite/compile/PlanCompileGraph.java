@@ -467,6 +467,8 @@ public final class PlanCompileGraph {
                 case QUERY_NODE_FETCHER -> {
                     var nodeFetcher = units.get(0);
                     precise(nodeFetcher, require(GlobalUnitKind.NODE_ID_ENCODER));
+                    // The judgement of an id refuses a malformed one with the client error.
+                    precise(nodeFetcher, require(GlobalUnitKind.CLIENT_EXCEPTION));
                     refOf(GlobalUnitKind.ENTITY_FETCHER_DISPATCH).ifPresent(d -> precise(nodeFetcher, d));
                     // A multi-tenant build's dispatchNodes builds its own loader with the router's
                     // options and keeps the context helper; a build without a tenant column reads

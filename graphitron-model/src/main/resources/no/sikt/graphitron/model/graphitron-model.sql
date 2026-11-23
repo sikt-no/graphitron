@@ -6588,7 +6588,7 @@ COMMENT ON COLUMN graphitron_node.graph_name IS 'the owning graph''s partition, 
 COMMENT ON COLUMN graphitron_node.type_name IS 'the type that is a node. The foreign key is into graphitron_tabletype rather than into the type coordinate, and that is the relation''s central claim: @node only takes effect on a type that also carries @table, so a node is a table-bound type before it is anything else and one that is not table bound cannot be a row here. A @node written on a type with no binding is a @node application in graphql_directive_application and no row here, and the anti-join between the two is where an author is told so. Cascading on delete, the dependency being existential rather than merely referential: a type that stops resolving to a table stops being a node, and the two are rewritten in one pass by the same gatherer';
 COMMENT ON COLUMN graphitron_node.type_id IS 'the wire type id this node answers to, resolved rather than as written: what the author declared where they declared one, what the backing class publishes where they did not, and the type''s own name where neither says. Never null, the last of those three always answering, so a reader encoding an id needs no fallback of its own';
 COMMENT ON COLUMN graphitron_node.type_id_origin IS 'which of the three answered, in the order they are tried: SDL_DECLARED from @node(typeId:), JOOQ_METADATA from the backing class''s __NODE_TYPE_ID, TYPE_NAME from the type itself. Carried because a diagnostic that says an id collides has to say where each came from, and because the tiers are a precedence a reader must not re-derive. The key columns'' own origin is a separate column on a separate relation, the two axes being independent: an author may declare the id and leave the columns to the catalog, or the reverse';
-COMMENT ON COLUMN graphitron_node.resolvable IS 'whether this subgraph fetches the node by its id: false where the type''s first @node says resolvable: false, true otherwise, a node the backing class publishes included. A node that is not resolvable is one another subgraph owns, and a node like any other: it implements Node, its id binds, encodes and decodes like any node''s and its type id counts towards the graph''s uniqueness. Only what fetches by id reads this: Query.node and nodes answer its id with null, and federation gets no key minted for it';
+COMMENT ON COLUMN graphitron_node.resolvable IS 'the resolvability the author wrote: false where the type''s first @node says resolvable: false, true otherwise, a node the backing class publishes included. A node that is not resolvable is one another subgraph owns, and a node like any other: it implements Node, its id binds, encodes and decodes like any node''s and its type id counts towards the graph''s uniqueness, and federation gets no key minted for it. Whether this subgraph fetches the node by its id is not this column alone, an id carrying @field encoding no node id: graphitron_node_served_by_id states that';
 
 CREATE TABLE graphitron_node_table (
   graph_name        VARCHAR   NOT NULL,
@@ -19294,6 +19294,50 @@ SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
     OR u.bound_to = '$error' OR u.bound_to LIKE '$error.%';
 COMMENT ON VIEW graphitron_outbox_entry_defect_pair_rule IS 'One row the outbox stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example h: $session on an @outbox gives one ARGMAPPING_SOURCE_MISFIT row at that entry, the handle class being no value a payload key carries.';
 
+-- A node this subgraph fetches by its id: resolvable, and its own id binding the node id at the
+-- node's table. An id carrying @field reads a column instead and encodes no node id, so its node is
+-- not fetched by id; a stub another subgraph owns is not either.
+CREATE VIEW graphitron_node_served_by_id_rule
+  (graph_name, type_name, table_source_name, table_schema, table_name) AS
+SELECT n.graph_name, n.type_name, tt.table_source_name, tt.table_schema, tt.table_name
+  FROM graphitron_node n
+  JOIN graphitron_tabletype tt ON tt.graph_name = n.graph_name AND tt.type_name = n.type_name
+  JOIN graphitron_occurrence_binding b
+    ON b.graph_name = n.graph_name AND b.coordinate = n.type_name || '.id'
+   AND b.bound = tt.table_schema || '.' || tt.table_name AND b.kind = 'NODE_ID'
+ WHERE n.resolvable;
+COMMENT ON VIEW graphitron_node_served_by_id_rule IS 'A node this subgraph fetches by its id: one row per node type that is resolvable and whose own id binds the node id at its table, in the shape graphitron_node_served_by_id stores. For example a Customer carrying @node over customer, its id unadorned, draws a row.';
+
+CREATE TABLE graphitron_node_served_by_id (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   GENERATED ALWAYS AS (type_name || '.id') NOT NULL,
+  bound             VARCHAR   GENERATED ALWAYS AS (table_schema || '.' || table_name) NOT NULL,
+  kind              VARCHAR   GENERATED ALWAYS AS ('NODE_ID') NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node (graph_name, type_name)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, table_source_name, table_schema, table_name)
+    REFERENCES graphitron_tabletype (graph_name, type_name, table_source_name, table_schema, table_name)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_node_served_by_id IS 'A node this subgraph fetches by its id: one row per node type that is resolvable and whose own id binds the node id at its table. For example a Customer carrying @node over customer, its id unadorned, draws a row, while a @node(resolvable: false) stub and a node whose id carries @field draw none.';
+COMMENT ON COLUMN graphitron_node_served_by_id.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_node_served_by_id.type_name IS 'the node type, with the graph the whole key: a node is served by id or it is not. Cascading from graphitron_node, so a type that stops being a node stops being served';
+COMMENT ON COLUMN graphitron_node_served_by_id.table_source_name IS 'the catalog source of the node''s table';
+COMMENT ON COLUMN graphitron_node_served_by_id.table_schema IS 'the schema of the node''s table';
+COMMENT ON COLUMN graphitron_node_served_by_id.table_name IS 'the node''s table, which with the source and schema references the type''s own table binding';
+COMMENT ON COLUMN graphitron_node_served_by_id.coordinate IS 'the node''s id field, type and id joined by a dot, as its occurrence binding spells it. Generated from type_name, so nothing writes it';
+COMMENT ON COLUMN graphitron_node_served_by_id.bound IS 'the node''s own table, schema-qualified, as the binding spells it. Generated from table_schema and table_name, so nothing writes it';
+COMMENT ON COLUMN graphitron_node_served_by_id.kind IS 'always NODE_ID, generated so nothing writes it, and carried so the foreign key holds the row to the id''s node id binding: a node whose id stops carrying a node id stops being served';
+COMMENT ON COLUMN graphitron_node_served_by_id.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 CREATE TABLE graphitron_key_field_binding (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -31240,8 +31284,9 @@ INSERT INTO meta_stage VALUES
   ('occurrence-routes', 'graphitron', 44, 'no.sikt.graphitron.model.derive.OccurrenceRoutes'),
   ('occurrence-depth-defects', 'graphitron', 45, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
   ('occurrence-values', 'graphitron', 46, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 47, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 48, 'no.sikt.graphitron.model.derive.Outboxes');
+  ('nodes-served-by-id', 'graphitron', 47, 'no.sikt.graphitron.model.derive.NodesServedById'),
+  ('entity-key-alternatives', 'graphitron', 48, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 49, 'no.sikt.graphitron.model.derive.Outboxes');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -31547,6 +31592,7 @@ INSERT INTO meta_stage_write VALUES
   ('entity-key-alternatives', 'graphitron_entry_defect'),
   ('entity-key-alternatives', 'graphitron_key_field_binding'),
   ('entity-key-alternatives', 'graphitron_accept_key'),
+  ('nodes-served-by-id', 'graphitron_node_served_by_id'),
   ('outbox', 'graphitron_entry_defect'),
   ('outbox', 'graphitron_argmapping_pair_defect'),
   ('outbox', 'graphitron_outbox_key'),
@@ -31646,6 +31692,7 @@ INSERT INTO meta_stage_rule VALUES
   ('code-references', 'graphitron_error_handler_source', 'graphitron_error_handler_source_rule'),
   ('directive-applications', 'graphitron_entry_defect', 'graphitron_directive_application_entry_defect_rule'),
   ('entity-key-alternatives', 'graphitron_accept_key', 'graphitron_accept_key_rule'),
+  ('nodes-served-by-id', 'graphitron_node_served_by_id', 'graphitron_node_served_by_id_rule'),
   ('entity-key-alternatives', 'graphitron_entry_defect', 'graphitron_entity_key_entry_defect_rule'),
   ('entity-key-alternatives', 'graphitron_key_field_binding', 'graphitron_key_field_binding_rule'),
   ('federation-imports', 'graphitron_federation_link_import', 'graphitron_federation_link_import_rule'),
@@ -35280,6 +35327,14 @@ INSERT INTO meta_relation VALUES
    'A table at least one node of a graph declares itself over: one row per graph and table, with how many nodes do and, where one alone does, which, in the shape graphitron_node_table stores.',
    'For example a film table only Film is bound to draws (film, 1, Film).',
    'The rule the stored relation is written from, after the nodes it counts.'),
+  ('graphitron_node_served_by_id', 'node-type', 'graphitron',
+   'A node this subgraph fetches by its id: one row per node type that is resolvable and whose own id binds the node id at its table.',
+   'For example a Customer carrying @node over customer, its id unadorned, draws a row, while a @node(resolvable: false) stub and a node whose id carries @field draw none.',
+   'Which nodes the node lookup serves, stated once for its two readers: the node fetcher judges an id against these nodes alone, and the entity dispatch gives each of them the node id alternative. A fact two uses need is a relation both read, so neither carries the predicate as a condition of its own. It is not a column on graphitron_node, whose stage runs before the occurrence bindings it reads exist; it is written from the rule beside it in a stage after them, referencing the id''s node id binding so that a node whose id stops carrying one stops being served.'),
+  ('graphitron_node_served_by_id_rule', 'node-type', 'graphitron',
+   'A node this subgraph fetches by its id: one row per node type that is resolvable and whose own id binds the node id at its table, in the shape graphitron_node_served_by_id stores.',
+   'For example a Customer carrying @node over customer, its id unadorned, draws a row.',
+   'The rule the stored relation is written from, after the occurrence bindings it reads.'),
   ('graphitron_key_field_binding', 'key-field', 'graphitron',
    'One field a federation key selects on a table-bound object type, authored or synthesised, and how it binds at that type''s own table.',
    'For example @key(fields: "tenantId sku") on a Product draws two COLUMN rows, the @key(fields: "id") synthesised for a node type one NODE_ID row, or a COLUMN row where its id carries @field, and the @key(fields: "internalGraphitronVoucher") an @accept mints one VOUCHER row.',

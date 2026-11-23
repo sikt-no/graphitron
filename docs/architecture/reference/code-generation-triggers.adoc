@@ -412,7 +412,8 @@ of several participant types answers each from its own participant's rows, and n
 decodes another's id. An id naming no participant is malformed for the field, a client error. A
 query-root field returning the `Node` interface, as `Query.node` and `Query.nodes` do, is the
 exception (Alf, 2026-11-04; Filip, 2026-11-20): it asks whether an id resolves in this subgraph at
-all, so a well-formed id whose type id names no node this subgraph serves by id answers `null`, as an
+all, so a well-formed id whose type id names no node this subgraph serves by id (the nodes
+`graphitron_node_served_by_id` states: resolvable, and the `id` binding the node id) answers `null`, as an
 id of no row does, and only an id that is not well formed is the client error. A subgraph cannot tell
 another subgraph's type from one that exists nowhere, and a gateway asking every subgraph for one id
 hears `null` from those that do not own it. Where

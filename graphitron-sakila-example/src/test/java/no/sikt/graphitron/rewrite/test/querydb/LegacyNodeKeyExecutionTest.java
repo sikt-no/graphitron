@@ -225,14 +225,19 @@ class LegacyNodeKeyExecutionTest {
     }
 
     @Test
-    void aLegacyIdWithAnUnparseableDroppedValue_isRejectedAsMalformed() {
+    void aLegacyIdWithAnUnparseableDroppedValue_isTheMalformedIdError() {
         inRolledBackTransaction(tx -> {
             int inventoryId = insertInventory(tx);
             String broken = NodeIdEncoder.encode("InventoryItem", 1, inventoryId, "yesterday");
-            Map<String, Object> data = execute(tx, """
+            var result = run(tx, """
                 { node(id: "%s") { id } }
                 """.formatted(broken));
-            assertThat(data.get("node")).isNull();
+            assertThat(result.getErrors()).singleElement().satisfies(error -> {
+                assertThat(error.getMessage()).isEqualTo(
+                    "Invalid node id \"" + broken + "\" for this argument: not a valid InventoryItem id");
+                assertThat(error.getPath()).containsExactly("node");
+            });
+            assertThat(((Map<String, Object>) result.getData()).get("node")).isNull();
         });
     }
 

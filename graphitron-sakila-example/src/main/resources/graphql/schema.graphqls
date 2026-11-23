@@ -449,6 +449,9 @@ type Query {
     # SELECT per typeId per tenant via EntityFetcherDispatch, scatters rows back to the
     # request's original positions. See QueryNodeFetcherClassGenerator.
     nodes(ids: [ID!]!): [Node]
+    # A Node-returning root under another name, the shape a consumer writes: a node fetcher by its
+    # signature, judging its id as Query.node does.
+    internalNode(id: ID): Node
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language]!
     # The single-key shape of the same lookup: a scalar key and a single return, which the
     # validator admits as one key answering one slot.

@@ -277,9 +277,10 @@ public sealed interface CallSiteExtraction
      * wrote, and it hid the mistake. This arm prunes a branch that structurally cannot match, under
      * a field-level guard that keeps a genuinely bad id an error.
      *
-     * <p>The third failure mode (NullOnMismatch) is dispatcher-driven (Query.node, Query.nodes,
-     * federated _entities) and does not appear here as a carrier arm; see
-     * {@code EntityFetcherDispatchClassGenerator}.
+     * <p>The third failure mode (NullOnMismatch) is dispatcher-driven (federated _entities) and does
+     * not appear here as a carrier arm; see {@code EntityFetcherDispatchClassGenerator}. Query.node and
+     * Query.nodes refuse a malformed id with the client error, as these arms do, and answer null only
+     * for an id of a type the subgraph does not serve by id or one naming no row.
      *
      * <p>Each arm carries the pre-resolved {@link HelperRef.Decode} for the target NodeType, so
      * the call-site emitter reaches the per-Node {@code decode<TypeName>} helper through a typed

@@ -1,0 +1,41 @@
+# The nodes a subgraph fetches by their id, which Query.node judges an id against: a node that is
+# resolvable and whose own id binds the node id at its table. A stub another subgraph owns is a node
+# like any other but is not fetched here, and a node whose id carries @field reads a column, so no
+# node id is decoded for it.
+
+interface Node { id: ID! }
+
+# Served by id: resolvable, its id the node's own.
+type Customer implements Node @table(name: "customer") @node { id: ID! }
+
+# Served by id under a declared type id: the type id is the wire's, the row still the type's.
+type Film implements Node @table(name: "film") @node(typeId: "F") { id: ID! @nodeId }
+
+# A stub: its id binds and decodes like any node's, but this subgraph does not fetch it.
+type Level implements Node @table(name: "study_level") @node(resolvable: false) { id: ID! }
+
+# Resolvable, but its id reads the address_id column: no node id to fetch it by. graphitron_node.resolvable
+# alone would count it.
+type Address implements Node @table(name: "address") @node { id: ID! @field(name: "address_id") }
+
+type Query {
+  node(id: ID!): Node
+  customers: [Customer!]!
+  films: [Film!]!
+  levels: [Level!]!
+  addresses: [Address!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_node_served_by_id", rows: """
+  type_name, table_name, coordinate,  bound,           kind
+  Customer,  customer,   Customer.id, public.customer, NODE_ID
+  Film,      film,       Film.id,     public.film,     NODE_ID
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node", rows: """
+  type_name, type_id,  resolvable
+  Address,   Address,  TRUE
+  Customer,  Customer, TRUE
+  Film,      F,        TRUE
+  Level,     StudyLevel, FALSE
+  """)

@@ -98,7 +98,6 @@ public final class EntityFetcherDispatchClassGenerator {
     /** A build without a tenant column: list slots combined, in order, into the list field's result. */
     public static final String IN_ORDER_METHOD = "inOrder";
     public static final String RESOLVE_TYPE_METHOD = "resolveType";
-    public static final String TYPENAME_FOR_TYPE_ID_METHOD = "typenameForTypeId";
     /** The emitted set of the entity typenames this subgraph resolves: the {@code fetchEntities} gate. */
     public static final String RESOLVABLE_TYPENAMES_FIELD = "RESOLVABLE_TYPENAMES";
     /**
@@ -197,8 +196,7 @@ public final class EntityFetcherDispatchClassGenerator {
                 .addMethod(loaders.loadSlot())
                 .addMethod(loaders.inOrder())
                 .addMethod(loaders.slotEnv())
-                .addMethod(buildResolveTypeMethod())
-                .addMethod(buildTypenameForTypeIdMethod(entities, LOAD_METHOD));
+                .addMethod(buildResolveTypeMethod());
             for (var entity : entities) {
                 spec.addMethod(loaders.loadType(entity));
                 for (int i = 0; i < entity.alternatives().size(); i++) {
@@ -217,7 +215,6 @@ public final class EntityFetcherDispatchClassGenerator {
         spec.addMethod(buildFetchEntitiesMethod(outputPackage))
             .addMethod(buildResolveByRepsMethod(entities))
             .addMethod(buildResolveTypeMethod())
-            .addMethod(buildTypenameForTypeIdMethod(entities, RESOLVE_BY_REPS_METHOD))
             .addMethod(buildContextHelper(graphitronContext));
 
         for (var entity : entities) {
@@ -328,47 +325,6 @@ public final class EntityFetcherDispatchClassGenerator {
                 + "entries as received; wrapping one again hides its row from type resolution.\n")
             .addCode(resolveByRepsBody(entities))
             .build();
-    }
-
-    private static MethodSpec buildTypenameForTypeIdMethod(List<EntityKeyQuery.Entity> entities, String dispatch) {
-        // Map keyed by each @node entity's NodeId expectedTypeId (differs from the typename when
-        // the consumer sets @node(typeId: ...)). Used by QueryNodeFetcher after peekTypeId to
-        // recover the GraphQL typename for synthesising reps.
-        var b = CodeBlock.builder();
-        b.add("$T<String, String> $L = $T.ofEntries(",
-            MAP, "MAP", MAP);
-        boolean first = true;
-        for (var entity : entities) {
-            // Only @node entities carry a NodeId alternative (exactly one: required == ["id"]);
-            // @key-only entities have none. Its expectedTypeId is the wire prefix, keyed to the
-            // typename here. Inclusion deliberately ignores resolvable.
-            var nodeId = entity.alternatives().stream()
-                .filter(a -> a instanceof EntityKeyQuery.Alternative.NodeId)
-                .map(a -> (EntityKeyQuery.Alternative.NodeId) a)
-                .findFirst()
-                .orElse(null);
-            if (nodeId == null) continue;
-            if (!first) b.add(",\n        ");
-            else b.add("\n        ");
-            first = false;
-            b.add("$T.entry($S, $S)", MAP, nodeId.typeId(), entity.typeName());
-        }
-        b.add(");\n");
-        var fieldInit = b.build();
-
-        var holder = MethodSpec.methodBuilder(TYPENAME_FOR_TYPE_ID_METHOD)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ClassName.get(String.class))
-            .addParameter(String.class, "typeId")
-            .addJavadoc("Returns the GraphQL typename for a given NodeId typeId prefix, or\n"
-                + "{@code null} when no {@code @node} type matches. Used by\n"
-                + "{@code QueryNodeFetcher} to synthesise representations from\n"
-                + "Relay ids before dispatching to {@link #" + dispatch + "}.\n")
-            .addStatement("if (typeId == null) return null")
-            .addCode(fieldInit)
-            .addStatement("return MAP.get(typeId)")
-            .build();
-        return holder;
     }
 
     private static CodeBlock resolveByRepsBody(List<EntityKeyQuery.Entity> entities) {

@@ -14,8 +14,9 @@ import com.palantir.javapoet.CodeBlock;
  * <p>Here rather than on any one host because every host that decodes a node id must fail the same
  * way: the key helpers {@link CompositeDecodeHelperRegistry} mints for a predicate, the record helpers
  * {@link RecordDecodeFragments} mints for an {@code argMapping} projection or a {@code @service}
- * input-bean member, the lookup rows {@link LookupRows} builds, and the legacy core's DML input
- * decodes and jOOQ-record {@code @service} decodes. A message that differed between them would tell a
+ * input-bean member, the lookup rows {@link LookupRows} builds, the legacy core's DML input
+ * decodes and jOOQ-record {@code @service} decodes, and the node fetcher's judgement of the id
+ * {@code Query.node} and {@code Query.nodes} are handed. A message that differed between them would tell a
  * client that one spelling of an id validates and another does not, and a host raising anything but
  * the client error would have its text redacted where the field has no errors channel.
  *
@@ -72,6 +73,34 @@ public final class NodeIdDecodeFailure {
                 String.class, peekedLocal, encoderClass, wireLocal, textLocal, textLocal)
             .addStatement("throw new $T($L)", clientException,
                 messageExpr(expectedTypeId, displayName, wireLocal, peekedLocal))
+            .build();
+    }
+
+    /**
+     * The single-type throw for a host that already knows the id carries the expected type's prefix,
+     * so only the malformed branch of {@link #throwStatement}'s message can apply: the same text,
+     * {@code not a valid <displayName> id}, with no peek of its own.
+     *
+     * @param idLocal the {@code String} local holding the wire value, echoed in the message
+     */
+    public static CodeBlock malformedThrowStatement(String outputPackage, String displayName, String idLocal) {
+        return CodeBlock.builder()
+            .addStatement("throw new $T($L)", clientException(outputPackage), malformedMessage(displayName, idLocal))
+            .build();
+    }
+
+    /**
+     * The throw for a {@code String} local that cannot be read as a node id at all, its type prefix
+     * not decoding (not base64url, no {@code :}, or an empty type id): no type is named, since the id
+     * names none. For a host that judges an id against every node it serves, where an id of a type
+     * it does not serve is not this failure.
+     *
+     * @param idLocal the {@code String} local holding the wire value, echoed in the message
+     */
+    public static CodeBlock undecodableThrowStatement(String outputPackage, String idLocal) {
+        return CodeBlock.builder()
+            .addStatement("throw new $T($S + $L + $S)", clientException(outputPackage),
+                "Invalid node id \"", idLocal, "\" for this argument: not a valid node id")
             .build();
     }
 
@@ -141,11 +170,17 @@ public final class NodeIdDecodeFailure {
             String peekedLocal) {
         return CodeBlock.of(
             "$L == null || $S.equals($L)\n"
-          + "    ? $S + $L + $S\n"
+          + "    ? $L\n"
           + "    : $S + $L + $S + $L + $S",
             peekedLocal, expectedTypeId, peekedLocal,
-            "Invalid node id \"", msgVar, "\" for this argument: not a valid " + displayName + " id",
+            malformedMessage(displayName, msgVar),
             "Invalid node id \"", msgVar, "\" for this argument: decodes to type \"", peekedLocal,
             "\", expected a " + displayName + " id");
+    }
+
+    /** The malformed text for one node type, the one spelling every single-type host raises. */
+    private static CodeBlock malformedMessage(String displayName, String msgVar) {
+        return CodeBlock.of("$S + $L + $S",
+            "Invalid node id \"", msgVar, "\" for this argument: not a valid " + displayName + " id");
     }
 }

@@ -126,20 +126,36 @@ class ConverterFilterExecutionTest {
     }
 
     @Test
-    void node_orgCodeSlotTheConverterCannotTake_answersNull() {
+    void node_orgCodeSlotTheConverterCannotTake_isTheMalformedIdError() {
         for (String slot : List.of("abc", "99999999999999999999")) {
-            var data = execute("{ node(id: \"" + termId(slot) + "\") { id } }");
-            assertThat(data.get("node")).as("org_code slot '%s'", slot).isNull();
+            String id = termId(slot);
+            var result = graphql.execute(Graphitron.newExecutionInput(dsl, "{}", "test-user")
+                .query("{ node(id: \"" + id + "\") { id } }").build());
+            assertThat(result.getErrors()).as("org_code slot '%s'", slot).singleElement().satisfies(error -> {
+                assertThat(error.getMessage()).isEqualTo(
+                    "Invalid node id \"" + id + "\" for this argument: not a valid ConverterCampusTerm id");
+                assertThat(error.getPath()).containsExactly("node");
+            });
+            assertThat(((Map<String, Object>) result.getData()).get("node")).isNull();
         }
     }
 
     @Test
-    void nodes_paddedOrgCodeSlot_isNotAnAliasOfTheRealId() {
-        // The encoder writes org_code 186 as "186", so "0186" names no row even though the converter
-        // would take it to the same database value.
+    void nodes_paddedOrgCodeSlot_isTheMalformedIdErrorAtItsPosition_notAnAliasOfTheRealId() {
+        // The encoder writes org_code 186 as "186", so "0186" is no id the server minted even though
+        // the converter would take it to the same database value: its element is null with the
+        // error, and the real id beside it resolves.
+        String padded = termId("0186");
         String real = idOfTerm("Autumn UiT");
-        var nodes = rows("{ nodes(ids: [\"" + termId("0186") + "\", \"" + real + "\"])"
-            + " { ... on ConverterCampusTerm { termName } } }", "nodes");
+        var result = graphql.execute(Graphitron.newExecutionInput(dsl, "{}", "test-user")
+            .query("{ nodes(ids: [\"" + padded + "\", \"" + real + "\"])"
+                + " { ... on ConverterCampusTerm { termName } } }").build());
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage()).isEqualTo(
+                "Invalid node id \"" + padded + "\" for this argument: not a valid ConverterCampusTerm id");
+            assertThat(error.getPath()).containsExactly("nodes", 0);
+        });
+        var nodes = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("nodes");
         assertThat(nodes).hasSize(2);
         assertThat(nodes.get(0)).isNull();
         assertThat(nodes.get(1)).containsEntry("termName", "Autumn UiT");

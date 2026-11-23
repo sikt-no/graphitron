@@ -188,7 +188,7 @@ type StudyLevel implements Node @table(name: "study_level") @node(resolvable: fa
 }
 ----
 
-It is a node like any other: it implements `Node`, and its `typeId` and key columns resolve exactly as any node's do, from `@node`, else from the table class's published metadata, else from the type's name and primary key, so its id encodes and decodes and its `typeId` counts towards the uniqueness rule below. Whether this subgraph resolves it is the one thing `resolvable: false` says: `Query.node` and `Query.nodes` answer its id with `null`, and a federated graph gets no `@key(fields: "id")` synthesised for it. The owning subgraph does those.
+It is a node like any other: it implements `Node`, and its `typeId` and key columns resolve exactly as any node's do, from `@node`, else from the table class's published metadata, else from the type's name and primary key, so its id encodes and decodes and its `typeId` counts towards the uniqueness rule below. Whether this subgraph resolves it is the one thing `resolvable: false` says: `Query.node` and `Query.nodes` answer its id with `null`, well formed or not, since this subgraph does not judge an id of a type it does not serve, and a federated graph gets no `@key(fields: "id")` synthesised for it. The owning subgraph does those.
 
 The build refuses a xref:nodeId.adoc[`@nodeId(typeName:)`] naming a `@table` type over a table that publishes node metadata without `@node` on it.
 

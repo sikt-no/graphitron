@@ -5099,30 +5099,85 @@ class GraphQLQueryTest {
 
     @Test
     void node_unknownTypeId_returnsNull() {
-        // typeId prefix no NodeType claims → null (Relay spec: "if no such object exists, the
-        // field returns null"). Dispatcher must not raise.
+        // A well-formed id of a type this subgraph does not serve by id → null, no error: another
+        // subgraph may own the type, so the id is not judged malformed.
         String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("NotARegisteredType", "1");
         Map<String, Object> data = execute("{ node(id: \"" + id + "\") { __typename } }");
         assertThat(data.get("node")).isNull();
     }
 
     @Test
-    void node_garbageInput_returnsNull() {
-        // Malformed base64 → null (opacity: decoding errors are not exposed to clients).
-        Map<String, Object> data = execute("{ node(id: \"not-a-valid-base64-id\") { __typename } }");
-        assertThat(data.get("node")).isNull();
+    void node_garbageInput_isTheUndecodableClientError() {
+        // An id that cannot be read as a node id at all fails the field with the client error.
+        graphql.ExecutionResult result = executeRaw("{ node(id: \"not-a-valid-base64-id\") { __typename } }");
+        assertMalformedNodeId(result, "node", "not-a-valid-base64-id", "not a valid node id");
     }
 
     @Test
-    void node_compositeKeyWrongArityId_returnsNull() {
-        // A well-formed id for the composite-key @node FilmActor (PK actor_id, film_id)
-        // whose decoded key has only one part. A wrong-arity id is treated exactly like a
-        // garbage/unknown id: null, no errors (an arity-blind decode reads past the decoded
-        // parts → AIOOBE → redacted 500).
+    void node_customerIdWithAKeyNoColumnHolds_isTheMalformedCustomerIdError() {
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", "abc");
+        graphql.ExecutionResult result = executeRaw("{ node(id: \"" + id + "\") { __typename } }");
+        assertMalformedNodeId(result, "node", id, "not a valid Customer id");
+    }
+
+    @Test
+    void node_compositeKeyWrongArityId_isTheMalformedFilmActorIdError() {
+        // A well-formed id for the composite-key @node FilmActor (PK actor_id, film_id) whose
+        // decoded key has only one part: its type is served here, so its key is judged and refused
+        // (an arity-blind decode would read past the decoded parts).
         String underArity = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1);
+        graphql.ExecutionResult result = executeRaw("{ node(id: \"" + underArity + "\") { __typename } }");
+        assertMalformedNodeId(result, "node", underArity, "not a valid FilmActor id");
+    }
+
+    @Test
+    void internalNode_aConsumerShapedNodeField_refusesAMalformedIdToo() {
+        // Any root field returning Node is a node fetcher by its signature, whatever it is called.
+        graphql.ExecutionResult result = executeRaw("{ internalNode(id: \"ikke-en-id\") { __typename } }");
+        assertMalformedNodeId(result, "internalNode", "ikke-en-id", "not a valid node id");
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         Map<String, Object> data = execute(
-            "{ node(id: \"" + underArity + "\") { __typename } }");
-        assertThat(data.get("node")).isNull();
+            "{ internalNode(id: \"" + c1 + "\") { __typename ... on Customer { firstName } } }");
+        assertThat(data).extractingByKey("internalNode", as(MAP)).containsEntry("firstName", "Mary");
+    }
+
+    @Test
+    void node_aStubsId_answersNull_wellFormedOrNot() {
+        // StudyLevel is @node(resolvable: false): another subgraph owns it, so this one serves no id of
+        // it, and never judges its key.
+        for (String id : List.of(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("StudyLevel", "BACHELOR"),
+                no.sikt.graphitron.generated.util.NodeIdEncoder.encode("StudyLevel", "a", "b", "c"))) {
+            Map<String, Object> data = execute("{ node(id: \"" + id + "\") { __typename } }");
+            assertThat(data.get("node")).as(id).isNull();
+        }
+    }
+
+    /**
+     * The malformed node id client error on {@code field}: one error naming {@code id} with the
+     * {@code reason} text, never redacted, and the field nullified.
+     */
+    private static void assertMalformedNodeId(graphql.ExecutionResult result, String field, String id,
+                                              String reason) {
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage())
+                .isEqualTo("Invalid node id \"" + id + "\" for this argument: " + reason)
+                .doesNotContain("Reference:");
+            assertThat(error.getPath()).containsExactly(field);
+        });
+        assertFieldNullified(result, field);
+    }
+
+    /**
+     * The malformed node id client error at {@code nodes}' element {@code index}: exactly one error,
+     * at that element's path, naming {@code id} with the {@code reason} text.
+     */
+    private static void assertMalformedNodeIdAt(graphql.ExecutionResult result, int index, String id,
+                                                String reason) {
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage())
+                .isEqualTo("Invalid node id \"" + id + "\" for this argument: " + reason);
+            assertThat(error.getPath()).containsExactly("nodes", index);
+        });
     }
 
     @Test
@@ -5166,36 +5221,41 @@ class GraphQLQueryTest {
     private static final String WRAPS_TO_ONE = "4294967297";
 
     @Test
-    void node_keyValueWrapsItsColumn_returnsNullNotTheWrappedRow() {
+    void node_keyValueWrapsItsColumn_isTheMalformedIdErrorNotTheWrappedRow() {
         String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", WRAPS_TO_ONE);
         assertThat(id).isEqualTo("Q3VzdG9tZXI6NDI5NDk2NzI5Nw");
-        Map<String, Object> data = execute(
+        graphql.ExecutionResult result = executeRaw(
             "{ node(id: \"" + id + "\") { __typename ... on Customer { customerId } } }");
-        assertThat(data.get("node")).isNull();
+        assertMalformedNodeId(result, "node", id, "not a valid Customer id");
     }
 
     @Test
-    void node_nonNumericOrPaddedKeyValue_returnsNull() {
+    void node_nonNumericOrPaddedKeyValue_isTheMalformedIdError() {
         for (String key : List.of("abc", " 1", "01", "1.0")) {
             String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", key);
-            Map<String, Object> data = execute(
+            graphql.ExecutionResult result = executeRaw(
                 "{ node(id: \"" + id + "\") { __typename ... on Customer { customerId } } }");
-            assertThat(data.get("node")).as("key value '%s'", key).isNull();
+            assertMalformedNodeId(result, "node", id, "not a valid Customer id");
         }
     }
 
     @Test
-    void nodes_undecodableKeyValues_nullSlotsWhileTheRestResolve() {
+    void nodes_undecodableKeyValues_nullSlotsWithAnErrorEachWhileTheRestResolve() {
         String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         String wrapped = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", WRAPS_TO_ONE);
         String text = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", "abc");
-        Map<String, Object> data = execute(
+        graphql.ExecutionResult result = executeRaw(
             "{ nodes(ids: [\"" + c1 + "\", \"" + wrapped + "\", \"" + text + "\"]) {"
             + " __typename ... on Customer { customerId } } }");
-        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(3);
+        var nodes = assertThat((Map<String, Object>) result.getData()).extractingByKey("nodes", as(LIST)).hasSize(3);
         nodes.element(0, as(MAP)).containsEntry("customerId", 1);
         nodes.element(1).isNull();
         nodes.element(2).isNull();
+        assertThat(result.getErrors()).extracting(e -> e.getPath()).containsExactlyInAnyOrder(
+            List.of("nodes", 1), List.of("nodes", 2));
+        assertThat(result.getErrors()).extracting(e -> e.getMessage()).containsExactlyInAnyOrder(
+            "Invalid node id \"" + wrapped + "\" for this argument: not a valid Customer id",
+            "Invalid node id \"" + text + "\" for this argument: not a valid Customer id");
     }
 
     @Test
@@ -5284,39 +5344,59 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void nodes_garbageId_returnsNullEntry() {
-        // Malformed base64 — null at that position, others still resolve.
+    void nodes_garbageId_nullEntryWithTheErrorAtItsPosition() {
+        // Malformed base64: that position is null with the client error at its path, the other id
+        // resolves, and the field is not nullified.
         String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
-        Map<String, Object> data = execute(
+        graphql.ExecutionResult result = executeRaw(
             "{ nodes(ids: [\"" + c1 + "\", \"not-a-valid-base64-id\"]) {"
             + " __typename ... on Customer { firstName } } }");
-        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(2);
+        var nodes = assertThat((Map<String, Object>) result.getData()).extractingByKey("nodes", as(LIST)).hasSize(2);
         nodes.element(0, as(MAP)).containsEntry("firstName", "Mary");
         nodes.element(1).isNull();
+        assertMalformedNodeIdAt(result, 1, "not-a-valid-base64-id", "not a valid node id");
     }
 
     @Test
-    void nodes_compositeKeyWrongArityIds_nullSlotsPreservePositions() {
+    void nodes_unknownTypeMissingRowAndValidId_resolvePerPositionWithNoError() {
+        String unknown = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("NotARegisteredType", "1");
+        String missing = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 999999);
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + unknown + "\", \"" + missing + "\", \"" + c1 + "\"]) {"
+            + " __typename ... on Customer { firstName } } }");
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(3);
+        nodes.element(0).isNull();
+        nodes.element(1).isNull();
+        nodes.element(2, as(MAP)).containsEntry("firstName", "Mary");
+    }
+
+    @Test
+    void nodes_compositeKeyWrongArityIds_nullSlotsWithAnErrorEachPreservePositions() {
         // A batch mixing a correct-arity FilmActor id (actor=1, film=1, a real row) with
         // an under-arity id (one key part) and an over-arity id (three key parts). Both wrong-arity
-        // ids must yield null in their positions; the valid one still resolves. The over-arity id's
-        // 2-part prefix (1,1) IS a real row, so without the != N guard it would silently resolve the
-        // wrong row rather than crash — this pins the null outcome for both failure modes.
+        // ids must yield null in their positions, each with the client error at its path; the valid
+        // one still resolves. The over-arity id's 2-part prefix (1,1) IS a real row, so without the
+        // != N guard it would silently resolve the wrong row; this pins the refusal for both modes.
         String valid      = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 1);
         String underArity = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1);
         String overArity  = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 1, 999);
-        Map<String, Object> data = execute(
+        graphql.ExecutionResult result = executeRaw(
             "{ nodes(ids: [\"" + valid + "\", \"" + underArity + "\", \"" + overArity + "\"]) {"
             + " __typename ... on FilmActor { actorId filmId } } }");
-        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(3);
+        var nodes = assertThat((Map<String, Object>) result.getData()).extractingByKey("nodes", as(LIST)).hasSize(3);
         nodes.element(0, as(MAP)).containsEntry("actorId", 1).containsEntry("filmId", 1);
         nodes.element(1).isNull();
         nodes.element(2).isNull();
+        assertThat(result.getErrors()).extracting(e -> e.getPath()).containsExactlyInAnyOrder(
+            List.of("nodes", 1), List.of("nodes", 2));
+        assertThat(result.getErrors()).allSatisfy(e ->
+            assertThat(e.getMessage()).endsWith("for this argument: not a valid FilmActor id"));
     }
 
     @Test
     void nodes_unknownTypeId_returnsNullEntry() {
-        // typeId prefix no NodeType claims — null at that position (Relay spec).
+        // A type this subgraph does not serve by id: null at that position, no error.
         String unknown = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("NotARegisteredType", "1");
         String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         Map<String, Object> data = execute(

@@ -263,6 +263,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_node_table", Arm.DERIVED);
         registrations.put("graphitron_node_table_rule", Arm.DERIVED);
         registrations.put("graphitron_key_field_binding", Arm.DERIVED);
+        registrations.put("graphitron_node_served_by_id", Arm.DERIVED);
         registrations.put("graphitron_minted_key", Arm.DERIVED);
         registrations.put("graphitron_voucher_member", Arm.DERIVED);
         registrations.put("graphitron_voucher_field", Arm.DERIVED);
@@ -555,6 +556,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_nesting_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_voucher_rule", Arm.DERIVED);
         registrations.put("graphitron_key_field_binding_rule", Arm.DERIVED);
+        registrations.put("graphitron_node_served_by_id_rule", Arm.DERIVED);
         registrations.put("graphitron_minted_key_rule", Arm.DERIVED);
         registrations.put("graphitron_voucher_member_rule", Arm.DERIVED);
         registrations.put("graphitron_voucher_field_rule", Arm.DERIVED);
