@@ -1,7 +1,7 @@
 ---
 id: R534
 title: "An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: codegen-correctness
@@ -14,7 +14,7 @@ last-updated: 2026-11-23
 
 ## Goal
 
-A client that sends an explicit `null` for a field bound to a `NOT NULL` column, in an input a `@service` method receives as a jOOQ record, gets that null written and validated whatever else the same input sends. When this item lands, the shape a consumer hit is pinned by execution tests, that consumer's own reproducer is green on a release cut from trunk, and the one helper that still carries the defect, which no consumer's schema reaches any more, is named in the roadmap node that deletes it.
+A client that sends an explicit `null` for a field bound to a `NOT NULL` column, in an input a `@service` method receives as a jOOQ record, gets that null written and validated whatever else the same input sends. When this item lands, the shape a consumer hit is pinned by execution tests and that consumer's own reproducer is green on a release cut from trunk. The one helper that carried the defect was to be named in the roadmap node that deleted it; R876 deleted it while this item was in progress, so the defect is left in no helper at all.
 
 ```graphql
 input FilmRecordDraftInput {
@@ -36,18 +36,16 @@ The service is handed a `FilmRecord`. Each column of a jOOQ record carries a *to
 
 The reference page already states the rule, in `docs/manual/reference/directives/service.adoc`: "A field sent as `null` writes `NULL`, on a `NOT NULL` column too, whatever else the input sends." Today that sentence is demonstrated only where the other thing the input sends is a node id. This item demonstrates it for a plain value, which is what the consumer sent.
 
-## The defect and where it still lives
+## The defect and where it lived
 
 Every `Record.fromArray` (and every other `from()` load) ends with jOOQ's `Tools.resetTouchedOnNotNull`, which clears the touched flag of every column that is null-valued and whose `DataType` is `NOT NULL`. A helper that runs `set(COLUMN, null)` for an explicit null and afterwards loads anything else into the same record through `fromArray` loses the null. A nullable column is spared, so `film.description` keeps a `NULL` write that `film.title` would lose.
 
-Two helpers build a jOOQ record from an input object:
+Two helpers built a jOOQ record from an input object when this item was specified:
 
 * `BuildEmitter.recordHelper`, emitted from the fact store (the database of schema, catalog and classpath facts the generator reads). It is correct: it loads every sent value through `fromArray`, then sets every explicit null, then decodes node ids through `NodeIdEncoder.decodeInto`, which writes each key column with `set`. No `fromArray` reaches the record after a null is set, and its javadoc says why.
-* `JooqRecordInstantiationEmitter`, the classified model's helper, which is being retired. It still has the defect, for a later key decode and for a later plain value alike, and the javadoc on `emitKeyDecode` calls it one.
+* `JooqRecordInstantiationEmitter`, the classified model's helper. It had the defect, for a later key decode and for a later plain value alike.
 
-Which helper a `@service` field gets was decided by `ServiceEmission.verdict`: `EMITTED` meant the store-fed fetcher and the first helper, anything else fell back to the classified fetcher and the second. Since R876's service flip every service the store owns takes the first; `ServiceVerdictCoverageGateTest` holds that every fact document's service is emitted or carries a stored error defect.
-
-No consumer's schema reaches it since R876's service flip (`derived-read-cost-is-a-shape-problem.md`): a service the store owns is emitted from the store or the build stops on a generator bug, and a verdict other than `EMITTED` on a graph the store accepts is that bug, so there is no fallback to the classified fetcher. The second helper is reached only by the classified model's own tests, and it goes with the walk's service code, under R876's node "The walk's service path is gone".
+Since R876's service flip (`derived-read-cost-is-a-shape-problem.md`) every service the store owns took the first helper, with no fallback to the classified fetcher, so no consumer's schema reached the second. R876 then deleted the second with the walk's service code (`93f8329f2`, 2026-11-20), and the node that was to own it went with it (`a5b3134d2`, the same day).
 
 ### Consumer report
 
@@ -57,12 +55,12 @@ Graphitron 9 answered the same request with a validation error, because its gene
 
 ## Implementation
 
-No generator behaviour changes. `BuildEmitter.recordHelper` already orders its loads correctly, and `JooqRecordInstantiationEmitter` is not patched: a fix there is work on code the R876 node above deletes.
+No generator behaviour changes. `BuildEmitter.recordHelper` already orders its loads correctly, and `JooqRecordInstantiationEmitter` was not patched: a fix there was work on code R876 was deleting, and has since deleted.
 
-Two comments state the erasure wrongly and are corrected, so what a reader finds matches the tree:
+Two comments stated the erasure wrongly and were corrected, so what a reader finds matches the tree:
 
-* The class javadoc of `CustomerRecordService` in `graphitron-sakila-service` still describes a present-null nested leaf as collapsing to omitted when the identity group is present. `GraphQLQueryTest.customerUpsert_explicitNullNestedLeaf_besideADecodedNodeId_writesNull` pins the opposite. The sentence is rewritten to the behaviour that test pins.
-* The javadoc on `JooqRecordInstantiationEmitter.emitKeyDecode` and `emitColumnBinding` attributes the reset to a later key decode and to every null-valued column. It is narrowed to the mechanism as verified: any later `fromArray` load, and only a null on a `NOT NULL` column.
+* The class javadoc of `CustomerRecordService` in `graphitron-sakila-service` described a present-null nested leaf as collapsing to omitted when the identity group is present. `GraphQLQueryTest.customerUpsert_explicitNullNestedLeaf_besideADecodedNodeId_writesNull` pins the opposite. The sentence is rewritten to the behaviour that test pins (`ad8d21c`). Once R876 deleted the classified helper, the same javadoc still named that helper and the record-class dedup it collided on, and claimed the only view of the flags; those are gone too, at the handover to review.
+* The javadoc on `JooqRecordInstantiationEmitter.emitKeyDecode` and `emitColumnBinding` attributed the reset to a later key decode and to every null-valued column. It was narrowed to the mechanism as verified (`ad8d21c`): any later `fromArray` load, and only a null on a `NOT NULL` column. The class has since been deleted.
 
 ## Tests
 
@@ -92,6 +90,12 @@ Green, on a snapshot of trunk rather than a release. No release contained `ad8d2
 * **Baseline.** The same class in the same environment, from an unedited copy on `10.0.0-RC47`: the reproducer fails, `data.endreKull.kull` carrying the element where null is expected, and the control passes.
 * **Which helper.** Trunk built the record with `BuildEmitter.recordHelper`: the values for `STUDIEKULLNAVN_ENGELSK` and `STATUS_EKSPORT_LMS` loaded by `fromArray`, then the explicit null on `STUDIEKULLNAVN` set, then the node ids decoded by `decodeInto`. The fetcher validates every touched column before it constructs `EndreKullService`, so the `@NotNull` on `STUDIEKULLNAVN` refuses the element before the service's own transaction is opened. RC47 built it with the classified helper, `rec.set(KULL.STUDIEKULLNAVN, null)` followed by `rec.fromArray(..., KULL.STUDIEKULLNAVN_ENGELSK)`, the sequence the consumer report names.
 * **What the copy changed.** sis does not build on trunk unchanged, and none of what trunk refused is `endreKull`, `EndreKullInput` or a `KULL` column. In a scratch copy only, not on sis's branch: eleven types another subgraph owns and a `@nodeId` names, declared `@node(resolvable: false)`, implementing `Node` with an `id` (`NODE_ID_TYPE_NAME_UNDECLARED_STUB`, then `NODE_WITHOUT_NODE_INTERFACE`; two `COLUMN_UNRESOLVED` refusals on `studienivaer` went with it); the `kullterminer` and `terminer` filters' `@reference` paths written on to `TERMIN` (`NODE_ID_LANDS_ON_TABLE`); the two `aktivInnenforPeriode` filters removed (`MEMBER_UNKNOWN`); `PersonProfil`'s `eierOrganisasjonskode fodselsnummer` key removed (`KEY_FIELD_NOT_A_COLUMN`); `FeideBruker`'s `@defaultTenant` dropped, its key made `resolvable: false` and sis's `personProfil` on it removed; and `sis-app`'s runtime wiring ported from `RequestTenants` and `SessionState` to the generated `ConnectionSources.mounting`, the key with no tenant read on the home organisation as the old default did.
+* **Where each refusal is ruled.** None of them is a regression the run leaves without an owner:
+    * The stubs (`NODE_ID_TYPE_NAME_UNDECLARED_STUB`, `NODE_WITHOUT_NODE_INTERFACE`, and the two `COLUMN_UNRESOLVED` that went with them): the `@node` reference states that a node another subgraph owns is written `@node(resolvable: false)` and implements `Node`, and R876's node "sis draws no entry defect the generator accepts" rules these stubs sis's to write.
+    * `NODE_ID_LANDS_ON_TABLE`: the same R876 node, fs-plattform MR 6636 (Alf, 2026-11-07).
+    * `MEMBER_UNKNOWN`: Alf's ruling of 2026-11-17 that an input nothing takes is refused, cited in R876's node "An input nothing takes is a defect everywhere".
+    * `KEY_FIELD_NOT_A_COLUMN`: the federation reference, which refuses a key field that does not read a column of the entity's own table.
+    * `@defaultTenant` and the `sis-app` port: R1119's ruling of 2026-11-17, no default tenant and no `@defaultTenant`.
 
 ### The run of 2026-11-23
 
@@ -101,16 +105,16 @@ Green, on `10.0.0-RC58`, the first release cut from trunk after `ad8d21c`. Its t
 * **Build.** RC58 refused nothing the copy's edits had not already answered, and asked for no edit of its own. The `sis-app` port built unchanged.
 * **Result.** As on the snapshot: the reproducer and `endreKull_gyldigInput_oppdatererKull` pass, and the other three cases fail with "A nested transaction in this field failed".
 * **Which helper.** `BuildEmitter.recordHelper` again: `fromArray` for the values sent, then the explicit nulls, then `decodeInto` for the id.
-* **What it does not show.** The release condition is met, but the run was in a copy edited to build on RC58, not on sis's branch; none of the edits touches `endreKull`, `EndreKullInput` or a `KULL` column. Only RC47 and RC58 were run, so which release between them first built this record with the store's helper is not shown.
+* **What it does not show.** The release condition is met, but the run was in a copy edited to build on RC58, not on sis's branch. None of the schema edits touches `endreKull`, `EndreKullInput` or a `KULL` column; the `sis-app` port does sit on every field's runtime path, `endreKull`'s included, and the passing control is what covers it. The red arm (RC47, unedited) and the green arms (snapshot and RC58, edited) differ in version and in edits alike, so the test's colour alone does not separate the two; the "Which helper" bullets do, by the order each build loads the record in. Only RC47 and RC58 were run, so which release between them first built this record with the store's helper is not shown.
 
 ## Roadmap entries
 
-* The R876 node "The walk's service path is gone" gains a sentence naming this erasure among what its subtract removes, with `JooqRecordInstantiationEmitter` beside the service leaves it deletes, so the residual has an owner after this file is gone.
-* On Done, `changelog.md` records the two cases, the sis outcome, and that hand-off.
+* The R876 node "The walk's service path is gone" was given a sentence naming this erasure among what its subtract removes (`ad8d21c`). R876 deleted the helper (`93f8329f2`) and the node (`a5b3134d2`) the same day, so nothing is left to hand off.
+* On Done, `changelog.md` records the two cases, the sis outcome, and that the helper which carried the defect is deleted.
 
 ## Other solutions we've considered
 
-* **Port the store helper's order to the classified helper** (every `fromArray` load first, explicit nulls last). Chosen against by Filip, 2026-11-19, while a consumer's service could still fall back to that helper, in favour of letting the path close with its owner. R876's service flip has since closed it: the port would now change only what the classified model's own tests exercise, in code about to be deleted.
+* **Port the store helper's order to the classified helper** (every `fromArray` load first, explicit nulls last). Chosen against by Filip, 2026-11-19, while a consumer's service could still fall back to that helper, in favour of letting the path close with its owner. R876's service flip closed it, and R876 has since deleted the helper.
 * **Load values without `fromArray`**, by per-column `set` with an explicit conversion, so the order stops mattering. `fromArray` is there for the column's own `DataType` and `Converter` coercion; replacing it is a separate design question with a wider surface than this defect.
 * **Validate by what the client sent**, as Graphitron 9 did. It restores the validation error and leaves the write dropped wherever no constraint covers the column, which reproduces the erasure Alf ruled a bug (2026-11-10).
 * **Tell the consumer which services still use the classified helper**, by a build warning or a generate-time refusal. Considered while a service could still fall back. A refusal raised in Java at generate time is what `docs/architecture/explanation/defects-as-facts.adoc` rules out, what the generator cannot emit yet being a stored deferral, and the service flip has since left no such service to name.
