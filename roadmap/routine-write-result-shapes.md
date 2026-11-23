@@ -296,3 +296,48 @@ column arms), 3 and 4. Slice 4 does not block 1 to 3, since opptak's slice write
   for `RETURNS TABLE(...)`. Are routine writes over those still wanted? If not, the name-matched write
   and its reader of `sql_name_matched_key_column` could go, as a deliberate breaking change. A recommends
   keeping them. That is Alf's and Filip's decision.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready review, 2026-11-23)
+
+Question 1 holds. What changes for a consumer is clear: a plpgsql routine returning one row of a
+table can back a mutation (its returned row is the payload's data, no re-read), back a query or a
+child field as a row source in one statement, take a list of node ids as an array of a composite key
+type, a table record or one key column, and have its SQLSTATE refusals land in `errors`. The claims
+about the tree check out: every relation, view, column, defect code, class, fact document, docs
+section and Mikado node the plan names exists as named, `code_type_element` does say an array names
+no class, the census does drop the generated package, and Alf's mutation ruling is already in
+`code-generation-triggers.adoc`, "Producer".
+
+Question 2 fails on one point, in slice 1.
+
+**Root `RETURNS TABLE(...)` reads lose their producer result.** Slice 1 retires the ROUTINE case of
+`graphitron_occurrence_producer_result_rule` and its join of `graphitron_routine_result`, and has the
+service arm answer for a routine by joining `code_method.result_element_class` to
+`sql_table.record_class_fqn` "of a `TABLE`". Today the ROUTINE case is what gives a root read over a
+`RETURNS TABLE(...)` function its shape and its table: the function's own `FUNCTION` row in
+`sql_table`, through `graphitron_routine_result`. Every routine fixture in sakila is that shape, and
+`Query.tilganger` (and `tilgangerAdmin`, `tilgangerSortert`, `tilgangerConnection`) is a root read over
+one whose type `Tilgang` binds no table. Under the rule as written:
+
+- the function's own record class matches no `TABLE` row, so `element_table` is null, the shape
+  falls to `OBJECT` and the result carries no table, which regresses those reads;
+- dropping the "of a `TABLE`" filter instead makes a `SETOF <table>` function match twice, its own
+  `FUNCTION` row and the base table, both carrying the base table's record class, as the evidence
+  section says, so the producer result gets two rows for one occurrence.
+
+The spec also does not say which holder method a root routine's call pins in
+`graphitron_occurrence_call_method`. A routine has several forms (execute, value, table) and the
+join's answer depends on which one is pinned: the table form of a table-valued function returns the
+table class, its execute form `Result<R>`, a one-row function's execute form `R`.
+
+What would satisfy it: name the form a root routine's call pins, per routine shape (one row of `T`,
+`SETOF T`, `RETURNS TABLE(...)`), and say how a `RETURNS TABLE(...)` root read keeps its result
+table once the ROUTINE case goes. Either the record-class join resolves a `FUNCTION` row where no
+`TABLE` row carries the class, with the rule that prefers the base table stated, or the
+`graphitron_routine_result` join stays for that shape and the spec says so. Add the existing
+`RETURNS TABLE` root reads to slice 1's tests as a regression guard (a fact document claiming their
+producer result is unchanged).
+
+Verdict: stays in Spec.
