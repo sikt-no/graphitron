@@ -306,6 +306,17 @@ each producer, what it runs and where it starts.
   parents: a `@splitQuery` field, a table-bound field under a parent that holds an object rather than
   rows, a payload's data field re-read by key after a write, or a child `@service`.
 
+A mutation over a routine that returns one row of a table is the exception to the re-read (Alf,
+2026-11-23):
+
+* The call returns the routine's record, and that record is the answer: the payload's data field is
+  the record itself, not projected and not re-read.
+* The routine prepared the row, so the row stands as the routine returned it, under the routine's
+  read policy rather than the caller's. A `SECURITY DEFINER` routine's row is therefore not filtered
+  again by row-level security.
+* The record carries the whole row, not only its key. A field under the data field that needs more
+  than the row's columns still starts a query of its own from the record's key.
+
 A table-bound field under a parent that holds an object, and a payload's data field, start their own
 query whatever is written on them, so a `@splitQuery` there changes nothing. It is admitted, and the
 store warns that it is redundant, `SPLIT_QUERY_REDUNDANT`, a write's payload included (Alf,
