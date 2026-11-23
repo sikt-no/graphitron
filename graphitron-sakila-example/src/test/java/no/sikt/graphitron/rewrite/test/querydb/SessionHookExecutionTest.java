@@ -573,6 +573,31 @@ class SessionHookExecutionTest {
     }
 
     @Test
+    void sessionMemberReadByAChildCondition_isProjectedIntoAServiceLift() throws Exception {
+        // The same child condition under a root @service: the service hands back store records, and
+        // the lift selecting SessionStore off them hands its $project the dsl the condition's glue
+        // reads the session off.
+        var engine = ownedEngine();
+        var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"mary\"}", probePool()), "{\"sub\":\"mary\"}", "mary")
+            .query("{ sessionStoresByService(ids: [1, 2]) { storeId customersOfPrincipal { firstName } } }")
+            .build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        java.util.Map<String, Object> data = result.getData();
+        @SuppressWarnings("unchecked")
+        var nodes = (List<java.util.Map<String, Object>>) data.get("sessionStoresByService");
+        assertThat(nodes).extracting(node -> node.get("storeId")).containsExactly(1, 2);
+        var names = new java.util.ArrayList<String>();
+        for (var node : nodes) {
+            @SuppressWarnings("unchecked")
+            var customers = (List<java.util.Map<String, Object>>) node.get("customersOfPrincipal");
+            customers.forEach(c -> names.add((String) c.get("firstName")));
+        }
+        assertThat(names).isNotEmpty().allMatch(name -> name.equalsIgnoreCase("mary"));
+    }
+
+    @Test
     void sessionMemberReadByAConditionOnAnEscapeHatchOperation_failsLoudlyInsteadOfBindingNull() throws Exception {
         try (Connection conn = probeConnection()) {
             DSLContext supplied = DSL.using(conn, SQLDialect.POSTGRES);

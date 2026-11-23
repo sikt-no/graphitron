@@ -130,6 +130,8 @@ public final class ServiceEmission {
     private final Optional<String> tenantType;
     /** The services the store states no connection for by design; see {@link #unkeyed(StoreHandle)}. */
     private final Set<String> unkeyed;
+    /** The types whose projection reads the session, which a lift hands the statement's connection. */
+    private final Set<String> sessionProjections;
 
     private ServiceEmission(boolean stored, Set<String> owned, Set<String> fetched,
                             Set<String> silenced,
@@ -140,7 +142,7 @@ public final class ServiceEmission {
                             Map<String, DiscriminatedQuery.Row> discriminated,
                             Set<String> toldApart,
                             Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType,
-                            Set<String> unkeyed) {
+                            Set<String> unkeyed, Set<String> sessionProjections) {
         this.stored = stored;
         this.owned = owned;
         this.fetched = fetched;
@@ -158,6 +160,7 @@ public final class ServiceEmission {
         this.connections = connections;
         this.tenantType = tenantType;
         this.unkeyed = unkeyed;
+        this.sessionProjections = sessionProjections;
     }
 
     /**
@@ -167,7 +170,7 @@ public final class ServiceEmission {
     public static ServiceEmission none() {
         return new ServiceEmission(false, Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Set.of(),
             Map.of(),
-            Set.of(), Map.of(), Optional.empty(), Set.of());
+            Set.of(), Map.of(), Optional.empty(), Set.of(), Set.of());
     }
 
     /** Reads every part's rows for the graph once. */
@@ -203,7 +206,8 @@ public final class ServiceEmission {
             toldApart(store),
             ConnectionQuery.read(store),
             tenantType(store),
-            unkeyed(store));
+            unkeyed(store),
+            ProjectionSessionQuery.read(store));
     }
 
     /**
@@ -481,9 +485,9 @@ public final class ServiceEmission {
             var told = discriminated.get(coordinate);
             methods.add(told != null
                 ? LiftEmitter.discriminatedLift(row, told, liftName, source, runtime.projectionClass(),
-                    runtime.selectionOccurrences())
+                    runtime.selectionOccurrences(), sessionProjections::contains)
                 : LiftEmitter.lift(row, liftName, source, runtime.projectionClass().apply(row.targetType()),
-                runtime.selectionOccurrences()));
+                runtime.selectionOccurrences(), Optional.empty(), sessionProjections.contains(row.targetType())));
             liftRef = Optional.of(new CallEmitter.Lift(runtime.fetchersClass(), liftName, row.list()));
         }
         // A record that may be a row of several members' tables is lifted by its own member's lift,
@@ -501,7 +505,7 @@ public final class ServiceEmission {
                     participant.table(), participant.key());
                 methods.add(LiftEmitter.lift(liftRow, liftName, source,
                     runtime.projectionClass().apply(participant.typeName()), runtime.selectionOccurrences(),
-                    Optional.of(participant.typeName())));
+                    Optional.of(participant.typeName()), sessionProjections.contains(participant.typeName())));
                 each.add(new CallEmitter.Polymorphic.Member(participant.typeName(),
                     ClassName.bestGuess(participant.table().recordClassName()), runtime.fetchersClass(), liftName));
             }

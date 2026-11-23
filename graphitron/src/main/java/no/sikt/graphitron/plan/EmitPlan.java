@@ -263,12 +263,14 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var conditions = ConditionCommands.produce(schema, outputPackage);
         // Each routine write's frame, connection and lift are read beside its rows, so its fetcher is
         // the frame around its body, and a records result's body hands its keys to its lift; the
-        // graph's node id decodes too, which a node id argument's decode is resolved against.
+        // graph's node id decodes too, which a node id argument's decode is resolved against, and the
+        // types whose projection reads the session, which a lift onto one hands the connection.
         var frames = store == null ? List.<FrameQuery.Row>of() : FrameQuery.read(store);
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty()
             : RoutineWriteQuery.read(store).framed(frames,
                 ConnectionQuery.read(store), LiftQuery.read(store),
-                no.sikt.graphitron.emit.NodeIdDecodeQuery.read(store));
+                no.sikt.graphitron.emit.NodeIdDecodeQuery.read(store),
+                no.sikt.graphitron.emit.ProjectionSessionQuery.read(store));
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage,

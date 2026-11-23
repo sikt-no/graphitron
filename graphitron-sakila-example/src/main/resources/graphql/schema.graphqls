@@ -6995,6 +6995,11 @@ extend type Query {
     # and SessionCustomer are their own types, off every Node and interface path, because a type
     # whose subtree reads the session is projected with the statement's dsl.
     sessionStores: [SessionStore!]! @defaultOrder(primaryKey: true)
+    # The same type lifted off a root @service's records: the lift hands SessionStore's projection
+    # the statement's dsl, which its customersOfPrincipal condition reads the session off.
+    sessionStoresByService(ids: [Int!]!): [SessionStore!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SessionStoreService",
+        method: "storesByIds"})
     # $session.<member>: one member of the handle binds where the whole handle did, the member's
     # own type (Integer here) against the parameter's.
     sessionNumber: Int @service(service: {

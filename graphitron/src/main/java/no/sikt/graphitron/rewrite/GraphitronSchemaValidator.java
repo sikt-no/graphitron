@@ -68,7 +68,6 @@ public class GraphitronSchemaValidator {
         validateOutcomeChildArmSwitch(schema, errors);
         validateWrapperArmSiblingPosture(schema, errors);
         validateSessionConditionsUnderFanOut(schema, errors);
-        validateSessionConditionsUnderLegacyProjection(schema, errors);
         validateTenantBindings(schema, errors);
         validateConditionEmitImplemented(schema, errors);
         validateProjectionUnitAddresses(schema, errors);
@@ -294,43 +293,6 @@ public class GraphitronSchemaValidator {
                         + "': a fanned statement is built before any tenant's connection exists, so"
                         + " there is no session handle for the condition to read. A @service bound to "
                         + ArgMappingSigil.SESSION_LITERAL + " still works under fan-out"),
-                    graphql.language.SourceLocation.EMPTY));
-            }
-        }
-    }
-
-    /**
-     * A {@code @condition} that reads {@code $session} is rejected below a type whose
-     * {@code $project} is called from an emitter that cannot hand it the statement's {@code dsl}:
-     * a federation entity or {@code Node} type (the entity and node dispatch), and a participant of
-     * an interface or union (the per-participant statements). Under any of them the type's
-     * projection would take {@code dsl} through the closure, and these callers do not pass it.
-     */
-    private void validateSessionConditionsUnderLegacyProjection(GraphitronSchema schema, List<ValidationError> errors) {
-        var legacy = new java.util.TreeMap<String, String>();
-        schema.entitiesByType().keySet().forEach(t -> legacy.putIfAbsent(t, "a federation entity type"));
-        for (var type : schema.types().values()) {
-            switch (type) {
-                case no.sikt.graphitron.rewrite.model.GraphitronType.NodeType n when n.resolvable() ->
-                    legacy.putIfAbsent(n.name(), "a Node type");
-                case no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType i ->
-                    i.participants().forEach(p -> legacy.putIfAbsent(p.typeName(), "a participant of interface '" + i.name() + "'"));
-                case no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType i ->
-                    i.participants().forEach(p -> legacy.putIfAbsent(p.typeName(), "a participant of interface '" + i.name() + "'"));
-                case no.sikt.graphitron.rewrite.model.GraphitronType.UnionType u ->
-                    u.participants().forEach(p -> legacy.putIfAbsent(p.typeName(), "a participant of union '" + u.name() + "'"));
-                default -> { }
-            }
-        }
-        for (var entry : legacy.entrySet()) {
-            String offender = sessionConditionBelow(schema, entry.getKey(), new java.util.HashSet<>());
-            if (offender != null) {
-                errors.add(ValidationError.forField(offender, Rejection.structural(
-                    "a @condition reading " + ArgMappingSigil.SESSION_LITERAL + " (at '" + offender
-                        + "') is not supported under type '" + entry.getKey() + "', " + entry.getValue()
-                        + ": its projection is called by an emitter that holds no per-connection statement"
-                        + " to read the session handle from. Bind the value in a @service, or move the"
-                        + " condition out of this type's subtree"),
                     graphql.language.SourceLocation.EMPTY));
             }
         }

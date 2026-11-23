@@ -4902,6 +4902,8 @@ COMMENT ON COLUMN graphitron_occurrence.element_coordinate_ref IS 'the coordinat
 
 CREATE INDEX graphitron_occurrence_element_ix ON graphitron_occurrence (graph_name, element_coordinate);
 CREATE INDEX graphitron_occurrence_argument_ix ON graphitron_occurrence (graph_name, argument_coordinate);
+CREATE INDEX graphitron_occurrence_field_ix ON graphitron_occurrence (graph_name, field_coordinate);
+COMMENT ON INDEX graphitron_occurrence_field_ix IS 'A reader holding a field occurrence asks for the occurrences reached through it, the field and its arguments and their input fields. graphitron_tabletype_session_rule asks it of every inline call in a projection, for the @condition its arguments may carry.';
 COMMENT ON INDEX graphitron_occurrence_element_ix IS 'A reader holding a declared element asks for its occurrences, and the primary key, a nested coordinate, serves none of that. graphitron_argmapping_step asks it of every argMapping, which is written on a declared field, argument or input field and resolved once per place that element is reached.';
 
 CREATE TABLE graphitron_occurrence_list_element (
@@ -19365,6 +19367,38 @@ COMMENT ON COLUMN graphitron_node_served_by_id.bound IS 'the node''s own table, 
 COMMENT ON COLUMN graphitron_node_served_by_id.kind IS 'always NODE_ID, generated so nothing writes it, and carried so the foreign key holds the row to the id''s node id binding: a node whose id stops carrying a node id stops being served';
 COMMENT ON COLUMN graphitron_node_served_by_id.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+CREATE TABLE graphitron_occurrence_projection (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  -- The type's own table binding: a type that stops being bound has no projection to read anything in.
+  FOREIGN KEY (graph_name, type_name)
+    REFERENCES graphitron_tabletype (graph_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_projection IS 'A field occurrence read in a table-bound type''s projection, and the type: one row per such occurrence. For example Film.title is read in Film''s projection, and so is Film.details.length, details being a nesting field read off the film row, while Film.actors.name is read in Actor''s.';
+COMMENT ON COLUMN graphitron_occurrence_projection.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_projection.coordinate IS 'the field occurrence, with the graph the whole key and a reference into graphitron_occurrence: an occurrence is read in one projection at most, the one its chain starts in, through nesting fields alone';
+COMMENT ON COLUMN graphitron_occurrence_projection.type_name IS 'the table-bound type whose projection reads it: the type declaring the top-level field its chain starts at. Stands beside graphitron_occurrence_nesting, which holds the nesting fields alone, and graphitron_occurrence_reader, which says how an occurrence reads and not in whose projection';
+COMMENT ON COLUMN graphitron_occurrence_projection.touched_at IS 'the reading that last wrote this row; each depth''s sweep deletes the rows an older reading wrote at it';
+
+CREATE TABLE graphitron_tabletype_session (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  -- The type's own table binding: a type that stops being bound has no projection to read anything.
+  FOREIGN KEY (graph_name, type_name)
+    REFERENCES graphitron_tabletype (graph_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_tabletype_session IS 'One table-bound type whose projection reads the executing connection''s session: one row per such type. For example SessionStore, whose customersOfPrincipal list is filtered by a @condition binding $session.principal.';
+COMMENT ON COLUMN graphitron_tabletype_session.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_tabletype_session.type_name IS 'the table-bound type, with the graph the whole key and a reference to its table binding: its projection reads the session, or projects a type whose projection does, so whoever selects it hands it the statement''s connection';
+COMMENT ON COLUMN graphitron_tabletype_session.touched_at IS 'the reading that wrote this row; the stage clears the graph''s rows before it writes, so every row is this reading''s';
+
 CREATE TABLE graphitron_key_field_binding (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -20190,7 +20224,27 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACC
                                 WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
                                   AND cc.field_name = ft.field_name)
                        OR EXISTS (SELECT 1 FROM graphitron_connection c
-                                   WHERE c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name)));
+                                   WHERE c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name)))
+UNION ALL
+-- A type whose projection reads the session, resolved as an entity: by a resolvable @key, authored or
+-- minted, as the entity dispatch reads one, or as a node this subgraph serves by its id. The dispatch,
+-- which Query.node and _entities both read through, selects the type's projection without the
+-- statement's connection, so the type is refused at its declaration, the type in the detail.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SESSION_PROJECTION_PATH_UNSUPPORTED', ts.type_name, 'entity-key-alternatives'
+  FROM graphitron_tabletype_session ts
+  JOIN graphql_ast_element_entry el ON el.graph_name = ts.graph_name AND el.coordinate = ts.type_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_node_served_by_id n
+                WHERE n.graph_name = ts.graph_name AND n.type_name = ts.type_name)
+    OR EXISTS (SELECT 1 FROM graphitron_directive_application a
+                 LEFT JOIN graphitron_ast_federation_key_entry ke
+                   ON ke.graph_name = a.graph_name AND ke.source_name = a.source_name
+                  AND ke.source_line = a.source_line AND ke.source_column = a.source_column
+                 LEFT JOIN graphitron_minted_key mk
+                   ON mk.graph_name = a.graph_name AND mk.type_name = a.coordinate AND mk.ordinal = a.ordinal
+                  AND a.origin = 'MINTED'
+                WHERE a.graph_name = ts.graph_name AND a.coordinate = ts.type_name AND a.directive_name = 'key'
+                  AND COALESCE(ke.resolvable, mk.resolvable, TRUE) = TRUE);
 COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file, or the @accept''s';
@@ -25192,6 +25246,76 @@ COMMENT ON COLUMN graphitron_occurrence_expression.call IS 'the call it is, expr
 COMMENT ON COLUMN graphitron_occurrence_expression.call_kind IS 'always EXPRESSION, pinned so the foreign key holds the row to a call of that kind';
 COMMENT ON COLUMN graphitron_occurrence_expression.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The field occurrences read in a table-bound type's projection, one depth at a time: a top-level
+-- field of a table-bound type at depth 0, and below it a field under a nesting field the depth above
+-- placed in a projection, read off the same row. The occurrence-bindings stage writes it a depth at a
+-- time, so the second arm reads only what the depth above stated.
+CREATE VIEW graphitron_occurrence_projection_rule (graph_name, coordinate, type_name) AS
+SELECT o.graph_name, o.coordinate, f.type_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.type_name
+ WHERE o.kind = 'FIELD' AND o.parent_coordinate IS NULL
+UNION ALL
+SELECT o.graph_name, o.coordinate, p.type_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_nesting ns ON ns.graph_name = o.graph_name AND ns.coordinate = o.parent_coordinate
+  JOIN graphitron_occurrence_projection p ON p.graph_name = ns.graph_name AND p.coordinate = ns.coordinate
+ WHERE o.kind = 'FIELD';
+COMMENT ON VIEW graphitron_occurrence_projection_rule IS 'One row the occurrence projection rule computes, in the shape graphitron_occurrence_projection stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_projection, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_projection_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_projection.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_projection_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_projection.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_projection_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_occurrence_projection.type_name';
+
+-- The table-bound types whose projection reads the session, one step at a time. An inline call is a
+-- field of a projection reading a row nested in it from a table-bound object type, its own nesting
+-- excepted. A type is seeded where one of its inline calls carries a @condition, its own or an
+-- argument's, applied to the call's table or a node id and filling a parameter from the session, as
+-- the condition glue it calls then takes the statement's connection; and it is marked where one of its
+-- inline calls reaches a type graphitron_tabletype_session already holds. The stage clears the graph's
+-- rows and writes the rule until a pass adds nothing, so the closure is one plain join per pass. Until
+-- the walk's projection units go, the walk decides whether a unit takes the connection by a closure of
+-- its own, and the generated compile is all that holds the two together: a lift handing over a
+-- connection the unit does not take, or withholding one it does, fails there.
+CREATE VIEW graphitron_tabletype_session_rule (graph_name, type_name) AS
+WITH inline_call (graph_name, coordinate, type_name, callee) AS (
+  SELECT p.graph_name, p.coordinate, p.type_name, ft.target_type_name
+    FROM graphitron_occurrence_projection p
+    JOIN graphitron_occurrence_reader r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+    JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+    JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+    JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+    JOIN graphitron_type gt
+      ON gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name AND gt.kind = 'OBJECT'
+   WHERE r.reads = 'NESTED'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_nesting ns
+                      WHERE ns.graph_name = p.graph_name AND ns.coordinate = p.coordinate)
+)
+SELECT i.graph_name, i.type_name
+  FROM inline_call i
+ WHERE EXISTS (SELECT 1 FROM graphitron_occurrence co
+                 JOIN graphitron_occurrence_condition cc
+                   ON cc.graph_name = co.graph_name AND cc.coordinate = co.coordinate
+                 JOIN graphitron_occurrence_binding cb
+                   ON cb.graph_name = cc.graph_name AND cb.coordinate = cc.coordinate AND cb.bound = cc.bound
+                 JOIN graphitron_occurrence_call_parameter cp
+                   ON cp.graph_name = cc.graph_name AND cp.coordinate = cc.coordinate AND cp.call = cc.call
+                WHERE co.graph_name = i.graph_name AND co.field_coordinate = i.coordinate
+                  AND cp.call_kind = 'CONDITION' AND cp.fill IN ('SESSION', 'SESSION_MEMBER')
+                  AND (cb.kind = 'NODE_ID'
+                       OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table rb
+                                   WHERE rb.graph_name = i.graph_name AND rb.coordinate = i.coordinate
+                                     AND rb.bound = cc.bound)))
+UNION
+SELECT i.graph_name, i.type_name
+  FROM inline_call i
+  JOIN graphitron_tabletype_session ts ON ts.graph_name = i.graph_name AND ts.type_name = i.callee;
+COMMENT ON VIEW graphitron_tabletype_session_rule IS 'One row the session projection rule computes, in the shape graphitron_tabletype_session stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_tabletype_session, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_tabletype_session_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_tabletype_session.graph_name';
+-- COMMENT ON COLUMN graphitron_tabletype_session_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_tabletype_session.type_name';
+
 -- The defects judging the node ids occurrence-bindings writes: a node id the generator would bind
 -- against the one node over a table, where no node or several are, so no binding was written.
 CREATE VIEW graphitron_occurrence_binding_entry_defect_rule
@@ -25688,6 +25812,25 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND sc.table_name = c.table_name AND sc.column_name = c.column_name
   JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
  WHERE sc.binding_type <> 'java.lang.String'
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- A participant whose projection reads the session, fetched by graphitron's own read of an interface
+-- or union: told apart by its table, however few others there are, or by a discriminator. That read
+-- selects the participant's projection without the statement's connection, so it is refused at the
+-- field reaching it until the connection is handed over there. A @service's lift hands it over, and a
+-- node fetcher's participants are read by the entity dispatch, which the entity key stage refuses at
+-- the type. A field reaching several such participants is one site, the detail the first by name.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SESSION_PROJECTION_PATH_UNSUPPORTED', MIN(p.participant_type), 'occurrence-bindings'
+  FROM graphitron_occurrence_participant p
+  JOIN graphitron_tabletype_session ts ON ts.graph_name = p.graph_name AND ts.type_name = p.participant_type
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer pr
+                    WHERE pr.graph_name = o.graph_name AND pr.coordinate = o.coordinate
+                      AND pr.kind = 'SERVICE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
+                    WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate)
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
@@ -31594,6 +31737,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_occurrence_binding_table'),
   ('occurrence-bindings', 'graphitron_occurrence_row_input'),
   ('occurrence-bindings', 'graphitron_occurrence_filter_term'),
+  ('occurrence-bindings', 'graphitron_occurrence_projection'),
+  ('occurrence-bindings', 'graphitron_tabletype_session'),
   ('occurrence-producers', 'graphitron_occurrence_call'),
   ('occurrence-producers', 'graphitron_entry_defect'),
   ('occurrence-bindings', 'graphitron_occurrence_call'),
@@ -31812,6 +31957,8 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_table_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_filter_term', 'graphitron_occurrence_filter_term_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_projection', 'graphitron_occurrence_projection_rule'),
+  ('occurrence-bindings', 'graphitron_tabletype_session', 'graphitron_tabletype_session_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_row_input', 'graphitron_occurrence_row_input_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_column_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_expression_binding_rule'),
@@ -32530,6 +32677,12 @@ INSERT INTO meta_grain VALUES
   ('occurrence-row-input',
    'one argument or input-field occurrence read under one field occurrence''s rows and not taken by its call, at one table its rows are on, in one graph',
    'graph_name, coordinate, table_source_name, table_schema, table_name', 'sdl'),
+  ('occurrence-projection',
+   'one field occurrence read in a table-bound type''s projection, in one graph',
+   'graph_name, coordinate', 'sdl'),
+  ('session-projection-type',
+   'one table-bound type whose projection reads the executing connection''s session, in one graph',
+   'graph_name, type_name', 'sdl'),
   ('occurrence-lookup-key',
    'one argument or input-field occurrence written @lookupKey that one field occurrence narrows by, at one table it reads, in one graph',
    'graph_name, coordinate, bound, key_coordinate', 'sdl'),
@@ -33123,6 +33276,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A child @service under a global table reads a tenant''s rows by a key landing on the tenant column, so its parents would be grouped by the tenant each names, which is not generated for a service yet: read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds.'),
   ('TENANT_FAN_OUT_ON_SERVICE', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_ON_SERVICE',
    'A @tenantFanOut marks a field a @service answers: the marker reads every tenant the request may see with a statement graphitron writes, and a service is called once, on one connection, which is not generated once per tenant yet. Remove the marker, or read the rows with a field graphitron fetches and mark that.'),
+  ('SESSION_PROJECTION_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SESSION_PROJECTION_PATH_UNSUPPORTED',
+   'A table-bound type whose fields read the session through a @condition is selected by a node fetcher, the entity dispatch or the fetch of a multi-table or discriminated interface or union, and the generated read of a type whose projection reads the session does not hand it the connection yet on this path: reach the type through a field returning it, or read the session-reading field by a query of its own.'),
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
    'An argMapping names $tenant, or @tenant marks an argument or input field, where nothing routes by it yet: the tenant is named for a root @service''s call, so write $tenant in that @service''s argMapping, or mark a value it reads. A child service runs on its parent''s tenant, and a query binds it through @field(name:) on the tenant column.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
@@ -34036,6 +34191,22 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_filter_term_rule', 'occurrence-filter-term', 'graphitron',
    'One row the filter term rule computes, in the shape graphitron_occurrence_filter_term stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_filter_term, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_projection', 'occurrence-projection', 'graphitron',
+   'A field occurrence read in a table-bound type''s projection, and the type: one row per such occurrence.',
+   'For example Film.title is read in Film''s projection, and so is Film.details.length, details being a nesting field read off the film row, while Film.actors.name is read in Actor''s.',
+   'Which projection reads an occurrence, stated once per occurrence: the session projection rule reads the inline calls of each type off it in one plain join per pass, rather than climbing the nesting chain again. It stands beside graphitron_occurrence_nesting, which holds the nesting fields alone, and graphitron_occurrence_reader, which says how an occurrence reads and not in whose projection. Written by occurrence-bindings a depth at a time once the nesting fields are, each depth reading the one above.'),
+  ('graphitron_occurrence_projection_rule', 'occurrence-projection', 'graphitron',
+   'One row the occurrence projection rule computes, in the shape graphitron_occurrence_projection stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_projection, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_tabletype_session', 'session-projection-type', 'graphitron',
+   'One table-bound type whose projection reads the executing connection''s session: one row per such type.',
+   'For example SessionStore, whose customersOfPrincipal list is filtered by a @condition binding $session.principal.',
+   'Whether a type''s projection takes the statement''s connection, stated once at the type: a @service lift selecting the type hands it over where a row says so, and the refusals of the paths that do not hand it over yet join it, rather than each closing over the inline calls again. Written by occurrence-bindings after the conditions and their fills, which seed it, and graphitron_occurrence_projection, whose inline calls it closes over: the stage clears the graph''s rows and writes the one-step rule until a pass adds nothing, since a mark an older reading left could otherwise hold itself up. Until the walk''s projection units go, the walk decides by a closure of its own whether a unit takes the connection, and the generated compile is the only gate holding the two together.'),
+  ('graphitron_tabletype_session_rule', 'session-projection-type', 'graphitron',
+   'One row the session projection rule computes, in the shape graphitron_tabletype_session stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_tabletype_session, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_built_class', 'occurrence-built-class', 'graphitron',
    'The class an input object occurrence is built into: one row per occurrence and class.',

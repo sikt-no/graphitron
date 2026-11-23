@@ -960,7 +960,12 @@ static method needs no holder.
     off its occurrence, and flips on its own, piece by piece as the store states each piece whole, the
     walk's `$project` called at the address and by the signature it is called by today (Alf,
     2026-11-15, 2026-11-23); a root single read is null exactly when its read finds no row, so the
-    walk's collapse of an all-null subtree goes with the flip (Alf, 2026-11-23). The
+    walk's collapse of an all-null subtree goes with the flip (Alf, 2026-11-23). Whether a type's
+    unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
+    reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
+    it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a
+    presence probe's filter over a field fetched by a query of its own, which the store does not, and
+    probes go with the flip. The
     conditions flip ahead of it on their own, its condition call reading the store's glue by the
     name it calls today. The callers' condition signatures and `PlanCompileGraph`'s edges to the
     conditions classes still come off the walk's `ConditionCommand` rows, while the classes are

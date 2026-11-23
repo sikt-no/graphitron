@@ -1,0 +1,133 @@
+# The table-bound types whose projection reads the session, and the paths that select one without
+# handing it the statement's connection. SessionStore.customersOfPrincipal is read into its parent's
+# statement and filtered by a @condition binding $session.principal, so SessionStore's projection
+# reads the session. SessionShelfOwner reads it through its nesting field shelf, whose customers
+# carry the same condition; SessionFilm projects SessionStore through stores, and SessionFilmContent
+# projects SessionFilm through film, so both read it by closure. SessionNodeStore carries the
+# condition itself and is a node.
+#
+# Refused: Query.storesOrFilms, a union whose participants are told apart by their tables, reaching
+# SessionStore; Query.sessionContent, a discriminated interface, reaching SessionFilmContent; and
+# SessionNodeStore at its declaration, which the node fetcher selects through the entity dispatch.
+#
+# The near misses draw nothing: Query.sessionStores and Query.shelfOwners reach their types through
+# fields returning them, PlainShortContent and PlainFilm read no session, PlainStore reads
+# SessionCustomer with no condition, and SessionCustomer, which the condition filters, reads none
+# itself. Query.node reaches SessionNodeStore too, and is refused at the type rather than at the field.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord"
+)
+
+interface Node { id: ID! }
+
+type SessionCustomer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+}
+
+type SessionStore @table(name: "store") {
+  storeId: Int! @field(name: "store_id")
+  customersOfPrincipal: [SessionCustomer!]! @reference(path: [{key: "customer_store_id_fkey"}])
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerOfPrincipal",
+      argMapping: "principal: $session.principal"})
+    @defaultOrder(primaryKey: true)
+}
+
+type SessionShelf {
+  customers: [SessionCustomer!]! @reference(path: [{key: "customer_store_id_fkey"}])
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerOfPrincipal",
+      argMapping: "principal: $session.principal"})
+    @defaultOrder(primaryKey: true)
+}
+
+type SessionShelfOwner @table(name: "store") {
+  storeId: Int! @field(name: "store_id")
+  shelf: SessionShelf
+}
+
+type SessionNodeStore implements Node @table(name: "store") @node {
+  id: ID!
+  customersOfPrincipal: [SessionCustomer!]! @reference(path: [{key: "customer_store_id_fkey"}])
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerOfPrincipal",
+      argMapping: "principal: $session.principal"})
+    @defaultOrder(primaryKey: true)
+}
+
+type PlainStore @table(name: "store") {
+  storeId: Int! @field(name: "store_id")
+  customers: [SessionCustomer!]! @reference(path: [{key: "customer_store_id_fkey"}])
+    @defaultOrder(primaryKey: true)
+}
+
+type SessionFilm @table(name: "film") {
+  title: String @field(name: "title")
+  stores: [SessionStore!]!
+    @reference(path: [{key: "inventory_film_id_fkey"}, {key: "inventory_store_id_fkey"}])
+    @defaultOrder(primaryKey: true)
+}
+
+type PlainFilm @table(name: "film") {
+  title: String @field(name: "title")
+}
+
+union SessionStoreOrFilm = SessionStore | PlainFilm
+
+interface SessionContent @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type SessionFilmContent implements SessionContent @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  film: SessionFilm
+}
+
+type PlainShortContent implements SessionContent @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "CONTENT_ID")
+}
+
+type Query {
+  node(id: ID!): Node
+  sessionStores: [SessionStore!]! @defaultOrder(primaryKey: true)
+  shelfOwners: [SessionShelfOwner!]! @defaultOrder(primaryKey: true)
+  plainStores: [PlainStore!]! @defaultOrder(primaryKey: true)
+  storesOrFilms: [SessionStoreOrFilm!]!
+  sessionContent: [SessionContent!]!
+}
+
+# The types whose projection reads the session: the two carrying the condition, the owner whose
+# nesting field carries it, and the two reading it by closure.
+extend schema @expectEquals(relation: "graphitron_tabletype_session", rows: """
+  type_name
+  SessionFilm
+  SessionFilmContent
+  SessionNodeStore
+  SessionShelfOwner
+  SessionStore
+  """)
+
+# Each path selecting one of them without the connection, and none of the near misses.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SESSION_PROJECTION_PATH_UNSUPPORTED'", rows: """
+  code,                                coordinate,           detail
+  SESSION_PROJECTION_PATH_UNSUPPORTED, Query.sessionContent, SessionFilmContent
+  SESSION_PROJECTION_PATH_UNSUPPORTED, Query.storesOrFilms,  SessionStore
+  SESSION_PROJECTION_PATH_UNSUPPORTED, SessionNodeStore,     SessionNodeStore
+  """)
+
+# The occurrences read in SessionShelfOwner's projection: its own fields, and through its nesting field
+# shelf the customers call beneath it, while the same fields reached through Query.shelfOwners and
+# the customer fields under the call are read in other projections.
+extend schema @expectEquals(relation: "graphitron_occurrence_projection",
+    where: "coordinate LIKE 'SessionShelfOwner.%' OR coordinate LIKE 'Query.shelfOwners.%'", rows: """
+  coordinate,                          type_name
+  SessionShelfOwner.shelf,             SessionShelfOwner
+  SessionShelfOwner.shelf.customers,   SessionShelfOwner
+  SessionShelfOwner.storeId,           SessionShelfOwner
+  """)

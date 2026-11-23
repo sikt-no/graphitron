@@ -1459,7 +1459,8 @@ public class TypeFetcherGenerator {
             }
             String liftName = field.name() + "Lift";
             builder.addMethod(no.sikt.graphitron.emit.LiftEmitter.lift(liftRow, liftName, source,
-                className(units.typeClass(liftRow.targetType())), className(units.selectionOccurrences())));
+                className(units.typeClass(liftRow.targetType())), className(units.selectionOccurrences()),
+                Optional.empty(), routineWrites.projectsWithSession(liftRow.targetType())));
             liftRef = Optional.of(new no.sikt.graphitron.emit.CallEmitter.Lift(fetchers, liftName, liftRow.list()));
         }
         var rendered = no.sikt.graphitron.emit.RoutineWriteEmitter.render(row, routineWrites, bodyName, liftRef,

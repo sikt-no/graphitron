@@ -315,11 +315,12 @@ public final class RoutineWriteQuery {
      * part its connection from {@link ConnectionQuery}, and for a records result its lift from
      * {@link LiftQuery}: the fetcher is {@link FrameEmitter}'s frame around the body
      * {@link RoutineWriteEmitter} renders, the frame reads the first two, and the body hands its
-     * captured keys to the lift.
+     * captured keys to the lift. Beside them too, the graph's types whose projection reads the
+     * session, from {@link ProjectionSessionQuery}, which a lift onto one hands the connection.
      */
     public record Rows(List<Row> rows, Map<String, FrameQuery.Row> frames,
                        Map<String, ConnectionQuery.Row> connections, Map<String, LiftQuery.Row> lifts,
-                       Optional<NodeIdDecodeQuery> decodes) {
+                       Optional<NodeIdDecodeQuery> decodes, Set<String> sessionProjections) {
 
         public Rows {
             rows = List.copyOf(rows);
@@ -327,6 +328,7 @@ public final class RoutineWriteQuery {
             connections = Map.copyOf(connections);
             lifts = Map.copyOf(lifts);
             Objects.requireNonNull(decodes, "decodes");
+            sessionProjections = Set.copyOf(sessionProjections);
             var seen = new java.util.HashSet<String>();
             for (var r : rows) {
                 if (!seen.add(coordinate(r))) {
@@ -339,7 +341,7 @@ public final class RoutineWriteQuery {
 
         /** The rows alone, with no frame, connection, lift or decode read beside them. */
         public Rows(List<Row> rows) {
-            this(rows, Map.of(), Map.of(), Map.of(), Optional.empty());
+            this(rows, Map.of(), Map.of(), Map.of(), Optional.empty(), Set.of());
         }
 
         /** No rows: a graph that writes through no routine, or a run with no store. */
@@ -350,14 +352,16 @@ public final class RoutineWriteQuery {
         /**
          * These rows with each one's frame out of {@code graphFrames}, connection out of
          * {@code graphConnections} and lift out of {@code graphLifts}, the rest dropped, and the
-         * graph's node id decodes, which an argument's {@link KeyValue} is resolved against. Every row has
+         * graph's node id decodes, which an argument's {@link KeyValue} is resolved against, and the
+         * graph's types whose projection reads the session, {@code graphSessionProjections}. Every row has
          * a frame: a routine write is a root occurrence, which {@link FrameQuery} frames by
          * construction, so a row with none is drift between the two queries. Every records result has
          * a lift, both this query and {@link LiftQuery} reading {@code graphitron_occurrence_lift}, so
          * one with none is a defect in one of them.
          */
         public Rows framed(List<FrameQuery.Row> graphFrames, Map<String, ConnectionQuery.Row> graphConnections,
-                           List<LiftQuery.Row> graphLifts, NodeIdDecodeQuery graphDecodes) {
+                           List<LiftQuery.Row> graphLifts, NodeIdDecodeQuery graphDecodes,
+                           Set<String> graphSessionProjections) {
             var framed = new LinkedHashMap<String, FrameQuery.Row>();
             graphFrames.forEach(f -> framed.put(f.coordinate(), f));
             var lifted = new LinkedHashMap<String, LiftQuery.Row>();
@@ -386,7 +390,8 @@ public final class RoutineWriteQuery {
                     ownLifts.put(coordinate, lift);
                 }
             }
-            return new Rows(rows, ownFrames, ownConnections, ownLifts, Optional.of(graphDecodes));
+            return new Rows(rows, ownFrames, ownConnections, ownLifts, Optional.of(graphDecodes),
+                graphSessionProjections);
         }
 
         /** The row for one coordinate, empty when the coordinate writes through no routine. */
@@ -420,6 +425,11 @@ public final class RoutineWriteQuery {
                     + argument.parameterName() + " of " + coordinate(row) + ", and its decode is refused: "
                     + refused.reason());
             };
+        }
+
+        /** Whether {@code typeName}'s projection reads the session, so a lift onto it hands over the connection. */
+        public boolean projectsWithSession(String typeName) {
+            return sessionProjections.contains(typeName);
         }
 
         /** {@code row}'s lift, empty for an object result or where these rows were read with none. */

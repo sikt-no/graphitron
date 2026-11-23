@@ -199,6 +199,17 @@ public final class LiftEmitter {
     public static MethodSpec lift(LiftQuery.Row row, String methodName, ClassName source,
                                   ClassName projection, ClassName selectionOccurrences,
                                   java.util.Optional<String> typeName) {
+        return lift(row, methodName, source, projection, selectionOccurrences, typeName, false);
+    }
+
+    /**
+     * {@link #lift(LiftQuery.Row, String, ClassName, ClassName, ClassName, java.util.Optional)}, handing
+     * the projection the statement's {@code dsl} after its environment where {@code takesDsl}: the
+     * projection of a type whose fields read the session takes the connection they read it off.
+     */
+    public static MethodSpec lift(LiftQuery.Row row, String methodName, ClassName source,
+                                  ClassName projection, ClassName selectionOccurrences,
+                                  java.util.Optional<String> typeName, boolean takesDsl) {
         requireKey(row.table(), row.key());
         requireKey(row.terminal(), row.terminalKey());
         var table = row.table();
@@ -209,7 +220,8 @@ public final class LiftEmitter {
             .map(name -> CodeBlock.of("$T.restrictTo($T.ownFields(env.getSelectionSet()), $S)",
                 selectionOccurrences, selectionOccurrences, name))
             .orElse(CodeBlock.of("$T.ownFields(env.getSelectionSet())", selectionOccurrences));
-        var project = CodeBlock.of("$T.$$project($L, $L, env)", projection, selection, terminal);
+        var project = CodeBlock.of("$T.$$project($L, $L, env$L)", projection, selection, terminal,
+            takesDsl ? ", dsl" : "");
         var on = new ArrayList<CodeBlock>();
         for (var column : row.key()) {
             on.add(CodeBlock.of("$L.$L.eq($T.$L)", TARGET, column.javaName(), source, column.javaName()));
@@ -376,6 +388,21 @@ public final class LiftEmitter {
                                                String methodName, ClassName source,
                                                java.util.function.Function<String, ClassName> projectionOf,
                                                ClassName selectionOccurrences) {
+        return discriminatedLift(row, discriminated, methodName, source, projectionOf, selectionOccurrences,
+            typeName -> false);
+    }
+
+    /**
+     * {@link #discriminatedLift(LiftQuery.Row, DiscriminatedQuery.Row, String, ClassName,
+     * java.util.function.Function, ClassName)}, handing a participant's projection the statement's
+     * {@code dsl} after its environment where {@code takesDsl} holds for the participant's type: the
+     * projection of a type whose fields read the session takes the connection they read it off.
+     */
+    public static MethodSpec discriminatedLift(LiftQuery.Row row, DiscriminatedQuery.Row discriminated,
+                                               String methodName, ClassName source,
+                                               java.util.function.Function<String, ClassName> projectionOf,
+                                               ClassName selectionOccurrences,
+                                               java.util.function.Predicate<String> takesDsl) {
         requireKey(row.table(), row.key());
         if (!row.root()) {
             throw new IllegalArgumentException(row.coordinate() + " is not a root lift this emits: it lifts under an object");
@@ -416,9 +443,10 @@ public final class LiftEmitter {
         for (var participant : discriminated.participants()) {
             var value = CodeBlock.of("$T.inline($S)", DSL, participant.value());
             values.add(value);
-            builder.addStatement("fields.addAll($T.$$project($T.restrictTo(selection, $S, $T.of($L)), $L, env))",
+            builder.addStatement("fields.addAll($T.$$project($T.restrictTo(selection, $S, $T.of($L)), $L, env$L))",
                 projectionOf.apply(participant.typeName()), selectionOccurrences, participant.typeName(),
-                ClassName.get("java.util", "Set"), shared, TARGET);
+                ClassName.get("java.util", "Set"), shared, TARGET,
+                takesDsl.test(participant.typeName()) ? ", dsl" : "");
             for (var cross : participant.crossFields()) {
                 String alias = TARGET + "_hop" + hop++;
                 var on = new ArrayList<CodeBlock>();

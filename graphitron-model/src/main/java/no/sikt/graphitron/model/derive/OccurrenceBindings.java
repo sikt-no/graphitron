@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
  * columns argMapping paths project out of them, the columns, the nesting fields read off their
  * parent's row, the vouchers, the {@code @externalField} expressions and their calls, the tables and
  * the {@code @condition}
- * calls applied to them, each over the whole graph from its rule view, then swept.
+ * calls applied to them, each over the whole graph from its rule view, then swept; and last which
+ * projection reads each field occurrence, a depth at a time, and the table-bound types whose
+ * projection reads the session, a pass at a time until one adds nothing.
  *
  * <p>Nothing in the depths reads these, so they are written once rather than a depth at a time.
  * Each step reads the ones before it: the columns skip what a node id binds, a table binding is
@@ -48,6 +50,11 @@ public final class OccurrenceBindings {
         OccurrenceExpressions.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
         OccurrenceFilterTerms.sweep(dsl, graph, touchedAt);
+        // Which projection reads each field occurrence, once the nesting fields hold this reading's
+        // rows alone; then the types whose projection reads the session, closing over the inline calls
+        // of each projection and seeded by the conditions.
+        OccurrenceProjections.derive(dsl, graph, touchedAt);
+        ProjectionSessions.derive(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS);
         EntryDefectKeyColumns.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS.stage());
     }

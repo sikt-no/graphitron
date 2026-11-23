@@ -129,20 +129,4 @@ class SessionMemberBindingPipelineTest {
         assertThat(errors(schema)).anySatisfy(message -> assertThat(message)
             .contains("(at 'Film.inventories')").contains("'Query.films'"));
     }
-
-    @Test
-    void sessionConditionBelowANodeType_rejects_becauseTheNodeDispatchCannotHandItTheStatementsDsl() {
-        var schema = build("""
-            interface Node { id: ID! }
-            type Film implements Node @table(name: "film") @node {
-                id: ID! @nodeId
-                inventories: [Inventory!]! %s
-            }
-            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
-            type Query { films: [Film!]! }
-            """.formatted(SESSION_CONDITION.replace("sessionBoxed", "sessionBoxed")));
-
-        assertThat(errors(schema)).anySatisfy(message -> assertThat(message)
-            .contains("(at 'Film.inventories')").contains("not supported under type 'Film'"));
-    }
 }
