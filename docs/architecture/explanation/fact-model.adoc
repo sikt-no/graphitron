@@ -437,11 +437,15 @@ Federation knows keys, not `Node.id` (ruled 2026-11-11). A `@key` is resolved by
 
 A node has an `id` field, whether this subgraph resolves it or not (ruled 2026-11-11): every `@node` implements `Node`, whose interface holds it to the field, and resolvability is a separate fact. A `@key`'s `fields:` name fields its type declares, whatever the type is bound to, so a key naming `id` on a type without one is the same defect as a key naming any other field it lacks (ruled 2026-11-12).
 
-A minted key field states what the subgraph can deliver (ruled 2026-11-18). The voucher field
-`internalGraphitronVoucher`, which `@issue` and `@accept` mint and key their type by, is `String!` on an issuing type,
-which signs one for every row, and `String` on an accepting one, which receives a voucher in a
-representation but never computes one, so a row it reads by any other route has none to give.
-Federation lets a shared field differ in nullability, so the two still meet in one key.
+The voucher field `internalGraphitronVoucher`, which `@issue` and `@accept` mint and key their type
+by, is `String` on an issuing type and on an accepting one (ruled 2026-11-23), because composition
+reports a nullability that differs between subgraphs on every schema check that sees both. From
+2026-11-18 the issuing side was `String!`, on the ruling that a minted key field states what the
+subgraph can deliver and the premise that an issuing type signs one for every row. That premise does
+not hold: a row whose voucher would be longer than `MAX_TOKEN`, or carry a number longer than
+`MAX_NUMBER_TEXT`, fails to sign, and the non-null field took the row's parent with it. An accepting
+type receives a voucher in a representation but never computes one, so a row it reads by any other
+route has none to give.
 Its name is `internalGraphitronVoucher` (ruled 2026-11-20): camelCase, because the subgraph SDL it is
 published in is held to Apollo GraphOS schema linting, which exempts the federation spec's own `_entities`
 and `_service` but not a field graphitron mints; and prefixed, so an author's own `voucher` field is not
