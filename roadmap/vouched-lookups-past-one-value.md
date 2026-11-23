@@ -33,11 +33,14 @@ Two shapes become usable:
 * *A voucher per entity* ([GitHub issue 584](https://github.com/sikt-no/graphitron/issues/584)). The
   vouched-for value is the entity's own key (a sak's id, with B's policies testing `sak_id`), so a list
   of N rows always presents N values. Usable once the limit is a cap sized to a list and one refusal,
-  `VOUCHER_VOUCHED_FOR_IN_KEY`, is narrowed (see *The per-entity voucher*).
+  `VOUCHER_VOUCHED_FOR_IN_KEY`, is narrowed (see *The per-entity voucher*). Since Alf's ruling of
+  2026-11-23 the second iteration also lets `Sak` itself carry the voucher, guarded by `@requires` in B,
+  so a client reads `sak { hendelser }` with no hop (see *Guarding with `@requires`*).
 
 What a consumer sees: its connection source reads a set off the `ConnectionKey` instead of one value
 per field, and its policies test `= ANY(...)` instead of `=`. Both are breaking for an accepting
-consumer. Nothing changes in the SDL either side writes or in the SQL Graphitron generates.
+consumer. The set key changes nothing in the SDL either side writes or in the SQL Graphitron generates;
+the `@requires` guard does change what both sides write and what Graphitron mints.
 
 ## Why
 
@@ -230,8 +233,9 @@ decodes to, with the voucher section that supplies it*, written by the stage tha
 foreign key so its sweep follows. The defect rule reads it ("the key is supplied from both sections"),
 and `EntityKeyQuery` reads the section per field for the dispatch.
 
-With that, the consumer's shape uses existing vocabulary only, provided B owns a `sak(sak_id)` table
-that its events reference:
+Under the first iteration's rules, the consumer's shape uses existing vocabulary only, provided B owns a
+`sak(sak_id)` table that its events reference. It is the fallback if the second iteration's guard is not
+ready for the consumer's timeline:
 
 ```graphql
 # Subgraph A: the issuer. Sak itself cannot issue (it is a node, keyed, and a root field returns it),
@@ -252,13 +256,154 @@ type SakHendelseLogg @table(name: "sak") @key(fields: "sakId")
 }
 ```
 
+### Guarding with `@requires` (the second iteration)
+
+**The ruling (Alf, 2026-11-23).** R1119's refusals of `@issue` on a keyed type, a node and a type a root
+field returns, and its absorbing and withholding every authored field, were scoping for the first
+iteration. This item changes those rules: correctness comes from federation's `@requires` in B rather
+than from the shape of A. Recorded in `docs/architecture/explanation/fact-model.adoc`.
+
+```graphql
+# Subgraph A: Sak stays an ordinary node, keyed by id and returned by root fields.
+type Sak @table(name: "sak") @key(fields: "id")
+    @issue(scope: "sakshendelser", ttl: "PT5M", vouchesFor: "id") {
+  id: ID! @nodeId
+  tittel: String!
+  # minted: internalGraphitronVoucher: String! @inaccessible
+}
+
+# Subgraph B: the vouched-for field is B's key, and every guarded field requires the voucher.
+type Sak @table(name: "sak") @key(fields: "id")
+    @accept(scope: "sakshendelser", vouchesFor: "id") {
+  id: ID!
+  hendelser: [Sakshendelse!]! @reference(path: [{key: "sakshendelse_sak_fkey"}])
+  # minted: internalGraphitronVoucher: String @external @inaccessible,
+  #         and @requires(fields: "internalGraphitronVoucher") on hendelser
+}
+```
+
+**Why it is correct.** Verified in Apollo Router's source (`apollo-federation`, branch `dev`, read
+2026-11-23):
+
+* For a field carrying `@requires`, the planner builds the `_entities` input from the required fields plus
+  a key of the type that selects no `@external` field (`inputs_for_require` and `locally_satisfiable_key`,
+  the first such key in declaration order, `resolvable:` not consulted). So B's representation for
+  `hendelser` is `{__typename, id, internalGraphitronVoucher}`, whichever key the router jumped by.
+* Graphitron's `_entities` dispatch already tries the voucher alternative before any authored key
+  (`HandleMethodBody.emitAlternativeCascade`, matching on `containsKey`), so that representation is
+  verified and read on the vouched connection with its subtree.
+* A jump by another key reaches only fields without `@requires`, under the caller's own row-level
+  security: a quiet `null` at worst, never more access. So `@accept` mints the `@requires` rather than
+  leaving it to the author.
+* A key field that is `null` in A's response is copied into the representation as `null`
+  (`execute_selection_set` in `selection.rs`); a non-null field that fails propagates in A and the row is
+  never sent. A's voucher field is `String!`, so B never sees a `null` voucher from it.
+
+**What changes.**
+
+* *A.* `@issue` may sit on any table-bound type, a node, a keyed type and a root-returned type included.
+  The voucher carries the `vouchesFor` fields; the type's other fields publish as usual.
+* *B.* `@accept` mints its voucher field `@external` and mints `@requires(fields: "internalGraphitronVoucher")`
+  on every field below the accepting type that it reads on the vouched connection. Both directives are
+  published in the subgraph SDL and imported through the federation `@link`.
+* *The key part.* `VOUCHER_VOUCHED_FOR_IN_KEY` is narrowed as above, so the vouched-for fields may be
+  B's authored key with an empty lookup section; if the lookup part goes altogether (see *Open*), the
+  refusal goes with it.
+* *The set key* (*How it works*) is what makes the list resolve: N saker present N vouched-for values in
+  one `_entities` call.
+* *A `null` voucher* in a representation fails that representation alone, not the request
+  (`MALFORMED` rejects the whole request today). It cannot come from a Graphitron issuer, but a
+  hand-written stub may publish the field nullable.
+
+**Principles architect's read (2026-11-23), for Alf and Filip to weigh.**
+
+* *One form, not two.* `@requires` works only where A and B share a key the router can jump by, which the
+  first iteration's dedicated issuing type withholds. Two forms would need two shapes in B, and B is built
+  without A's schema, so every reader would fork on a form it cannot see. Recommended: retire absorbing,
+  withholding, A's minted `resolvable: false` key and the three `VOUCHER_ISSUE_ON_*` refusals; the old
+  usage becomes an ordinary type carrying `@issue` that publishes B's key. Deletes
+  `graphitron_voucher_member` and the anti-join on it, and the ISSUE role of `graphitron_minted_key`. The
+  issuing relations that reference members (`graphitron_voucher_vouched_for`,
+  `graphitron_voucher_component`) point at `graphitron_field` instead, as `graphitron_accept_vouched_for`
+  does, reading the column from the field's existing binding.
+* *Drop B's resolvable voucher key.* Under `@requires` the voucher travels with whichever key the router
+  used, so it no longer selects one; keeping it in the key cascade mixes two axes. `graphitron_minted_key`
+  goes back to the node key only, `@inaccessible` is minted off `graphitron_voucher_field`, and the
+  dispatch checks for a voucher before choosing a key alternative. It also removes the composition
+  question of `@external` on a key field.
+* *Store the guarded fields.* `@requires` and `@external` are minted off a stored relation at
+  field-declaration grain (`graphitron_voucher_guard`, say), not worked out inside the minting view.
+* *The lookup part probably dissolves.* The representation now carries B's key, so the voucher's lookup
+  section repeats navigation. Dropping it deletes `graphitron_accept_key`, `@accept(key:)`, its three
+  key refusals, `VOUCHER_VOUCHED_FOR_IN_KEY` and the codec's lookup section. The cost: a voucher for a value
+  is no longer bound to one row, and unlocks any row B's policies admit for that value under whatever key
+  is presented.
+* No reason found that the old form must stay, short of a consumer whose A can publish no key it shares
+  with B.
+
+**Open, for Alf and Filip.**
+
+* *The voucher is no longer a key* (Alf's direction, 2026-11-23, to be confirmed against a running router
+  before it is ruled). Neither side keys its type by `internalGraphitronVoucher`: A's minted
+  `resolvable: false` key and B's resolvable one both go, and the voucher travels only as a field
+  `@requires` names, beside a key A and B share. It settles the two questions the architect raised: B
+  keeps no voucher key, and one form remains, since a dedicated issuing type that withholds every key is
+  unreachable without one. It also removes the composition question of `@external` on a key field. The
+  2026-11-18 ruling in `fact-model.adoc` that the voucher field is a minted key field changes with it:
+  the nullability stands (`String!` on A, `String` on B), B's field becomes `@external`, and it keys
+  nothing. B's dispatch looks for a voucher in the representation before choosing a key alternative,
+  rather than treating it as one.
+* *Prove it first.* Before implementation, two small subgraphs composed and served by a real router: for
+  `sak { hendelser }`, one sak and a list, B receives `{__typename, id, internalGraphitronVoucher}`; a field
+  without `@requires`, reached by `id`, receives no voucher and reads under the caller's own row-level
+  security. Rover and the router cannot be downloaded in the agent sandbox, so this runs in CI or on a
+  developer machine.
+* *A field directive in B instead of `@accept` on the type.* Since what is guarded is a field, and
+  `@requires` and the router's planning are per field, B could mark each guarded field:
+
+  ```graphql
+  type Sak @table(name: "sak") @key(fields: "id") {
+    id: ID!
+    status: String!                     # public, read under the caller's own row-level security
+    hendelser: [Sakshendelse!]!
+      @reference(path: [{key: "sakshendelse_sak_fkey"}])
+      @requiresVoucher(scope: "sakshendelser", vouchesFor: "id")
+    # minted: internalGraphitronVoucher: String @external @inaccessible,
+    #         and @requires(fields: "internalGraphitronVoucher") on hendelser
+  }
+  ```
+
+  It answers which fields are guarded (the author says, in the SDL), lets one type mix public and vouched
+  fields, reads as the specialised `@requires` it is, and turns the guarded-field relation into a capture
+  of an authored directive rather than a derivation. With the voucher no longer a key, type-level
+  `@accept`, `@accept(key:)` and its refusals, and `graphitron_accept_key` dissolve. Open within it:
+  * Where `scope` and `vouchesFor` live: on the field directive, self-contained like `@requires`, with
+    two guarded fields of one type that disagree refused (recommended); or once on the type, with an
+    argument-less field directive, which brings a smaller `@accept` back. One scope per type to start;
+    several would need a voucher field per scope.
+  * What reads on the vouched connection: the guarded field and its subtree, and the entity's own row in
+    the fetch that carries the voucher, since B's lookup of `Sak` may itself sit behind row-level
+    security. Proposed: a representation carrying a voucher reads its entity and every field of that
+    fetch on the vouched connection; the router already puts the guarded fields in a fetch of their own.
+  * A's side: `@issue` stays on the type, without absorbing or withholding and without a key; whether it
+    is renamed to pair with `@requiresVoucher`.
+  * A field that should carry the directive and does not answers a quiet `null`, the same risk
+    federation's own `@requires` carries, visible in the SDL.
+  * The principles architect is consulted on this shape before it is ruled.
+* Which fields are guarded, if type-level `@accept` stays: every non-key field of the accepting type, or
+  only those that read on the vouched connection. Key fields cannot carry `@requires`.
+* Whether the lookup part goes, giving up binding a voucher to one row. The 2026-11-16 ruling that the
+  lookup part is navigation only is in R1119's *Rulings* but in no `docs/architecture` page; it is
+  recorded there with whatever is decided now.
+* Scope: retiring the first form is larger than raising the limit. Whether it stays in this item is the
+  Spec review's call.
+* Composition: if B keeps its voucher key, that Federation 2 composition accepts `@external` on a field B
+  also keys by, checked with a real composition before implementation.
+* Whether Graphitron's classification passes an authored `@requires` or `@external` through untouched
+  today; it names neither.
+
 *Outside this item.*
 
-* The extra hop (`Sak.hendelseLogg.hendelser` rather than `Sak.hendelser`) is the voucher itself: the
-  router hands B a voucher only by jumping on a type keyed by it, and `Sak` cannot be that type
-  without publishing a key that bypasses the voucher (`VOUCHER_ISSUE_ON_KEYED_TYPE`,
-  `VOUCHER_ISSUE_ON_NODE`, `VOUCHER_ISSUE_ON_ROOT_TYPE`). Removing the hop means reopening those
-  refusals, a question for Alf and Filip that this item does not take.
 * An accepted entity with no table of its own in B, whose "row" is just its vouched-for values (the
   issue's point 2 taken literally). It contradicts how an entity is resolved
   (`docs/manual/reference/federation.adoc`, "selecting its row from its table") and three `@accept`
