@@ -7,7 +7,7 @@ priority: 5
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-25
-last-updated: 2026-11-20
+last-updated: 2026-11-23
 ---
 
 # An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record
@@ -85,13 +85,23 @@ Once the two cases are on trunk, sis runs `EndreKullMutationIT.endreKull_eksplis
 
 ### The run of 2026-11-20
 
-Green, on a snapshot of trunk rather than a release: no release has been cut since `ad8d21c`, so whether this run stands in for the one the paragraph above names is open.
+Green, on a snapshot of trunk rather than a release. No release contained `ad8d21c` that day: the latest, `10.0.0-RC57`, was cut from a commit of the day before. The run of 2026-11-23 below repeats this one on the first release that does.
 
 * **What ran.** sis's `sis/upgrade-graphitron` at `a30f72c6bc`, the commit after the one adding the reproducer, with `sis-graphql-spec` and `sis-app` built against Graphitron `10-SNAPSHOT` installed from trunk `4df4e926e`, which contains `ad8d21c`. `sis-jooq` and `sis-service` were sis's own jars of 2026-11-17, the same in both arms below; `EndreKullService` has not changed since June. sis's `systemtest-ci` profile deployed the war to WildFly 40.0.1 over the local FS Oracle image, and only `EndreKullMutationIT` ran.
 * **Result.** The reproducer passes, and so does `endreKull_gyldigInput_oppdatererKull`, the control that a valid element is written through the same build. The class's other three cases fail with a top-level "A nested transaction in this field failed": a service that opens its own transaction fails the field on a claimed exception, which sis tracks apart from this defect and which fails the same three on RC47.
 * **Baseline.** The same class in the same environment, from an unedited copy on `10.0.0-RC47`: the reproducer fails, `data.endreKull.kull` carrying the element where null is expected, and the control passes.
 * **Which helper.** Trunk built the record with `BuildEmitter.recordHelper`: the values for `STUDIEKULLNAVN_ENGELSK` and `STATUS_EKSPORT_LMS` loaded by `fromArray`, then the explicit null on `STUDIEKULLNAVN` set, then the node ids decoded by `decodeInto`. The fetcher validates every touched column before it constructs `EndreKullService`, so the `@NotNull` on `STUDIEKULLNAVN` refuses the element before the service's own transaction is opened. RC47 built it with the classified helper, `rec.set(KULL.STUDIEKULLNAVN, null)` followed by `rec.fromArray(..., KULL.STUDIEKULLNAVN_ENGELSK)`, the sequence the consumer report names.
 * **What the copy changed.** sis does not build on trunk unchanged, and none of what trunk refused is `endreKull`, `EndreKullInput` or a `KULL` column. In a scratch copy only, not on sis's branch: eleven types another subgraph owns and a `@nodeId` names, declared `@node(resolvable: false)`, implementing `Node` with an `id` (`NODE_ID_TYPE_NAME_UNDECLARED_STUB`, then `NODE_WITHOUT_NODE_INTERFACE`; two `COLUMN_UNRESOLVED` refusals on `studienivaer` went with it); the `kullterminer` and `terminer` filters' `@reference` paths written on to `TERMIN` (`NODE_ID_LANDS_ON_TABLE`); the two `aktivInnenforPeriode` filters removed (`MEMBER_UNKNOWN`); `PersonProfil`'s `eierOrganisasjonskode fodselsnummer` key removed (`KEY_FIELD_NOT_A_COLUMN`); `FeideBruker`'s `@defaultTenant` dropped, its key made `resolvable: false` and sis's `personProfil` on it removed; and `sis-app`'s runtime wiring ported from `RequestTenants` and `SessionState` to the generated `ConnectionSources.mounting`, the key with no tenant read on the home organisation as the old default did.
+
+### The run of 2026-11-23
+
+Green, on `10.0.0-RC58`, the first release cut from trunk after `ad8d21c`. Its tagged commit, `f6e16dd53`, contains `ad8d21c` and the snapshot `4df4e926e` the run above built.
+
+* **What ran.** The edited scratch copy of the run above, with `version.graphitron` moved from `10-SNAPSHOT` to `10.0.0-RC58` and nothing else changed. It resolved Graphitron into an empty local repository, so no snapshot was on hand, and generated into an empty store. `sis-jooq` and `sis-service` were byte for byte the jars both arms above ran. Same profile, server and database; only `EndreKullMutationIT` ran.
+* **Build.** RC58 refused nothing the copy's edits had not already answered, and asked for no edit of its own. The `sis-app` port built unchanged.
+* **Result.** As on the snapshot: the reproducer and `endreKull_gyldigInput_oppdatererKull` pass, and the other three cases fail with "A nested transaction in this field failed".
+* **Which helper.** `BuildEmitter.recordHelper` again: `fromArray` for the values sent, then the explicit nulls, then `decodeInto` for the id.
+* **What it does not show.** The release condition is met, but the run was in a copy edited to build on RC58, not on sis's branch; none of the edits touches `endreKull`, `EndreKullInput` or a `KULL` column. Only RC47 and RC58 were run, so which release between them first built this record with the store's helper is not shown.
 
 ## Roadmap entries
 
