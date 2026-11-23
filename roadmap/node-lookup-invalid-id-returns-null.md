@@ -1,13 +1,13 @@
 ---
 id: R1146
 title: "An invalid id to a Node-returning lookup returns null with no error"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: nodeid
 depends-on: []
 created: 2026-11-03
-last-updated: 2026-11-20
+last-updated: 2026-11-23
 ---
 
 # An invalid id to a Node-returning lookup returns null with no error
