@@ -97,17 +97,59 @@ class StoreConsolePsqlTest {
         }
     }
 
+    /**
+     * The pair every installation once shared, tried the way anybody who can reach the port would
+     * try it. The password is minted per console now, so knowing the user and the port is not
+     * enough.
+     */
     @Test
-    void aWrongPasswordIsRefusedAtConnect(@TempDir Path home) throws Exception {
+    void theOldSharedPasswordIsRefusedAtConnect(@TempDir Path home) throws Exception {
         assumeTrue(psqlPresent(), "psql is not on the PATH");
         try (var console = STORE.handle().console(0)) {
-            var run = run("PGPASSWORD=not-the-password psql -X -w -h " + console.host()
+            var run = run("PGPASSWORD=graphitron psql -X -w -h " + console.host()
                 + " -p " + console.port() + " -U " + console.user() + " -d " + console.database()
                 + " -t -A -c \"select 1\"", home, "");
             assertThat(run.exit())
-                .as("the fixed password is a credential the server checks, not decoration. "
-                    + "stderr: %s", run.error())
+                .as("a password that is not this console's is refused. stderr: %s", run.error())
                 .isNotZero();
+            assertThat(run.output().strip()).as("and no answer comes back").isEmpty();
+        }
+    }
+
+    /**
+     * Read-only over the wire, where it has to hold: the statements that would run Java in the
+     * session's JVM or read the developer's files are refused to the client the printed command
+     * connects as, and the console goes on answering afterwards.
+     *
+     * <p>Over the wire rather than in-process because the wire is where the client's rights were
+     * hardest to arrange: H2's PostgreSQL server ordinarily refuses a user without admin rights at
+     * connect, and a change that brought the admin back to make connecting work would leave the
+     * in-process cases green.
+     */
+    @Test
+    void codeExecutionAndFileAccessAreRefusedOverTheWire(@TempDir Path home) throws Exception {
+        assumeTrue(psqlPresent(), "psql is not on the PATH");
+        Path readable = Files.writeString(home.resolve("readable.txt"), "the developer's file");
+        try (var console = STORE.handle().console(0)) {
+            for (String escape : new String[] {
+                "create alias run as 'String run(String c) { return c; }'",
+                "select file_read('" + readable + "', 'UTF-8')",
+                "select file_write('x', '" + home.resolve("written.txt") + "')"}) {
+                var run = run(console.connectCommand() + " -t -A -c \"" + escape + "\"", home, "");
+                assertThat(run.exit()).as("%s fails. stderr: %s", escape, run.error()).isNotZero();
+                assertThat(run.error())
+                    .as("%s is refused for want of admin rights", escape)
+                    .contains("Admin rights are required");
+                assertThat(run.output())
+                    .as("and nothing of the file comes back")
+                    .doesNotContain("the developer's file");
+            }
+            assertThat(home.resolve("written.txt")).doesNotExist();
+            var after = run(console.connectCommand()
+                + " -t -A -c \"select count(*) from meta_family\"", home, "");
+            assertThat(after.output().strip())
+                .as("the console still answers reads. stderr: %s", after.error())
+                .containsOnlyDigits();
         }
     }
 

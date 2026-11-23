@@ -3,27 +3,35 @@ package no.sikt.graphitron.model.boot;
 import no.sikt.graphitron.model.test.FactStores;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The read-only SQL console a store mints onto itself: what it shows, what it refuses, and the one
  * thing about it that is a requirement rather than a convenience.
  *
- * <p>Everything here reads the console through its own database rather than over the wire, which is
- * where every claim except the printed command line actually lives: {@code READONLY} is a property
- * of the link, and liveness is a property of the link reading through. What only a real client can
+ * <p>Everything here reads the console through its own database rather than over the wire, as the
+ * user a wire client becomes, which is where every claim except the printed command line actually
+ * lives: what that user may do is a property of its rights, and liveness is a property of the link
+ * reading through. What only a real client can
  * answer for, that the command the session prints runs verbatim, is {@link StoreConsolePsqlTest}'s
  * subject.
  *
@@ -85,14 +93,8 @@ class StoreConsoleTest {
 
     /**
      * The refusals, each arm rather than a sample, since this is the guard a developer relies on
-     * while poking around.
-     *
-     * <p>What it does <em>not</em> cover, deliberately: DDL on the console database, which is not
-     * refused (a {@code DROP TABLE} drops the link and leaves the store's relation alone, as the
-     * store count below shows), and the fact that a connecting client is an H2 admin and so could
-     * write through a link it created itself. The console is not a sandbox and does not claim to be.
-     * These are asserted as refusals rather than as the hole staying open: H2 closing it would be
-     * welcome, not a regression.
+     * while poking around: the client holds {@code SELECT} and nothing else, so DML is refused, and
+     * so is DDL that would drop a link or put something beside it.
      */
     @Test
     void writesThroughTheConsoleAreRefusedAndTheStoreIsUnchanged() throws SQLException {
@@ -103,16 +105,86 @@ class StoreConsoleTest {
             for (String write : List.of(
                 "INSERT INTO store_stamp (singleton, ddl_hash, generator_version) VALUES ('Y', 'h', 'v')",
                 "UPDATE store_stamp SET ddl_hash = 'tampered'",
-                "DELETE FROM store_stamp")) {
+                "DELETE FROM store_stamp",
+                "DROP TABLE store_stamp",
+                "CREATE TABLE beside_the_links (i INT)")) {
                 assertThatThrownBy(() -> execute(client, write))
                     .as("%s is refused through the console", write)
                     .isInstanceOf(SQLException.class)
-                    .hasMessageContaining("read only");
+                    .hasMessageContaining("Not enough rights");
             }
+            assertThat(count(client, "SELECT count(*) FROM store_stamp"))
+                .as("and the relation is still there to read")
+                .isEqualTo(before);
         }
         assertThat(count(store.connection(), "SELECT count(*) FROM store_stamp"))
             .as("and the store's rows are what they were")
             .isEqualTo(before);
+    }
+
+    /**
+     * What makes "read-only" a statement about the client rather than about the links. Every
+     * statement here is one an H2 admin may run and each is a way out of the database: Java in the
+     * session's JVM, the developer's files, or a fresh writable link onto the store. The client is
+     * not an admin, so H2 refuses all of them, and it refuses the statements that would make it one.
+     *
+     * <p>The file arms name a path that does not exist, so a refusal is the rights check and not the
+     * filesystem's answer; the write arm's target is asserted absent afterwards.
+     */
+    @Test
+    void aClientCannotRunCodeTouchFilesOrOpenItsOwnLinks(@TempDir Path dir)
+        throws SQLException {
+        var store = STORE.handle();
+        Path target = dir.resolve("written-by-the-console.txt");
+        try (var console = store.console(0);
+             Connection client = client(console)) {
+            for (String escape : List.of(
+                "CREATE ALIAS run AS 'String run(String c) { return c; }'",
+                "CREATE ALIAS prop FOR \"java.lang.System.getProperty\"",
+                "CREATE AGGREGATE agg FOR \"java.lang.Object\"",
+                "SELECT FILE_READ('" + dir.resolve("absent.txt") + "', 'UTF-8')",
+                "SELECT FILE_WRITE('x', '" + target + "')",
+                "CALL CSVWRITE('" + target + "', 'SELECT 1')",
+                "SELECT * FROM CSVREAD('" + dir.resolve("absent.csv") + "')",
+                "SCRIPT",
+                "SCRIPT TO '" + target + "'",
+                "RUNSCRIPT FROM '" + dir.resolve("absent.sql") + "'",
+                "BACKUP TO '" + target + "'",
+                "CREATE LINKED TABLE writable(NULL, 'jdbc:h2:mem:elsewhere', '', '', 'PUBLIC.T')",
+                "CREATE LOCAL TEMPORARY LINKED TABLE writable(NULL, 'jdbc:h2:mem:elsewhere', '', '', 'PUBLIC.T')",
+                "CALL LINK_SCHEMA('ELSEWHERE', '', 'jdbc:h2:mem:elsewhere', '', '', 'PUBLIC')",
+                "ALTER USER \"graphitron\" ADMIN TRUE",
+                "CREATE USER another PASSWORD 'p' ADMIN",
+                "SHUTDOWN")) {
+                assertThatThrownBy(() -> execute(client, escape))
+                    .as("%s is refused to a console client", escape)
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("Admin rights are required");
+            }
+            assertThat(target).as("and nothing was written").doesNotExist();
+            assertThat(count(client, "SELECT count(*) FROM meta_family"))
+                .as("the console is still serving after every refusal, SHUTDOWN included")
+                .isPositive();
+        }
+    }
+
+    /**
+     * The guard under the client's rights: the links reach the store as its own select-only reader,
+     * so the console database holds no connection that could write to the store at all.
+     */
+    @Test
+    void theLinksReachTheStoreAsItsSelectOnlyReader() throws SQLException {
+        var store = STORE.handle();
+        // The name as the DDL's "Store access" section spells it.
+        String readers = "SELECT count(*) FROM information_schema.sessions "
+            + "WHERE user_name = 'GRAPHITRON_READER'";
+        long before = count(store.connection(), readers);
+        try (var console = store.console(0)) {
+            assertThat(count(store.connection(), readers))
+                .as("the one connection the %d links share is the reader's, not the store admin's",
+                    console.relationCount())
+                .isEqualTo(before + 1);
+        }
     }
 
     @Test
@@ -195,19 +267,75 @@ class StoreConsoleTest {
     }
 
     @Test
-    void theConnectCommandIsCompleteAndNamesWhatItConnectsWith() {
+    void theConnectCommandIsCompleteAndCarriesNoSecret() {
         var store = STORE.handle();
         try (var console = store.console(0)) {
             assertThat(console.connectCommand())
                 .as("the whole point is that a developer pastes this without editing it")
-                .isEqualTo("PGPASSWORD=graphitron psql -X -h 127.0.0.1 -p " + console.port()
-                    + " -U graphitron -d store")
+                .isEqualTo("PGPASSFILE=" + console.passwordFile() + " psql -X -w -h 127.0.0.1 -p "
+                    + console.port() + " -U graphitron -d store")
                 .doesNotContain("<")
-                .contains(console.password(), console.user(), console.database());
+                .as("and it names where the password is rather than the password, because this "
+                    + "line goes to the log and to whoever asks the MCP server")
+                .doesNotContain(console.password());
             assertThat(console.coordinates())
                 .as("an agent reads the same values as fields, off the same handle")
                 .isEqualTo(new StoreConsole.Coordinates("127.0.0.1", console.port(), "graphitron",
-                    "graphitron", "store", console.relationCount(), console.connectCommand()));
+                    console.passwordFile().toString(), "store", console.relationCount(),
+                    console.connectCommand()));
+            assertThat(console.coordinates().toString())
+                .as("and no field of them is the password")
+                .doesNotContain(console.password());
+        }
+    }
+
+    /**
+     * Loopback keeps other machines out and nobody else: every account and process on this one can
+     * reach the port. What keeps them out is that the password exists in one file only its owner
+     * can read, which is also the only form libpq accepts a password file in.
+     */
+    @Test
+    void thePasswordIsInAFileOnlyItsOwnerCanRead() throws IOException {
+        var store = STORE.handle();
+        Path file;
+        try (var console = store.console(0)) {
+            file = console.passwordFile();
+            assertThat(Files.readString(file, StandardCharsets.UTF_8))
+                .as("one line of libpq's password-file format, naming exactly this console")
+                .isEqualTo("127.0.0.1:" + console.port() + ":store:graphitron:"
+                    + console.password() + "\n");
+            assumeTrue(Files.getFileStore(file).supportsFileAttributeView("posix"),
+                "this filesystem has no POSIX permissions to read");
+            assertThat(Files.getPosixFilePermissions(file))
+                .as("readable and writable by the owner, and by nobody else")
+                .isEqualTo(Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        }
+        assertThat(file).as("and it goes when the console does").doesNotExist();
+    }
+
+    /**
+     * The password is minted per console, so the pair every installation used to share opens
+     * nothing, and neither does a password read off an earlier session.
+     */
+    @Test
+    void neitherAGuessablePasswordNorAnEarlierConsolesOpensThisOne() throws SQLException {
+        var store = STORE.handle();
+        String earlier;
+        try (var console = store.console(0)) {
+            earlier = console.password();
+            assertThat(earlier).as("256 bits, hex").matches("[0-9a-f]{64}");
+        }
+        try (var console = store.console(0)) {
+            assertThat(console.password()).as("a fresh one each start").isNotEqualTo(earlier);
+            for (String wrong : List.of("graphitron", "", earlier)) {
+                assertThatThrownBy(() -> client(console.consoleUrl(), "graphitron", wrong))
+                    .as("the password '%s' is refused", wrong)
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("Wrong user name or password");
+            }
+            try (Connection client = client(console)) {
+                assertThat(string(client, "SELECT 1")).as("and its own is accepted").isEqualTo("1");
+            }
         }
     }
 
@@ -273,14 +401,14 @@ class StoreConsoleTest {
 
     /** A connection onto the console database, which is what a client over the wire becomes. */
     private static Connection client(StoreConsole console) throws SQLException {
-        return client(console.consoleUrl());
+        return client(console.consoleUrl(), console.user(), console.password());
     }
 
-    private static Connection client(String url) throws SQLException {
+    private static Connection client(String url, String user, String password) throws SQLException {
         var source = new org.h2.jdbcx.JdbcDataSource();
         source.setURL(url);
-        source.setUser("graphitron");
-        source.setPassword("graphitron");
+        source.setUser(user);
+        source.setPassword(password);
         return source.getConnection();
     }
 

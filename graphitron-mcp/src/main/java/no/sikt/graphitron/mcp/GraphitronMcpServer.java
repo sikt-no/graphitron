@@ -1160,16 +1160,21 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 Map.of("type", "object", "properties", Map.of()))
             .title("Fact-store SQL console")
             .description("Returns the connection coordinates of this dev session's read-only SQL "
-                + "console onto its own fact store, as fields (host, port, user, password, database) "
-                + "plus a ready-to-run connectCommand, so there is nothing to parse. Run SQL there "
+                + "console onto its own fact store, as fields (host, port, user, passwordFile, "
+                + "database) plus a ready-to-run connectCommand, so there is nothing to parse. The "
+                + "password is minted per session and is not in this answer: passwordFile is a "
+                + "libpq password file only the session's owner can read, which connectCommand "
+                + "already names as PGPASSFILE. Run SQL there "
                 + "for a question the other tools do not answer, or for a result larger than a tool "
                 + "response should carry; it is the same facts they read, live. The client is psql: "
                 + "the server speaks the PostgreSQL wire protocol but JDBC drivers cannot connect to "
                 + "it, and psql's backslash commands are unimplemented, so introspect through "
-                + "information_schema (its identifiers are upper-case). Writes to the store's "
-                + "relations are refused. The console is off unless the developer turned it on, in "
+                + "information_schema (its identifiers are upper-case). The client may SELECT and "
+                + "nothing else: writes, DDL, file functions and CREATE ALIAS are refused. The "
+                + "console is off unless the developer turned it on, in "
                 + "which case this answers status=disabled and names the command that starts one. "
-                + "The port is fresh per session, so re-read these coordinates after a restart "
+                + "The port and the password file are fresh per session, so re-read these "
+                + "coordinates after a restart "
                 + "rather than caching them. Takes no arguments.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
@@ -1197,7 +1202,9 @@ public final class GraphitronMcpServer implements AutoCloseable {
         fields.put("host", coordinates.host());
         fields.put("port", coordinates.port());
         fields.put("user", coordinates.user());
-        fields.put("password", coordinates.password());
+        // The file's path and never its contents: this endpoint answers whoever reaches its port,
+        // and the file answers only the session's owner.
+        fields.put("passwordFile", coordinates.passwordFile());
         fields.put("database", coordinates.database());
         fields.put("relations", coordinates.relations());
         // The same string the session printed for its developer, carried rather than reassembled, so

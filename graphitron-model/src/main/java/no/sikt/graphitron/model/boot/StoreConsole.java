@@ -8,6 +8,16 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,6 +25,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -52,12 +64,29 @@ import java.util.UUID;
  *       and why nothing here reads H2's status string as proof.
  * </ul>
  *
- * <p>Read-only means {@code INSERT}, {@code UPDATE} and {@code DELETE} through a linked relation are
- * refused by H2, which catches a mistyped statement while a developer pokes around. It is not a
- * sandbox: DDL on the console database itself is not refused, and a connecting client has to be an
- * H2 admin anyway (H2's PostgreSQL server issues {@code SET DEFAULT_NULL_ORDERING HIGH} at connect,
- * which requires admin, so a rights-limited user is refused before it runs anything). For a dev tool
- * on a loopback port that is fine; this class just does not claim otherwise.
+ * <p>Read-only is a property of who the client is, not only of the links. Loopback is not a
+ * boundary between the accounts and processes of one machine, and an H2 admin can compile and run
+ * Java ({@code CREATE ALIAS}), read and write files, and open a fresh writable link onto the store.
+ * So a client is never the admin. The database is created by an owner whose password is minted
+ * here and kept nowhere, and a client connects as {@link #USER}, which holds {@code SELECT} on the
+ * linked relations and nothing else: H2 refuses it every statement that needs admin or schema
+ * rights, which is the whole list above along with DML and DDL on the relations. Underneath, the
+ * links are {@code READONLY} and reach the store as its own select-only reader, so the console
+ * database holds no way to write to the store whoever is asking. Two things make that possible:
+ *
+ * <ul>
+ *   <li>H2's PostgreSQL server issues {@code SET DEFAULT_NULL_ORDERING HIGH} at every connect, which
+ *       requires admin, so a rights-limited user is ordinarily refused before it runs anything.
+ *       {@code IGNORE_UNKNOWN_SETTINGS=TRUE} on the database name the server maps its key to makes
+ *       H2 log that refusal and carry on, and the ordering is set once, in the creation URL,
+ *       where the owner has the rights.
+ *   <li>The client's password is minted per console and handed over as a file only this process's
+ *       owner can read (see {@link #passwordFile()}), so reaching the port is not enough to log in,
+ *       and a password from an earlier session opens nothing.
+ * </ul>
+ *
+ * <p>What remains is what any read access carries: a client can read every fact, create
+ * session-local temporary tables, and spend this JVM's memory and processor on a query.
  *
  * <p>Linked reads are live and cheap. A row committed to the store after the links were created is
  * visible on the next query, so the console shows the session's current rows rather than a snapshot
@@ -70,16 +99,22 @@ import java.util.UUID;
 public final class StoreConsole implements AutoCloseable {
 
     /**
-     * The console's own credentials, fixed rather than minted. The listener is confined to loopback,
-     * so a secret buys nothing a dev tool wants, and the fixed pair is what makes
-     * {@link #connectCommand()} a line a developer can paste. Non-empty for a mechanical reason
-     * rather than a security one: libpq refuses to send an empty password and prompts instead, which
-     * would break that line.
+     * The user a client connects as: rights-limited, holding {@code SELECT} on the linked relations
+     * and nothing else. The name is fixed, since it is not the secret; its password is minted per
+     * console.
      */
     static final String USER = "graphitron";
 
-    /** @see #USER */
-    static final String PASSWORD = "graphitron";
+    /**
+     * The user that creates the console database and so is its admin. Its password is minted in
+     * {@link #open} and kept nowhere, so nothing arriving on the port can become it.
+     */
+    private static final String OWNER = "graphitron_console_owner";
+
+    /** The bytes of entropy in a minted password, which is hex-encoded and so needs no escaping. */
+    private static final int SECRET_BYTES = 32;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
      * The database name a client passes as {@code -d}: the alias the PostgreSQL server maps onto the
@@ -113,12 +148,17 @@ public final class StoreConsole implements AutoCloseable {
     private final Connection connection;
     private final String url;
     private final int relationCount;
+    private final String password;
+    private final Path passwordFile;
 
-    private StoreConsole(Server server, Connection connection, String url, int relationCount) {
+    private StoreConsole(Server server, Connection connection, String url, int relationCount,
+                         String password, Path passwordFile) {
         this.server = server;
         this.connection = connection;
         this.url = url;
         this.relationCount = relationCount;
+        this.password = password;
+        this.passwordFile = passwordFile;
     }
 
     /**
@@ -139,12 +179,20 @@ public final class StoreConsole implements AutoCloseable {
     static StoreConsole open(Connection storeConnection, String storeUrl, int port, BindCheck bindCheck) {
         List<String> relations = relationsOf(storeConnection, port);
         String name = "graphitron-console-" + UUID.randomUUID();
-        String url = "jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
-        Connection console = connect(url, port);
+        String url = "jdbc:h2:mem:" + name;
+        // DEFAULT_NULL_ORDERING here rather than left to the server's connect-time SET, which a
+        // rights-limited client is refused: see the class comment.
+        Connection console = connect(
+            url + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DEFAULT_NULL_ORDERING=HIGH", port);
+        String password = secret();
         try (Statement statement = console.createStatement()) {
             for (String relation : relations) {
                 statement.execute(link(relation, storeUrl));
             }
+            // After the links, so the grant covers them, and never ADMIN: everything a client must
+            // not do is something H2 refuses a user without it.
+            statement.execute("CREATE USER \"" + USER + "\" PASSWORD '" + password + "'");
+            statement.execute("GRANT SELECT ON SCHEMA PUBLIC TO \"" + USER + "\"");
         } catch (SQLException e) {
             shutdownQuietly(console);
             throw failure(port, "the store's relations could not be linked: " + e.getMessage(), e);
@@ -157,8 +205,12 @@ public final class StoreConsole implements AutoCloseable {
             //
             // Neither -pgAllowOthers (H2's peer check stays on, which is defence in depth behind the
             // bind, never instead of it) nor -baseDir (nothing here is file-backed).
+            //
+            // IGNORE_UNKNOWN_SETTINGS on the mapped name is what lets the rights-limited client in:
+            // the server sends settings at connect that only an admin may set, and with this H2
+            // skips the ones it refuses rather than dropping the session.
             server = Server.createPgServer("-pgPort", Integer.toString(port), "-pgDaemon",
-                "-key", DATABASE, "mem:" + name).start();
+                "-key", DATABASE, "mem:" + name + ";IGNORE_UNKNOWN_SETTINGS=TRUE").start();
         } catch (SQLException e) {
             shutdownQuietly(console);
             throw failure(port, "the PostgreSQL server did not start: " + e.getMessage(), e);
@@ -169,10 +221,20 @@ public final class StoreConsole implements AutoCloseable {
             // A listener that cannot prove it is loopback-only does not stay up, so the failure mode
             // is a missing debug tool rather than a port open to the network. Through the same
             // teardown close() uses, so the refused console is given back exactly as thoroughly.
-            tearDown(server, console);
+            tearDown(server, console, null);
             throw failure(server.getPort(), e.getMessage(), e);
         }
-        return new StoreConsole(server, console, url, relations.size());
+        Path passwordFile;
+        try {
+            passwordFile = writePasswordFile(server.getPort(), password);
+        } catch (IOException | RuntimeException e) {
+            // The same posture as the bind: a console whose password cannot be kept to its owner
+            // does not stay up.
+            tearDown(server, console, null);
+            throw failure(server.getPort(),
+                "its password file could not be written for the owner alone: " + e.getMessage(), e);
+        }
+        return new StoreConsole(server, console, url, relations.size(), password, passwordFile);
     }
 
     /**
@@ -180,7 +242,7 @@ public final class StoreConsole implements AutoCloseable {
      * for a wire round trip. Not a production door: a consumer that hands the console on gets
      * {@link #coordinates()}, and a consumer that connects goes through the port. Publishing this
      * one costs nothing the store's privacy doctrine protects, since it names the console rather
-     * than the store.
+     * than the store. It carries no settings, because a rights-limited client naming one is refused.
      */
     String consoleUrl() {
         return url;
@@ -205,9 +267,22 @@ public final class StoreConsole implements AutoCloseable {
         return USER;
     }
 
-    /** The password a client authenticates with. @see #USER */
-    public String password() {
-        return PASSWORD;
+    /**
+     * This console's password, for a test that connects in-process as the client. Deliberately not
+     * public: a consumer hands on {@link #passwordFile()}, never the secret itself.
+     */
+    String password() {
+        return password;
+    }
+
+    /**
+     * The file holding this console's password, in libpq's password-file format, so a client names
+     * it as {@code PGPASSFILE} and the secret never appears on a command line, in a log, or in an
+     * answer from a service that does not know who is asking. Only the owner of this process can
+     * read it, and {@link #close()} deletes it.
+     */
+    public Path passwordFile() {
+        return passwordFile;
     }
 
     /** The database name a client passes as {@code -d}. @see #DATABASE */
@@ -232,10 +307,14 @@ public final class StoreConsole implements AutoCloseable {
      * the same errors ahead of its answer. A line handed out to be pasted has to work on a machine
      * whose owner has configured psql, and the cost is that the session does not inherit their
      * formatting preferences, which is the cheaper half of that trade.
+     *
+     * <p>{@code -w} keeps the line from ever prompting. Whoever cannot read the password file has
+     * no password to type either, and an agent that shells out would hang on the prompt rather than
+     * read the refusal.
      */
     public String connectCommand() {
-        return "PGPASSWORD=" + PASSWORD + " psql -X -h " + HOST + " -p " + port()
-            + " -U " + USER + " -d " + DATABASE;
+        return "PGPASSFILE=" + shellQuote(passwordFile.toString()) + " psql -X -w -h " + HOST
+            + " -p " + port() + " -U " + USER + " -d " + DATABASE;
     }
 
     /**
@@ -244,17 +323,18 @@ public final class StoreConsole implements AutoCloseable {
      * developer reading the log run the same string from the same place.
      */
     public Coordinates coordinates() {
-        return new Coordinates(HOST, port(), USER, PASSWORD, DATABASE, relationCount,
-            connectCommand());
+        return new Coordinates(HOST, port(), USER, passwordFile.toString(), DATABASE,
+            relationCount, connectCommand());
     }
 
     /**
      * A live console's connection coordinates, for a consumer that hands them on rather than
      * connecting itself: the MCP {@code store.console} tool, which answers an agent in fields so it
-     * never scrapes them out of log text.
+     * never scrapes them out of log text. It names the password file and never the password: the
+     * tool answers whoever reaches its port, and the file answers only the session's owner.
      */
-    public record Coordinates(String host, int port, String user, String password, String database,
-                              int relations, String connectCommand) {}
+    public record Coordinates(String host, int port, String user, String passwordFile,
+                              String database, int relations, String connectCommand) {}
 
     /**
      * Whether this console is still serving. False once {@link #close()} has run, and it says so
@@ -266,12 +346,13 @@ public final class StoreConsole implements AutoCloseable {
     }
 
     /**
-     * Stops serving and drops the console database. The store is left exactly as it was: the links
-     * were this database's, and the one pooled connection they shared goes with it.
+     * Stops serving, drops the console database and deletes the password file. The store is left
+     * exactly as it was: the links were this database's, and the one pooled connection they shared
+     * goes with it.
      */
     @Override
     public void close() {
-        tearDown(server, connection);
+        tearDown(server, connection, passwordFile);
     }
 
     /**
@@ -279,9 +360,84 @@ public final class StoreConsole implements AutoCloseable {
      * the database goes, then the database itself. One helper rather than two call sites, so the
      * console that failed its bind check is released exactly as completely as one that served.
      */
-    private static void tearDown(Server server, Connection console) {
+    private static void tearDown(Server server, Connection console, Path passwordFile) {
         server.stop();
         shutdownQuietly(console);
+        if (passwordFile != null) {
+            try {
+                Files.deleteIfExists(passwordFile);
+            } catch (IOException e) {
+                // The password in it died with the database, so a file left behind opens nothing.
+            }
+        }
+    }
+
+    /** A fresh password: unpredictable, and hex so it needs no escaping in SQL or a password file. */
+    private static String secret() {
+        byte[] bytes = new byte[SECRET_BYTES];
+        RANDOM.nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
+    }
+
+    /**
+     * Writes the client's password where only this process's owner can read it, as one line of
+     * libpq's password-file format naming exactly this console.
+     *
+     * <p>Registered for deletion at exit as well as deleted by {@link #close()}, for the reason the
+     * listener is a daemon: a console nobody closed must not leave something behind.
+     */
+    private static Path writePasswordFile(int port, String password) throws IOException {
+        Path file = createOwnerOnly();
+        try {
+            Files.writeString(file,
+                HOST + ":" + port + ":" + DATABASE + ":" + USER + ":" + password + "\n",
+                StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            Files.deleteIfExists(file);
+            throw e;
+        }
+        file.toFile().deleteOnExit();
+        return file;
+    }
+
+    /**
+     * An empty file nobody but the owner can open, restricted in the call that creates it rather
+     * than afterwards, so there is no moment at which it is readable by anyone else. On a POSIX
+     * filesystem that is mode {@code 600}, which libpq also insists on before it will read a
+     * password file. Elsewhere the access-control list is replaced with a single entry for the
+     * owner, and a filesystem offering neither fails rather than leaving the password readable.
+     */
+    private static Path createOwnerOnly() throws IOException {
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            return Files.createTempFile("graphitron-console-", ".pgpass",
+                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+        }
+        Path file = Files.createTempFile("graphitron-console-", ".pgpass");
+        try {
+            AclFileAttributeView acl = Files.getFileAttributeView(file, AclFileAttributeView.class);
+            if (acl == null) {
+                throw new IOException("this filesystem cannot restrict a file to its owner");
+            }
+            acl.setAcl(List.of(AclEntry.newBuilder()
+                .setType(AclEntryType.ALLOW)
+                .setPrincipal(acl.getOwner())
+                .setPermissions(EnumSet.allOf(AclEntryPermission.class))
+                .build()));
+            return file;
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(file);
+            throw e;
+        }
+    }
+
+    /**
+     * {@code value} as one shell word. A temporary directory is usually a plain path and is left
+     * bare so the printed line stays readable; anything else is single-quoted.
+     */
+    private static String shellQuote(String value) {
+        return value.matches("[A-Za-z0-9_./+=:@%-]+")
+            ? value
+            : "'" + value.replace("'", "'\\''") + "'";
     }
 
     /**
@@ -307,29 +463,19 @@ public final class StoreConsole implements AutoCloseable {
     }
 
     /**
-     * One link statement. {@code READONLY} is what refuses DML through the link; the quoted name
-     * keeps the console's relation named exactly as the store spells it, so an unquoted lowercase
-     * lookup from a client resolves the way it does against the store itself.
+     * One link statement. The link connects to the store as
+     * {@link GraphitronModelStore#READER_USER}, the store's own select-only user, so nothing in the
+     * console database, its owner included, holds a way to write to the store: the guard is the
+     * store's grant rather than a promise made here. {@code READONLY} then refuses DML where it is
+     * typed instead of at the store. The quoted name keeps the console's relation named exactly as
+     * the store spells it, so an unquoted lowercase lookup from a client resolves the way it does
+     * against the store itself.
      */
     private static String link(String relation, String storeUrl) {
-        return "CREATE LINKED TABLE \"" + relation + "\"(NULL, '" + quote(storeUrl) + "', '"
-            + quote(storeUser()) + "', '" + quote(storePassword()) + "', 'PUBLIC." + relation
+        return "CREATE LINKED TABLE \"" + relation + "\"(NULL, '"
+            + quote(GraphitronModelStore.readerUrl(storeUrl)) + "', '"
+            + quote(GraphitronModelStore.READER_USER) + "', '', 'PUBLIC." + relation
             + "') READONLY";
-    }
-
-    /**
-     * The store's own credentials, which are H2's defaults because
-     * {@link GraphitronModelStore} names neither: its data source connects with an empty user, and
-     * that empty user is the database's admin. Named here rather than spelled inside the link
-     * statement so the coupling is visible if that ever changes.
-     */
-    private static String storeUser() {
-        return "";
-    }
-
-    /** @see #storeUser() */
-    private static String storePassword() {
-        return "";
     }
 
     private static String quote(String literal) {
@@ -380,14 +526,15 @@ public final class StoreConsole implements AutoCloseable {
     }
 
     /**
-     * Under the console's own credentials, which create the database on this first connection and
-     * make that user its admin.
+     * As {@link #OWNER}, under a password minted for this one call: the first connection creates
+     * the database and makes its user the admin, and the connection returned is the only thing
+     * that will ever hold that identity.
      */
     private static Connection connect(String url, int port) {
         var source = new org.h2.jdbcx.JdbcDataSource();
         source.setURL(url);
-        source.setUser(USER);
-        source.setPassword(PASSWORD);
+        source.setUser(OWNER);
+        source.setPassword(secret());
         try {
             return source.getConnection();
         } catch (SQLException e) {

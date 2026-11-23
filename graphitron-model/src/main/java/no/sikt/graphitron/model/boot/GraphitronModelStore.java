@@ -507,14 +507,22 @@ public final class GraphitronModelStore implements AutoCloseable {
      * has no use for.
      */
     private static Connection connectAsReader(String url) {
-        int settings = url.indexOf(';');
         JdbcDataSource source = new JdbcDataSource();
-        source.setURL(settings < 0 ? url : url.substring(0, settings));
+        source.setURL(readerUrl(url));
         try {
             return source.getConnection(READER_USER, "");
         } catch (SQLException e) {
             throw new IllegalStateException("could not open a reader onto the model store at " + url, e);
         }
+    }
+
+    /**
+     * {@code url} with its settings cut off, which is the URL {@link #READER_USER} can connect on.
+     * Shared with {@link StoreConsole}, whose links connect as that user too.
+     */
+    static String readerUrl(String url) {
+        int settings = url.indexOf(';');
+        return settings < 0 ? url : url.substring(0, settings);
     }
 
     /**

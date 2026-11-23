@@ -110,11 +110,11 @@ Two current limits: writes cannot be persisted (rollback is unconditional by des
 [#store-console]
 == Query the fact store from an agent
 
-The tools above are the questions somebody wrote in advance. When an agent has one they do not cover, the fact store behind them holds a couple of hundred relations that do, and `store.console` is the door: with the console enabled it returns the connection as fields (`host`, `port`, `user`, `password`, `database`) plus a ready `connectCommand`. Read the fields; there is nothing to parse.
+The tools above are the questions somebody wrote in advance. When an agent has one they do not cover, the fact store behind them holds a couple of hundred relations that do, and `store.console` is the door: with the console enabled it returns the connection as fields (`host`, `port`, `user`, `passwordFile`, `database`) plus a ready `connectCommand`. Read the fields; there is nothing to parse. The password is never one of them: the MCP endpoint answers whoever reaches its port, so it names the password file instead, which only the account running the session can read and which `connectCommand` already passes as `PGPASSFILE`.
 
-The tool is always present. Without a console it answers `{"status": "disabled"}` and names the command that starts one, so an agent can tell you what to restart with rather than guessing why `psql` refuses. The port is fresh per session, so re-read the coordinates after a restart instead of caching them.
+The tool is always present. Without a console it answers `{"status": "disabled"}` and names the command that starts one, so an agent can tell you what to restart with rather than guessing why `psql` refuses. The port and the password file are fresh per session, so re-read the coordinates after a restart instead of caching them.
 
-The client is `psql`: the server speaks the PostgreSQL wire protocol, but a JDBC driver cannot connect to it, and the backslash commands are unimplemented, so introspect through `information_schema` (its identifiers are upper-case). Writes to the store's relations are refused. Turning the console on, and what it does and does not guarantee, is in xref:dev-loop.adoc#store-console[Query the fact store while the session runs].
+The client is `psql`: the server speaks the PostgreSQL wire protocol, but a JDBC driver cannot connect to it, and the backslash commands are unimplemented, so introspect through `information_schema` (its identifiers are upper-case). The client may `SELECT` and nothing else: writes, DDL, file functions and `CREATE ALIAS` are refused, so a statement an agent proposes to run there cannot change the store or leave the database. Turning the console on, and what it does and does not guarantee, is in xref:dev-loop.adoc#store-console[Query the fact store while the session runs].
 
 [#setup]
 == Connect your agent

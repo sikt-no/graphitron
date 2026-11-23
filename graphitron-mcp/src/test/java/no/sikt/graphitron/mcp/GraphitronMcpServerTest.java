@@ -184,8 +184,9 @@ class GraphitronMcpServerTest {
     @Test
     void storeConsoleReturnsEveryCoordinateAsItsOwnField() throws Exception {
         var coordinates = new no.sikt.graphitron.model.boot.StoreConsole.Coordinates(
-            "127.0.0.1", 32973, "graphitron", "graphitron", "store", 219,
-            "PGPASSWORD=graphitron psql -X -h 127.0.0.1 -p 32973 -U graphitron -d store");
+            "127.0.0.1", 32973, "graphitron", "/tmp/graphitron-console-1.pgpass", "store", 219,
+            "PGPASSFILE=/tmp/graphitron-console-1.pgpass psql -X -w -h 127.0.0.1 -p 32973 "
+                + "-U graphitron -d store");
         try (var server = new GraphitronMcpServer(loopback(0), null, null, null, null, null, null,
                  coordinates);
              var client = connect(server.port())) {
@@ -200,7 +201,9 @@ class GraphitronMcpServerTest {
                 .containsEntry("host", "127.0.0.1")
                 .containsEntry("port", 32973)
                 .containsEntry("user", "graphitron")
-                .containsEntry("password", "graphitron")
+                .containsEntry("passwordFile", "/tmp/graphitron-console-1.pgpass")
+                .as("the endpoint answers whoever reaches it, so the password itself is never a field")
+                .doesNotContainKey("password")
                 .containsEntry("database", "store")
                 .containsEntry("relations", 219)
                 .containsEntry("connectCommand", coordinates.connectCommand())
@@ -226,7 +229,7 @@ class GraphitronMcpServerTest {
             assertThat(structured)
                 .containsEntry("status", "disabled")
                 .containsEntry("enableWith", GraphitronMcpServer.ENABLE_STORE_CONSOLE)
-                .doesNotContainKeys("host", "port", "user", "password", "database",
+                .doesNotContainKeys("host", "port", "user", "passwordFile", "database",
                     "connectCommand");
         }
     }
