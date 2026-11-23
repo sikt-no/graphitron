@@ -1,0 +1,39 @@
+# The condition method a field's table has, and what it takes beside the table and the arguments.
+# Query.customersByFirstName's filter compares a term and takes neither, and so does
+# Query.customersNamed, whose @condition fills its parameter from an argument;
+# Query.customersSeenByUser's fills it from the request context and takes the context;
+# Query.customersOfPrincipal's fills it from the session and takes the statement's connection.
+# Query.allCustomers carries no @condition, so its table has no condition method and no row.
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord"
+)
+
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+
+type Query {
+  allCustomers: [Customer!]! @defaultOrder(primaryKey: true)
+  customersByFirstName(firstName: String @field(name: "first_name")): [Customer!]!
+    @defaultOrder(primaryKey: true)
+  customersNamed(name: String!): [Customer!]! @defaultOrder(primaryKey: true)
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerOfPrincipal", argMapping: "principal: name"})
+  customersSeenByUser: [Customer!]! @defaultOrder(primaryKey: true)
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerSeenByUser"}, contextArguments: ["userId"])
+  customersOfPrincipal: [Customer!]! @defaultOrder(primaryKey: true)
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "customerOfPrincipal", argMapping: "principal: $session.principal"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_condition_signature", rows: """
+  coordinate,                 bound,           takes_context, takes_session
+  Query.customersByFirstName, public.customer, FALSE,         FALSE
+  Query.customersNamed,       public.customer, FALSE,         FALSE
+  Query.customersOfPrincipal, public.customer, FALSE,         TRUE
+  Query.customersSeenByUser,  public.customer, TRUE,          FALSE
+  """)

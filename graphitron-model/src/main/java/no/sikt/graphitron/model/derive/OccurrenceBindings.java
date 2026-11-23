@@ -11,7 +11,8 @@ import java.time.LocalDateTime;
  * columns argMapping paths project out of them, the columns, the nesting fields read off their
  * parent's row, the vouchers, the {@code @externalField} expressions and their calls, the tables and
  * the {@code @condition}
- * calls applied to them, each over the whole graph from its rule view, then swept; and last which
+ * calls applied to them and what each condition method takes, each over the whole graph from its rule
+ * view, then swept; and last which
  * projection reads each field occurrence, a depth at a time, and the table-bound types whose
  * projection reads the session, a pass at a time until one adds nothing.
  *
@@ -50,6 +51,9 @@ public final class OccurrenceBindings {
         OccurrenceExpressions.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
         OccurrenceFilterTerms.sweep(dsl, graph, touchedAt);
+        // What each condition method takes, once the conditions and their fills hold this reading's
+        // rows alone.
+        OccurrenceConditionSignatures.derive(dsl, graph, touchedAt);
         // Which projection reads each field occurrence, once the nesting fields hold this reading's
         // rows alone; then the types whose projection reads the session, closing over the inline calls
         // of each projection and seeded by the conditions.

@@ -25124,6 +25124,76 @@ COMMENT ON COLUMN graphitron_occurrence_condition.call_kind IS 'always CONDITION
 COMMENT ON COLUMN graphitron_occurrence_condition.override_written IS 'whether the @condition was written with override: true, false where override: was not written; carried for the transition and retired with the rule that decides what a condition consumes';
 COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The condition method a field occurrence's table has, and what it takes beside the table and the
+-- arguments. A table has one where the field's filter compares a term on it or a @condition is
+-- applied there, the field's own or its arguments', on that table or on a node id's. It takes the
+-- request context where such a @condition fills a parameter from it, and the statement's connection
+-- where one fills a parameter from the session.
+CREATE VIEW graphitron_occurrence_condition_signature_rule
+  (graph_name, coordinate, bound, takes_context, takes_session) AS
+WITH applied (graph_name, coordinate, bound, call_coordinate, call) AS (
+  SELECT rb.graph_name, rb.coordinate, rb.bound, cc.coordinate, cc.call
+    FROM graphitron_occurrence_binding_table rb
+    JOIN graphitron_occurrence fo ON fo.graph_name = rb.graph_name AND fo.coordinate = rb.coordinate
+    JOIN graphitron_occurrence co ON co.graph_name = rb.graph_name AND co.field_coordinate = rb.coordinate
+    JOIN graphitron_occurrence_condition cc ON cc.graph_name = co.graph_name AND cc.coordinate = co.coordinate
+    JOIN graphitron_occurrence_binding cb
+      ON cb.graph_name = cc.graph_name AND cb.coordinate = cc.coordinate AND cb.bound = cc.bound
+    JOIN graphitron_occurrence_call_method cm
+      ON cm.graph_name = cc.graph_name AND cm.coordinate = cc.coordinate AND cm.call = cc.call
+   WHERE fo.kind = 'FIELD' AND (cc.bound = rb.bound OR cb.kind = 'NODE_ID')
+),
+termed (graph_name, coordinate, bound) AS (
+  SELECT rb.graph_name, rb.coordinate, rb.bound
+    FROM graphitron_occurrence_binding_table rb
+    JOIN graphitron_occurrence fo ON fo.graph_name = rb.graph_name AND fo.coordinate = rb.coordinate
+    JOIN graphitron_occurrence o ON o.graph_name = rb.graph_name AND o.field_coordinate = rb.coordinate
+    JOIN graphitron_occurrence_filter_term st
+      ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+     AND st.table_source_name = rb.table_source_name AND st.table_schema = rb.table_schema
+     AND st.table_name = rb.table_name
+   WHERE fo.kind = 'FIELD'
+),
+keyed (graph_name, coordinate, bound) AS (
+  SELECT graph_name, coordinate, bound FROM applied
+  UNION
+  SELECT graph_name, coordinate, bound FROM termed
+)
+SELECT k.graph_name, k.coordinate, k.bound,
+       MAX(CASE WHEN cp.fill = 'CONTEXT_KEY' THEN 1 ELSE 0 END) = 1,
+       MAX(CASE WHEN cp.fill IN ('SESSION', 'SESSION_MEMBER') THEN 1 ELSE 0 END) = 1
+  FROM keyed k
+  LEFT JOIN applied a ON a.graph_name = k.graph_name AND a.coordinate = k.coordinate AND a.bound = k.bound
+  LEFT JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = a.graph_name AND cp.coordinate = a.call_coordinate AND cp.call = a.call
+ GROUP BY k.graph_name, k.coordinate, k.bound;
+COMMENT ON VIEW graphitron_occurrence_condition_signature_rule IS 'One row the condition signature rule computes, in the shape graphitron_occurrence_condition_signature stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_condition_signature, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_signature_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_condition_signature.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_signature_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_condition_signature.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_signature_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_condition_signature.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_signature_rule.takes_context IS 'the takes_context of a row of this rule, which the stage writes into graphitron_occurrence_condition_signature.takes_context';
+-- COMMENT ON COLUMN graphitron_occurrence_condition_signature_rule.takes_session IS 'the takes_session of a row of this rule, which the stage writes into graphitron_occurrence_condition_signature.takes_session';
+
+CREATE TABLE graphitron_occurrence_condition_signature (
+  graph_name    VARCHAR   NOT NULL,
+  coordinate    VARCHAR   NOT NULL,
+  bound         VARCHAR   NOT NULL,
+  takes_context BOOLEAN   NOT NULL,
+  takes_session BOOLEAN   NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- The field's table binding: a table the field stops binding has no condition method there.
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding_table (graph_name, coordinate, bound) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_condition_signature IS 'The condition method a field occurrence''s table has, and what it takes beside the table and the arguments: one row per occurrence and table the field''s filter compares a term on or a @condition is applied to. For example Query.films(filter:) gives Query.films on public.film a method taking neither, SessionStore.customersOfPrincipal on public.customer has one taking the session, its condition filling a parameter from $session.principal, and a field with neither has no row.';
+COMMENT ON COLUMN graphitron_occurrence_condition_signature.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_condition_signature.coordinate IS 'the field occurrence whose condition method it is; a field occurrence and table with no row has no condition method';
+COMMENT ON COLUMN graphitron_occurrence_condition_signature.bound IS 'the table the method filters, as the field''s binding spells it; with the graph and the occurrence the key, and a reference to that binding';
+COMMENT ON COLUMN graphitron_occurrence_condition_signature.takes_context IS 'whether the method takes the request''s DataFetchingEnvironment, a @condition applied there filling a parameter from a CONTEXT_KEY';
+COMMENT ON COLUMN graphitron_occurrence_condition_signature.takes_session IS 'whether the method takes the statement''s DSLContext, a @condition applied there filling a parameter from the session or one of its members';
+COMMENT ON COLUMN graphitron_occurrence_condition_signature.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- An @externalField occurrence binds an expression at each table its values are rows of: the table
 -- its method takes, the parent's row for a field of a table-bound type and the nesting chain's
 -- anchor for a field of a nesting type under one. Which method computes it is the call's, below.
@@ -31753,6 +31823,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_occurrence_call_parameter_pair'),
   ('occurrence-bindings', 'graphitron_argmapping_landing_key_column'),
   ('occurrence-bindings', 'graphitron_occurrence_condition'),
+  ('occurrence-bindings', 'graphitron_occurrence_condition_signature'),
   ('occurrence-producers', 'graphitron_occurrence_call_parameter'),
   ('occurrence-bindings', 'graphitron_occurrence_call_parameter'),
   ('occurrence-producers', 'graphitron_occurrence_binding'),
@@ -31973,6 +32044,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-bindings', 'graphitron_occurrence_call_parameter_defect', 'graphitron_occurrence_condition_parameter_defect_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_call_parameter_pair', 'graphitron_occurrence_call_parameter_pair_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_condition', 'graphitron_occurrence_condition_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_condition_signature', 'graphitron_occurrence_condition_signature_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_expression', 'graphitron_occurrence_expression_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_nesting', 'graphitron_occurrence_nesting_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_node_id_carried', 'graphitron_occurrence_node_id_carried_rule'),
@@ -32680,6 +32752,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-projection',
    'one field occurrence read in a table-bound type''s projection, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('occurrence-condition-signature',
+   'one field occurrence and one table it has a condition method on, in one graph',
+   'graph_name, coordinate, bound', 'sdl'),
   ('session-projection-type',
    'one table-bound type whose projection reads the executing connection''s session, in one graph',
    'graph_name, type_name', 'sdl'),
@@ -34152,6 +34227,14 @@ INSERT INTO meta_relation VALUES
    'One row the call-context-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example contextArguments: ["userId", "userId"] on one @service gives one CONTEXT_KEY_DUPLICATE row at each element; brukerId read as a Long by one @service and as a long by another gives one CONTEXT_KEY_TYPE_DISAGREES row at each element.',
    'The stage''s own defects, decided from the context keys it has just written, so each reads only what is upstream of it and none waits for a later stage''s facts; a key''s type is its parameter''s on the method the code-references stage resolved, read off the classpath. A pair''s defect is rolled up from its entries in a CTE, the entries being graphitron_call_context_key_entry_defect_pair_rule''s rows.'),
+  ('graphitron_occurrence_condition_signature', 'occurrence-condition-signature', 'graphitron',
+   'The condition method a field occurrence''s table has, and what it takes beside the table and the arguments: one row per occurrence and table the field''s filter compares a term on or a @condition is applied to.',
+   'For example Query.films(filter:) gives Query.films on public.film a method taking neither, SessionStore.customersOfPrincipal on public.customer has one taking the session, its condition filling a parameter from $session.principal, and a field with neither has no row.',
+   'Which condition methods there are and what each takes, stated once for every emitter that writes a definition or a call: the conditions class renders a method for each row with these parameters, and a root fetcher calls it with them, so the two cannot disagree. A plain join over the conditions and their fills, stored because several readers build on it (fact-model.adoc, Every relation has a grain). Written by occurrence-bindings once the conditions and their fills hold this reading''s rows alone.'),
+  ('graphitron_occurrence_condition_signature_rule', 'occurrence-condition-signature', 'graphitron',
+   'One row the condition signature rule computes, in the shape graphitron_occurrence_condition_signature stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_condition_signature, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_condition', 'graph-occurrence-binding', 'graphitron',
    'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method.',
    'For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.',

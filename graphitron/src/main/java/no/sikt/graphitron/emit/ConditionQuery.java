@@ -20,6 +20,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TABL
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_SIGNATURE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
@@ -217,9 +218,9 @@ public final class ConditionQuery {
     }
 
     /**
-     * One field occurrence's filters on one table its rows are, a row of its {@code TABLE} binding: the
-     * occurrence, the table's bound name as the binding spells it, what it produces where it produces
-     * anything, the table, the generated terms in
+     * One field occurrence's filters on one table its rows are, a row of its {@code TABLE} binding that
+     * has a condition method: the occurrence, the table's bound name as the binding spells it, what it
+     * produces where it produces anything, the table, the generated terms in
      * coordinate order but those an {@code override: true} suppresses, the {@code @condition} calls
      * applied there in coordinate order, a condition on a node id's table among them, and whether a
      * call reads the request context or the session, which the emitted
@@ -493,10 +494,12 @@ public final class ConditionQuery {
                     cc.BOUND.eq(rbBound).or(cb.KIND.eq("NODE_ID")))
                 .orderBy(cc.COORDINATE));
 
+        var sig = GRAPHITRON_OCCURRENCE_CONDITION_SIGNATURE;
         var out = new ArrayList<Row>();
         store.dsl()
             .select(rbCoordinate, rp.KIND, rt.TABLE_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN, rt.JOOQ_NAME,
-                rt.RECORD_CLASS_FQN, terms, calls, rbBound, gf.TYPE_NAME, gf.FIELD_NAME, participantType)
+                rt.RECORD_CLASS_FQN, terms, calls, rbBound, gf.TYPE_NAME, gf.FIELD_NAME, participantType,
+                sig.TAKES_CONTEXT, sig.TAKES_SESSION)
             .from(rb)
             .join(fo).on(fo.GRAPH_NAME.eq(rbGraph), fo.COORDINATE.eq(rbCoordinate), fo.KIND.eq("FIELD"))
             .join(gf).on(gf.GRAPH_NAME.eq(fo.GRAPH_NAME), gf.COORDINATE.eq(fo.ELEMENT_COORDINATE))
@@ -504,6 +507,9 @@ public final class ConditionQuery {
                 rt.TABLE_NAME.eq(rbTable))
             .join(rs).on(rs.SOURCE_NAME.eq(rt.SOURCE_NAME), rs.TABLE_SCHEMA.eq(rt.TABLE_SCHEMA))
             .leftJoin(rp).on(rp.GRAPH_NAME.eq(rbGraph), rp.COORDINATE.eq(rbCoordinate))
+            // The tables a condition method is rendered for are the store's, the root fetchers calling
+            // exactly these.
+            .join(sig).on(sig.GRAPH_NAME.eq(rbGraph), sig.COORDINATE.eq(rbCoordinate), sig.BOUND.eq(rbBound))
             .where(rbGraph.eq(store.graphName()))
             .orderBy(rbCoordinate, rt.TABLE_NAME)
             .forEach(r -> {
@@ -531,14 +537,9 @@ public final class ConditionQuery {
                         raw.landingRecordClass(), raw.lists(), raw.ownTypeId(), facets.get(raw.coordinate())))
                     .toList();
                 var made = applied.stream().map(Applied::call).toList();
-                if (r.value8().isEmpty() && made.isEmpty()) {
-                    return;
-                }
-                var kinds = made.stream().flatMap(x -> x.fills().stream()).map(Fill::fill).toList();
                 out.add(new Row(r.value1(), r.value10(), r.value2(),
                     new LiftQuery.Table(r.value3(), r.value4(), r.value5(), r.value6(), r.value7()), written, made,
-                    kinds.contains("CONTEXT_KEY"),
-                    kinds.contains("SESSION") || kinds.contains("SESSION_MEMBER"),
+                    r.value14(), r.value15(),
                     r.value11(), r.value12(), r.value13()));
             });
         return out;
