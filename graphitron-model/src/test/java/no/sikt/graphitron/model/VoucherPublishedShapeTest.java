@@ -4,6 +4,7 @@ import graphql.language.StringValue;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
+import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.FactGraphs;
 import org.junit.jupiter.api.BeforeAll;
@@ -16,8 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What an issuing subgraph publishes for a type marked {@code @issue}, read off the two schemas capture
  * hands back for the {@code scenarios/voucher-issue} document: the emitted schema carries the voucher
- * field Graphitron mints alone, kept from clients by {@code @inaccessible}, and keys the type by it
- * as a key this subgraph does not resolve, while the schema as written keeps every absorbed field and
+ * field Graphitron mints alone, nullable as on the accepting side and kept from clients by
+ * {@code @inaccessible}, and keys the type by it as a key this subgraph does not resolve, while the schema as written keeps every absorbed field and
  * has no voucher field, nobody having written one.
  */
 class VoucherPublishedShapeTest {
@@ -46,6 +47,14 @@ class VoucherPublishedShapeTest {
         var writtenType = (GraphQLObjectType) written.getType("FilmRef");
         assertThat(writtenType.getFieldDefinitions()).extracting(GraphQLFieldDefinition::getName)
             .containsExactly("filmId", "title");
+    }
+
+    @Test
+    @DisplayName("the voucher is a nullable String, as on the accepting side, so a row it cannot sign keeps its place")
+    void theVoucherIsNullable() {
+        var type = (GraphQLObjectType) emitted.getType("FilmRef");
+        assertThat(GraphQLTypeUtil.simplePrint(type.getFieldDefinition("internalGraphitronVoucher").getType()))
+            .isEqualTo("String");
     }
 
     @Test

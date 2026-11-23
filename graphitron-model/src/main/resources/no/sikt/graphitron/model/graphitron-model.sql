@@ -4563,10 +4563,11 @@ SELECT m.graph_name, m.type_name, m.field_name, m.coordinate, m.ordinal, m.type_
                         WHERE tc.graph_name = m.graph_name AND tc.coordinate = m.type_name))
 UNION ALL
 -- The voucher field of a type marked @issue or @accept, which its own relation already withholds
--- where the name is taken. Non-null where the type issues, every row being signed one; nullable where
--- it accepts, since a row this subgraph reads by any other route has no voucher to give.
+-- where the name is taken. Nullable in either role: an issuing row whose values cannot be signed has
+-- no voucher, and an accepting subgraph never computes one, so a row it reads by any other route has
+-- none to give.
 SELECT v.graph_name, v.type_name, v.field_name, v.coordinate, v.ordinal,
-       CASE v.role WHEN 'ISSUE' THEN 'String!' ELSE 'String' END, 'String', v.role = 'ISSUE', 0,
+       'String', 'String', FALSE, 0,
        CAST(NULL AS BOOLEAN), CAST(NULL AS VARCHAR),
        'The signed voucher a router carries from the issuing subgraph to the accepting one.',
        FALSE, CAST(NULL AS VARCHAR)

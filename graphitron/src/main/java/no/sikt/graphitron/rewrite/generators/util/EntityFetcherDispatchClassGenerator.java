@@ -640,7 +640,8 @@ public final class EntityFetcherDispatchClassGenerator {
          * {@code DataType}, the connection key is built from the vouched-for values, and the lookup
          * columns load into the loader for the authored key the voucher decodes onto, under that key. A
          * failed check, or a value no column takes, rejects the request ({@code rejectVoucher}); a value
-         * past the one-value limit fails this representation alone. The
+         * past the one-value limit fails this representation alone; a null voucher is none, and its slot
+         * is {@code null}, as a key value that is null matches no row. The
          * per-type data (scope, the fields each section names, their columns) is read off the voucher
          * alternative and the authored key it pairs with by identity, the one list the SELECT also reads.
          */
@@ -662,8 +663,13 @@ public final class EntityFetcherDispatchClassGenerator {
                 .collect(CodeBlock.joining(", "));
             var lookupNames = lookup.fields().stream().map(f -> CodeBlock.of("$S", f.fieldName()))
                 .collect(CodeBlock.joining(", "));
-            arm.add("// A voucher is verified, never matched: checked whole, or the request is rejected.\n");
             arm.addStatement("Object presented = rep.get($S)", voucher.voucherField());
+            arm.add("// A null voucher is none: the issuing side gives a row it cannot sign none, and a key value\n");
+            arm.add("// that is null matches no row, so the slot is null and nothing is checked or acquired.\n");
+            arm.beginControlFlow("if (presented == null)");
+            arm.addStatement("return $T.completedFuture(null)", CF);
+            arm.endControlFlow();
+            arm.add("// A voucher is verified, never matched: checked whole, or the request is rejected.\n");
             arm.addStatement("$T token", codec.nestedClass("Token"));
             arm.beginControlFlow("try");
             arm.beginControlFlow("if (!(presented instanceof String voucher))");

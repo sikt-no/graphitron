@@ -43,7 +43,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * whose values the dispatcher coerces to their columns, is read on a key carrying its vouched-for
  * value; one that fails any check rejects the request before any key is asked for, among plain-key and
  * valid representations alike; a representation whose vouched-for value is not the first one presented
- * fails alone, at its own index, naming the limit and no value.
+ * fails alone, at its own index, naming the limit and no value. A null voucher is none: the issuing
+ * side gives a row it cannot sign none, so its slot is {@code null}, as a key value that is null matches
+ * no row, and it never rejects the request.
  */
 @UnitTier
 class VoucherDispatchTest {
@@ -181,6 +183,28 @@ class VoucherDispatchTest {
                 });
             assertThat(asked).as(reason.name() + ": nothing is acquired after a failed check").isEmpty();
         });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aNullVoucherIsNoVoucher_itsSlotIsNullAndTheRestOfTheRequestResolves() {
+        var result = present(List.of(rep(valid("olivia", "1")), rep(null), plain("4")));
+        assertThat(result.getErrors()).isEmpty();
+        var entities = (List<Object>) ((Map<String, Object>) result.getData()).get("_entities");
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(1)).isNull();
+        assertThat(asked).containsExactlyInAnyOrder(ConnectionKey.forVouchedFor("olivia"), ConnectionKey.defaultSource());
+        assertThat(auditLines()).as("a null voucher is neither redeemed nor rejected").hasSize(1);
+    }
+
+    @Test
+    void aNullVoucherIsNeverResolvedPastByPlainKeyFields_itsSlotIsNullAndNothingIsAskedFor() {
+        var rep = rep(null);
+        rep.put("id", "4");
+        var result = present(List.of(rep));
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(asked).isEmpty();
+        assertThat(auditLines()).isEmpty();
     }
 
     @Test

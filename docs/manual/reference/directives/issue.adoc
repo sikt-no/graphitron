@@ -2,7 +2,7 @@
 :description: Mark a table-bound type, so this subgraph vouches for its rows to another subgraph.
 :!toc:
 
-Marks a table-bound type in a federated subgraph that vouches for the rows its own rules let the user see, so another subgraph can grant access to them through its database's row-level security. Graphitron gives the type a *voucher* field, `internalGraphitronVoucher: String!`, and every field you write on the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching type `@accept`.
+Marks a table-bound type in a federated subgraph that vouches for the rows its own rules let the user see, so another subgraph can grant access to them through its database's row-level security. Graphitron gives the type a *voucher* field, `internalGraphitronVoucher: String`, and every field you write on the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching type `@accept`.
 
 == SDL signature
 
@@ -39,11 +39,11 @@ type VgsResultat @table(name: "soknad_vgs_resultat")
 }
 ----
 
-`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `internalGraphitronVoucher` alone. You do not write the voucher field; its name is the same in every subgraph, so the issuing and accepting sides cannot disagree on it. It is non-null here, every row being signed one, and nullable on the accepting side, which never computes one. Name and type the absorbed fields exactly as the other subgraph's key fields and vouched-for fields; a mismatch shows up as every voucher being rejected there.
+`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `internalGraphitronVoucher` alone. You do not write the voucher field; its name is the same in every subgraph, so the issuing and accepting sides cannot disagree on it. It is nullable, as on the accepting side: a row whose voucher cannot be made, one longer than `VoucherCodec.MAX_TOKEN` or carrying a number longer than `VoucherCodec.MAX_NUMBER_TEXT`, gets no voucher and an error at the voucher's path, and the row itself is still answered. Name and type the absorbed fields exactly as the other subgraph's key fields and vouched-for fields; a mismatch shows up as every voucher being rejected there.
 
 == What the subgraph publishes
 
-* Only the voucher field, `internalGraphitronVoucher: String!`, marked `@inaccessible` so clients never see it. The absorbed fields, and any arguments they declare, are not part of the published schema, though they stay in the schema as written, where the editor shows and checks them.
+* Only the voucher field, `internalGraphitronVoucher: String`, marked `@inaccessible` so clients never see it. The absorbed fields, and any arguments they declare, are not part of the published schema, though they stay in the schema as written, where the editor shows and checks them.
 * `@key(fields: "internalGraphitronVoucher", resolvable: false)` on the issuing type, after any key you wrote. The type is keyed by its voucher and not resolved here, so a router reaches the other subgraph's entity from this one only through the voucher. The link imports `@inaccessible` for you.
 * Every absorbed field is withheld whatever else is refused, so a schema whose `@issue` is refused for another reason still never publishes them.
 

@@ -178,7 +178,9 @@ its arms are the build's:
 
 A representation whose voucher vouches for a second value is not a request
 rejection: it fails alone, at its own index, as a client error naming the limit
-and no value, and the rest of the request is answered.
+and no value, and the rest of the request is answered. Nor is a representation
+whose voucher is `null`, which an issuing subgraph gives a row it cannot sign: it
+carries no voucher, and its slot is `null`.
 
 [source,java]
 ----

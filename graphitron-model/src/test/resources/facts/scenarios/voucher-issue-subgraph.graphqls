@@ -55,8 +55,9 @@ extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   VgsResultat, ISSUE, internalGraphitronVoucher, FALSE
   """)
 
-# The minted voucher field is non-null here: every row the issuing field reads is signed one.
+# The minted voucher field is nullable here too: a row whose values cannot be signed has no voucher,
+# and the row itself is still answered.
 extend schema @expectEquals(relation: "graphitron_field", where: "coordinate = 'VgsResultat.internalGraphitronVoucher'", rows: """
   type_sdl, non_null
-  String!,  TRUE
+  String,   FALSE
   """)

@@ -698,7 +698,7 @@ enum OutboxOutcome {
 
 """
 Marks a table-bound type in a federated subgraph that vouches for its rows to another subgraph.
-Graphitron adds the voucher field, `internalGraphitronVoucher: String!`, and every field written on the type is absorbed
+Graphitron adds the voucher field, `internalGraphitronVoucher: String`, and every field written on the type is absorbed
 into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which
 publishes the voucher alone. The voucher is `@inaccessible`, and the type is keyed by it, so a router
 can reach the other subgraph's entity from here only through the voucher. Requires a federation
