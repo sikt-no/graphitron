@@ -972,7 +972,12 @@ static method needs no holder.
     for a term at emit time, so it lands as one stored fact both read, not a second emit-time copy.
     A root list whose `@orderBy` argument takes one order is the store's, its helper rendered from the
     store's choices, all three of FS main's among them; one taking a list of orders, completed as the
-    client lists it, stays the walk's. Connections are the next reason to close. Whether a type's
+    client lists it, stays the walk's. A root connection over one table in either order, not faceted,
+    is the store's too, its records its edge's items and its page size the carrier's
+    `defaultFirstValue` or the unauthored default over `<maxAllowedPageSize>`: 65 of FS main's 66 root
+    connections. That page-size rule is restated from `PaginationResolver` in `RootQuery`; it becomes
+    one stored fact when the child-connection flip arrives as its second reader. Faceted connections,
+    an order argument taking a list, and polymorphic roots are what remain. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
     it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a

@@ -243,8 +243,9 @@ public final class LauncherCommands {
     /**
      * A root the store states whole, read off its occurrence: the table its rows are of, projected by
      * its type's unit, its condition method where its table has one, called as the store says it is
-     * defined, and a list in its default order or one record. A lookup joins its keys' rows instead,
-     * its list following the keys. A single record is null exactly when the read finds no row.
+     * defined, and a list in its default order or one record, or a connection's page. A lookup joins
+     * its keys' rows instead, its list following the keys. A single record is null exactly when the
+     * read finds no row.
      */
     private static LauncherCommand storeRootRow(no.sikt.graphitron.emit.RootQuery.Emitted root,
             GeneratedUnits units) {
@@ -270,7 +271,15 @@ public final class LauncherCommands {
                 units.selectionOccurrences());
         }
         ResultShape result;
-        if (root.list() && root.choice() != null) {
+        if (root.pageSize() != null) {
+            // A connection pages in its chosen or default order, which the store states for every one
+            // it emits.
+            Ordering ordering = root.choice() != null
+                ? new Ordering.Helper(units.orderByHelperMethod(root.parentType(), root.fieldName()),
+                    units.orderByResult())
+                : new Ordering.Columns(fixedOf(root.order()));
+            result = new ResultShape.Connection(ordering, root.pageSize(), units.connectionHelper(), null);
+        } else if (root.list() && root.choice() != null) {
             result = new ResultShape.RecordList(new Ordering.Helper(
                 units.orderByHelperMethod(root.parentType(), root.fieldName()), units.orderByResult()));
         } else if (root.list()) {

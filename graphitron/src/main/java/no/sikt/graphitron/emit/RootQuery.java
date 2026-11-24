@@ -1,5 +1,6 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -11,7 +12,10 @@ import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
@@ -36,6 +40,8 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.selectOne;
@@ -63,8 +69,10 @@ public final class RootQuery {
         LOOKUP_KEY_CONVERTED,
         /** Its rows may be several types', told apart by table or discriminator. */
         POLYMORPHIC,
-        /** It builds a connection. */
-        CONNECTION,
+        /** It builds a connection that surfaces facets. */
+        FACETED,
+        /** It builds a connection the store states no order for, which paging needs. */
+        NO_ORDER,
         /** Its table carries the tenant column. */
         TENANTED,
         /** It is read through a {@code @pivot}. */
@@ -95,12 +103,14 @@ public final class RootQuery {
      * rows and their table, whether it reads a list, its order's keys in sequence, the row key
      * completing them, the condition method its table has, {@code null} where it has none, the keys a
      * lookup narrows its rows by in key order, none for a plain read, and the {@code @orderBy} choice a
-     * client picks its order by, {@code null} where it picks none. A lookup's list follows its keys
-     * rather than an order; a list with a choice reads the default order where the client picks none.
+     * client picks its order by, {@code null} where it picks none, and for a connection the page it
+     * serves where the client asks for none, {@code null} for a list or a record. A lookup's list
+     * follows its keys rather than an order; a list with a choice reads the default order where the
+     * client picks none.
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
-                          List<LookupKey> keys, Choice choice)
+                          List<LookupKey> keys, Choice choice, Integer pageSize)
             implements Result {
         public Emitted {
             Objects.requireNonNull(coordinate, "coordinate");
@@ -151,14 +161,23 @@ public final class RootQuery {
         var da = GRAPHITRON_DIRECTIVE_APPLICATION;
         var od = GRAPHITRON_OCCURRENCE_ORDER;
         var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
+        var gc = GRAPHITRON_CONNECTION;
+        var ge = GRAPHITRON_EDGE;
+        var te = GRAPHITRON_TABLETYPE.as("te");
+        var cc = GRAPHITRON_CONNECTION_CARRIER;
         var graph = store.graphName();
+        // A connection's records are its edge's items, whose table is their type's, and not the
+        // producer's result, which is the connection.
+        var source = coalesce(te.TABLE_SOURCE_NAME, r.TABLE_SOURCE_NAME);
+        var schema = coalesce(te.TABLE_SCHEMA, r.TABLE_SCHEMA);
+        var name = coalesce(te.TABLE_NAME, r.TABLE_NAME);
         var producers = store.dsl()
             .select(p.COORDINATE, p.KIND, r.SHAPE, f.TYPE_NAME, f.FIELD_NAME, ft.TARGET_TYPE_NAME,
-                r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA, r.TABLE_NAME,
+                source, schema, name,
                 field(exists(selectOne().from(x).where(x.GRAPH_NAME.eq(p.GRAPH_NAME), x.COORDINATE.eq(p.COORDINATE)))),
-                field(exists(selectOne().from(cn).where(cn.GRAPH_NAME.eq(p.GRAPH_NAME), cn.COORDINATE.eq(p.COORDINATE)))),
-                field(exists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(r.GRAPH_NAME), tc.SOURCE_NAME.eq(r.TABLE_SOURCE_NAME),
-                    tc.TABLE_SCHEMA.eq(r.TABLE_SCHEMA), tc.TABLE_NAME.eq(r.TABLE_NAME)))),
+                cn.FACETED,
+                field(exists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(p.GRAPH_NAME), tc.SOURCE_NAME.eq(source),
+                    tc.TABLE_SCHEMA.eq(schema), tc.TABLE_NAME.eq(name)))),
                 field(exists(selectOne().from(da).where(da.GRAPH_NAME.eq(f.GRAPH_NAME), da.COORDINATE.eq(f.COORDINATE),
                     da.DIRECTIVE_NAME.eq("pivot")))),
                 field(exists(selectOne().from(od).where(od.GRAPH_NAME.eq(p.GRAPH_NAME), od.COORDINATE.eq(p.COORDINATE),
@@ -167,12 +186,18 @@ public final class RootQuery {
                     sk.KIND.ne("COLUMN")))),
                 field(exists(selectOne().from(tt).where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME),
                     tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME), tt.TABLE_SOURCE_NAME.eq(r.TABLE_SOURCE_NAME),
-                    tt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA), tt.TABLE_NAME.eq(r.TABLE_NAME)))))
+                    tt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA), tt.TABLE_NAME.eq(r.TABLE_NAME)))),
+                ge.ITEM_TYPE_NAME, cc.DEFAULT_FIRST_VALUE)
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .leftJoin(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME), ft.FIELD_NAME.eq(f.FIELD_NAME))
             .leftJoin(r).on(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE))
+            .leftJoin(cn).on(cn.GRAPH_NAME.eq(p.GRAPH_NAME), cn.COORDINATE.eq(p.COORDINATE))
+            .leftJoin(gc).on(gc.GRAPH_NAME.eq(cn.GRAPH_NAME), gc.TYPE_NAME.eq(cn.CONNECTION_TYPE_NAME))
+            .leftJoin(ge).on(ge.GRAPH_NAME.eq(gc.GRAPH_NAME), ge.TYPE_NAME.eq(gc.EDGE_TYPE_NAME))
+            .leftJoin(te).on(te.GRAPH_NAME.eq(ge.GRAPH_NAME), te.TYPE_NAME.eq(ge.ITEM_TYPE_NAME))
+            .leftJoin(cc).on(cc.GRAPH_NAME.eq(f.GRAPH_NAME), cc.COORDINATE.eq(f.COORDINATE))
             .where(p.GRAPH_NAME.eq(graph), p.START.eq("ROOT"), p.KIND.in("SELECT", "LOOKUP"))
             .orderBy(p.COORDINATE)
             .fetch();
@@ -181,15 +206,18 @@ public final class RootQuery {
         var signatures = signatures(store);
         var lookups = lookups(store);
         var choices = choices(store);
+        var maxPageSize = maxPageSize(store);
         var out = new LinkedHashMap<String, Result>();
         for (var row : producers) {
-            var at = new Producer(row.value1(), row.value2(), row.value3(), row.value4(), row.value5(), row.value6(),
-                row.value7(), row.value8(), row.value9());
+            boolean connection = row.value11() != null;
+            var at = new Producer(row.value1(), row.value2(), row.value3(), row.value4(), row.value5(),
+                connection ? row.value17() : row.value6(), row.value7(), row.value8(), row.value9());
             Reason reason = null;
             if (Boolean.TRUE.equals(row.value10())) reason = Reason.POLYMORPHIC;
-            else if (Boolean.TRUE.equals(row.value11())) reason = Reason.CONNECTION;
-            else if (at.table() == null || at.returnType() == null || !Boolean.TRUE.equals(row.value16())
-                || !("RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
+            else if (Boolean.TRUE.equals(row.value11())) reason = Reason.FACETED;
+            else if (at.table() == null || at.returnType() == null
+                || !(connection || Boolean.TRUE.equals(row.value16()))
+                || !(connection || "RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
                 reason = Reason.NOT_ONE_TABLE;
             }
             else if (Boolean.TRUE.equals(row.value12())) reason = Reason.TENANTED;
@@ -200,6 +228,9 @@ public final class RootQuery {
                 reason = Reason.ORDER_ARGUMENT_LIST;
             }
             else if (Boolean.TRUE.equals(row.value15())) reason = Reason.SORT_KEY_NOT_A_COLUMN;
+            else if (connection && !orders.containsKey(at.coordinate()) && !choices.containsKey(at.coordinate())) {
+                reason = Reason.NO_ORDER;
+            }
             if (reason != null) {
                 out.put(at.coordinate(), new NotYet(at.coordinate(), reason));
                 continue;
@@ -209,12 +240,14 @@ public final class RootQuery {
                 out.put(at.coordinate(), new NotYet(at.coordinate(), Reason.NOT_ONE_TABLE));
                 continue;
             }
-            boolean list = "RECORD_LIST".equals(at.shape());
+            boolean list = connection || "RECORD_LIST".equals(at.shape());
             boolean lookup = "LOOKUP".equals(at.kind());
+            Integer pageSize = !connection ? null
+                : row.value18() != null ? row.value18() : ConnectionDefaults.defaultPageSize(maxPageSize);
             out.put(at.coordinate(), new Emitted(at.coordinate(), at.parentType(), at.fieldName(), at.returnType(),
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
                 signatures.get(List.of(at.coordinate(), at.schema() + "." + at.table())),
-                lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate())));
+                lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()), pageSize));
         }
         return out;
     }
@@ -294,6 +327,14 @@ public final class RootQuery {
             head.nonNull(), head.sortField(), head.directionField(),
             keys.getOrDefault(coordinate, Map.of()))));
         return out;
+    }
+
+    /** The largest page the graph's build lets a connection serve, where it set one. */
+    private static java.util.OptionalInt maxPageSize(StoreHandle store) {
+        var m = STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
+        var max = store.dsl().select(m.MAX_PAGE_SIZE).from(m).where(m.GRAPH_NAME.eq(store.graphName()))
+            .fetchOne(m.MAX_PAGE_SIZE);
+        return max == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(max);
     }
 
     /** A root lookup's keys in key order, or the reason the store does not state them whole yet. */
