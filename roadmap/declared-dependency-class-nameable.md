@@ -1,7 +1,7 @@
 ---
 id: R1206
 title: "A class in a declared dependency is nameable where the schema names it"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: service

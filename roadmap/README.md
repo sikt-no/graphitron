@@ -20,7 +20,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | Spec | 2026-10-29 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R1206` | A class in a declared dependency is nameable where the schema names it | Spec | 2026-11-24 | [plan](declared-dependency-class-nameable.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R1199` | An _entities lookup with vouchers for several values resolves on one connection | Spec | 2026-11-24 <sub>created 2026-11-18</sub> | [plan](vouched-lookups-past-one-value.md) |
@@ -29,6 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-29 <sub>created 2026-08-27</sub> | [plan](corpus-directives-to-expect-equals.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1206` | A class in a declared dependency is nameable where the schema names it | Ready | 2026-11-24 | [plan](declared-dependency-class-nameable.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1168` | An error handler that an earlier handler shadows is reported, as a warning or an error <sub>blocked by: [error-dispatch-matches-graphitron-9](error-dispatch-matches-graphitron-9.md)</sub> | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](shadowed-error-handler-is-reported.md) |
 | `R1167` | Error-channel dispatch routes every throw where Graphitron 9 routed it | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](error-dispatch-matches-graphitron-9.md) |
@@ -558,7 +558,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R1206` [**A class in a declared dependency is nameable where the schema names it**](declared-dependency-class-nameable.md) — Spec, feature
+- `R1206` [**A class in a declared dependency is nameable where the schema names it**](declared-dependency-class-nameable.md) — Ready, feature
 - `R1199` [**An _entities lookup with vouchers for several values resolves on one connection**](vouched-lookups-past-one-value.md) — Spec, feature
 - `R1207` [**An accepting type guards its vouched fields with @requires, so an issuer can be an ordinary entity**](vouched-fields-guarded-by-requires.md) — Backlog, feature, blocked by [vouched-lookups-past-one-value](vouched-lookups-past-one-value.md)
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
