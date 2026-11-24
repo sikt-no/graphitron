@@ -251,6 +251,21 @@ class ArgmappingProjectionDefectsTest {
     }
 
     /**
+     * A list of ids opened with its key column at an input-field {@code @condition}, taken in a
+     * {@code List} of the column, is not judged here: the occurrence build judges a {@code @condition}
+     * parameter wherever the condition is written, and the view's comparison, reading the erased
+     * {@code List}, would refuse the type a list of ids asks for. The near miss, the same column taken
+     * in a {@code String}, is the store's refusal, which {@code defects/argmapping-key-column-unresolved}
+     * pins at {@code FilmKeyAsString.film}.
+     */
+    @Test
+    void aListProjectionAtAnInputFieldConditionMintsNothing() {
+        List<ValidationError> violations = FACTS.read("scenarios/argmapping-key-column", graph ->
+            ArgmappingProjectionDefects.detect(graph.handle().dsl(), graph.handle().graphName()).violations());
+        assertThat(violations).isEmpty();
+    }
+
+    /**
      * A projection off a list of node ids at a root routine is not deferred here: the occurrence build
      * judges a root routine's parameters and stores the deferral, {@code ROUTINE_NODE_ID_LIST_UNSUPPORTED},
      * which {@code defects/routine-node-id-slot} pins, so reporting it here too would report it twice.

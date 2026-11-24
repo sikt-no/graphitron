@@ -5,6 +5,8 @@ import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
 
+import java.util.List;
+
 /**
  * Condition-method fixtures for the {@code @condition} rail whose parameters are fed by an
  * {@code argMapping} key projection: the method takes the decoded key column of a {@code @nodeId},
@@ -43,5 +45,13 @@ public final class ProjectedKeyConditionFixtures {
      */
     public static Condition filmsOfOptionalLanguagePrimitive(Table<?> table, int languageId) {
         return table.field(Film.FILM.LANGUAGE_ID).eq(languageId);
+    }
+
+    /** Narrows a table to the named film keys, each {@code film_id} off a decoded id of a list. */
+    public static Condition filmKeysIn(Table<?> table, List<Integer> filmIds) {
+        if (filmIds == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Film.FILM.FILM_ID).in(filmIds);
     }
 }

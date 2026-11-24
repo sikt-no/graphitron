@@ -4,7 +4,9 @@
 # does not have; filmsByEither projects out of a union's id, one key per member, which is refused for
 # now: each is refused where the pair is written, the key columns it could have meant named under
 # the defect. languagesByPrimitive takes language_id in an int, a type the column is not, refused at
-# the condition with the parameter named under it. A routine parameter takes one value, so
+# the condition with the parameter named under it; so are languagesByOne, taking the language_id of a
+# list of ids in one Integer where it is a List<Integer>, and FilmKeyAsString.film, an input-field
+# @condition taking film_id in a String. A routine parameter takes one value, so
 # rentFilmByPair, stopping on a FilmActor id at a @routine, is refused as filmActorsPicked is; the
 # one-column Customer id stopped on the same way lands, as scenarios/argmapping-key-column states.
 
@@ -20,6 +22,12 @@ type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
 input FilmActorPick { filmActor: ID @nodeId(typeName: "FilmActor") }
 
+input FilmKeyAsString {
+  film: ID @nodeId(typeName: "Film") @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdCondition", argMapping: "filmId: film.film_id"}, override: true)
+}
+
 type Query {
   filmActorsPicked(pick: FilmActorPick): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -33,6 +41,10 @@ type Query {
   languagesByPrimitive(ref: ID @nodeId(typeName: "Language")): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
       method: "filmsOfOptionalLanguagePrimitive", argMapping: "languageId: ref.language_id"}, override: true)
+  languagesByOne(ids: [ID!] @nodeId(typeName: "Language")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+      method: "filmsOfOptionalLanguage", argMapping: "languageId: ids.language_id"}, override: true)
+  filmsByKeyAsString(filter: FilmKeyAsString): [Film!]!
 }
 
 type Mutation {
@@ -48,6 +60,8 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Query.filmsByEither
   ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Mutation.rentFilmByPair
   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, Query.languagesByPrimitive
+  NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, Query.languagesByOne
+  NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, FilmKeyAsString.film
   """)
 
 # The key columns each unresolved projection could have meant.

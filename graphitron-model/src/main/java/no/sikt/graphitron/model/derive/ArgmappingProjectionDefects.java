@@ -329,8 +329,10 @@ public final class ArgmappingProjectionDefects {
     /**
      * The view's author arms, decoded, but the type mismatch where the occurrence build judges the
      * parameter against the shape the id decodes into, as {@code NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT}:
-     * a {@code @service} parameter, a field's or an argument's {@code @condition} parameter, and a
-     * root {@code @routine}'s, whose call the store fills. Reported here too it would be reported
+     * a {@code @service} parameter, a {@code @condition} parameter wherever the condition is written,
+     * and a root {@code @routine}'s, whose call the store fills. The view's comparison reads a list's
+     * erased class, so at those parameters it would also refuse the {@code List} a list of ids asks
+     * for. Reported here too it would be reported
      * twice. A child routine's parameters are a path step's, which the build does not judge, so its
      * mismatch stays here.
      */
@@ -340,9 +342,7 @@ public final class ArgmappingProjectionDefects {
             // These parameters' types are the occurrence build's to judge, against the decode shape.
             .where(v.GRAPH_NAME.eq(graphName), not(v.VERDICT.eq("KEY_COLUMN_TYPE_MISMATCH")
                 .and(v.DIRECTIVE_NAME.eq("service")
-                    .or(v.DIRECTIVE_NAME.eq("condition")
-                        .and(v.ELEMENT_KIND.isNotNull())
-                        .and(v.ELEMENT_KIND.in("FIELD_DEFINITION", "FIELD_ARGUMENT")))
+                    .or(v.DIRECTIVE_NAME.eq("condition"))
                     .or(atRootRoutine(v.GRAPH_NAME, v.DIRECTIVE_NAME, v.TYPE_NAME)))))
             .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.COORDINATE, v.ORDINAL, v.POSITION)
             .fetch(row -> {
