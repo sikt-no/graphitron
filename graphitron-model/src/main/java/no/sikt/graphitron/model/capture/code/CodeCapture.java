@@ -40,6 +40,7 @@ import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_ENUM_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.CODE_DELIVERY_CONTAINER;
@@ -160,13 +161,14 @@ public final class CodeCapture {
         classes(dsl, census.classes(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         enumConstants(dsl, census.classes(), touchedAt);
-        var reactor = reactorClasses(census);
+        var catalog = catalogClasses(dsl, census);
+        var reactor = memberClasses(census, catalog);
         var nested = nestedClasses(reactor, deliveryContainers(dsl));
         admitted(dsl, nested, touchedAt);
         try (var headers = new ClassHeaders(headerEntries(reading.sources()))) {
             var ancestry = new ClassAncestry(census.classes(), headers);
             throwables(dsl, census.classes(), ancestry, touchedAt);
-            methods(dsl, reactor, nested, ancestry, touchedAt);
+            methods(dsl, reactor, nested, catalog, ancestry, touchedAt);
             throwableSlots(dsl, census, lookup(census), ancestry, touchedAt);
         }
         // Every entry read, not only the ones that declared something, so an entry that stopped
@@ -189,9 +191,8 @@ public final class CodeCapture {
 
     /**
      * The members the graph's session handle class offers, which are the slots of the class the
-     * build named in {@code <sessionState><handle>}. The census withholds members from the jOOQ
-     * package and the reactor gate keeps jar classes out of the member arms, and a handle is
-     * routinely a jOOQ record or a class of a sibling, so this class is read whole on purpose,
+     * build named in {@code <sessionState><handle>}. The reactor gate keeps jar classes out of the
+     * member arms, and a handle is routinely a class of a jar, so this class is read whole on purpose,
      * from the entries the build declared, and only its slots are written: it is not a method an
      * author may name, so none of the directive arms gain it. A transitive entry is not one of
      * them: a handle there writes nothing, as a class no entry holds does.
@@ -468,8 +469,8 @@ public final class CodeCapture {
      * answer to something else.
      */
     private static void methods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
-                                List<ClassfileCensus.ClassAt> nested, ClassAncestry ancestry,
-                                LocalDateTime touchedAt) {
+                                List<ClassfileCensus.ClassAt> nested, Set<String> catalog,
+                                ClassAncestry ancestry, LocalDateTime touchedAt) {
         record Declared(String source, String className, ClassfileCensus.MethodAt at) {}
         var found = new ArrayList<Declared>();
         for (ClassfileCensus.ClassAt at : classes) {
@@ -530,18 +531,23 @@ public final class CodeCapture {
         slots(dsl, all, all, containers, touchedAt);
         construction(dsl, classes, all, containers, touchedAt);
 
-        arm(dsl, CODE_CONDITION_METHOD, found.stream()
+        // The arms are what an author is offered at a directive, and the generated catalog is no
+        // code an author names there: its methods are facts above and candidates nowhere.
+        var named = found.stream()
+            .filter(d -> !catalog.contains(d.source() + '\u0000' + d.className()))
+            .toList();
+        arm(dsl, CODE_CONDITION_METHOD, named.stream()
             .filter(d -> isConditionMethod(d.at()))
             .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
-        arm(dsl, CODE_EXTERNAL_FIELD_METHOD, found.stream()
+        arm(dsl, CODE_EXTERNAL_FIELD_METHOD, named.stream()
             .filter(d -> isLifterMethod(d.at(), ancestry))
             .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
-        arm(dsl, CODE_SERVICE_METHOD, found.stream()
+        arm(dsl, CODE_SERVICE_METHOD, named.stream()
             .filter(d -> !isConditionMethod(d.at()) && !isLifterMethod(d.at(), ancestry))
             .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
 
         // The classes an instance service method was found on, whose constructors make its holder.
-        var holders = found.stream()
+        var holders = named.stream()
             .filter(d -> !d.at().isStatic())
             .filter(d -> !isConditionMethod(d.at()) && !isLifterMethod(d.at(), ancestry))
             .map(d -> d.source() + '\u0000' + d.className())
@@ -1386,6 +1392,60 @@ public final class CodeCapture {
         return method.isStatic() && JOOQ_FIELD.equals(method.returnType())
             && method.parameters().size() == 1
             && ancestry.isA(method.parameters().getFirst().type(), JOOQ_TABLE);
+    }
+
+    /**
+     * The classes whose members are read: the reactor's, and the generated catalog's wherever its
+     * entry sits. The catalog's classes are read for their facts and kept out of the directive arms,
+     * which {@link #methods} decides by the same set.
+     *
+     * <p>A graph's catalog is consumer code whatever entry carries it. A reactor build's generated
+     * classes are the reactor's already, and a catalog built elsewhere and declared as a jar is the
+     * same code reached another way, so its schema packages are read with their members too: a
+     * holder method's form and a record's accessors are code facts like any others. The catalog is
+     * the one the jOOQ reading registered, a {@code sql_schema} row whose source is the entry and
+     * the schema's package, so the classes admitted are those of an entry some graph reads its
+     * catalog from. What a class's rows say is still read from its classfile alone.
+     */
+    private static List<ClassfileCensus.ClassAt> memberClasses(ClassfileCensus.Census census,
+                                                               Set<String> catalog) {
+        var admitted = new java.util.LinkedHashSet<>(reactorClasses(census));
+        census.classes().stream()
+            .filter(at -> catalog.contains(at.source() + '\u0000' + at.className()))
+            .forEach(admitted::add);
+        return List.copyOf(admitted);
+    }
+
+    /**
+     * The census classes of a graph's generated catalog, each as its entry and its name joined by a
+     * NUL: the classes of a schema package the jOOQ reading registered, in the entry it registered
+     * the package from. A {@code sql_schema} row's source is that entry and the package, so this is a
+     * join on the stored name rather than a test of the class name's spelling.
+     */
+    private static Set<String> catalogClasses(DSLContext dsl, ClassfileCensus.Census census) {
+        var catalogs = dsl.selectDistinct(SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.SCHEMA_PACKAGE)
+            .from(SQL_SCHEMA)
+            .fetch();
+        if (catalogs.isEmpty()) {
+            return Set.of();
+        }
+        var sources = new java.util.HashSet<String>();
+        var packages = new java.util.TreeSet<String>();
+        catalogs.forEach(r -> {
+            sources.add(r.value1());
+            packages.add(r.value2());
+        });
+        var found = new java.util.HashSet<String>();
+        for (ClassfileCensus.ClassAt at : census.classes()) {
+            for (String schemaPackage : packages) {
+                if (at.className().startsWith(schemaPackage + ".")
+                        && sources.contains(at.source() + "!" + schemaPackage)) {
+                    found.add(at.source() + '\u0000' + at.className());
+                    break;
+                }
+            }
+        }
+        return Set.copyOf(found);
     }
 
     /**

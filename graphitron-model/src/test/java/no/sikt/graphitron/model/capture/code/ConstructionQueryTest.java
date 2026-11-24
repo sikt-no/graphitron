@@ -248,7 +248,7 @@ class ConstructionQueryTest {
     private static void withReactorCapture(Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
             CodeCapture.capture(store.dsl(),
-                ClasspathSourceCapture.read(store.dsl(), REACTOR, null, FIRST), null, FIRST);
+                ClasspathSourceCapture.read(store.dsl(), REACTOR, FIRST), null, FIRST);
             body.accept(store.dsl());
         }
     }

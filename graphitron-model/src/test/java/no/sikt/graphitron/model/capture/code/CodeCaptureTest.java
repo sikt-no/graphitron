@@ -206,30 +206,6 @@ class CodeCaptureTest {
         });
     }
 
-    /**
-     * The package a caller names is read at the class grain: its classes are kept with their kind
-     * and supertypes, so a relation can key into one, and their members are left out, which is the
-     * generated code's bulk and nothing a reader asks for. A package is a name plus a dot, so a
-     * name that merely starts the package's characters narrows nothing.
-     */
-    @Test
-    @DisplayName("the named package's classes are kept without their members, and the name is a package")
-    void theNamedPackageIsReadAtTheClassGrain() {
-        String fixtures = "no.sikt.graphitron.model.capture.code.fixtures";
-        withCapture(REACTOR_AND_JOOQ, fixtures, FIRST, dsl -> {
-            assertThat(dsl.fetchCount(CODE_CLASS, CODE_CLASS.CLASS_NAME.eq(FIXTURE)))
-                .as("the class is kept, so a relation can key into it")
-                .isEqualTo(1);
-            assertThat(dsl.fetchCount(CODE_METHOD, CODE_METHOD.CLASS_NAME.eq(FIXTURE)))
-                .as("and its members are left out")
-                .isZero();
-        });
-        withCapture(REACTOR_AND_JOOQ, "no.sikt.graphitron.model.capture.code.fix", FIRST, dsl ->
-            assertThat(dsl.fetchCount(CODE_METHOD, CODE_METHOD.CLASS_NAME.eq(FIXTURE)))
-                .as("a name starting the package's characters is not the package")
-                .isPositive());
-    }
-
     @Test
     @DisplayName("a GraphQLScalarType constant is admitted, with the type its scalar coerces to")
     void aScalarConstantIsAdmitted() {
@@ -352,12 +328,12 @@ class CodeCaptureTest {
         try (var store = GraphitronStore.inMemory()) {
             var dsl = store.dsl();
             CodeCapture.capture(dsl,
-                ClasspathSourceCapture.read(dsl, CLASSPATH, null, FIRST), null, FIRST);
+                ClasspathSourceCapture.read(dsl, CLASSPATH, FIRST), null, FIRST);
             int afterFirst = dsl.fetchCount(CODE_SCALAR_CONSTANT);
             int throwablesAfterFirst = dsl.fetchCount(CODE_THROWABLE);
             int ancestorsAfterFirst = dsl.fetchCount(CODE_THROWABLE_SUPERTYPE);
             CodeCapture.capture(dsl,
-                ClasspathSourceCapture.read(dsl, CLASSPATH, null, SECOND), null, SECOND);
+                ClasspathSourceCapture.read(dsl, CLASSPATH, SECOND), null, SECOND);
 
             assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT))
                 .as("the same constants, not doubled and not emptied").isEqualTo(afterFirst);
@@ -1005,7 +981,7 @@ class CodeCaptureTest {
             var dsl = store.dsl();
             ModelCapture.writeGraph(dsl, new GraphIdentity("reclaim", dir), FIRST);
             CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "reclaim",
-                    List.of(ClasspathEntry.project(gone), ClasspathEntry.project(stays)), null, FIRST, null),
+                    List.of(ClasspathEntry.project(gone), ClasspathEntry.project(stays)), FIRST, null),
                 null, FIRST);
             String goneName = gone.toString();
             assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(goneName)))
@@ -1017,7 +993,7 @@ class CodeCaptureTest {
 
             deleteTree(gone);
             CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "reclaim",
-                    List.of(ClasspathEntry.project(stays)), null, SECOND, null),
+                    List.of(ClasspathEntry.project(stays)), SECOND, null),
                 null, SECOND);
 
             assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(goneName)))
@@ -1053,7 +1029,7 @@ class CodeCaptureTest {
             for (String graph : List.of("first", "second")) {
                 ModelCapture.writeGraph(dsl, new GraphIdentity(graph, dir), FIRST);
                 CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, graph,
-                        List.of(ClasspathEntry.project(shared), ClasspathEntry.project(stays)), null, FIRST, null),
+                        List.of(ClasspathEntry.project(shared), ClasspathEntry.project(stays)), FIRST, null),
                     null, FIRST);
             }
             assertThat(claimants(dsl, sharedName))
@@ -1062,7 +1038,7 @@ class CodeCaptureTest {
 
             deleteTree(shared);
             CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "second",
-                    List.of(ClasspathEntry.project(stays)), null, SECOND, null),
+                    List.of(ClasspathEntry.project(stays)), SECOND, null),
                 null, SECOND);
 
             assertThat(claimants(dsl, sharedName))
@@ -1076,7 +1052,7 @@ class CodeCaptureTest {
                 .isPositive();
 
             CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "first",
-                    List.of(ClasspathEntry.project(stays)), null, SECOND, null),
+                    List.of(ClasspathEntry.project(stays)), SECOND, null),
                 null, SECOND);
 
             assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(sharedName)))
@@ -1159,25 +1135,13 @@ class CodeCaptureTest {
         return SHARED.computeIfAbsent(entries, e -> {
             var store = FactStores.inMemory();
             OPEN.add(store);
-            var reading = ClasspathSourceCapture.read(store.dsl(), e, null, FIRST);
+            var reading = ClasspathSourceCapture.read(store.dsl(), e, FIRST);
             CodeCapture.capture(store.dsl(), reading, null, FIRST);
             if (vouch) {
                 ClasspathSourceCapture.vouch(store.dsl(), reading);
             }
             return store.dsl();
         });
-    }
-
-    /** One reading of {@code entries} with {@code headerOnlyPackage}, which is what a run hands in. */
-    private static void withCapture(List<ClasspathEntry> entries, String headerOnlyPackage,
-                                    LocalDateTime at, Consumer<DSLContext> body) {
-        try (var store = GraphitronStore.inMemory()) {
-            var reading = ClasspathSourceCapture.read(store.dsl(), entries, headerOnlyPackage, at);
-            CodeCapture.capture(store.dsl(), reading, null, at);
-            // As the pass does, once the classes are transcribed.
-            ClasspathSourceCapture.vouch(store.dsl(), reading);
-            body.accept(store.dsl());
-        }
     }
 
     /** Every type one throwable is, as the store holds it. */

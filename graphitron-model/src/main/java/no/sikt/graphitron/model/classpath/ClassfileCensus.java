@@ -123,11 +123,8 @@ public final class ClassfileCensus {
      * the world would have nothing to scope by if this dropped it.
      *
      * @param entries    directories and jars, in the order a classloader would search them
-     * @param headerOnlyPackage the package whose classes are read without their members, or null
-     *                   to read every class whole. A package name and not a character prefix;
-     *                   {@link #headerOnlyPrefix} is where the difference between the two is spelled
      */
-    public static Census read(List<ClasspathEntry> entries, String headerOnlyPackage) {
+    public static Census read(List<ClasspathEntry> entries) {
         var read = new ArrayList<EntryAt>();
         var classes = new ArrayList<ClassAt>();
         for (ClasspathEntry classified : entries) {
@@ -139,7 +136,7 @@ public final class ClassfileCensus {
             }
             read.add(new EntryAt(source, directory ? "DIRECTORY" : "JAR",
                 classified.origin().name(), classified.coordinate()));
-            classes.addAll(readEntry(entry, source, headerOnlyPackage));
+            classes.addAll(readEntry(entry, source));
         }
         return new Census(List.copyOf(read), List.copyOf(classes));
     }
@@ -156,15 +153,13 @@ public final class ClassfileCensus {
      * @param source     the entry a class is recorded under, which is the entry rather than the
      *                   file, so a class reads the same whether the whole entry was walked or this
      *                   one file was re-read
-     * @param headerOnlyPackage the package read without members, on {@link #read}'s terms
      */
-    public static List<ClassAt> readEntry(Path entry, String source, String headerOnlyPackage) {
-        String headerOnly = headerOnlyPrefix(headerOnlyPackage);
+    public static List<ClassAt> readEntry(Path entry, String source) {
         if (Files.isDirectory(entry)) {
-            return readDirectory(entry, source, headerOnly);
+            return readDirectory(entry, source);
         }
         return Files.isRegularFile(entry) && entry.toString().endsWith(".jar")
-            ? readJar(entry, source, headerOnly)
+            ? readJar(entry, source)
             : List.of();
     }
 
@@ -172,16 +167,14 @@ public final class ClassfileCensus {
      * One classfile's class, or nothing where it is not one this reading carries. What a caller
      * re-reads for the files a compile rewrote, keeping the rest of the entry.
      */
-    public static Optional<ClassAt> readFile(Path entry, Path file, String source,
-                                             String headerOnlyPackage) {
+    public static Optional<ClassAt> readFile(Path entry, Path file, String source) {
         return read(bytes(file), pathOf(entry, file), sizeOf(file), modifiedOf(file),
-            file.getFileName().toString(), source, headerOnlyPrefix(headerOnlyPackage));
+            file.getFileName().toString(), source);
     }
 
     /**
-     * One class, read whole, from the first of {@code entries} that holds it: the member reading
-     * the header-only package withholds from the census, for a class a caller names on purpose.
-     * Empty where no entry holds a public class of that name. The class is recorded under the
+     * One class, read whole, from the first of {@code entries} that holds it, for a class a caller
+     * names on purpose. Empty where no entry holds a public class of that name. The class is recorded under the
      * entry it was found in, as the census records it, so its rows partition the same way.
      *
      * @param entries   directories and jars, in the order a classloader would search them
@@ -197,7 +190,7 @@ public final class ClassfileCensus {
                 Path file = entry.resolve(relative);
                 if (Files.isRegularFile(file)) {
                     var found = read(bytes(file), pathOf(entry, file), sizeOf(file), modifiedOf(file),
-                        NAMED_FILE, source, null);
+                        NAMED_FILE, source);
                     if (found.isPresent()) {
                         return found;
                     }
@@ -213,7 +206,7 @@ public final class ClassfileCensus {
                         bytes = in.readAllBytes();
                     }
                     var found = read(bytes, zipped.getName(), zipped.getSize(), zipped.getTime(),
-                        NAMED_FILE, source, null);
+                        NAMED_FILE, source);
                     if (found.isPresent()) {
                         return found;
                     }
@@ -255,33 +248,14 @@ public final class ClassfileCensus {
         return entry.relativize(file).toString().replace(java.io.File.separatorChar, '/');
     }
 
-    /**
-     * The caller's package as a test a class name can be put to: the name and the dot below it, or
-     * null where there is nothing to exclude.
-     *
-     * <p>The dot is the whole of it, and leaving it off is not a near miss. A package name is
-     * routinely a character prefix of a class name in the package above it, so a bare
-     * {@code startsWith} drops classes no caller meant to name: excluding {@code graphql.Assert}
-     * would take {@code graphql.AssertException} with it. The failure is silent in the direction
-     * that hides, a class simply absent from an arm reading exactly like a classpath that does not
-     * carry it.
-     *
-     * <p>An empty name excludes nothing rather than everything, which is the other end of the same
-     * confusion: every class name starts with the empty string, so a caller declaring no package
-     * would have had a reading admit nothing at all and report it as a classpath with no members.
-     */
-    private static String headerOnlyPrefix(String headerOnlyPackage) {
-        return headerOnlyPackage == null || headerOnlyPackage.isEmpty()
-            ? null : headerOnlyPackage + ".";
-    }
 
-    private static List<ClassAt> readDirectory(Path directory, String source, String headerOnly) {
+    private static List<ClassAt> readDirectory(Path directory, String source) {
         try (Stream<Path> files = Files.walk(directory)) {
             var classes = new ArrayList<ClassAt>();
             files.filter(Files::isRegularFile)
                 .filter(file -> file.getFileName().toString().endsWith(".class"))
                 .forEach(file -> read(bytes(file), pathOf(directory, file), sizeOf(file),
-                        modifiedOf(file), file.getFileName().toString(), source, headerOnly)
+                        modifiedOf(file), file.getFileName().toString(), source)
                     .ifPresent(classes::add));
             return classes;
         } catch (IOException e) {
@@ -289,7 +263,7 @@ public final class ClassfileCensus {
         }
     }
 
-    private static List<ClassAt> readJar(Path jar, String source, String headerOnly) {
+    private static List<ClassAt> readJar(Path jar, String source) {
         try (ZipFile zip = new ZipFile(jar.toFile())) {
             var classes = new ArrayList<ClassAt>();
             for (ZipEntry zipped : zip.stream().toList()) {
@@ -303,7 +277,7 @@ public final class ClassfileCensus {
                 String fileName = zipped.getName()
                     .substring(zipped.getName().lastIndexOf('/') + 1);
                 read(bytes, zipped.getName(), zipped.getSize(), zipped.getTime(), fileName,
-                    source, headerOnly).ifPresent(classes::add);
+                    source).ifPresent(classes::add);
             }
             return classes;
         } catch (IOException e) {
@@ -331,12 +305,11 @@ public final class ClassfileCensus {
 
     /**
      * One classfile, or nothing where it is not a class this census carries: a name the reader
-     * skips, a file that will not parse, or a non-public class. A class under the header-only
-     * package is carried without its members.
+     * skips, a file that will not parse, or a non-public class.
      */
     private static Optional<ClassAt> read(byte[] bytes, String filePath, long byteSize,
                                                     long mtimeMillis, String fileName,
-                                                    String source, String headerOnly) {
+                                                    String source) {
         if (skipOnName(fileName)) {
             return Optional.empty();
         }
@@ -352,11 +325,6 @@ public final class ClassfileCensus {
             return Optional.empty();
         }
         String className = classfile.thisClass().asInternalName().replace('/', '.');
-        if (headerOnly != null && className.startsWith(headerOnly)) {
-            return Optional.of(new ClassAt(source, filePath, byteSize, mtimeMillis, className,
-                kindOf(classfile), supertypesOf(classfile), List.of(), List.of(),
-                classfile.flags().has(AccessFlag.ABSTRACT), List.of(), List.of()));
-        }
         return Optional.of(new ClassAt(source, filePath, byteSize, mtimeMillis, className,
             kindOf(classfile), supertypesOf(classfile), methodsOf(classfile),
             constructorsOf(classfile), classfile.flags().has(AccessFlag.ABSTRACT),

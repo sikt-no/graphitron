@@ -51,3 +51,31 @@ extend schema @assertContains(relation: "sql_routine_parameter", rows: """
   public,       films_for_actor, 0,
   public,       films_for_actor, 1,
   """)
+
+# The generated catalog's classes are read with their members, wherever the entry carrying them sits:
+# the corpus declares the catalog as a jar, and its Routines holder and its records are code facts like
+# a reactor class's. A routine's Configuration-first method is one of the holder's methods.
+extend schema @assertContains(relation: "code_method", rows: """
+  class_name,                                             method_name,            is_static, result_erased_class
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  rentalCountForCustomer, TRUE,      java.lang.Integer
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  outboxEmit,             TRUE,
+  """)
+
+extend schema @assertContains(relation: "code_method_parameter", rows: """
+  class_name,                                             method_name,            position, erased_class
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  rentalCountForCustomer, 0,        org.jooq.Configuration
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  rentalCountForCustomer, 1,        java.lang.Integer
+  """)
+
+# The catalog's classes are read for their facts and offered at no directive: a holder method or a
+# record's accessor is no @service, @condition or @externalField candidate.
+extend schema @assertAbsent(relation: "code_service_method", rows: """
+  class_name,                                                               method_name
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,                    rentalCountForCustomer
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord,   getTitle
+  """)
+
+extend schema @assertAbsent(relation: "code_condition_method", rows: """
+  class_name
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines
+  """)

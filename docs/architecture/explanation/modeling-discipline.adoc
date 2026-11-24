@@ -67,8 +67,8 @@ The `jvm_` family was eaten away as this proceeded, from thirteen relations to n
 
 The classes jOOQ generates are classes like any other, and the code family captures them as code
 facts, so a relation that names a record class or a parameter type can key into it with a foreign
-key. Today the census reads the generated package's classes without their members, and reading
-those is the same capture, not a new family. A nested class is no census class of its own, its methods reached
+key. The census reads the generated package's classes with their members, as it reads any other
+class, so a holder method's form and a record's accessors are code facts like any others. A nested class is no census class of its own, its methods reached
 through the class declaring it; where a census method or constructor on its own entry returns or
 takes one, the census reads it by name for its members and builds it where a parameter takes it, so
 a value a service hands back as a nested record, and a bean a service takes as one, is known like

@@ -192,7 +192,7 @@ class ClasspathSourceCaptureTest {
         pause();
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         ModelCapture.writeGraph(dsl, new GraphIdentity(GRAPH, dir), readAt);
-        var reading = ClasspathSourceCapture.capture(dsl, GRAPH, List.of(entry), null, readAt,
+        var reading = ClasspathSourceCapture.capture(dsl, GRAPH, List.of(entry), readAt,
             observation);
         if (finished) {
             ClasspathSourceCapture.vouch(dsl, reading);

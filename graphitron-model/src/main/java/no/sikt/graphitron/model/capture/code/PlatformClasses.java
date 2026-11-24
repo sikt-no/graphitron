@@ -94,7 +94,7 @@ final class PlatformClasses {
         var out = new ArrayList<ClassfileCensus.ClassAt>();
         for (var name : headers.keySet().stream().sorted().toList()) {
             if (reachesThrowable(name, headers)) {
-                ClassfileCensus.readFile(modules, files.get(name), SOURCE, null).ifPresent(out::add);
+                ClassfileCensus.readFile(modules, files.get(name), SOURCE).ifPresent(out::add);
             }
         }
         return List.copyOf(out);

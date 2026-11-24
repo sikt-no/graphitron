@@ -77,8 +77,8 @@ public final class ModelCapture {
 
         boolean catalogued = JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null),
             loader, classpath, observation, readAt);
-        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
-            config.jooqPackage().orElse(null), readAt, observation);
+        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath, readAt,
+            observation);
         CodeCapture.capture(dsl, classes, loader, readAt);
         // Each stamp after the rows it vouches for: a capture stopped before this leaves the entries
         // unvouched, and the next one reads them again rather than skipping on their word.

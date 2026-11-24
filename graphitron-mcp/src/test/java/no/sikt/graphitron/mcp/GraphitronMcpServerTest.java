@@ -1113,14 +1113,15 @@ class GraphitronMcpServerTest {
         assertThat((List<Map<String, Object>>) film.get("tables"))
             .containsExactly(Map.of("table", "public.film"));
 
-        // The @table arm of the coalescing backing view: the table's own generated record. Its
-        // members are empty because the classpath census deliberately never scans generated jOOQ
-        // records, which is the silence that view's comment names rather than a missing read.
+        // The @table arm of the coalescing backing view: the table's own generated record, read by the
+        // classpath census like any other class, so it offers its accessors as members.
         assertThat((List<Map<String, Object>>) film.get("backing")).singleElement()
             .satisfies(backing -> {
                 assertThat(backing).containsEntry("declaredVia", "BOUND_TABLE");
                 assertThat((String) backing.get("class")).endsWith(".FilmRecord");
-                assertThat(backing).doesNotContainKey("members");
+                assertThat((List<Map<String, Object>>) backing.get("members"))
+                    .contains(Map.of("accessorMethodName", "getTitle", "name", "title",
+                        "origin", "BEAN_ACCESSOR", "type", "String"));
             });
 
         var title = fieldNamed(film, "Film.title");

@@ -126,6 +126,12 @@ This slice closes two open Mikado nodes:
 - "A method's form is read off its signature", as settled in
   `roadmap/audits/2026-10-22-jooq-routine-model.md`, "What the store takes from this".
 
+The whole generated package is read, not only the holders (Alf, 2026-11-24). Measured on opptak
+(FS 946fc4aa20): a cold capture costs about 3.5 s and 10 MB more, `code_method` goes from 4,081 to
+16,821 rows, and a warm capture is unchanged within noise, the generated jar being vouched and
+skipped. The members are read wherever the graph's catalog sits, a declared jar as much as a
+reactor module, since the catalog is consumer code whatever entry carries it.
+
 Holder classes are found by type and never by the name `Routines`, as the audit says ("Configuration that
 changes what exists").
 

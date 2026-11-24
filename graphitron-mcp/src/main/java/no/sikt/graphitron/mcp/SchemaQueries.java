@@ -206,8 +206,9 @@ final class SchemaQueries {
      *     grounded the class, {@code ACCESSOR} where a field read off a class backing its parent
      *     reached it. Provenance and never a preference: a type its two populations
      *     answer differently is two entries here, where the walk applies a precedence and never says so
-     * @param members empty where the classpath census never reached the class, which is the ordinary
-     *     case on the table arm: the generated jOOQ records it names are deliberately never scanned
+     * @param members empty where the classpath census never reached the class: a class on no entry
+     *     the graph reads. The table arm's generated records are read like any other class, so they
+     *     offer their accessors
      */
     record Backing(String className, String declaredVia, List<MemberSlot> members) {}
 
@@ -541,8 +542,7 @@ final class SchemaQueries {
      * {@link StoreHandle#resolves} rather than by a graph column it does not carry: the slots of the
      * copy the graph resolves the class name to, the first entry on its classpath declaring it, so a
      * class two entries declare offers one copy's members and not both. A class the reading
-     * never reached answers with nothing, which is not a failure: the table arm's classes are generated
-     * jOOQ records the reading deliberately never scans.
+     * never reached answers with nothing, which is not a failure: a class on no entry the graph reads.
      *
      * <p>The rendered type is one key join out, the slot naming what reading it yields and the
      * rendering belonging to that type. On a whole primary key, so it cannot widen what the class

@@ -109,11 +109,10 @@ public final class ClasspathSourceCapture {
      *                    nothing, which decides every entry from the filesystem
      */
     public static Reading capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
-                                  String headerOnlyPackage, LocalDateTime readAt,
-                                  Observation observation) {
+                                  LocalDateTime readAt, Observation observation) {
         Progress.started(dsl, graph, GATHERER);
         var read = dsl.transactionResult(
-            tx -> gather(tx.dsl(), graph, classpath, headerOnlyPackage, readAt, observation));
+            tx -> gather(tx.dsl(), graph, classpath, readAt, observation));
         Progress.completed(dsl, graph, GATHERER);
         return read;
     }
@@ -125,8 +124,7 @@ public final class ClasspathSourceCapture {
     private static final String CORPUS = "classpath";
 
     private static Reading gather(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
-                                  String headerOnlyPackage, LocalDateTime readAt,
-                                  Observation observation) {
+                                  LocalDateTime readAt, Observation observation) {
         var declared = declared(classpath);
         if (declared.isEmpty()) {
             // A run handed no classpath has nothing to say about one. Claiming nothing and
@@ -161,7 +159,7 @@ public final class ClasspathSourceCapture {
         // A stamp computed and found equal is a read of the entry as surely as one that differed, so
         // it is dated like one: a session's observation trusts what was verified after its floor.
         date(dsl, verified, readAt);
-        var reading = read(dsl, changed, headerOnlyPackage, readAt, stamps);
+        var reading = read(dsl, changed, readAt, stamps);
         var claimed = new LinkedHashSet<String>();
         declared.forEach(entry -> claimed.add(entry.path().toString()));
 
@@ -332,16 +330,15 @@ public final class ClasspathSourceCapture {
      * leave an entry alone on a later reading, which a caller holding no graph is not asking.
      */
     public static Reading read(DSLContext dsl, List<ClasspathEntry> classpath,
-                               String headerOnlyPackage, LocalDateTime readAt) {
+                               LocalDateTime readAt) {
         var stamps = new java.util.HashMap<String, String>();
         declared(classpath).forEach(entry -> stamps.put(entry.path().toString(), stampOf(entry)));
-        return read(dsl, classpath, headerOnlyPackage, readAt, stamps);
+        return read(dsl, classpath, readAt, stamps);
     }
 
     private static Reading read(DSLContext dsl, List<ClasspathEntry> classpath,
-                                String headerOnlyPackage, LocalDateTime readAt,
-                                java.util.Map<String, String> stamps) {
-        var census = ClassfileCensus.read(declared(classpath), headerOnlyPackage);
+                                LocalDateTime readAt, java.util.Map<String, String> stamps) {
+        var census = ClassfileCensus.read(declared(classpath));
         var read = new LinkedHashSet<String>();
         census.entries().forEach(at -> read.add(at.source()));
         writeSources(dsl, census.entries(), readAt);

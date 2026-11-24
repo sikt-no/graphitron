@@ -77,7 +77,7 @@ The following parameters apply to every goal:
 | `jooqPackage`
 | `String` (Java package)
 | (none)
-| Root Java package of the consumer's jOOQ-generated catalog (the `Tables` / `Keys` / `Routines` classes). Required for `generate` and `dev`; optional for `validate` and `capture`. The classifier resolves every `@table` and `@field` against the catalog rooted at this package. A `capture` run that falls back to the sentinel warns, because the catalog it then loads is empty and the store gets no database facts.
+| Root Java package of the consumer's jOOQ-generated catalog (the `Tables` / `Keys` / `Routines` classes). Required for `generate` and `dev`; optional for `validate` and `capture`. The classifier resolves every `@table` and `@field` against the catalog rooted at this package. Its classes are also read like any other class the build compiles, members included, so a generated `Routines` method is a Java method graphitron knows. A `capture` run that falls back to the sentinel warns, because the catalog it then loads is empty and the store gets no database facts.
 
 | `graphName`
 | `String`

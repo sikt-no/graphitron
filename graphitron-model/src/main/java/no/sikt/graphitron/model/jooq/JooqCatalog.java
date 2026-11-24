@@ -87,7 +87,7 @@ public class JooqCatalog {
 
     public static void verifyTablesClassPresent(String schemaName, String packageName, ClassLoader codegenLoader) {
         try {
-            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            // nameability: exempt (jOOQ catalog class, read through the catalog)
             Class.forName(packageName + ".Tables", false, codegenLoader);
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException(
@@ -201,7 +201,7 @@ public class JooqCatalog {
     /** The generated {@code Routines} class beside the table's schema, or null when there is none. */
     private Class<?> routinesClassOf(Table<?> table) {
         try {
-            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            // nameability: exempt (jOOQ catalog class, read through the catalog)
             return Class.forName(
                 table.getSchema().getClass().getPackageName() + ".Routines", true, codegenLoader);
         } catch (ClassNotFoundException e) {
@@ -276,7 +276,7 @@ public class JooqCatalog {
         String schemaPackage = schema.getClass().getPackageName();
         Class<?> routinesClass;
         try {
-            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            // nameability: exempt (jOOQ catalog class, read through the catalog)
             routinesClass = Class.forName(schemaPackage + ".Routines", true, codegenLoader);
         } catch (ClassNotFoundException | LinkageError e) {
             return List.of();
@@ -305,7 +305,7 @@ public class JooqCatalog {
         String routineClass = schemaPackage + ".routines." + Character.toUpperCase(name.charAt(0))
             + name.substring(1);
         try {
-            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            // nameability: exempt (jOOQ catalog class, read through the catalog)
             Class<?> c = Class.forName(routineClass, true, codegenLoader);
             if (!org.jooq.Routine.class.isAssignableFrom(c)) {
                 return null;
@@ -386,7 +386,7 @@ public class JooqCatalog {
             .map(s -> {
                 String candidateClass = s.getClass().getPackageName() + ".routines." + routineClassName;
                 try {
-                    // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+                    // nameability: exempt (jOOQ catalog class, read through the catalog)
                     Class<?> c = Class.forName(candidateClass, true, codegenLoader);
                     if (!org.jooq.Routine.class.isAssignableFrom(c)) return null;
                     var routine = (org.jooq.Routine<?>) c.getDeclaredConstructor().newInstance();
@@ -1073,7 +1073,7 @@ public class JooqCatalog {
 
     private Optional<Class<?>> keysClass(Schema schema) {
         try {
-            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            // nameability: exempt (jOOQ catalog class, read through the catalog)
             return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Keys", false, codegenLoader));
         } catch (ClassNotFoundException e) {
             return Optional.empty();
@@ -1739,7 +1739,7 @@ public class JooqCatalog {
 
     private Optional<Class<?>> tablesClass(Schema schema) {
         try {
-            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            // nameability: exempt (jOOQ catalog class, read through the catalog)
             return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Tables", false, codegenLoader));
         } catch (ClassNotFoundException e) {
             return Optional.empty();
@@ -1795,7 +1795,7 @@ public class JooqCatalog {
             // triggers static initialization regardless of the flag (JLS §12.4.1), and the catalog
             // value itself depends on those initializers having run. The other three call sites in
             // this class only read class metadata and use `initialize = false`.
-            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            // nameability: exempt (jOOQ catalog class, read through the catalog)
             var cls = Class.forName(generatedJooqPackage + ".DefaultCatalog", true, codegenLoader);
             var field = cls.getField("DEFAULT_CATALOG");
             return (Catalog) field.get(null);

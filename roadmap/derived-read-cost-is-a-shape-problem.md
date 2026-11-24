@@ -741,9 +741,6 @@ each parameter, so the generator reads it and `ServiceCatalog` resolves nothing.
 one whose instances graphitron can build; its public methods are service methods, and a public
 static method needs no holder.
 
-* **The generated jOOQ classes are read with their members** `open`, off the critical path. The census's header-only
-  package goes, so tables, records, `Routines`, package classes and DAOs are read like any other
-  class, with a sis capture timed before and after.
 * **The argMapping readers read the landing, and the candidate and match go** `open`, E's. R1099's step 2 stored where an argument path lands, `graphitron_argmapping_landing`, under each occurrence of its call; what follows is its readers.
   `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
@@ -1243,7 +1240,7 @@ static method needs no holder.
   admits `ROUTINE` (or `OUTBOX_NOT_A_WRITE` reads the routine producer beside it), the key rule gains
   the routine arm, and `RoutineWriteEmitter` calls R1113's companion with the captured record, in
   one commit, so a routine `@outbox` is never accepted without being emitted.
-* **A table class's column fields are stated** `blocked`, on "The generated jOOQ classes are read with their members". The code family keeps each generated table's public column fields, which
+* **A table class's column fields are stated** `open`. The code family keeps each generated table's public column fields, which
   the census reads and the capture drops.
 * **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
   flag and where it is computed, so a client-side computed column is told from a stored one.
@@ -1960,8 +1957,6 @@ The call order already follows it; what is left is a gate that holds it and the 
 * **The pipeline overview states the order and what holds it** `blocked`, on "A gate holds the call order to the roster". `pipeline-overview.adoc` § Capture names the order and the gate.
 * **The pipeline overview describes a dependency's row** `open`. The `store_` bookkeeping sentence
   names `store_graph_dependency` and what each kind of entry lets a capture skip.
-* **The manual says what the jOOQ package is read for** `blocked`, on "The generated jOOQ classes are read with their members". The `jooqPackage` row of `mojo-configuration.adoc` no longer implies
-  the package is read differently from any other.
 
 ### The store knows whether an artifact can go stale `open`
 

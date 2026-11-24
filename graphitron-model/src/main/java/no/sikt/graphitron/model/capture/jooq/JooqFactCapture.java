@@ -1213,10 +1213,10 @@ public final class JooqFactCapture {
      * every interface reachable from it.
      *
      * <p>Captured rather than derived, and that is the one thing to know before reading it. The
-     * classpath census drops the generated jOOQ package on purpose, so no census edge climbs out of
-     * a generated record, and the chain above one runs through jOOQ's own runtime classes that
-     * nothing scans. This walk holds the record {@link Class} itself, so it is the only reader that
-     * can state the closure at all.
+     * chain above a generated record runs through jOOQ's own runtime classes, which a graph's
+     * census reads only where the build declares the jOOQ jar, so the code family's edges may stop
+     * at the jar's edge. This walk holds the record {@link Class} itself, so it is the only reader
+     * that can state the closure whatever the classpath holds.
      */
     private static void recordSupertypes(DSLContext dsl, List<TableAt> tables) {
         var t = SQL_TABLE_RECORD_SUPERTYPE;
