@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R1206` | A class in a declared dependency is nameable where the schema names it | Spec | 2026-11-24 | [plan](declared-dependency-class-nameable.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
-| `R454` | A routine write takes the shapes opptak's slice needs | Spec | 2026-11-23 <sub>created 2026-07-09</sub> | [plan](routine-write-result-shapes.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R1199` | An _entities lookup with vouchers for several values resolves on one connection | Spec | 2026-11-23 <sub>created 2026-11-18</sub> | [plan](vouched-lookups-past-one-value.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-11-03 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
@@ -30,6 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-29 <sub>created 2026-08-27</sub> | [plan](corpus-directives-to-expect-equals.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R454` | A routine write takes the shapes opptak's slice needs | Ready | 2026-11-24 <sub>created 2026-07-09</sub> | [plan](routine-write-result-shapes.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1168` | An error handler that an earlier handler shadows is reported, as a warning or an error <sub>blocked by: [error-dispatch-matches-graphitron-9](error-dispatch-matches-graphitron-9.md)</sub> | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](shadowed-error-handler-is-reported.md) |
 | `R1167` | Error-channel dispatch routes every throw where Graphitron 9 routed it | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](error-dispatch-matches-graphitron-9.md) |
@@ -513,7 +513,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture
-- `R454` [**A routine write takes the shapes opptak's slice needs**](routine-write-result-shapes.md) — Spec, feature
+- `R454` [**A routine write takes the shapes opptak's slice needs**](routine-write-result-shapes.md) — Ready, feature
 - `R816` [**Refuse a routine write's first-hop condition instead of deferring it**](routine-write-reread-drops-first-hop-condition.md) — Spec, generator
 - `R717` [**The routine carrier's explicit data-field path needs a correlation arm that anchors on the captured record**](routine-carrier-residual-path-correlation.md) — Backlog, architecture
 - `R718` [**Three reads a chain field or a routine-bound type falls through**](column-scope-admits-the-chain-terminus.md) — Backlog, architecture

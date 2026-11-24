@@ -1,13 +1,13 @@
 ---
 id: R454
 title: "A routine write takes the shapes opptak's slice needs"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: routine
 depends-on: []
 created: 2026-07-09
-last-updated: 2026-11-23
+last-updated: 2026-11-24
 ---
 
 # A routine write takes the shapes opptak's slice needs
