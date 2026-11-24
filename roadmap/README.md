@@ -54,8 +54,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-14 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Review | 2026-11-19 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | In Review | 2026-11-23 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
-| `R1202` | A list of node ids' key column reaches a List parameter at a @condition through argMapping | Ready | 2026-11-23 <sub>created 2026-11-20</sub> | [plan](bare-argmapping-list-nodeid-refused-at-field-condition.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
+| `R1202` | A list of node ids' key column reaches a List parameter at a @condition through argMapping | In Progress | 2026-11-24 <sub>created 2026-11-20</sub> | [plan](bare-argmapping-list-nodeid-refused-at-field-condition.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -541,7 +541,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1044` [**Two-writer column agreement compares converter-backed values by their database value**](column-agreement-follows-the-database-value.md) — Backlog, bug
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R1107` [**Two foreign keys to a node type resolve to the one whose referenced columns are the node key**](fk-ambiguity-resolved-by-node-key-columns.md) — Backlog, feature
-- `R1202` [**A list of node ids' key column reaches a List parameter at a @condition through argMapping**](bare-argmapping-list-nodeid-refused-at-field-condition.md) — Ready, bug
+- `R1202` [**A list of node ids' key column reaches a List parameter at a @condition through argMapping**](bare-argmapping-list-nodeid-refused-at-field-condition.md) — In Progress, bug
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
 - `R420` [**Support list-valued @nodeId+@reference on INSERT inputs (row fan-out)**](list-nodeid-reference-insert-fanout.md) — Backlog, feature

@@ -1,13 +1,13 @@
 ---
 id: R1202
 title: "A list of node ids' key column reaches a List parameter at a @condition through argMapping"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 6
 theme: nodeid
 depends-on: []
 created: 2026-11-20
-last-updated: 2026-11-23
+last-updated: 2026-11-24
 ---
 
 # A list of node ids' key column reaches a List parameter at a @condition through argMapping
