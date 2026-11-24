@@ -247,6 +247,25 @@ census it replaced is gone.
     * **Every read of `sql_table` by record class goes through the graph's sources** `done`. The
       key-row and result-shape defect arms and the emitters' `BuildQuery` and `NodeIdDecodeQuery`
       catalog reads join the graph's sources; every other `sql_table` read already did.
+    * **A record class belongs to one table, the base table before a function returning its rows** `open`, E's, high priority: it crashes a capture.
+      jOOQ generates a table-valued function returning `SETOF t` with `t`'s own record class, so
+      `sql_table` holds two rows for that class, the base table and the `FUNCTION` row. Seven rule
+      views (`graphitron_call_parameter_table_rule`, `graphitron_occurrence_binding_member_rule`, the
+      lift and lift-candidate rules, the producer entry defect rule, `graphitron_field_handed_record_rule`,
+      the source-claim object member rule) and about a dozen emitter and editor readers join on
+      `record_class_fqn` with no preference, so each answers twice for that class: a `@service`
+      taking the record fails the capture with a primary-key violation in
+      `graphitron_occurrence_call_parameter`, found when a `SETOF film_endorsement` fixture beside
+      a service taking `FilmEndorsementRecord` broke every capture of the sakila corpus. The base-table
+      preference the producer result rule takes for a routine's record is this fact spelled inside
+      one rule, and moves onto it. The fix is one stored fact, the table a record class
+      belongs to per graph, the base table preferred over a `FUNCTION` row, written where the catalog
+      is read and joined by every reader in place of `sql_table.record_class_fqn`, not ten patched
+      joins (A, 2026-11-24). Ends with a fixture function returning `SETOF` a table whose record a
+      `@service` takes, captured beside it. FS today (fs-private at 946fc4aa20, read only): no live
+      `SETOF`-of-table function; opptak's one, `plukk_neste_plasstildeling() RETURNS SETOF
+      plasstildeling` (V311), was dropped in V313, while opptak's services take
+      `PlasstildelingRecord`, so the shape has reached FS once and would have crashed its capture.
     * `sql_table_record_supertype` is never swept and is filled through the reading graph's
       classpath, so it holds the union of every reader's: ends with "A class's supertypes are one
       code fact". `NameMatchedKeys` matches functions against every catalog in the store: ends with
