@@ -5,9 +5,9 @@ status: Backlog
 bucket: feature
 priority: 3
 theme: service
-depends-on: [vouched-lookups-past-one-value]
+depends-on: []
 created: 2026-11-23
-last-updated: 2026-11-23
+last-updated: 2026-11-24
 ---
 
 # An accepting type guards its vouched fields with @requires, so an issuer can be an ordinary entity
