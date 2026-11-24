@@ -1,0 +1,40 @@
+# The participant fields a discriminated read of an interface scopes each participant by.
+# FilmContent.rating is a column of film read one step off content over content_film_id_fkey, a
+# cross column; FilmContent.title is a column of content itself, and no cross column.
+# FilmContent.meta is a nesting field read off the content row, so Content's participants answer it
+# under one alias; Content.title, which every participant reads off its own row, is no shared field.
+
+enum MpaaRating { G PG PG_13 R NC_17 }
+
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+
+type ContentMeta { length: Int @field(name: "LENGTH") }
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+  rating: MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+  meta: ContentMeta
+}
+
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "CONTENT_ID")
+  title: String! @field(name: "TITLE")
+}
+
+type Query { contents: [Content!]! @defaultOrder(primaryKey: true) }
+
+extend schema @expectEquals(relation: "graphitron_field_cross_column",
+    where: "type_name IN ('FilmContent', 'ShortContent')", rows: """
+  type_name,   field_name
+  FilmContent, rating
+  """)
+
+extend schema @expectEquals(relation: "graphitron_interface_shared_field",
+    where: "interface_type = 'Content'", rows: """
+  interface_type, field_name
+  Content,        meta
+  """)

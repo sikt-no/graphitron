@@ -54,6 +54,8 @@ public final class OccurrenceBindings {
         // What each condition method takes, once the conditions and their fills hold this reading's
         // rows alone.
         OccurrenceConditionSignatures.derive(dsl, graph, touchedAt);
+        // The participant fields a discriminated read scopes each participant by.
+        ParticipantFields.derive(dsl, graph, touchedAt);
         // Which projection reads each field occurrence, once the nesting fields hold this reading's
         // rows alone; then the types whose projection reads the session, closing over the inline calls
         // of each projection and seeded by the conditions.

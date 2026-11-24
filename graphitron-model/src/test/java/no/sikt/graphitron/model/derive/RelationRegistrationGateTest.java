@@ -329,6 +329,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_filter_term_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_condition_signature", Arm.DERIVED);
         registrations.put("graphitron_occurrence_condition_signature_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_cross_column", Arm.DERIVED);
+        registrations.put("graphitron_field_cross_column_rule", Arm.DERIVED);
+        registrations.put("graphitron_interface_shared_field", Arm.DERIVED);
+        registrations.put("graphitron_interface_shared_field_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_projection", Arm.DERIVED);
         registrations.put("graphitron_occurrence_projection_rule", Arm.DERIVED);
         registrations.put("graphitron_tabletype_session", Arm.DERIVED);

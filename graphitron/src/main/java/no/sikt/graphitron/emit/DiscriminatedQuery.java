@@ -10,6 +10,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CROSS_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INTERFACE_SHARED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
@@ -110,9 +112,20 @@ public final class DiscriminatedQuery {
         var ns = GRAPHITRON_OCCURRENCE_NESTING;
         var nesting = java.util.Set.copyOf(store.dsl().select(ns.COORDINATE).from(ns)
             .where(ns.GRAPH_NAME.eq(graph)).fetch(ns.COORDINATE));
+        // The fields each interface's participants answer under one alias, and the fields read one
+        // step off their type's own table.
+        var sf = GRAPHITRON_INTERFACE_SHARED_FIELD;
+        var shared = new LinkedHashMap<String, List<String>>();
+        store.dsl().select(sf.INTERFACE_TYPE, sf.FIELD_NAME).from(sf).where(sf.GRAPH_NAME.eq(graph))
+            .orderBy(sf.INTERFACE_TYPE, sf.FIELD_NAME)
+            .forEach(r -> shared.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(r.value2()));
+        var cc = GRAPHITRON_FIELD_CROSS_COLUMN;
+        var crossColumns = java.util.Set.copyOf(store.dsl().select(cc.TYPE_NAME.concat(".").concat(cc.FIELD_NAME))
+            .from(cc).where(cc.GRAPH_NAME.eq(graph)).fetch(org.jooq.Record1::value1));
         var out = new LinkedHashMap<String, Row>();
         byCoordinate.forEach((coordinate, stated) -> out.put(coordinate,
-            row(store, coordinate, Optional.ofNullable(targets.get(coordinate)), stated, fields, nesting)));
+            row(store, coordinate, Optional.ofNullable(targets.get(coordinate)), stated, fields, nesting,
+                shared, crossColumns)));
         return out;
     }
 
@@ -124,12 +137,10 @@ public final class DiscriminatedQuery {
      * refused.
      */
     private static Row row(StoreHandle store, String coordinate, Optional<String> target, List<Stated> stated,
-                           Map<String, List<FieldFact>> fields, java.util.Set<String> nesting) {
+                           Map<String, List<FieldFact>> fields, java.util.Set<String> nesting,
+                           Map<String, List<String>> sharedByInterface, java.util.Set<String> crossColumns) {
         var first = stated.getFirst();
         String base = first.base();
-        var declared = target.map(t -> fields.getOrDefault(t, List.of()).stream().map(FieldFact::fieldName)
-            .collect(java.util.stream.Collectors.toSet())).orElse(java.util.Set.of());
-        var shared = new java.util.TreeSet<String>();
         var participants = new ArrayList<Participant>();
         for (var s : stated) {
             if (!"DISCRIMINATOR".equals(s.recognizedBy()) || !s.table().equals(base)) {
@@ -139,13 +150,7 @@ public final class DiscriminatedQuery {
             var crossFields = new ArrayList<CrossField>();
             for (var f : fields.getOrDefault(s.type(), List.of())) {
                 if (nesting.contains(s.type() + "." + f.fieldName())) {
-                    shared.add(f.fieldName());
                     continue;
-                }
-                boolean sameRowColumn = !"OBJECT".equals(f.targetKind()) && !f.tableBound()
-                    && (f.reaches() == null || f.reaches().equals(base));
-                if (declared.contains(f.fieldName()) && !sameRowColumn) {
-                    shared.add(f.fieldName());
                 }
                 if ("OBJECT".equals(f.targetKind()) && !f.tableBound()) {
                     throw refused(coordinate, s.type() + "." + f.fieldName()
@@ -155,7 +160,9 @@ public final class DiscriminatedQuery {
                 if (f.tableBound() || f.reaches() == null || f.reaches().equals(base)) {
                     continue;
                 }
-                var cross = crossField(store, s.type(), f.fieldName(), base);
+                var cross = crossColumns.contains(s.type() + "." + f.fieldName())
+                    ? crossField(store, s.type(), f.fieldName())
+                    : Optional.<CrossField>empty();
                 if (cross.isEmpty()) {
                     throw refused(coordinate, s.type() + "." + f.fieldName()
                         + " is read more than one step off " + base, "SCALAR_PATH");
@@ -164,7 +171,8 @@ public final class DiscriminatedQuery {
             }
             participants.add(new Participant(s.type(), s.value(), crossFields));
         }
-        return new Row(coordinate, first.column(), participants, List.copyOf(shared));
+        return new Row(coordinate, first.column(), participants,
+            target.map(t -> sharedByInterface.getOrDefault(t, List.of())).orElse(List.of()));
     }
 
     /** A lift the store should have refused, by the code it refuses it with. */
@@ -196,11 +204,11 @@ public final class DiscriminatedQuery {
     }
 
     /**
-     * {@code type.field}'s one step off {@code base}: the table it reaches, the column pairs and the
-     * column it reads there; empty where its path takes more than one step or does not start at
-     * {@code base}.
+     * {@code type.field}'s one step off its own table, which graphitron_field_cross_column states it
+     * is read across: the table it reaches, the column pairs and the column it reads there; empty
+     * where no column is bound there.
      */
-    private static Optional<CrossField> crossField(StoreHandle store, String type, String field, String base) {
+    private static Optional<CrossField> crossField(StoreHandle store, String type, String field) {
         var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
         var fc = SQL_COLUMN.as("fc");
         var tc = SQL_COLUMN.as("tc");
@@ -221,8 +229,7 @@ public final class DiscriminatedQuery {
             .where(sc.GRAPH_NAME.eq(graph), sc.COORDINATE.eq(coordinate))
             .orderBy(sc.POSITION, sc.ORDINAL)
             .fetch();
-        if (steps.isEmpty() || steps.stream().anyMatch(r -> r.value1() != 0)
-                || !steps.getFirst().value2().equals(base)) {
+        if (steps.isEmpty()) {
             return Optional.empty();
         }
         var head = steps.getFirst();

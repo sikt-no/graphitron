@@ -25306,6 +25306,86 @@ COMMENT ON COLUMN graphitron_occurrence_expression.call IS 'the call it is, expr
 COMMENT ON COLUMN graphitron_occurrence_expression.call_kind IS 'always EXPRESSION, pinned so the foreign key holds the row to a call of that kind';
 COMMENT ON COLUMN graphitron_occurrence_expression.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- A scalar field of a table-bound type read one step off its own table: its join path takes one step,
+-- from the type's own table to another. The step and the column read there are stored already; this
+-- states only that the field is read across it.
+CREATE VIEW graphitron_field_cross_column_rule (graph_name, type_name, field_name) AS
+SELECT DISTINCT f.graph_name, f.type_name, f.field_name
+  FROM graphitron_field f
+  JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.type_name
+  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
+  JOIN graphitron_join_path jp ON jp.graph_name = f.graph_name AND jp.coordinate = f.coordinate AND jp.kind = 'JOIN'
+ WHERE t.kind <> 'OBJECT'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype nt WHERE nt.graph_name = f.graph_name AND nt.type_name = f.named_type)
+   AND jp.target_table <> tt.table_name
+   AND EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                WHERE sc.graph_name = jp.graph_name AND sc.coordinate = jp.coordinate
+                  AND sc.position = 0 AND sc.from_table = tt.table_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                    WHERE sc.graph_name = jp.graph_name AND sc.coordinate = jp.coordinate AND sc.position <> 0);
+COMMENT ON VIEW graphitron_field_cross_column_rule IS 'One row the field cross column rule computes, in the shape graphitron_field_cross_column stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_field_cross_column, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_field_cross_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_cross_column.graph_name';
+-- COMMENT ON COLUMN graphitron_field_cross_column_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_cross_column.type_name';
+-- COMMENT ON COLUMN graphitron_field_cross_column_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_cross_column.field_name';
+
+CREATE TABLE graphitron_field_cross_column (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  -- The type's own table binding: a type that stops being bound has no own table to step off.
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_tabletype (graph_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_cross_column IS 'A scalar field of a table-bound type read one step off its own table: one row per such field. For example FilmContent.rating, a column of film reached from content over content_film_id_fkey, while FilmContent.title, a column of content itself, has no row.';
+COMMENT ON COLUMN graphitron_field_cross_column.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_cross_column.type_name IS 'the table-bound type declaring the field, with the graph a reference to its table binding';
+COMMENT ON COLUMN graphitron_field_cross_column.field_name IS 'the field, completing the key; its step is graphitron_join_path_step_column''s at the field''s coordinate';
+COMMENT ON COLUMN graphitron_field_cross_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- The fields the participants of an interface answer under one alias, not qualified by participant:
+-- a participant's nesting field, an object with no table of its own read off the row it is spliced
+-- into (its path reaching no table, or the participant's own over the empty path it rests on), and a
+-- field the interface declares that is no column of the participant's own row, an object,
+-- a table-bound type, or a column one step away.
+CREATE VIEW graphitron_interface_shared_field_rule (graph_name, interface_type, field_name) AS
+WITH member_field (graph_name, interface_type, field_name, kind, table_bound, reaches, base) AS (
+  SELECT m.graph_name, m.container_name, f.field_name, t.kind,
+         EXISTS (SELECT 1 FROM graphitron_tabletype nt WHERE nt.graph_name = f.graph_name AND nt.type_name = f.named_type),
+         jp.target_table, pt.table_name
+    FROM graphitron_type_member m
+    JOIN graphitron_tabletype pt ON pt.graph_name = m.graph_name AND pt.type_name = m.member_type_name
+    JOIN graphitron_field f ON f.graph_name = m.graph_name AND f.type_name = m.member_type_name
+    JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
+    LEFT JOIN graphitron_join_path jp ON jp.graph_name = f.graph_name AND jp.coordinate = f.coordinate AND jp.kind = 'JOIN'
+   WHERE m.container_kind = 'INTERFACE'
+)
+SELECT DISTINCT mf.graph_name, mf.interface_type, mf.field_name
+  FROM member_field mf
+ WHERE (mf.kind = 'OBJECT' AND NOT mf.table_bound AND (mf.reaches IS NULL OR mf.reaches = mf.base))
+    OR (EXISTS (SELECT 1 FROM graphitron_field df
+                 WHERE df.graph_name = mf.graph_name AND df.type_name = mf.interface_type AND df.field_name = mf.field_name)
+        AND (mf.kind = 'OBJECT' OR mf.table_bound OR mf.reaches <> mf.base));
+COMMENT ON VIEW graphitron_interface_shared_field_rule IS 'One row the interface shared field rule computes, in the shape graphitron_interface_shared_field stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_interface_shared_field, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_interface_shared_field_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_interface_shared_field.graph_name';
+-- COMMENT ON COLUMN graphitron_interface_shared_field_rule.interface_type IS 'the interface_type of a row of this rule, which the stage writes into graphitron_interface_shared_field.interface_type';
+-- COMMENT ON COLUMN graphitron_interface_shared_field_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_interface_shared_field.field_name';
+
+CREATE TABLE graphitron_interface_shared_field (
+  graph_name     VARCHAR   NOT NULL,
+  interface_type VARCHAR   NOT NULL,
+  field_name     VARCHAR   NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, interface_type, field_name),
+  -- The interface: a type that stops being one has no participants to share a field across.
+  FOREIGN KEY (graph_name, interface_type) REFERENCES graphitron_type (graph_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_interface_shared_field IS 'A field the participants of an interface answer under one alias, not qualified by participant: one row per interface and field name. For example Content.title, which Content declares and FilmContent and ShortContent each read under the alias title, is no row, its participants reading it off their own row; a nesting field of FilmContent, or a field Content declares that FilmContent reads across a step, is one.';
+COMMENT ON COLUMN graphitron_interface_shared_field.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_interface_shared_field.interface_type IS 'the interface its participants answer the field through';
+COMMENT ON COLUMN graphitron_interface_shared_field.field_name IS 'the field name, completing the key: one alias however many participants declare it';
+COMMENT ON COLUMN graphitron_interface_shared_field.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- The field occurrences read in a table-bound type's projection, one depth at a time: a top-level
 -- field of a table-bound type at depth 0, and below it a field under a nesting field the depth above
 -- placed in a projection, read off the same row. The occurrence-bindings stage writes it a depth at a
@@ -31797,6 +31877,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_occurrence_binding_table'),
   ('occurrence-bindings', 'graphitron_occurrence_row_input'),
   ('occurrence-bindings', 'graphitron_occurrence_filter_term'),
+  ('occurrence-bindings', 'graphitron_field_cross_column'),
+  ('occurrence-bindings', 'graphitron_interface_shared_field'),
   ('occurrence-bindings', 'graphitron_occurrence_projection'),
   ('occurrence-bindings', 'graphitron_tabletype_session'),
   ('occurrence-producers', 'graphitron_occurrence_call'),
@@ -32018,6 +32100,8 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_table_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_filter_term', 'graphitron_occurrence_filter_term_rule'),
+  ('occurrence-bindings', 'graphitron_field_cross_column', 'graphitron_field_cross_column_rule'),
+  ('occurrence-bindings', 'graphitron_interface_shared_field', 'graphitron_interface_shared_field_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_projection', 'graphitron_occurrence_projection_rule'),
   ('occurrence-bindings', 'graphitron_tabletype_session', 'graphitron_tabletype_session_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_row_input', 'graphitron_occurrence_row_input_rule'),
@@ -32739,6 +32823,12 @@ INSERT INTO meta_grain VALUES
   ('occurrence-row-input',
    'one argument or input-field occurrence read under one field occurrence''s rows and not taken by its call, at one table its rows are on, in one graph',
    'graph_name, coordinate, table_source_name, table_schema, table_name', 'sdl'),
+  ('field-cross-column',
+   'one scalar field of one table-bound type read one step off its own table, in one graph',
+   'graph_name, type_name, field_name', 'sdl'),
+  ('interface-shared-field',
+   'one field name the participants of one interface answer under one alias, in one graph',
+   'graph_name, interface_type, field_name', 'sdl'),
   ('occurrence-projection',
    'one field occurrence read in a table-bound type''s projection, in one graph',
    'graph_name, coordinate', 'sdl'),
@@ -34262,6 +34352,22 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_filter_term_rule', 'occurrence-filter-term', 'graphitron',
    'One row the filter term rule computes, in the shape graphitron_occurrence_filter_term stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_filter_term, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_field_cross_column', 'field-cross-column', 'graphitron',
+   'A scalar field of a table-bound type read one step off its own table: one row per such field.',
+   'For example FilmContent.rating, a column of film reached from content over content_film_id_fkey, while FilmContent.title, a column of content itself, has no row.',
+   'Whether a field is read across one step rather than off its own row, stated once for the readers that lower it as a correlated read of that step: the discriminated lift of a @service and the discriminated root fetcher. Only the predicate is stored; the step and its columns are graphitron_join_path_step_column''s and the column read there graphitron_occurrence_column''s, which the readers join. Written by occurrence-bindings, the join paths it reads being occurrence-depths''.'),
+  ('graphitron_field_cross_column_rule', 'field-cross-column', 'graphitron',
+   'One row the field cross column rule computes, in the shape graphitron_field_cross_column stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_field_cross_column, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_interface_shared_field', 'interface-shared-field', 'graphitron',
+   'A field the participants of an interface answer under one alias, not qualified by participant: one row per interface and field name.',
+   'For example Content.title, which Content declares and FilmContent and ShortContent each read under the alias title, is no row, its participants reading it off their own row; a nesting field of FilmContent, or a field Content declares that FilmContent reads across a step, is one.',
+   'Which participant fields share one alias across the participants of an interface read as one statement, stated once for the readers that scope each participant''s selection by it: the discriminated lift of a @service and the discriminated root fetcher. A participant field is shared where it is a nesting field, read off the row it is spliced into, or where the interface declares it and it is no column of the participant''s own row. Written by occurrence-bindings, the join paths it reads being occurrence-depths''.'),
+  ('graphitron_interface_shared_field_rule', 'interface-shared-field', 'graphitron',
+   'One row the interface shared field rule computes, in the shape graphitron_interface_shared_field stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_interface_shared_field, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_projection', 'occurrence-projection', 'graphitron',
    'A field occurrence read in a table-bound type''s projection, and the type: one row per such occurrence.',
