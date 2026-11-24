@@ -72,8 +72,9 @@ import static org.jooq.impl.DSL.selectOne;
  * one off a list-shaped node id, are both {@link Rejection.Deferred}. Whether an emitter exists is a
  * fact about this codebase and not about the schema. {@link #EMITTING_SITES} is the first of those
  * facts, held beside the switch that names the five sites so a value can neither be misspelled nor
- * forgotten; the second is the list shape at every site but {@code @service}, a coherent request
- * naming the list of a key column across the decoded ids that nothing else builds yet. Both shrink as emitters land rather than being deleted,
+ * forgotten; the second is the list shape at a child {@code @routine}, a coherent request naming the
+ * list of a key column across the decoded ids that no routine call builds yet, where the
+ * {@code @service} fetcher and the conditions class build it. Both shrink as emitters land rather than being deleted,
  * and a projection either arm covers fails the build saying so, which is the honest state: emitting
  * nothing, or emitting the raw base64, are the two outcomes they exist to prevent.
  *
@@ -369,8 +370,8 @@ public final class ArgmappingProjectionDefects {
      *
      * <p>Two deferrals, and they are here rather than in SQL for one reason: each is a fact about
      * this codebase and not about the schema. A site whose emitter does not read a projection yet is
-     * {@link #EMITTING_SITES}' business, and a list-shaped node id off a site other than
-     * {@code @service} is an emitter that does not exist for a request that is perfectly coherent,
+     * {@link #EMITTING_SITES}' business, and a list-shaped node id at a child {@code @routine} is an
+     * emitter that does not exist for a request that is perfectly coherent,
      * the author having named the list of one key column across the decoded ids. A view cannot see either. Both arms shrink as emitters land, which is
      * what distinguishes them from the author defects the view states.
      */
@@ -414,12 +415,12 @@ public final class ArgmappingProjectionDefects {
     }
 
     /**
-     * Whether a projection off a list of node ids is deferred at {@code site}: everywhere but a
-     * {@code @service} parameter, whose emitter decodes each id of the list and reads the column off
-     * each.
+     * Whether a projection off a list of node ids is deferred at {@code site}: at a {@code @routine}
+     * parameter, whose call takes one value. A {@code @service} fetcher and the conditions class
+     * decode each id of the list and read the column off each, at every {@code @condition} site.
      */
     private static boolean listDeferred(Boolean leafIsList, Site site) {
-        return Boolean.TRUE.equals(leafIsList) && site != Site.SERVICE;
+        return Boolean.TRUE.equals(leafIsList) && site == Site.ROUTINE;
     }
 
     /**

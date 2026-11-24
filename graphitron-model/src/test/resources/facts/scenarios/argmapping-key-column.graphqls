@@ -5,8 +5,9 @@
 # parameter takes one value, so a pair stopping on a node id at a @routine projects one key column
 # too: rentFilmBare's customerId is a Customer id, whose key is customer_id alone. The projection is a
 # fact of the argMapping landing, and each fill a pair wrote states it. Off a list of ids a projection
-# is the list of that column across the decoded ids: FilmKeysFilter.films names film_id past a list
-# of Film ids at an input-field @condition, whose parameter is a List<Integer>.
+# is the list of that column across the decoded ids, at every @condition site: filmsByIdList names
+# film_id past a list of Film ids at the field, filmsByPickedList descends onto one, filmsByKeyList
+# names it at the argument, and FilmKeysFilter.films at an input field, each parameter a List<Integer>.
 
 interface Node { id: ID! }
 
@@ -23,6 +24,8 @@ type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
 input FilmPick { film: ID @nodeId(typeName: "Film") }
 
+input FilmListPick { films: [ID!] @nodeId(typeName: "Film") }
+
 input FilmKeysFilter {
   films: [ID!] @nodeId(typeName: "Film") @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
@@ -37,6 +40,15 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmIdKeyEquals", argMapping: "filmId: pick.film"}, override: true)
   filmsByKeys(filter: FilmKeysFilter): [Film!]!
+  filmsByIdList(ids: [ID!] @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+      method: "filmKeysIn", argMapping: "filmIds: ids.film_id"}, override: true)
+  filmsByPickedList(pick: FilmListPick): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+      method: "filmKeysIn", argMapping: "filmIds: pick.films"}, override: true)
+  filmsByKeyList(ids: [ID!] @nodeId(typeName: "Film") @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+      method: "filmKeysIn", argMapping: "filmIds: ids.film_id"}, override: true)): [Film!]!
 }
 
 type Mutation {
@@ -52,6 +64,9 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing",
   Query.filmsByNamed,  Query.filmsByNamed(id:),         film_id,       FALSE,    COLUMN
   Query.filmsByPicked, Query.filmsByPicked(pick.film:), ,              TRUE,     COLUMN
   Query.filmsByKeys(filter.films:), Query.filmsByKeys(filter.films:), film_id, FALSE, COLUMN
+  Query.filmsByIdList, Query.filmsByIdList(ids:),       film_id,       FALSE,    COLUMN
+  Query.filmsByPickedList, Query.filmsByPickedList(pick.films:), ,     TRUE,     COLUMN
+  Query.filmsByKeyList(ids:), Query.filmsByKeyList(ids:), film_id,  FALSE,    COLUMN
   """)
 
 # The key column each projecting landing takes.
@@ -61,6 +76,9 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column"
   Query.filmsByNamed,  Query.filmsByNamed(id:),         public.film, 0
   Query.filmsByPicked, Query.filmsByPicked(pick.film:), public.film, 0
   Query.filmsByKeys(filter.films:), Query.filmsByKeys(filter.films:), public.film, 0
+  Query.filmsByIdList, Query.filmsByIdList(ids:),       public.film, 0
+  Query.filmsByPickedList, Query.filmsByPickedList(pick.films:), public.film, 0
+  Query.filmsByKeyList(ids:), Query.filmsByKeyList(ids:), public.film, 0
   """)
 
 # The fills a written pair made state it.
@@ -70,6 +88,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair
   Query.filmsByNamed,  condition:public.film, 1,        filmId
   Query.filmsByPicked, condition:public.film, 1,        filmId
   Query.filmsByKeys(filter.films:), condition:public.film, 1, filmIds
+  Query.filmsByIdList, condition:public.film, 1,        filmIds
+  Query.filmsByPickedList, condition:public.film, 1,    filmIds
+  Query.filmsByKeyList(ids:), condition:public.film, 1, filmIds
   """)
 
 # A pair stopping on the node id at a routine parameter takes one key column, as a descent does at
@@ -106,20 +127,29 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", r
   Mutation.rentFilmBare(customerId:), public.customer, KEY_VALUE
   """)
 
-# A list of ids opened with its key column lands on a slot one list deep, and its parameter takes the
-# column of each decoded id: the slot projection and the KEY_VALUE shape, at the List<Integer> the
-# input-field @condition declares.
+# A list of ids opened with its key column, or descended onto, lands on a slot one list deep, and its
+# parameter takes the column of each decoded id: the slot projection and the KEY_VALUE shape, at the
+# List<Integer> each @condition declares.
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", rows: """
   coordinate,                                 kind,      list_depth
   Query.filmsByKeys(filter.films:),           PARAMETER, 1
+  Query.filmsByIdList(ids:),                  PARAMETER, 1
+  Query.filmsByPickedList(pick.films:),       PARAMETER, 1
+  Query.filmsByKeyList(ids:),                 PARAMETER, 1
   """)
 
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot_projection", rows: """
   coordinate,                       position, bound,       key_position
   Query.filmsByKeys(filter.films:), 1,        public.film, 0
+  Query.filmsByIdList(ids:),        1,        public.film, 0
+  Query.filmsByPickedList(pick.films:), 1,    public.film, 0
+  Query.filmsByKeyList(ids:),       1,        public.film, 0
   """)
 
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
   coordinate,                       bound,       decode_shape
   Query.filmsByKeys(filter.films:), public.film, KEY_VALUE
+  Query.filmsByIdList(ids:),        public.film, KEY_VALUE
+  Query.filmsByPickedList(pick.films:), public.film, KEY_VALUE
+  Query.filmsByKeyList(ids:),       public.film, KEY_VALUE
   """)

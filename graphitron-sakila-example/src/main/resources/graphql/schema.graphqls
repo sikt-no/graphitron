@@ -134,6 +134,19 @@ input OptionalLanguageFilter {
         @reference(path: [{key: "film_language_id_fkey"}])
 }
 
+input LanguageIdsPick {
+    languageIds: [ID!] @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+input LanguageIdsFilter {
+    languageIds: [ID!] @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+            method: "languagesIn",
+            argMapping: "languageIds: languageIds.language_id"
+        }, override: true)
+}
+
 # Routine-carrier RLS fixture (see init.sql's secure_note block): the write commits through a
 # SECURITY DEFINER routine while the caller's read policy hides the fresh row, so the payload's
 # data field legitimately resolves null with an empty errors channel.
@@ -444,6 +457,37 @@ type Query {
             argMapping: "languageId: pick.languageRef.language_id"
         }, override: true)
         @defaultOrder(primaryKey: true)
+    # A list of node ids handing a @condition the key column of each, a List<Integer>: by naming the
+    # column past the list, beside a single id named the same way, by descending onto a list inside an
+    # input object, and at an input-field @condition applied to the language table. A malformed id in
+    # the list fails the request before the method runs; an omitted list reaches it as null.
+    filmsOfLanguageIds(
+        languageIds: [ID!] @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
+    ): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+            method: "filmsOfLanguages",
+            argMapping: "languageIds: languageIds.language_id"
+        }, override: true)
+        @defaultOrder(primaryKey: true)
+    filmsOfLanguageIdsWithOriginal(
+        languageIds: [ID!]! @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
+        originalId: ID! @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_original_language_id_fkey"}])
+    ): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+            method: "filmsOfLanguagesWithOriginal",
+            argMapping: "languageIds: languageIds.language_id, originalLanguageId: originalId.language_id"
+        }, override: true)
+        @defaultOrder(primaryKey: true)
+    filmsOfPickedLanguageIds(pick: LanguageIdsPick): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+            method: "filmsOfLanguages",
+            argMapping: "languageIds: pick.languageIds"
+        }, override: true)
+        @defaultOrder(primaryKey: true)
+    filmsOfLanguageIdsFilter(filter: LanguageIdsFilter): [Film!]! @defaultOrder(primaryKey: true)
     # Relay Global Object Identification entry point — dispatches by typeId prefix
     # (extracted from the opaque base64 id) to the matching NodeType's table.
     # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".

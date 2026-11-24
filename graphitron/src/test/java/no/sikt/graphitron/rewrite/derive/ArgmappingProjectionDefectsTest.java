@@ -251,15 +251,16 @@ class ArgmappingProjectionDefectsTest {
     }
 
     /**
-     * A list of ids opened with its key column at an input-field {@code @condition}, taken in a
-     * {@code List} of the column, is not judged here: the occurrence build judges a {@code @condition}
-     * parameter wherever the condition is written, and the view's comparison, reading the erased
-     * {@code List}, would refuse the type a list of ids asks for. The near miss, the same column taken
-     * in a {@code String}, is the store's refusal, which {@code defects/argmapping-key-column-unresolved}
-     * pins at {@code FilmKeyAsString.film}.
+     * A list of ids opened with its key column at a {@code @condition}, at a field, an argument or an
+     * input field, and taken in a {@code List} of the column, is neither judged nor deferred here. The
+     * occurrence build judges a {@code @condition} parameter wherever the condition is written, and the
+     * view's comparison, reading the erased {@code List}, would refuse the type a list of ids asks for;
+     * and the conditions class decodes each id of the list, so nothing defers. The near misses, the
+     * column taken in one {@code Integer} or in a {@code String}, are the store's refusals, which
+     * {@code defects/argmapping-key-column-unresolved} pins.
      */
     @Test
-    void aListProjectionAtAnInputFieldConditionMintsNothing() {
+    void aListProjectionAtEveryConditionSiteMintsNothing() {
         List<ValidationError> violations = FACTS.read("scenarios/argmapping-key-column", graph ->
             ArgmappingProjectionDefects.detect(graph.handle().dsl(), graph.handle().graphName()).violations());
         assertThat(violations).isEmpty();
@@ -309,8 +310,8 @@ class ArgmappingProjectionDefectsTest {
     /**
      * A composite projection is one deferral per bound parameter, not one per key column of the
      * type. The projection relation's grain is the key column, so a read that did not collapse it
-     * would report a two-column key twice for one entry. A list of ids at a @condition is the
-     * deferral used, one column per decoded id being what no condition builds yet.
+     * would report a two-column key twice for one entry. A list of ids at a child {@code @routine} is
+     * the deferral used, one column per decoded id being what no routine call builds yet.
      */
     @Test
     void oneDeferralPerBoundParameterRatherThanPerKeyColumn() {
@@ -319,15 +320,14 @@ class ArgmappingProjectionDefectsTest {
                     @node(keyColumns: ["inventory_id", "store_id"]) {
                 id: ID! @nodeId
             }
-            type Film @table(name: "film") { title: String }
-            type Query { films(in: FilmPick!): [Film!]!, inventory: Inventory }
-            input FilmPick {
-                inventoryIds: [ID!] @nodeId(typeName: "Inventory") @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-                    method: "rentalRateRange",
-                    argMapping: "fra: inventoryIds.inventory_id, til: inventoryIds.store_id"
-                })
+            type ActorFilm { filmId: Int @field(name: "FILM_ID") }
+            type Actor @table(name: "actor") {
+                films(units: [ID!] @nodeId(typeName: "Inventory")): [ActorFilm!]
+                    @routine(name: "films_for_actor",
+                             argMapping: "pActorId: units.inventory_id, pMinLength: units.store_id")
+                    @defaultOrder(fields: [{name: "film_id"}])
             }
+            type Query { actors: [Actor], inventory: Inventory }
             """);
 
         assertThat(violations)

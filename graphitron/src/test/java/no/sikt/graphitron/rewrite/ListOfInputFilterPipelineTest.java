@@ -652,23 +652,6 @@ class ListOfInputFilterPipelineTest {
         assertLocated(schema, "PairFilter.pairs", "Query.filmActors(filter)/pairs");
     }
 
-    @Test
-    void fieldLevelConditionPathThroughTheList_doesNotClassify() {
-        var schema = build("""
-            input PairInput {
-                actorId: Int! @field(name: "actor_id")
-                filmId: Int! @field(name: "film_id")
-            }
-            input PairFilter { pairs: [PairInput] }
-            """ + FILM_ACTOR + """
-            type Query {
-                filmActors(filter: PairFilter): [FilmActor!]!
-                    @condition(condition: {className: "%s", method: "filmIdArgCondition", argMapping: "filmId: filter.pairs.actorId"})
-            }
-            """.formatted(STUB));
-        assertThat(schema.field("Query", "filmActors")).isInstanceOf(UnclassifiedField.class);
-    }
-
     // ===== The invariant, over every schema built above =====
 
     @AfterAll

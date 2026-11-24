@@ -47,6 +47,43 @@ public final class ProjectedKeyConditionFixtures {
         return table.field(Film.FILM.LANGUAGE_ID).eq(languageId);
     }
 
+    /**
+     * Narrows films to any of the named languages, and constrains nothing when the list was left out.
+     * The parameter is {@code language_id} off each decoded id of a list of {@code @nodeId}s, by an
+     * {@code argMapping} that names the column past the list or descends onto it.
+     */
+    public static Condition filmsOfLanguages(Table<?> table, List<Integer> languageIds) {
+        if (languageIds == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Film.FILM.LANGUAGE_ID).in(languageIds);
+    }
+
+    /**
+     * Narrows films to any of the named languages that also have the named original language: a list
+     * of ids and a single id read by one condition, each projected to its key column.
+     */
+    public static Condition filmsOfLanguagesWithOriginal(Table<?> table, List<Integer> languageIds,
+                                                         Integer originalLanguageId) {
+        var languages = languageIds == null ? DSL.noCondition()
+            : table.field(Film.FILM.LANGUAGE_ID).in(languageIds);
+        var original = originalLanguageId == null ? DSL.noCondition()
+            : table.field(Film.FILM.ORIGINAL_LANGUAGE_ID).eq(originalLanguageId);
+        return languages.and(original);
+    }
+
+    /**
+     * Narrows the languages a film's {@code EXISTS} reaches to the named ones: an input-field
+     * {@code @condition} on a list of {@code @nodeId}s is applied to the node's table, and takes the
+     * key column of each decoded id.
+     */
+    public static Condition languagesIn(Table<?> table, List<Integer> languageIds) {
+        if (languageIds == null) {
+            return DSL.noCondition();
+        }
+        return table.field(DSL.name("language_id"), Integer.class).in(languageIds);
+    }
+
     /** Narrows a table to the named film keys, each {@code film_id} off a decoded id of a list. */
     public static Condition filmKeysIn(Table<?> table, List<Integer> filmIds) {
         if (filmIds == null) {

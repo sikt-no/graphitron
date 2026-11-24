@@ -2808,11 +2808,6 @@ class FieldBuilder {
             withField.add(fieldCondition);
             filters = List.copyOf(withField);
         }
-        var throughList = conditionReadThroughList(filters, fieldDef);
-        if (throughList != null) {
-            errors.add(throughList);
-            return new TableFieldComponents.Rejected(foldRejections(errors));
-        }
         var orderByResolved = orderByResolver.resolve(refs, parentTypeName, fieldDef, rt, returnTypeName, singleTable);
         if (orderByResolved instanceof OrderByResolver.Resolved.Rejected r) {
             errors.add(r.rejection());
@@ -2882,67 +2877,6 @@ class FieldBuilder {
             // A list-of-input filter's row read carries its cell columns itself; unreached here.
             case CallSiteExtraction.ElementRows ignored -> column.columnClass();
         };
-    }
-
-    /**
-     * Refuses an authored condition parameter whose read descends into a list of input objects,
-     * at any directive site: the descent reads the list as one object and the parameter would
-     * receive {@code null}. The list-of-input walk already refuses a condition inside an element
-     * and one on the list field reaching below it, each at its own coordinate; this gate catches
-     * the paths that reach a list from further up (a field-level or argument-level
-     * {@code argMapping}, or a nested field's dotted path), which only the GraphQL types along the
-     * path can answer. Null when every read stops at or above each list it meets.
-     */
-    private static Rejection conditionReadThroughList(List<WhereFilter> filters, GraphQLFieldDefinition fieldDef) {
-        for (var filter : filters) {
-            ConditionFilter condition = authoredCondition(filter);
-            if (condition == null) continue;
-            for (var param : condition.params()) {
-                if (!(param.source() instanceof ParamSource.Arg arg)) {
-                    continue;
-                }
-                var read = arg.absoluteReadPath();
-                String list = listLevelOnPath(fieldDef, read.get(0), read.subList(1, read.size()));
-                if (list != null) {
-                    return Rejection.structural("field '" + fieldDef.getName() + "' @condition method '"
-                        + condition.methodName() + "': parameter '" + param.name() + "' reads '"
-                        + String.join(".", read) + "', which descends"
-                        + " into '" + list + "', a list of input objects with no single value below it;"
-                        + " bind the whole list instead");
-                }
-            }
-        }
-        return null;
-    }
-
-    /** The authored condition a filter calls, or null for the generated implicit-predicate filter. */
-    private static ConditionFilter authoredCondition(WhereFilter filter) {
-        return switch (filter) {
-            case ConditionFilter cf -> cf;
-            case FkTargetConditionFilter fk -> fk.delegate();
-            case GeneratedConditionFilter ignored -> null;
-        };
-    }
-
-    /**
-     * The first list level the descent from argument {@code outerArgName} down {@code path} steps
-     * into (the name of the slot typed as a list, with the path continuing below it), or null.
-     */
-    private static String listLevelOnPath(GraphQLFieldDefinition fieldDef, String outerArgName, List<String> path) {
-        var argument = fieldDef.getArgument(outerArgName);
-        if (argument == null) return null;
-        GraphQLType current = argument.getType();
-        String name = outerArgName;
-        for (var segment : path) {
-            var unwrapped = GraphQLTypeUtil.unwrapNonNull(current);
-            if (GraphQLTypeUtil.isList(unwrapped)) return name;
-            if (!(unwrapped instanceof GraphQLInputObjectType input)) return null;
-            var next = input.getField(segment);
-            if (next == null) return null;
-            current = next.getType();
-            name = segment;
-        }
-        return null;
     }
 
     /**

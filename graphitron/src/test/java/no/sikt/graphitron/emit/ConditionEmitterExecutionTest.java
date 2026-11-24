@@ -126,7 +126,8 @@ class ConditionEmitterExecutionTest {
             "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName", "filmByNodeId",
             "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm", "filmsByRating", "filmsByTitlePrefix",
             "filmsByLengthAndTitlePrefix", "filmsByTitleOverridden", "customersSeen", "filmsByTitleBean",
-            "projectNotesByProject", "filmsByOptionalLanguage");
+            "projectNotesByProject", "filmsByOptionalLanguage", "filmsByLanguages", "filmsByLanguagesWithOriginal",
+            "filmsByPickedLanguages");
     }
 
     @Test
@@ -337,6 +338,37 @@ class ConditionEmitterExecutionTest {
             .isNotEmpty().isEqualTo(films(FILM.LANGUAGE_ID.eq(1)));
         assertThat(films(condition("filmsByOptionalLanguage", args("pick", args("languageRef", id("LanguageNode", 2))))))
             .isEmpty();
+    }
+
+    @Test
+    @DisplayName("a @condition taking a key column off a list of node ids gets the column of each id, null where the list is absent")
+    void authoredTakingAProjectedKeyColumnOffAList() throws Exception {
+        assertThat(films(condition("filmsByLanguages", args("languageIds", List.of(id("LanguageNode", 1), id("LanguageNode", 2))))))
+            .isNotEmpty().isEqualTo(films(FILM.LANGUAGE_ID.in(1, 2)));
+        assertThat(films(condition("filmsByLanguages", args("languageIds", List.of(id("LanguageNode", 2))))))
+            .isEmpty();
+        assertThat(films(condition("filmsByLanguages", args())))
+            .as("the method received null and constrained nothing").isEqualTo(films(DSL.noCondition()));
+        assertThatThrownBy(() -> condition("filmsByLanguages",
+                args("languageIds", List.of(id("LanguageNode", 1), id("FilmActor", 1, 1)))))
+            .as("a malformed id inside the list is the client's error, raised before the method runs")
+            .hasRootCauseMessage("Invalid node id \"" + id("FilmActor", 1, 1)
+                + "\" for this argument: decodes to type \"FilmActor\", expected a LanguageNode id");
+    }
+
+    @Test
+    @DisplayName("a list of node ids reached by descending onto it, and one read beside a single id, are decoded alike")
+    void authoredTakingAProjectedKeyColumnOffAListByDescentAndBesideASingleId() throws Exception {
+        assertThat(films(condition("filmsByPickedLanguages", args("pick", args("languageIds", List.of(id("LanguageNode", 1)))))))
+            .isNotEmpty().isEqualTo(films(FILM.LANGUAGE_ID.eq(1)));
+        assertThat(films(condition("filmsByPickedLanguages", args("pick", args()))))
+            .isEqualTo(films(DSL.noCondition()));
+        assertThatThrownBy(() -> condition("filmsByPickedLanguages",
+                args("pick", args("languageIds", List.of("not-an-id")))))
+            .hasRootCauseMessage("Invalid node id \"not-an-id\" for this argument: not a valid LanguageNode id");
+        assertThat(films(condition("filmsByLanguagesWithOriginal",
+                args("languageIds", List.of(id("LanguageNode", 1)), "originalId", id("LanguageNode", 1)))))
+            .isEqualTo(films(FILM.LANGUAGE_ID.in(1).and(FILM.ORIGINAL_LANGUAGE_ID.eq(1))));
     }
 
     private static List<Integer> customers(Condition condition) {
