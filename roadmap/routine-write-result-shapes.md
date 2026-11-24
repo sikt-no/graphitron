@@ -1,7 +1,7 @@
 ---
 id: R454
 title: "A routine write takes the shapes opptak's slice needs"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: routine
