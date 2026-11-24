@@ -73,18 +73,19 @@ import java.util.Objects;
  *       {@code DSL.val(value, type).getValue()}, so it answers what that answers (a number that
  *       does not parse is {@code null}), save that a value {@code inRange} refuses is
  *       {@code null} before jOOQ parses it. It runs no trip and refuses no wrap; it is the
- *       generated filters' coercion, bounded.</li>
+ *       generated filters' coercion, bounded. A connection cursor of the release-candidate form
+ *       reads its tokens through it too.</li>
  * </ul>
  *
- * <p>Each first asks {@code inRange(type, value)}, which bounds the work: on a column with a number
- * class on either side of its converter, text over {@code MAX_NUMBER_TEXT} characters, or a number
- * with more integer digits than that class holds or more than {@code MAX_DIGITS} fraction digits,
- * is no value of the column. It is decided from the text's length and the number's scale and bit
- * length before anything parses or rescales the value, since parsing and rescaling cost time that
- * grows with a value's length and exponent. A cursor of the release-candidate form, which does not
- * pass through {@code ColumnValues}, asks {@code inRange} itself. {@code fromWire} asks it too, so
- * a client's {@code ID} text is bounded on every column-bound filter, lookup key and list-of-input
- * cell, not only where a node id, cursor or entity key is decoded.
+ * <p>Each first asks the private {@code inRange(type, value)}, which bounds the work: on a column
+ * with a number class on either side of its converter, text over {@code MAX_NUMBER_TEXT}
+ * characters, or a number with more integer digits than that class holds or more than
+ * {@code MAX_DIGITS} fraction digits, is no value of the column. It is decided from the text's
+ * length and the number's scale and bit length before anything parses or rescales the value, since
+ * parsing and rescaling cost time that grows with a value's length and exponent. The bound is a
+ * precondition of the entry points rather than a check of its own, so a caller cannot read a value
+ * at a column through this class without it, and code that reads one some other way is the thing
+ * to change.
  *
  * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
  * value of the column, so whether that is a skipped slot or a client error stays with the caller.
@@ -195,8 +196,8 @@ public class ColumnValuesClassGenerator {
             .addParameter(Object.class, "value")
             .addJavadoc("The value a client's wire {@code value} binds as in a column of {@code type}, by the\n"
                 + "column's own coercion, or {@code null} when {@code value} is {@code null}, when that coercion\n"
-                + "answers {@code null}, or when {@link #inRange} refuses it, which it decides before anything\n"
-                + "parses the value.\n")
+                + "answers {@code null}, or when the value is too large to be a value of the column, which is\n"
+                + "decided before anything parses it.\n")
             .addStatement("if (value == null || !inRange(type, value)) return null")
             .addStatement("return $T.val(value, type).getValue()", DSL)
             .build();
@@ -486,7 +487,7 @@ public class ColumnValuesClassGenerator {
         // entry point's: a length test on text, a scale and a bit length on a number, and a precision
         // read only once those have bounded the number's size.
         var inRange = MethodSpec.methodBuilder("inRange")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(boolean.class)
             .addParameter(dataTypeWildcard, "type")
             .addParameter(Object.class, "value")

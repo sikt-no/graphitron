@@ -623,10 +623,12 @@ public class ConnectionHelperClassGenerator {
         // it: split on U+0000 keeping trailing empty tokens, strict arity, U+0001 as a typed NULL,
         // every other token coerced on the column's own (converted) type. The token is the text of
         // the user-side value, record.get(column).toString(), so it is read through the converted
-        // type rather than ColumnValues; an enum token is the Java constant's name, which parses only
-        // where it equals the literal, exactly as before. DSL.val(token, type).getValue() is the
-        // non-deprecated equivalent of the DataType.convert the release candidates called; a null
-        // from it is a token that is no value of its column, rejected like the JSON reading's.
+        // type, by ColumnValues.fromWire, rather than as a database value; an enum token is the Java
+        // constant's name, which parses only where it equals the literal, exactly as before.
+        // fromWire is DSL.val(token, type).getValue(), the non-deprecated equivalent of the
+        // DataType.convert the release candidates called, behind the size bound every ColumnValues
+        // entry point applies; a null from it is a token that is no value of its column, rejected
+        // like the JSON reading's.
         var readReleaseCandidateCursor = MethodSpec.methodBuilder("readReleaseCandidateCursor")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(ArrayTypeName.of(fieldWildcard))
@@ -641,11 +643,7 @@ public class ConnectionHelperClassGenerator {
             .addCode("    if (\"\\u0001\".equals(tokens[i])) {\n")
             .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
             .addCode("    } else {\n")
-            // jOOQ's own parse of a numeric token costs time that grows with its exponent and length,
-            // so the size bound every ColumnValues entry point applies runs first.
-            .addCode("        if (!$T.inRange(col.getDataType(), tokens[i]))\n", columnValuesClass)
-            .addCode("            throw new IllegalArgumentException(\"cursor token not coercible\");\n")
-            .addCode("        Object value = $T.val((Object) tokens[i], col.getDataType()).getValue();\n", DSL)
+            .addCode("        Object value = $T.fromWire(col.getDataType(), tokens[i]);\n", columnValuesClass)
             .addCode("        if (value == null)\n")
             .addCode("            throw new IllegalArgumentException(\"cursor token not coercible\");\n")
             .addCode("        seekFields[i] = $T.val(value, col.getDataType());\n", DSL)

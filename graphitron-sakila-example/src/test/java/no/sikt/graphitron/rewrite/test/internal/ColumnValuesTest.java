@@ -311,7 +311,7 @@ class ColumnValuesTest {
         assertThat(ColumnValues.fromDatabase(INTEGER, null)).isNull();
     }
 
-    // ===== inRange: a value's size is bounded before anything parses or rescales it =====
+    // ===== The size bound: every entry point refuses a value on its size before anything parses or rescales it =====
 
     /** A value refused on its size is refused before it is parsed or rescaled, well inside this budget. */
     private static final Duration PROMPTLY = Duration.ofSeconds(1);
@@ -330,7 +330,6 @@ class ColumnValuesTest {
             for (DataType<?> type : types) {
                 for (String text : texts) {
                     String what = type.getName() + " " + text.substring(0, Math.min(16, text.length()));
-                    assertThat(ColumnValues.inRange(type, text)).as(what).isFalse();
                     assertThat(ColumnValues.coerce(type, text)).as("coerce " + what).isNull();
                     assertThat(ColumnValues.exact(type, text)).as("exact " + what).isNull();
                     assertThat(ColumnValues.folded(type, text)).as("folded " + what).isNull();
@@ -344,7 +343,7 @@ class ColumnValuesTest {
     }
 
     @Test
-    void inRange_passesEveryValueTheColumnsNumberClassHolds() {
+    void theSizeBound_passesEveryValueTheColumnsNumberClassHolds() {
         assertThat(ColumnValues.coerce(BIGINT, "9223372036854775807")).isEqualTo(Long.MAX_VALUE);
         assertThat(ColumnValues.coerce(BIGINT, "-9223372036854775808")).isEqualTo(Long.MIN_VALUE);
         assertThat(ColumnValues.exact(BIGINT, "-9223372036854775808")).isEqualTo(Long.MIN_VALUE);
@@ -359,10 +358,9 @@ class ColumnValuesTest {
         assertThat(ColumnValues.coerce(DECIMAL_INTEGER, widest)).isEqualTo(new BigInteger(widest));
         assertThat(ColumnValues.coerce(NUMERIC, widest + "9")).as("one integer digit more").isNull();
         assertThat(ColumnValues.coerce(DOUBLE, "1e308")).isEqualTo(1e308);
-        assertThat(ColumnValues.inRange(SQLDataType.VARCHAR, "1e30000000"))
-            .as("a text column reads the text as text, at any exponent").isTrue();
-        assertThat(ColumnValues.coerce(SQLDataType.VARCHAR, "1e30000000")).isEqualTo("1e30000000");
-        assertThat(ColumnValues.inRange(SQLDataType.VARCHAR, MANY_DIGITS)).isTrue();
+        assertThat(ColumnValues.coerce(SQLDataType.VARCHAR, "1e30000000"))
+            .as("a text column reads the text as text, at any exponent").isEqualTo("1e30000000");
+        assertThat(ColumnValues.coerce(SQLDataType.VARCHAR, MANY_DIGITS)).as("and at any length").isEqualTo(MANY_DIGITS);
     }
 
     // ===== fromWire: a client's wire value, coerced as jOOQ coerces it, behind the same bound =====
