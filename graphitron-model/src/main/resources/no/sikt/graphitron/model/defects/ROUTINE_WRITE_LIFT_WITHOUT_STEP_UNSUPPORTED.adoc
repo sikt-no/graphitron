@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the table the records land on.
+
+A `@routine` write returning records of a table reads them by capturing the key of the first table its path reaches out of the function's result, and re-reading from there after the write. With no `@reference` step after the routine there is no such table, and that write is not generated yet.
+
+*Next step.* Write a `@reference` path from the function's result to the table. See xref:directives/routine.adoc#write[Writes on Mutation].

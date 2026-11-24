@@ -1,0 +1,5 @@
+Reported at the field, the detail giving how many fields re-read the result.
+
+A `@routine` write's object result is re-read by the fields under it after the write, keyed by what the routine returned, and the write captures the keys of one such field. More than one is not generated yet.
+
+*Next step.* Keep one field re-reading the result. See xref:directives/routine.adoc#write[Writes on Mutation].

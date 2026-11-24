@@ -84,11 +84,10 @@ class RoutineWriteAdmissionTest {
      * The shapes the store admits and the emitter does not render yet, each kept out of the rows by
      * name and refused by the walk: a table-bound return with no step after its routine (a lift), an
      * object result with two fields re-reading the written rows, one encoding a node id from the
-     * returned keys beside its re-read, and a non-null single re-read with no errors field. Three
-     * draw no defect, so the named case is all that keeps them out; the node id draws
-     * NODE_ID_LANDS_ON_TABLE, the node-id rule not yet taking a routine result's name-matched keys
-     * as the path to the node's table. No fact document holds them: the store states no defect for
-     * them and the generator refuses them.
+     * returned keys beside its re-read, and a non-null single re-read with no errors field. Each is a
+     * stored deferral at the field, {@code defects/routine-write-unrendered} pinning the codes; the
+     * node id also draws NODE_ID_LANDS_ON_TABLE, the node-id rule not yet taking a routine result's
+     * name-matched keys as the path to the node's table.
      */
     @Test
     void theShapesTheEmitterDoesNotRenderYetAreKeptOutByName() {
@@ -122,7 +121,9 @@ class RoutineWriteAdmissionTest {
             var d = GRAPHITRON_ENTRY_DEFECT;
             assertThat(handle.dsl().select(d.CODE).from(d).where(d.GRAPH_NAME.eq(handle.graphName()))
                 .fetch(d.CODE))
-                .containsExactly("NODE_ID_LANDS_ON_TABLE");
+                .containsExactlyInAnyOrder("NODE_ID_LANDS_ON_TABLE",
+                    "ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED", "ROUTINE_WRITE_SEVERAL_RE_READS_UNSUPPORTED",
+                    "ROUTINE_WRITE_NODE_ID_FROM_KEYS_UNSUPPORTED", "ROUTINE_WRITE_NON_NULL_RE_READ_UNSUPPORTED");
             assertThat(RoutineWriteQuery.unrendered(handle)).containsOnly(
                 entry("Mutation.lifted", RoutineWriteQuery.Unrendered.LIFT_WITHOUT_STEP),
                 entry("Mutation.twice", RoutineWriteQuery.Unrendered.SEVERAL_RE_READING_FIELDS),

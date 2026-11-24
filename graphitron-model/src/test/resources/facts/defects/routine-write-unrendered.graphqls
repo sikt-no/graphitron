@@ -1,0 +1,38 @@
+# Four routine-write shapes the store admits and the emitter does not generate yet, each a stored
+# deferral at the field rather than a shape the emitter only leaves out by name:
+# - Mutation.lifted returns rentals' records with no @reference step out of rent_film's result, so
+#   there is no key to capture and lift them by.
+# - Mutation.twice holds an object re-read by two fields, and the write captures the keys of one.
+# - Mutation.withId has a field encoding a node id from the returned keys.
+# - Mutation.nonNull has its one re-reading field single and non-null, with no errors field.
+
+type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+union WriteError = DbErr
+interface Node { id: ID! }
+type Rental implements Node @node @table(name: "rental") {
+  id: ID! @nodeId
+  rentalId: Int! @field(name: "rental_id")
+}
+type Query { rentals: [Rental] node(id: ID!): Node }
+type RentalTwice { rental: Rental other: Rental errors: [WriteError] }
+type RentalWithId { rental: Rental rentalId: ID @nodeId(typeName: "Rental") errors: [WriteError] }
+type RentalNonNull { rental: Rental! }
+type Mutation {
+  lifted(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+  twice(inventoryId: Int!, customerId: Int!): RentalTwice
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+  withId(inventoryId: Int!, customerId: Int!): RentalWithId
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+  nonNull(inventoryId: Int!, customerId: Int!): RentalNonNull
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'ROUTINE_WRITE_%_UNSUPPORTED'", rows: """
+  code,                                        coordinate,       detail
+  ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED, Mutation.lifted,  rental
+  ROUTINE_WRITE_SEVERAL_RE_READS_UNSUPPORTED,  Mutation.twice,   2
+  ROUTINE_WRITE_NODE_ID_FROM_KEYS_UNSUPPORTED, Mutation.withId,  rentalId
+  ROUTINE_WRITE_NON_NULL_RE_READ_UNSUPPORTED,  Mutation.nonNull, rental
+  """)

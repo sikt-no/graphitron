@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the re-reading field.
+
+The one field re-reading a `@routine` write's object result is single and non-null, and the result has no errors field. A re-read that finds no row, a routine that wrote nothing or a row the caller may not read, could not answer such a field.
+
+*Next step.* Make the field nullable. See xref:directives/routine.adoc#write[Writes on Mutation].

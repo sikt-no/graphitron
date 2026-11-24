@@ -33,5 +33,6 @@ public final class OccurrenceDepthDefects {
             .execute();
         dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph), t.TOUCHED_AT.ne(readAt)).execute();
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.DEPTHS);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.ROUTINE_WRITES);
     }
 }

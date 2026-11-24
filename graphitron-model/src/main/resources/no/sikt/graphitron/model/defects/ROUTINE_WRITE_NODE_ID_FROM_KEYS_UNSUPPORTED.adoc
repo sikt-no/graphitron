@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the field under the result that encodes the id.
+
+A field under a `@routine` write's object result that encodes a node id from the keys the routine returned is not generated yet: the re-read that would read those keys back is the one the write captures for a table-bound field.
+
+*Next step.* Read the node's table under the result, a field of its `@table` type, and take the id from there. See xref:directives/routine.adoc#write[Writes on Mutation].

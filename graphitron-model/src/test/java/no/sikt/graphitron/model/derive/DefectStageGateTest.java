@@ -31,7 +31,10 @@ import static org.jooq.impl.DSL.table;
  * code the vocabulary declares is raised by some stage.
  *
  * <p>Read off the store's own definitions rather than a roster kept here. A stored writer is a stage's
- * rule view, one per stage in {@code meta_stage_rule}: the codes it emits are the code literals in
+ * rule view in {@code meta_stage_rule}, usually one per stage; a stage may raise from a second where
+ * its first is a long union, since H2 keeps a parsed copy of a union at every level of its nesting and
+ * each further arm costs every session holding the rule more than a short rule of its own does. The
+ * codes it emits are the code literals in
  * the view bodies its read expands, and the {@code CHECK} lists of the tables it reaches that carry a
  * code column, which is how a defect relation of its own feeds a rule. A Java writer states its stage
  * and codes as constants beside the statement that writes them, and is listed here.
@@ -46,7 +49,7 @@ class DefectStageGateTest {
     private static final Pattern STAGE_LITERAL = Pattern.compile("'([a-z][a-z0-9-]*)'");
 
     @Test
-    @DisplayName("every defect rule view is one meta_stage_rule states, one per stage")
+    @DisplayName("every defect rule view is one meta_stage_rule states")
     void everyRuleViewIsWritten() {
         ThreadConfinedStore.run(dsl -> {
             var declared = new TreeSet<String>(dsl.select(field(name("TABLE_NAME"), String.class))
@@ -62,10 +65,6 @@ class DefectStageGateTest {
                     + " named *" + RULE_SUFFIX.toLowerCase() + " in the store; a view no Rule names"
                     + " is a rule nobody writes")
                 .isEqualTo(declared);
-            var rules = StageAnswerAgreementTest.defectRules(dsl);
-            assertThat(rules.stream().map(StageAnswerAgreementTest.DefectRule::stage).distinct().count())
-                .as("one rule per stage")
-                .isEqualTo(rules.size());
         });
     }
 

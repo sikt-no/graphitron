@@ -1421,12 +1421,11 @@ pass and no stratum that clears and recomputes.
       * **A node id is encoded from a routine result's returned keys** `open`. `NODE_ID_LANDS_ON_TABLE`
         refuses a `@nodeId(typeName:)` under a routine write's object result, its rule taking a
         foreign key and not the name-matched keys that carry the node's key out of the result.
-      * **What the model admits the emitters follow** `open`. An id encoded from returned keys, a
-        non-null single field under a routine with no errors field, a list field taking one row by
-        a lift of one key per parent, a routine lift with no step and several fields re-reading a routine's
-        rows are no defect, the routine ones `RoutineWriteQuery.Unrendered`, kept out of the rows by
-        name, so each emitter refusal joins
-        "The store, the generator and the emitters agree on what a service call can be" before the walk's refusals go.
+      * **What the model admits the emitters follow** `open`. A list field taking one row by a lift
+        of one key per parent is no defect, so the emitter's refusal joins "The store, the generator
+        and the emitters agree on what a service call can be" before the walk's refusals go. The routine
+        write's four, an id encoded from returned keys, a non-null single re-read with no errors field,
+        a lift with no step and several fields re-reading the rows, are stored deferrals at the field.
     * **A name claimed that does not exist is one defect** `open`. `TABLE_UNRESOLVED`,
       `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
       written name resolving to nothing, the position saying what was named, so they fold into one

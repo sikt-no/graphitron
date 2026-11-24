@@ -42,6 +42,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_ENTRY_DEFE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_WRITE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static org.jooq.impl.DSL.field;
@@ -140,6 +141,15 @@ public final class EntryDefects {
 
     /** The lift and column defects' rule, {@link OccurrenceDepthDefects}. */
     public static final Rule DEPTHS = new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE);
+
+    /**
+     * The routine writes the emitter does not generate yet, raised by {@link OccurrenceDepthDefects}
+     * beside {@link #DEPTHS} rather than as arms of it: H2 keeps a parsed copy of a union at every
+     * level of its nesting, so an arm added to a long union costs every session holding it more than
+     * a short rule of its own does.
+     */
+    public static final Rule ROUTINE_WRITES =
+        new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_ROUTINE_WRITE_ENTRY_DEFECT_RULE);
 
     /** The entity key stage's rule, {@link EntityKeyAlternatives}. */
     public static final Rule ENTITY_KEYS =

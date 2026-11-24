@@ -29940,6 +29940,140 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                ELSE 'NO_KEY_FROM_PARENT' END;
 COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
 
+CREATE VIEW graphitron_occurrence_routine_write_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A routine write handing back records of a table along no path out of the function's result, at the
+-- field: with no first step there is no key to capture and lift the records by, and the write is not
+-- generated yet. The detail is the table the records land on.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED', res.table_name, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_producer_routine pr ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate
+  JOIN graphitron_occurrence_producer_result res ON res.graph_name = p.graph_name AND res.coordinate = p.coordinate
+  -- A table-valued function's write: a routine with no table of its own is called, not read in FROM.
+  JOIN sql_table fn
+    ON fn.source_name = pr.routine_source_name AND fn.table_schema = pr.table_schema
+   AND fn.table_name = pr.routine_name
+ WHERE p.kind = 'ROUTINE' AND p.start = 'ROOT'
+   AND res.shape IN ('SINGLE_RECORD', 'RECORD_LIST') AND res.table_name IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s
+                    WHERE s.graph_name = p.graph_name AND s.coordinate = p.coordinate
+                      AND s.target_type = ft.target_type_name AND s.position = 0)
+UNION ALL
+-- A routine write's object result with a field under it encoding a node id from the returned keys, at
+-- the field: the re-read that would encode it is not generated yet. The detail is the field's name.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ROUTINE_WRITE_NODE_ID_FROM_KEYS_UNSUPPORTED', c.name, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_producer_routine pr ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate
+  JOIN graphitron_occurrence_producer_result res ON res.graph_name = p.graph_name AND res.coordinate = p.coordinate
+  -- A table-valued function's write: a routine with no table of its own is called, not read in FROM.
+  JOIN sql_table fn
+    ON fn.source_name = pr.routine_source_name AND fn.table_schema = pr.table_schema
+   AND fn.table_name = pr.routine_name
+  JOIN graphitron_occurrence c
+    ON c.graph_name = p.graph_name AND c.parent_coordinate = p.coordinate AND c.kind = 'FIELD'
+  JOIN graphitron_binding_claim x
+    ON x.graph_name = c.graph_name AND x.coordinate = c.element_coordinate AND x.kind = 'NODE_ID'
+ WHERE p.kind = 'ROUTINE' AND p.start = 'ROOT'
+   AND res.shape = 'OBJECT'
+   AND EXISTS (SELECT 1 FROM graphitron_join_path jp
+                WHERE jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+                  AND jp.target_type = ft.target_type_name AND jp.target_source_name = pr.routine_source_name
+                  AND jp.target_schema = pr.table_schema AND jp.target_table = pr.routine_name)
+UNION ALL
+-- A routine write's object result re-read by more than one field, at the field: the write captures
+-- the keys of one, and several are not generated yet. The detail is the number of fields.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ROUTINE_WRITE_SEVERAL_RE_READS_UNSUPPORTED', CAST((SELECT COUNT(*) FROM graphitron_occurrence c
+           JOIN graphitron_occurrence_producer_lift k
+             ON k.graph_name = c.graph_name AND k.coordinate = c.coordinate AND k.read = 'COLUMNS'
+          WHERE c.graph_name = p.graph_name AND c.parent_coordinate = p.coordinate AND c.kind = 'FIELD') AS VARCHAR),
+       'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_producer_routine pr ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate
+  JOIN graphitron_occurrence_producer_result res ON res.graph_name = p.graph_name AND res.coordinate = p.coordinate
+  -- A table-valued function's write: a routine with no table of its own is called, not read in FROM.
+  JOIN sql_table fn
+    ON fn.source_name = pr.routine_source_name AND fn.table_schema = pr.table_schema
+   AND fn.table_name = pr.routine_name
+ WHERE p.kind = 'ROUTINE' AND p.start = 'ROOT'
+   AND res.shape = 'OBJECT'
+   AND EXISTS (SELECT 1 FROM graphitron_join_path jp
+                WHERE jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+                  AND jp.target_type = ft.target_type_name AND jp.target_source_name = pr.routine_source_name
+                  AND jp.target_schema = pr.table_schema AND jp.target_table = pr.routine_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
+                JOIN graphitron_binding_claim x
+                  ON x.graph_name = c.graph_name AND x.coordinate = c.element_coordinate AND x.kind = 'NODE_ID'
+               WHERE c.graph_name = p.graph_name AND c.parent_coordinate = p.coordinate AND c.kind = 'FIELD')
+   AND (SELECT COUNT(*) FROM graphitron_occurrence c
+           JOIN graphitron_occurrence_producer_lift k
+             ON k.graph_name = c.graph_name AND k.coordinate = c.coordinate AND k.read = 'COLUMNS'
+          WHERE c.graph_name = p.graph_name AND c.parent_coordinate = p.coordinate AND c.kind = 'FIELD') > 1
+UNION ALL
+-- A routine write's object result re-read by one field that is single and non-null, at the field: a
+-- re-read finding no row could not answer it, and the write is not generated yet. The detail is the
+-- field's name.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ROUTINE_WRITE_NON_NULL_RE_READ_UNSUPPORTED', c.name, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_producer_routine pr ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate
+  JOIN graphitron_occurrence_producer_result res ON res.graph_name = p.graph_name AND res.coordinate = p.coordinate
+  -- A table-valued function's write: a routine with no table of its own is called, not read in FROM.
+  JOIN sql_table fn
+    ON fn.source_name = pr.routine_source_name AND fn.table_schema = pr.table_schema
+   AND fn.table_name = pr.routine_name
+  JOIN graphitron_occurrence c
+    ON c.graph_name = p.graph_name AND c.parent_coordinate = p.coordinate AND c.kind = 'FIELD'
+  JOIN graphitron_occurrence_producer_lift k
+    ON k.graph_name = c.graph_name AND k.coordinate = c.coordinate AND k.read = 'COLUMNS'
+  JOIN graphitron_field cf ON cf.graph_name = c.graph_name AND cf.coordinate = c.element_coordinate
+ WHERE p.kind = 'ROUTINE' AND p.start = 'ROOT'
+   AND res.shape = 'OBJECT'
+   AND EXISTS (SELECT 1 FROM graphitron_join_path jp
+                WHERE jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+                  AND jp.target_type = ft.target_type_name AND jp.target_source_name = pr.routine_source_name
+                  AND jp.target_schema = pr.table_schema AND jp.target_table = pr.routine_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
+                JOIN graphitron_binding_claim x
+                  ON x.graph_name = c.graph_name AND x.coordinate = c.element_coordinate AND x.kind = 'NODE_ID'
+               WHERE c.graph_name = p.graph_name AND c.parent_coordinate = p.coordinate AND c.kind = 'FIELD')
+   AND (SELECT COUNT(*) FROM graphitron_occurrence c
+           JOIN graphitron_occurrence_producer_lift k
+             ON k.graph_name = c.graph_name AND k.coordinate = c.coordinate AND k.read = 'COLUMNS'
+          WHERE c.graph_name = p.graph_name AND c.parent_coordinate = p.coordinate AND c.kind = 'FIELD') = 1
+   AND NOT cf.is_list AND cf.non_null;
+COMMENT ON VIEW graphitron_occurrence_routine_write_entry_defect_rule IS 'One row the routine write defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a Mutation @routine whose record field is lifted along no path out of the function''s result giving one ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED row at the field.';
+
 CREATE VIEW graphitron_occurrence_source_claim_declaring_table_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
 SELECT DISTINCT o.graph_name, o.coordinate, 'declaringTable', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
   FROM graphitron_occurrence o
@@ -32178,6 +32312,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record', 'graphitron_occurrence_node_id_slot_record_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record_column', 'graphitron_occurrence_node_id_slot_record_column_rule'),
   ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_depth_entry_defect_rule'),
+  ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_routine_write_entry_defect_rule'),
   ('occurrence-depth-defects', 'graphitron_occurrence_list_element_defect', 'graphitron_occurrence_list_element_defect_rule'),
   ('occurrence-depths', 'graphitron_join_path_claimed', 'graphitron_join_path_claimed_rule'),
   ('occurrence-depths', 'graphitron_join_path_step', 'graphitron_join_path_step_rule'),
@@ -33350,6 +33485,14 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.'),
   ('SERVICE_PAYLOAD_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_PAYLOAD_IN_A_LIST',
    'A @service hands back a list of table records, or of the class a payload''s data field is read off, under a list of payloads whose field taking them is a list too, and each element fills one payload: make the payload''s field a single one, return one payload, or hand back the payloads themselves.'),
+  ('ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED',
+   'A routine write hands back records of a table along no path out of the function''s result, so it has no key to capture and lift them by, and such a write is not generated yet: write a @reference path from the function''s result to the table.'),
+  ('ROUTINE_WRITE_NODE_ID_FROM_KEYS_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_WRITE_NODE_ID_FROM_KEYS_UNSUPPORTED',
+   'A field under a routine write''s object result encodes a node id from the keys the routine returned, and such a re-read is not generated yet: read the node''s table under the result instead.'),
+  ('ROUTINE_WRITE_SEVERAL_RE_READS_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_WRITE_SEVERAL_RE_READS_UNSUPPORTED',
+   'A routine write''s object result is re-read by more than one field, and the write captures the keys of one: keep one field re-reading the result.'),
+  ('ROUTINE_WRITE_NON_NULL_RE_READ_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_WRITE_NON_NULL_RE_READ_UNSUPPORTED',
+   'The one field re-reading a routine write''s object result is single and non-null, and a re-read finding no row could not answer it: make the field nullable.'),
   ('ROUTINE_WRITE_PATH_FANS_OUT', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_PATH_FANS_OUT',
    'A routine write handing back one record reads it along a path with a step that reaches many rows, so one written row could answer as several: return a list, or read the record along a path whose every step reaches one row.'),
   ('ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN',
@@ -35149,6 +35292,10 @@ INSERT INTO meta_relation VALUES
    'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.',
    'The defects judging the facts occurrence-bindings and occurrence-builds write, a child producer''s lift and the column a field reads or writes, by a stage of their own after them, so neither the depth loop nor the gatherer''s one rule over every arm carries them.'),
+  ('graphitron_occurrence_routine_write_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the routine write defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a Mutation @routine whose record field is lifted along no path out of the function''s result giving one ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED row at the field.',
+   'The routine writes the emitter does not generate yet, judged by the occurrence-depth-defects stage beside its occurrence rule rather than inside it: H2 holds a parsed copy of a union at every level of its nesting, so arms added to the occurrence rule cost every session holding it more than a rule of their own does.'),
   ('graphitron_field_target_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the field target defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the field-targets stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.',
