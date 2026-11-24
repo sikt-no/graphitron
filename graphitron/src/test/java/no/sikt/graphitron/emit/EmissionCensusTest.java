@@ -329,17 +329,22 @@ class EmissionCensusTest {
     @Test
     void theCensusOfTheExampleSchemasRootReads() {
         var emitted = new ArrayList<String>();
+        var nodes = new ArrayList<String>();
         var held = new TreeMap<String, List<String>>();
         for (var result : roots.values()) {
             switch (result) {
                 case RootQuery.Emitted e -> emitted.add(e.coordinate());
+                case RootQuery.NodeFetcher n -> nodes.add(n.coordinate());
                 case RootQuery.NotYet n -> held.computeIfAbsent(n.reason().name(), k -> new ArrayList<>())
                     .add(n.coordinate());
             }
         }
         java.util.Collections.sort(emitted);
+        java.util.Collections.sort(nodes);
         held.values().forEach(java.util.Collections::sort);
         org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
+            soft.assertThat(nodes).as("the node fetchers the store emits")
+                .containsExactly("Query.internalNode", "Query.node", "Query.nodes");
             soft.assertThat(emitted).as("the roots the store emits").containsExactly(
                 "Query.actorsByFilmFilter", "Query.actorsByFilmFilterConnection", "Query.actorsByFilmIds",
                 "Query.addressesByCountryName", "Query.addressesByCustomerIds",
@@ -410,10 +415,9 @@ class EmissionCensusTest {
                     "Query.allContentConnectionByFilmTitle", "Query.allFanItems", "Query.allFanLabelled",
                     "Query.allParties", "Query.allPartiesConnection", "Query.allSubjects",
                     "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documents",
-                    "Query.documentsConnection", "Query.fanItem", "Query.internalNode", "Query.node",
-                    "Query.nodes", "Query.occupantById", "Query.occupantByOptionalId",
-                    "Query.occupantsByAddress", "Query.occupantsByFilter", "Query.occupantsByIds",
-                    "Query.occupantsByIdsConnection", "Query.occupantsByLastName",
+                    "Query.documentsConnection", "Query.fanItem", "Query.occupantById",
+                    "Query.occupantByOptionalId", "Query.occupantsByAddress", "Query.occupantsByFilter",
+                    "Query.occupantsByIds", "Query.occupantsByIdsConnection", "Query.occupantsByLastName",
                     "Query.occupantsByMixedNamePrefix", "Query.occupantsByName",
                     "Query.occupantsByNameConnection", "Query.occupantsByNamePrefix",
                     "Query.occupantsByNullableIds", "Query.occupantsByStoreId",

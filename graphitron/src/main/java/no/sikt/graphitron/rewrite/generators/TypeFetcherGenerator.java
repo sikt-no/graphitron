@@ -734,8 +734,15 @@ public class TypeFetcherGenerator {
                             btf.name(), outputPackage));
                     }
                 }
-                case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
-                case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
+                // A node fetcher the store states renders from it; the walk's field otherwise.
+                case QueryField.QueryNodeField f -> builder.addMethod(
+                    launchers.nodeFetcherFor(f.parentTypeName(), f.name())
+                        .map(node -> buildQueryNodeFetcher(node.fieldName(), node.multiTenant(), outputPackage))
+                        .orElseGet(() -> buildQueryNodeFetcher(f.name(), multiTenant(ctx), outputPackage)));
+                case QueryField.QueryNodesField f -> builder.addMethod(
+                    launchers.nodeFetcherFor(f.parentTypeName(), f.name())
+                        .map(node -> buildQueryNodesFetcher(node.fieldName(), node.multiTenant(), outputPackage))
+                        .orElseGet(() -> buildQueryNodesFetcher(f.name(), multiTenant(ctx), outputPackage)));
                 case QueryField.QueryTableInterfaceField f    -> {
                     var interfaceRow = launchers.rowFor(f.parentTypeName(), f.name())
                         .orElseThrow(() -> new IllegalStateException(
@@ -4811,14 +4818,15 @@ public class TypeFetcherGenerator {
                 instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured;
     }
 
-    private static MethodSpec buildQueryNodeFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryNodeField field, String outputPackage) {
+    /** A node fetcher's root method named {@code name}, handing the request to the node dispatcher. */
+    private static MethodSpec buildQueryNodeFetcher(String name, boolean multiTenant, String outputPackage) {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
         TypeName valueType = RECORD;
-        if (!multiTenant(ctx)) {
+        if (!multiTenant) {
             // The node is read through the entity loader, so the field is asynchronous; a failed
             // read is routed as any loader-backed field's is.
-            return MethodSpec.methodBuilder(field.name())
+            return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(asyncResultType(valueType))
                 .addParameter(ENV, "env")
@@ -4829,7 +4837,7 @@ public class TypeFetcherGenerator {
                     .build())
                 .build();
         }
-        var builder = MethodSpec.methodBuilder(field.name())
+        var builder = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
@@ -4845,14 +4853,15 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-    private static MethodSpec buildQueryNodesFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryNodesField field, String outputPackage) {
+    /** A plural node fetcher's root method named {@code name}, handing the request to the node dispatcher. */
+    private static MethodSpec buildQueryNodesFetcher(String name, boolean multiTenant, String outputPackage) {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
-        if (!multiTenant(ctx)) {
+        if (!multiTenant) {
             // The dispatcher answers the list's result itself, each element null with an error at
             // its own path when its batch failed; only a throw outside every slot is routed here.
             TypeName valueType = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
-            return MethodSpec.methodBuilder(field.name())
+            return MethodSpec.methodBuilder(name)
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(asyncResultType(valueType))
                 .addParameter(ENV, "env")
@@ -4866,7 +4875,7 @@ public class TypeFetcherGenerator {
         // Multi-tenant elements are the dispatcher's per-node envelopes, each handing its own
         // tenant down; the list itself is wrapped in the field's envelope as usual.
         TypeName valueType = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
-        return MethodSpec.methodBuilder(field.name())
+        return MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(asyncResultType(valueType))
             .addParameter(ENV, "env")

@@ -231,13 +231,17 @@ public final class LauncherCommands {
         }
         // The @orderBy spec of each root the store states, which its row's helper renders.
         var argumentOrders = new java.util.LinkedHashMap<FieldCoordinates, OrderBySpec.Argument>();
+        // And each node fetcher the store states, whose root method is rendered from it.
+        var nodeFetchers = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher>();
         for (var root : roots.values()) {
             if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted && emitted.choice() != null) {
                 argumentOrders.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()),
                     argumentOrderOf(emitted));
+            } else if (root instanceof no.sikt.graphitron.emit.RootQuery.NodeFetcher node) {
+                nodeFetchers.put(FieldCoordinates.coordinates(node.parentType(), node.fieldName()), node);
             }
         }
-        return new LauncherRelation(rows, carrierDsl, connections, argumentOrders);
+        return new LauncherRelation(rows, carrierDsl, connections, argumentOrders, nodeFetchers);
     }
 
     /**

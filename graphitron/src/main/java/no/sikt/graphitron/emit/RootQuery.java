@@ -27,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
@@ -41,6 +42,7 @@ import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
@@ -50,6 +52,9 @@ import static org.jooq.impl.DSL.selectOne;
  * Each root {@code SELECT} or {@code LOOKUP} producer, and whether the store states its fetcher whole:
  * read off its occurrence, the table its records are rows of, the type whose projection selects them,
  * its default order and the condition method its table has.
+ *
+ * <p>A node fetcher is a {@link NodeFetcher}, its root method only handing the request to the node
+ * dispatcher.
  *
  * <p>Roots flip piece by piece, so a producer the store does not state whole yet is {@link NotYet}, its
  * reason the stored fact that holds it back, and its fetcher stays the walk's. The census in
@@ -88,6 +93,21 @@ public final class RootQuery {
     /** One root producer's verdict, keyed by its occurrence. */
     public sealed interface Result {
         String coordinate();
+    }
+
+    /**
+     * A node fetcher, a root returning the {@code Node} interface by the id or ids it decodes: its
+     * field, whether it answers a list, and whether the build is multi-tenant, which decides whether
+     * it answers through the entity loader or in the tenant's envelope. What it dispatches to is the
+     * node dispatcher's, generated from the store's served nodes.
+     */
+    public record NodeFetcher(String coordinate, String parentType, String fieldName, boolean plural,
+                              boolean multiTenant) implements Result {
+        public NodeFetcher {
+            Objects.requireNonNull(coordinate, "coordinate");
+            Objects.requireNonNull(parentType, "parentType");
+            Objects.requireNonNull(fieldName, "fieldName");
+        }
     }
 
     /** A root the store holds back, and why. */
@@ -165,6 +185,7 @@ public final class RootQuery {
         var ge = GRAPHITRON_EDGE;
         var te = GRAPHITRON_TABLETYPE.as("te");
         var cc = GRAPHITRON_CONNECTION_CARRIER;
+        var pn = GRAPHITRON_OCCURRENCE_PRODUCER_NODE;
         var graph = store.graphName();
         // A connection's records are its edge's items, whose table is their type's, and not the
         // producer's result, which is the connection.
@@ -187,7 +208,8 @@ public final class RootQuery {
                 field(exists(selectOne().from(tt).where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME),
                     tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME), tt.TABLE_SOURCE_NAME.eq(r.TABLE_SOURCE_NAME),
                     tt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA), tt.TABLE_NAME.eq(r.TABLE_NAME)))),
-                ge.ITEM_TYPE_NAME, cc.DEFAULT_FIRST_VALUE)
+                ge.ITEM_TYPE_NAME, cc.DEFAULT_FIRST_VALUE,
+                field(exists(selectOne().from(pn).where(pn.GRAPH_NAME.eq(p.GRAPH_NAME), pn.COORDINATE.eq(p.COORDINATE)))))
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
@@ -207,8 +229,15 @@ public final class RootQuery {
         var lookups = lookups(store);
         var choices = choices(store);
         var maxPageSize = maxPageSize(store);
+        boolean multiTenant = store.dsl().fetchExists(STORE_GRAPH_TENANT_COLUMN,
+            STORE_GRAPH_TENANT_COLUMN.GRAPH_NAME.eq(graph));
         var out = new LinkedHashMap<String, Result>();
         for (var row : producers) {
+            if (Boolean.TRUE.equals(row.value19())) {
+                out.put(row.value1(), new NodeFetcher(row.value1(), row.value4(), row.value5(),
+                    "RECORD_LIST".equals(row.value3()), multiTenant));
+                continue;
+            }
             boolean connection = row.value11() != null;
             var at = new Producer(row.value1(), row.value2(), row.value3(), row.value4(), row.value5(),
                 connection ? row.value17() : row.value6(), row.value7(), row.value8(), row.value9());
