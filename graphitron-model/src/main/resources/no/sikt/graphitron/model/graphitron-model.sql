@@ -3532,6 +3532,8 @@ COMMENT ON COLUMN graphitron_field.description IS 'the docstring the generator e
 COMMENT ON COLUMN graphitron_field.bound_name IS 'the name the field reads by: its @field(name:) where the field''s first @field application wrote one, else the field''s own name. Stated once here so that no reader joins the binding and falls back to the field name itself; what a name finds, a column or a member of a class, is the reader''s question';
 COMMENT ON COLUMN graphitron_field.bound_name_upper IS 'the upper-cased form of bound_name, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper. Generated, so nothing writes it';
 CREATE INDEX graphitron_field_name_ix ON graphitron_field (graph_name, field_name);
+CREATE INDEX graphitron_field_named_type_ix ON graphitron_field (graph_name, named_type);
+COMMENT ON INDEX graphitron_field_named_type_ix IS 'Serves a rule asking a graph for the fields returning one type, as the fetchers stage''s RESULT_SHAPES_CONFLICT asks of each declaration whether a write and a service both return it: without it, the rule probes the fields, or the producers they join, by graph alone, once per declaration.';
 COMMENT ON INDEX graphitron_field_name_ix IS 'Serves a rule asking a graph for the fields of one name, as the Relay shape names its edges and node fields: without it, a rule filtered to one graph probes the fields by graph alone, and graphitron_edge_rule did so once per object type, 2.9 s on sis against 0.1 s with this index.';
 
 CREATE TABLE graphitron_enum_value (
@@ -13673,37 +13675,35 @@ UNION ALL
 -- builds and holds no class, returned by a @service as well, whose object is a class of its own, so
 -- the payload's fields would read two different objects. Where the type is also a row, the mix above
 -- is what is judged.
+-- Each declaration is tested by its own graph and name, every read keyed on both, rather than joined to
+-- a derived list of the conflicting types, which H2 re-evaluated per declaration once the stage's graph
+-- filter was pushed in, or tested against the list, whose own reads then narrowed to no graph.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'fetchers'
-  FROM (SELECT r.graph_name, r.type_name
-          FROM (SELECT graph_name, type_name FROM graphitron_result
-                 GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
-         WHERE NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
-                             WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
-                    AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
-                                      JOIN code_graph_class k
-                                        ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
-                                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name
-                                       AND k.is_jooq_record = TRUE))
-        UNION
-        SELECT wf.graph_name, wf.named_type
-          FROM graphitron_producer w
-          JOIN graphitron_field wf
-            ON wf.graph_name = w.graph_name AND wf.type_name = w.type_name AND wf.field_name = w.field_name
-         WHERE w.kind IN ('INSERT', 'UPDATE', 'DELETE')
-           AND EXISTS (SELECT 1 FROM graphitron_producer sp
-                         JOIN graphitron_field sf
-                           ON sf.graph_name = sp.graph_name AND sf.type_name = sp.type_name
-                          AND sf.field_name = sp.field_name
-                        WHERE sp.graph_name = wf.graph_name AND sp.kind = 'SERVICE'
-                          AND sf.named_type = wf.named_type)
-           AND EXISTS (SELECT 1 FROM graphitron_result_class rc
-                        WHERE rc.graph_name = wf.graph_name AND rc.type_name = wf.named_type)
-           AND NOT EXISTS (SELECT 1 FROM graphitron_result x
-                            WHERE x.graph_name = wf.graph_name AND x.type_name = wf.named_type
-                              AND x.shape = 'ROW')) c
-  JOIN graphql_ast_type_declaration_entry d
-    ON d.graph_name = c.graph_name AND d.name = c.type_name
+  FROM graphql_ast_type_declaration_entry d
+ WHERE ((SELECT COUNT(*) FROM graphitron_result r
+          WHERE r.graph_name = d.graph_name AND r.type_name = d.name) > 1
+        AND NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
+                          WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name)
+                 AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                                   JOIN code_graph_class k
+                                     ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
+                                  WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name
+                                    AND k.is_jooq_record = TRUE)))
+    OR (EXISTS (SELECT 1 FROM graphitron_field wf
+                  JOIN graphitron_producer w
+                    ON w.graph_name = wf.graph_name AND w.type_name = wf.type_name AND w.field_name = wf.field_name
+                 WHERE wf.graph_name = d.graph_name AND wf.named_type = d.name
+                   AND w.kind IN ('INSERT', 'UPDATE', 'DELETE'))
+        AND EXISTS (SELECT 1 FROM graphitron_field sf
+                      JOIN graphitron_producer sp
+                        ON sp.graph_name = sf.graph_name AND sp.type_name = sf.type_name
+                       AND sp.field_name = sf.field_name
+                     WHERE sf.graph_name = d.graph_name AND sf.named_type = d.name AND sp.kind = 'SERVICE')
+        AND EXISTS (SELECT 1 FROM graphitron_result_class rc
+                     WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name)
+        AND NOT EXISTS (SELECT 1 FROM graphitron_result x
+                         WHERE x.graph_name = d.graph_name AND x.type_name = d.name AND x.shape = 'ROW'))
 UNION ALL
 -- A producer handing over an object of a class whose supertype chain reaches a class the graph reads
 -- no copy of, at the field: whether the object's fields are read through the Record API or by its
@@ -21536,17 +21536,18 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND mp.position = cp.position
   JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.landing_coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  -- The occurrence's element is an argument or an input field, never both, so at most one of these
+  -- matches; the type it names must be an input object. Joined rather than tested in a correlated
+  -- EXISTS over a union, which H2 re-ran per candidate pair once the stage's graph filter was pushed in.
+  LEFT JOIN graphitron_argument a ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = o.graph_name AND t.type_name = COALESCE(a.named_type, f.named_type)
+   AND t.kind = 'INPUT_OBJECT'
  WHERE cp.fill = 'ARGUMENT'
    -- The map or Object itself, whatever it holds, or a list of either.
    AND (mp.erased_class IN ('java.util.Map', 'java.lang.Object')
         OR mp.element_class IN ('java.util.Map', 'java.lang.Object'))
-   AND EXISTS (SELECT 1 FROM graphitron_type t
-                WHERE t.graph_name = o.graph_name AND t.kind = 'INPUT_OBJECT'
-                  AND t.type_name IN (SELECT a.named_type FROM graphitron_argument a
-                                       WHERE a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
-                                      UNION ALL
-                                      SELECT f.named_type FROM graphitron_field f
-                                       WHERE f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate))
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
 -- A @condition's parameter taking a jOOQ record, built from an input object: a condition takes the
