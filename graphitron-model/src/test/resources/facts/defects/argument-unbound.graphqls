@@ -41,10 +41,13 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   ARGUMENT_UNBOUND, Query.filmsFirstByService(first:)
   ARGUMENT_UNBOUND, Query.filmsWithExtra(extra:)
   ARGUMENT_UNBOUND, Query.filmsByPrefixAndExtra(extra:)
+  ARGUMENT_UNBOUND, Mutation.rentWithNote(note:)
   """)
 
-# The bound arguments bind the method's parameter; the unbound one binds nothing.
-extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter", rows: """
+# The bound arguments bind the method's parameter; the unbound one binds nothing. The routine writes'
+# bindings are the routine's own case and are pinned where routine parameters are.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter",
+    where: "call_kind <> 'ROUTINE'", rows: """
   coordinate,                    call_coordinate,      call,     position, call_kind
   Query.filmsFirstByService(ids:), Query.filmsFirstByService, producer, 1,  SERVICE
   Query.filmsByService(ids:),    Query.filmsByService, producer, 1,        SERVICE
@@ -58,4 +61,25 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,             coordinate
   ARGUMENT_UNBOUND, Query.filmsByKeyAndPrefix(filmId:)
   ARGUMENT_UNBOUND, Query.filmsByKeyAndPrefix(titlePrefix:)
+  """)
+
+# A routine write's re-read is keyed rather than filtered, so on a Mutation @routine every argument
+# reaches a parameter or nowhere: rentWithNote takes a note rent_film has no parameter for, refused at
+# the argument, while rentMapped reads every argument it takes and draws nothing. A Query routine's
+# argument is not judged this way, since a read routine may take a filter.
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+
+type Mutation {
+  rentWithNote(inventoryId: Int!, customerId: Int!, note: String): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentMapped(inventoryId: Int!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+}
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,             coordinate
+  ARGUMENT_UNBOUND, Mutation.rentMapped(inventoryId:)
+  ARGUMENT_UNBOUND, Mutation.rentMapped(customerId:)
   """)

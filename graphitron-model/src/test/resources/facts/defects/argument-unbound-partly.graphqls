@@ -34,7 +34,15 @@ type Query {
       method: "filmTitlePrefixCondition", argMapping: "titlePrefix: filter.titlePrefix"}, override: true)
 }
 
+# A routine write's input is judged the same way: rentFromInput maps in.inventoryId and in.customerId
+# to rent_film's parameters and leaves in.reason behind, ARGUMENT_UNBOUND at RentInput.reason.
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+input RentInput { inventoryId: Int! customerId: Int! reason: String }
+
 type Mutation {
+  rentFromInput(in: RentInput!): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: in.inventoryId, pCustomerId: in.customerId")
+    @reference(path: [{table: "rental"}])
   reviewPartly(review: Review!): FilmReviewPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
       method: "submit",
@@ -50,6 +58,7 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   ARGUMENT_UNBOUND, Review.note
   ARGUMENT_UNBOUND, FilmNestedFilter.inner
   ARGUMENT_UNBOUND, FilmNestedFilter.titles
+  ARGUMENT_UNBOUND, RentInput.reason
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
@@ -65,4 +74,7 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   ARGUMENT_UNBOUND, FilmInnerFilter.description
   ARGUMENT_UNBOUND, FilmInnerFilter.length
   ARGUMENT_UNBOUND, FilmTitleFilter.title
+  ARGUMENT_UNBOUND, Mutation.rentFromInput(in:)
+  ARGUMENT_UNBOUND, RentInput.inventoryId
+  ARGUMENT_UNBOUND, RentInput.customerId
   """)

@@ -9056,8 +9056,8 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
   -- A name on an entry's left side that no parameter of the called method carries: the method the
   -- mapping's code reference, which shares the site's key, resolved to. Silent where the reference
   -- resolved to no single method, or the method was compiled without parameter names, which
-  -- PARAMETER_NAMES_MISSING and the reference's own defects report; @routine and @outbox name no code
-  -- reference under their mapping and are judged where their names are. The detail is the name written.
+  -- PARAMETER_NAMES_MISSING and the reference's own defects report; a root @routine's names are judged
+  -- with the routine's call at occurrence-producers, and @outbox's where its names are. The detail is the name written.
   SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
          'ARGMAPPING_PARAMETER_UNKNOWN', p.target_name
     FROM graphitron_ast_argmapping_pair_entry p
@@ -9258,8 +9258,8 @@ UNION ALL
 -- A name on an entry's left side that no parameter of the called method carries: the method the
 -- mapping's code reference, which shares the site's key, resolved to. Silent where the reference
 -- resolved to no single method, or the method was compiled without parameter names, which
--- PARAMETER_NAMES_MISSING and the reference's own defects report; @routine and @outbox name no code
--- reference under their mapping and are judged where their names are. The detail is the name written.
+-- PARAMETER_NAMES_MISSING and the reference's own defects report; a root @routine's names are judged
+-- with the routine's call at occurrence-producers, and @outbox's where its names are. The detail is the name written.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
        'ARGMAPPING_PARAMETER_UNKNOWN', p.target_name
   FROM graphitron_ast_argmapping_pair_entry p
@@ -20908,10 +20908,11 @@ SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_MARK
  WHERE x.source_name IS NOT NULL
  GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column
 UNION ALL
--- An argument of a @service field nothing takes, at the argument: a service composes with no filter,
--- so an argument nothing takes, itself or anything under it (graphitron_occurrence_taken), has
--- nowhere to go. Raised here, where the taken fact is written, and only where the service's method
--- resolved, an unresolved one being its reference's defect. The arguments graphitron reads itself, an
+-- An argument of a @service field or of a routine write nothing takes, at the argument: a service
+-- composes with no filter, and a routine write's re-read is keyed rather than filtered, so an argument
+-- nothing takes, itself or anything under it (graphitron_occurrence_taken), has nowhere to go. Raised
+-- here, where the taken fact is written, and only where the service's method or the routine resolved,
+-- an unresolved one being its reference's or its element's defect. The arguments graphitron reads itself, an
 -- @orderBy and a connection's page arguments, are taken by it; the ones expansion mints are written
 -- nowhere and so are not reached.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
@@ -20919,12 +20920,23 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
   FROM graphitron_occurrence o
   JOIN graphitron_occurrence po ON po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
   JOIN graphitron_occurrence_producer p
-    ON p.graph_name = po.graph_name AND p.coordinate = po.coordinate AND p.kind = 'SERVICE'
+    ON p.graph_name = po.graph_name AND p.coordinate = po.coordinate AND p.kind IN ('SERVICE', 'ROUTINE')
   JOIN graphql_ast_element_entry el
     ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
  WHERE o.kind = 'FIELD_ARGUMENT'
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
-                WHERE m.graph_name = po.graph_name AND m.coordinate = po.coordinate AND m.call = 'producer')
+   AND (p.kind = 'SERVICE'
+        AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
+                     WHERE m.graph_name = po.graph_name AND m.coordinate = po.coordinate AND m.call = 'producer')
+        OR p.kind = 'ROUTINE' AND p.start = 'ROOT'
+                AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer_routine pr
+                             WHERE pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate)
+                AND EXISTS (SELECT 1 FROM graphitron_occurrence wo
+                              JOIN graphitron_field wf
+                                ON wf.graph_name = wo.graph_name AND wf.coordinate = wo.element_coordinate
+                              JOIN graphql_root_operation ro
+                                ON ro.graph_name = wf.graph_name AND ro.type_name = wf.type_name
+                               AND ro.operation = 'MUTATION'
+                             WHERE wo.graph_name = p.graph_name AND wo.coordinate = p.coordinate))
    -- Taken by what a call or graphitron reads: a parameter, the tenant, an @outbox key, the ordering
    -- or the page.
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
@@ -20933,8 +20945,8 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                       AND t.taken_by IN ('PARAMETER', 'TENANT', 'OUTBOX', 'ORDER', 'PAGE')
                     WHERE s.graph_name = o.graph_name AND s.step_coordinate = o.coordinate)
 UNION ALL
--- An input field under an argument of a @service field that the argMapping paths taking the
--- argument leave behind, at the input field: something under the argument is taken, by a dotted
+-- An input field under an argument of a @service field or of a routine write that the argMapping paths
+-- taking the argument leave behind, at the input field: something under the argument is taken, by a dotted
 -- path, but nothing takes this field or anything inside it, and no step above it takes it whole.
 -- Reported once, at the outermost such field: its parent has something under it taken. A field
 -- whose input object is built into a class or a record is judged member by member, MEMBER_UNKNOWN's.
@@ -20943,12 +20955,23 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
   FROM graphitron_occurrence o
   JOIN graphitron_occurrence a ON a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate
   JOIN graphitron_occurrence_producer p
-    ON p.graph_name = a.graph_name AND p.coordinate = a.parent_coordinate AND p.kind = 'SERVICE'
+    ON p.graph_name = a.graph_name AND p.coordinate = a.parent_coordinate AND p.kind IN ('SERVICE', 'ROUTINE')
   JOIN graphql_ast_element_entry el
     ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
  WHERE o.kind = 'INPUT_FIELD'
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
-                WHERE m.graph_name = p.graph_name AND m.coordinate = p.coordinate AND m.call = 'producer')
+   AND (p.kind = 'SERVICE'
+        AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
+                     WHERE m.graph_name = p.graph_name AND m.coordinate = p.coordinate AND m.call = 'producer')
+        OR p.kind = 'ROUTINE' AND p.start = 'ROOT'
+                AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer_routine pr
+                             WHERE pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate)
+                AND EXISTS (SELECT 1 FROM graphitron_occurrence wo
+                              JOIN graphitron_field wf
+                                ON wf.graph_name = wo.graph_name AND wf.coordinate = wo.element_coordinate
+                              JOIN graphql_root_operation ro
+                                ON ro.graph_name = wf.graph_name AND ro.type_name = wf.type_name
+                               AND ro.operation = 'MUTATION'
+                             WHERE wo.graph_name = p.graph_name AND wo.coordinate = p.coordinate))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
                     WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
    -- Nothing at or under it is taken.
@@ -24298,7 +24321,31 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
  WHERE p.kind = 'LOOKUP' AND p.start = 'ROOT' AND f.named_type = 'Node'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
-                    WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate);
+                    WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate)
+UNION ALL
+-- A name on a root @routine's argMapping entry that no IN parameter of the routine carries, at the
+-- mapping: the routine the producer calls, its parameters by the generated method's names, which
+-- argMapping binds by. Judged here rather than with the other mappings' names, the routine being
+-- resolved after the pairs are. Silent where the generated method was compiled without parameter
+-- names. Once per mapping, the detail the first such name.
+SELECT pe.graph_name, pe.source_name, pe.source_line, pe.source_column,
+       'ARGMAPPING_PARAMETER_UNKNOWN', MIN(pe.target_name), 'occurrence-producers'
+  FROM graphitron_occurrence_call oc
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = oc.graph_name AND pr.coordinate = oc.coordinate
+  JOIN graphitron_argmapping_site site
+    ON site.graph_name = oc.graph_name AND site.coordinate = oc.application_coordinate
+   AND site.directive_name = oc.application_directive AND site.ordinal = oc.application_ordinal
+   AND site.owner = 'argMapping'
+  JOIN graphitron_ast_argmapping_pair_entry pe
+    ON pe.graph_name = site.graph_name AND pe.source_name = site.source_name
+   AND pe.source_line = site.source_line AND pe.source_column = site.source_column
+ WHERE oc.call_kind = 'ROUTINE' AND pe.target_kind = 'NAME'
+   AND NOT EXISTS (SELECT 1 FROM sql_routine_parameter rp
+                    WHERE rp.source_name = pr.routine_source_name AND rp.table_schema = pr.table_schema
+                      AND rp.routine_name = pr.routine_name
+                      AND (rp.jooq_name = pe.target_name OR REGEXP_LIKE(rp.jooq_name, '^arg[0-9]+$')))
+ GROUP BY pe.graph_name, pe.source_name, pe.source_line, pe.source_column;
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
