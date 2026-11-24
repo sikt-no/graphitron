@@ -7,7 +7,7 @@ priority: 3
 theme: service
 depends-on: []
 created: 2026-11-18
-last-updated: 2026-11-23
+last-updated: 2026-11-24
 ---
 
 # An _entities lookup with vouchers for several values resolves on one connection
@@ -153,27 +153,52 @@ public record ConnectionKey(Set<VouchedFor> vouchedFor) {
 
 ### The cap
 
-The limit becomes a bound on the set's size, a safety bound on the session setting and the policy's
-array rather than "one". It is a runtime setting, not a store fact: nothing in the SDL or the catalog
-states it and no emitter branches on it. It is application-wide, taken by the accepting runtime
-(`Graphitron.runtime(...)`, beside the dialect and jOOQ `Settings`, which are application-wide already),
-and enforced per representation as above. Not on `VoucherKeys`: that is the key-material interface the
-how-to invites consumers to implement, so a cap given through its `accepting(...)` factory would not exist
-for a consumer's own implementation. Nor in the configuration, though the one size bound already in the
-tree lives there: `<maxAllowedPageSize>` is a configuration value the store checks at build time against
-what the schema states (`DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM`). The cap has nothing in B's schema to be
-checked against, since the list whose rows present the values is paged by A, in another build, and what
-it protects is what B's policies cost at runtime, which is a deployment's fact. A runtime value is also
-where the dialect and jOOQ `Settings` already live (`runtime-extension-points.adoc`, 2026-11-16: "The
-jOOQ dialect and settings Graphitron uses the connection with are the runtime's, application-wide").
-No written ruling covers where it goes; the runtime is the
-proposal, open for Alf and Filip at review. Its default is sized to a list or a page, not to a few owners,
-since the per-entity voucher presents one value per row. The proposal is 1000, a router batch of a long
-list. A policy's `= ANY` over a session setting is evaluated per row and the planner cannot treat the
-array as a constant, so the implementer measures a thousand-value set against the RLS fixture before the
-default is fixed, and lowers it if the per-row cost shows. The how-to says
-why the bound exists and what a consumer that pages larger raises it to. A cap below 1 is refused at
-runtime construction.
+The limit becomes a bound on the set's size, the most distinct vouched-for values one operation admits,
+rather than "one". It bounds what one request costs B's database: the whole set is one session setting,
+and every row read under B's policies tests membership in it. It grants nothing: every admitted value
+was vouched for by A to the same caller. It is a runtime setting, not a store fact: nothing in the SDL
+or the catalog states it and no emitter branches on it.
+
+*A runtime hook, shaped like `BatchSizeLimit` (Filip, 2026-11-24).* The accepting runtime takes it as
+`Graphitron.runtime(...).withVouchedValueLimit(limit)`, beside `withBatchSizeLimit`, and the generated
+`VouchedValueLimit` sits next to `BatchSizeLimit` in the schema package:
+
+```java
+var runtime = Graphitron.runtime(SQLDialect.POSTGRES, voucherKeys)
+    .withVouchedValueLimit(env -> 1000);
+```
+
+* *Asked once per operation*, by the carrier at the first voucher it admits, with that `_entities` field's
+  environment (`maxVouchedValues(env)`), and held for the operation. The set is per operation, so the
+  limit cannot change partway through it; the environment lets it differ by request, a larger one for a
+  batch integration, say.
+* *Default 1000* (Filip, 2026-11-24) when no hook is given: sized to a list or a page, not to a few owners,
+  since the per-entity voucher presents one value per row. A policy's `= ANY` over a session setting is
+  evaluated per row and the planner cannot treat the array as a constant, so the implementer still
+  measures a thousand-value set against the RLS fixture and reports it; a cost that argues for a lower
+  default goes back to Filip rather than changing it silently.
+* *It fails closed, unlike `BatchSizeLimit`.* There, no hook or an answer below 1 means no limit, which is
+  safe for a bound that only splits a statement. Here no limit would drop the protection: an answer below
+  1 admits no value, so every vouched representation fails at its own index as past the limit, and a
+  consumer that wants no practical bound answers `Integer.MAX_VALUE`. A hook that throws leaves the default
+  standing and logs one ERROR line naming its class, as the runtime's other hooks do.
+* *No escape-hatch path.* `Graphitron.newGraphQL()` has no runtime, but a build that accepts vouchers is
+  owned connections only, so the hook is always reachable.
+
+Why there and not elsewhere:
+
+* Not on `VoucherKeys`: that is the key-material interface the how-to invites consumers to implement, so a
+  cap given through its `accepting(...)` factory would not exist for a consumer's own implementation.
+* Not in the configuration, though `<maxAllowedPageSize>` is a size bound there: the store checks it at
+  build time against what the schema states (`DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM`). The cap has nothing in
+  B's schema to be checked against, since the list whose rows present the values is paged by A, in
+  another build, and what it protects is a deployment's fact.
+* Not on `@accept`: the set is per operation across every accepting type (one key, one lease), so a cap
+  per type would need a rule for combining them.
+* Not per request on the execution input, nor on the connection source: the hook's environment already
+  gives a per-request answer from one place, and the source is consumer-implemented as `VoucherKeys` is.
+
+The how-to says why the bound exists and what a consumer that pages larger raises it to.
 
 `VoucherRuntime.LIMIT_MESSAGE` keeps naming the limit and no value, reworded from "one vouched-for value"
 to the cap.
@@ -288,7 +313,8 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
   `Set<VouchedFor>` component and the nested `VouchedFor` record from the shape's parts; `forVouchedFor`
   takes a non-empty set; `hasVouchedFor` reads the set. The shape's own type does not change.
 * *The carrier* (`ConnectionRuntimeClassGenerator`): `vouchedKey` becomes the operation's admitted set
-  and its cap; `admitVouched(ConnectionKey)` becomes `admitVouched(VouchedFor)`, answering whether the
+  and its cap, asked of the runtime's `VouchedValueLimit` at the first admission and held for the
+  operation; `admitVouched(ConnectionKey)` becomes `admitVouched(VouchedFor, env)`, answering whether the
   value is in the set or was added to it, still the one site that decides. Closing the set answers the
   operation's vouched key. `entryFor`'s invariant becomes "a key with a vouched-for part is the
   operation's vouched key", still an `IllegalStateException`.
@@ -300,12 +326,16 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
   `load<Type>` is also reached from `Query.node` and `Query.nodes` (through `load` and `loadKeyed`), where
   no `fetchEntities` closes a set; that path never meets the voucher arm, since a representation built
   from a node id carries no voucher field, so it gains no close of its own.
-* *The runtime* (`VoucherRuntime`, the generated runtime factory): the cap on `Graphitron.runtime(...)`
-  in an accepting build, its default, its refusal below 1, and the reworded `LIMIT_MESSAGE`.
+* *The runtime* (`ConnectionRuntimeClassGenerator`, beside `withBatchSizeLimit`; `VoucherRuntime`): in an
+  accepting build, the generated `VouchedValueLimit` interface (`maxVouchedValues(env)`), the runtime's
+  `withVouchedValueLimit` copy method and its accessor, the default of 1000 without one, an answer below 1
+  admitting none, a throwing hook leaving the default, and the reworded `LIMIT_MESSAGE`.
 * *Docs*: `voucher-handover.adoc` (step 4's source and policy, step 5's limit bullet, the precision
   note, and what a per-entity voucher means for a consumer: one value per row, a cap sized to a list, one
   accepting shape per build; not the second-field form, see *The per-entity voucher*), `accept.adoc`
-  (the limit paragraph, the audit outcome name), and `docs/architecture/reference/runtime-extension-points.adoc`
+  (the limit paragraph, the audit outcome name), `docs/manual/reference/runtime-api.adoc` (a
+  `VouchedValueLimit` row in the consumer hooks table, beside `BatchSizeLimit`, its default and why it
+  fails closed), and `docs/architecture/reference/runtime-extension-points.adoc`
   (the key's parts restated as above, the limit sentence). The same page's one-request-rejection
   paragraph still lists "a second vouched-for value" among the request rejections, stale since slice 8g;
   that is fixed on its own as a `docs` commit, not carried here.
@@ -316,7 +346,9 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
 
 * *Unit tier* (emitter harness, `testing.adoc` "Every emitted unit runs at the unit tier"): the generated
   `ConnectionKey` for one and for two vouched-for fields; admission in representation order, a repeated
-  value admitted again, the value past the cap refused, a cap of one behaving as slice 8g does; a forged
+  value admitted again, the value past the cap refused, a cap of one behaving as slice 8g does; the
+  `VouchedValueLimit` asked once per operation, 1000 without one, an answer below 1 admitting none, a
+  throwing hook leaving 1000; a forged
   voucher after admitted ones still rejecting the request; a second `_entities` field seeing a closed set;
   `VouchedFor`'s and the key's `toString` naming no value.
   `VoucherDispatchTest` and `RequestRejectionCarrierTest` move from the one-value key to the set.
@@ -325,8 +357,8 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
   * `vouchersForTwoOwnersInOneLookupResolveTheFirstOwnersAndFailEachOfTheSecondsAtItsIndex` becomes:
     representations for two owners in one call resolve every entity of both, on one lease, acquired
     once.
-  * A cap set to 2 with three owners: the third owner's representations each fail at their own index,
-    naming no value, and take no connection.
+  * `withVouchedValueLimit(env -> 2)` with three owners: the third owner's representations each fail at
+    their own index, naming no value, and take no connection.
   * A split query and a `@service` below entities of two owners read on the one lease, in one batch.
   * A plain-key representation beside vouchers still reads on the request's own connection.
   * The per-entity shape: representations carrying only a voucher, one per row, each vouching for its
@@ -401,6 +433,9 @@ whole does not pass, because the second half is a design still open.
 
    *Author (2026-11-23):* the narrowing left this item for R1207, with its pending ruling. *The cap*
    still proposes the runtime and awaits Alf's or Filip's nod.
+
+   *Author (2026-11-24):* Filip ruled the cap: a runtime hook taking the field's environment, shaped like
+   `BatchSizeLimit` (`withVouchedValueLimit`), default 1000. *The cap* states it.
 
 2. **The goal promises a change the plan does not build (question 1).** The Goal's second bullet and
    *What a consumer sees* ("the `@requires` guard does change what both sides write and what Graphitron
