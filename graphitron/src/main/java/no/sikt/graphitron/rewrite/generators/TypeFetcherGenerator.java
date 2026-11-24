@@ -216,6 +216,31 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * A root over several tables as the store states it: its participants and their tables, each
+     * branch filtered by its table's condition method as its stored signature calls it, no node-id
+     * dispatch, and rows in key order, then by type.
+     */
+    private static List<MethodSpec> storeMultiTableMethods(TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.emit.RootQuery.MultiTable multiTable, CompositeDecodeHelperRegistry registry,
+            String outputPackage) {
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var participants = new ArrayList<no.sikt.graphitron.rewrite.model.ParticipantRef>();
+        var glue = new LinkedHashMap<String, no.sikt.graphitron.command.GlueCall>();
+        for (var branch : multiTable.branches()) {
+            participants.add(new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound(branch.typeName(),
+                branch.table(), null, List.of()));
+            if (branch.condition() != null) {
+                glue.put(branch.typeName(), new no.sikt.graphitron.command.GlueCall(
+                    units.participantConditionMethod(multiTable.parentType(), multiTable.fieldName(), branch.typeName()),
+                    branch.condition().takesContext(), branch.condition().takesSession()));
+            }
+        }
+        return MultiTablePolymorphicEmitter.emitMethods(ctx, multiTable.parentType(), multiTable.fieldName(),
+            participants, MultiTablePolymorphicEmitter.BranchWhere.ofGlue(glue), List.of(), registry,
+            multiTable.list(), Optional.empty(), outputPackage);
+    }
+
+    /**
      * The launcher relation a nesting-reached type's class renders from. The run's relation
      * leaves the type's fields out (its schema walk visits flat coordinates only), so the rows
      * are minted from the fields themselves, while the carrier-routing fact is the run's own: the
@@ -755,7 +780,10 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryInterfaceField f -> {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
-                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                    var multiTable = launchers.multiTableFor(f.parentTypeName(), f.name());
+                    if (multiTable.isPresent()) {
+                        storeMultiTableMethods(ctx, multiTable.get(), registry, outputPackage).forEach(builder::addMethod);
+                    } else if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
                                 f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage,
@@ -771,7 +799,10 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryUnionField f -> {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
-                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                    var multiTable = launchers.multiTableFor(f.parentTypeName(), f.name());
+                    if (multiTable.isPresent()) {
+                        storeMultiTableMethods(ctx, multiTable.get(), registry, outputPackage).forEach(builder::addMethod);
+                    } else if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
                                 f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage,

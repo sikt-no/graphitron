@@ -190,12 +190,29 @@ public final class MultiTablePolymorphicEmitter {
             boolean isList,
             Optional<PolymorphicOrdering> ordering,
             String outputPackage) {
+        return emitMethods(ctx, parentTypeName, fieldName, participants,
+            BranchWhere.ofFilters(parentTypeName, fieldName, participantFilters, outputPackage),
+            nodeIdArgDispatches, registry, isList, ordering, outputPackage);
+    }
+
+    /** The root fetcher with each branch's filter as {@code branchWhere} states it. */
+    public static List<MethodSpec> emitMethods(
+            TypeFetcherEmissionContext ctx,
+            String parentTypeName,
+            String fieldName,
+            List<ParticipantRef> participants,
+            BranchWhere branchWhere,
+            List<NodeIdArgDispatch> nodeIdArgDispatches,
+            CompositeDecodeHelperRegistry registry,
+            boolean isList,
+            Optional<PolymorphicOrdering> ordering,
+            String outputPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildMainFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants, participantFilters,
+        methods.add(buildMainFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants, branchWhere,
             nodeIdArgDispatches, registry, isList, ordering, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false, List.of(), outputPackage));
@@ -340,8 +357,8 @@ public final class MultiTablePolymorphicEmitter {
         var slots = ordering.map(PolymorphicOrdering::slots).orElse(List.of());
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildRootConnectionFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants,
-            participantFilters, nodeIdArgDispatches, registry, defaultPageSize, ordering, outputPackage,
-            connection));
+            BranchWhere.ofFilters(parentTypeName, fieldName, participantFilters, outputPackage), nodeIdArgDispatches,
+            registry, defaultPageSize, ordering, outputPackage, connection));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true, slots,
                 outputPackage));
@@ -502,7 +519,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String parentTypeName,
             String fieldName, List<ParticipantRef.TableBound> participants,
-            Map<String, List<WhereFilter>> participantFilters,
+            BranchWhere branchWhere,
             List<NodeIdArgDispatch> nodeIdArgDispatches, CompositeDecodeHelperRegistry registry,
             boolean isList, Optional<PolymorphicOrdering> ordering, String outputPackage) {
 
@@ -542,7 +559,7 @@ public final class MultiTablePolymorphicEmitter {
         } else {
             outerOrder = keyOrderReferences(pkArity, true);
         }
-        builder.addCode(buildStage1Block(participants, Map.of(), participantFilters,
+        builder.addCode(buildStage1Block(participants, Map.of(), branchWhere,
             parentTypeName, fieldName, outputPackage, null, null,
             ordering.map(PolymorphicOrdering::slots).orElse(List.of()), outerOrder));
 
@@ -653,7 +670,7 @@ public final class MultiTablePolymorphicEmitter {
         // so the parent/field names feed no glue derivation on this path.
         // No slots and a key-only order: this child coordinate lowers no ordering.
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
-        builder.addCode(buildStage1Block(participants, participantJoinPaths, Map.of(),
+        builder.addCode(buildStage1Block(participants, participantJoinPaths, BranchWhere.NONE,
             null, fieldName, outputPackage, parentSourceKey, parentKeyOwnerTable,
             List.of(), keyOrderReferences(pkArity, false)));
 
@@ -736,7 +753,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String parentTypeName,
             String fieldName, List<ParticipantRef.TableBound> participants,
-            Map<String, List<WhereFilter>> participantFilters,
+            BranchWhere branchWhere,
             List<NodeIdArgDispatch> nodeIdArgDispatches, CompositeDecodeHelperRegistry registry,
             int defaultPageSize, Optional<PolymorphicOrdering> ordering, String outputPackage,
             no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
@@ -816,7 +833,7 @@ public final class MultiTablePolymorphicEmitter {
             pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
 
         // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
-        builder.addCode(buildStage1ConnectionBlock(participants, participantFilters,
+        builder.addCode(buildStage1ConnectionBlock(participants, branchWhere,
             parentTypeName, fieldName, outputPackage,
             ordering.map(PolymorphicOrdering::slots).orElse(List.of()), pkArity));
 
@@ -893,7 +910,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static CodeBlock buildStage1ConnectionBlock(
             List<ParticipantRef.TableBound> participants,
-            Map<String, List<WhereFilter>> participantFilters,
+            BranchWhere filterWhere,
             String parentTypeName, String fieldName, String outputPackage,
             List<PolymorphicOrdering.Slot> slots, int pkArity) {
         var b = CodeBlock.builder();
@@ -911,7 +928,7 @@ public final class MultiTablePolymorphicEmitter {
             String alias = "stage1_" + participant.typeName();
             // Root connection has no parent-FK restriction, so the branch WHERE is the @field
             // filter predicate alone.
-            CodeBlock branchWhere = branchFilterWhere(parentTypeName, fieldName, participant, participantFilters, outputPackage);
+            CodeBlock branchWhere = filterWhere.on(participant, alias);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", branchProjection(participant, alias, slots));
                 b.add("        .from($L)\n", alias);
@@ -970,7 +987,7 @@ public final class MultiTablePolymorphicEmitter {
     private static CodeBlock buildStage1Block(
             List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
-            Map<String, List<WhereFilter>> participantFilters,
+            BranchWhere filterWhere,
             String parentTypeName,
             String fieldName,
             String outputPackage,
@@ -996,7 +1013,7 @@ public final class MultiTablePolymorphicEmitter {
             CodeBlock branchWhere = andWhere(
                 singleBranchCorrelationWhere(participant, participantJoinPaths, parentSourceKey,
                     parentKeyOwnerTable),
-                branchFilterWhere(parentTypeName, fieldName, participant, participantFilters, outputPackage));
+                filterWhere.on(participant, alias));
             if (p == 0) {
                 b.add("dsl.select($L)\n", branchProjection(participant, alias, slots));
                 b.add("    .from($L)\n", alias);
@@ -1248,23 +1265,45 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Builds the {@code @field} filter predicate for one stage-1 branch, or {@code null} when the
-     * participant has no filters: one glue call against the participant's own minted method
-     * ({@code <Parent>Conditions.<field>Participant_<Type>Condition}), bound to the branch alias
-     * {@code stage1_<Type>} with the fetcher's own {@code env.getArguments()} as the map. Each
-     * participant's filters were lowered against its own table, so the branch call hands its own
-     * alias; the extraction plumbing (decode helpers, converter coercions, shared-outer lifts)
-     * lives in the glue body.
+     * One stage-1 branch's filter predicate on its alias {@code stage1_<Type>}, or {@code null} where
+     * the participant has none: one call of the participant's own condition method
+     * ({@code <Parent>Conditions.<field>Participant_<Type>Condition}), handed the branch alias and
+     * the fetcher's own {@code env.getArguments()}. Each participant's filters bind its own table, so
+     * the branch call hands its own alias; the extraction plumbing (decode helpers, converter
+     * coercions, shared-outer lifts) lives in the condition method's body.
      */
-    private static CodeBlock branchFilterWhere(String parentTypeName, String fieldName,
-            ParticipantRef.TableBound participant, Map<String, List<WhereFilter>> participantFilters,
-            String outputPackage) {
-        var filters = participantFilters.getOrDefault(participant.typeName(), List.of());
-        if (filters.isEmpty()) return null;
-        var glue = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
-            .participantConditionMethod(parentTypeName, fieldName, participant.typeName());
-        return ConditionGlueCall.expression(glue, filters,
-            "stage1_" + participant.typeName(), CodeBlock.of("env.getArguments()"));
+    @FunctionalInterface
+    public interface BranchWhere {
+        CodeBlock on(ParticipantRef.TableBound participant, String alias);
+
+        /** No branch filters: a child's stage 1 is restricted by its parent correlation alone. */
+        BranchWhere NONE = (participant, alias) -> null;
+
+        /** Each branch's call as the walk's lowered filters shape it, the context handed where one reads it. */
+        static BranchWhere ofFilters(String parentTypeName, String fieldName,
+                Map<String, List<WhereFilter>> participantFilters, String outputPackage) {
+            return (participant, alias) -> {
+                var filters = participantFilters.getOrDefault(participant.typeName(), List.of());
+                if (filters.isEmpty()) return null;
+                var glue = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
+                    .participantConditionMethod(parentTypeName, fieldName, participant.typeName());
+                return ConditionGlueCall.expression(glue, filters, alias, CodeBlock.of("env.getArguments()"));
+            };
+        }
+
+        /** Each branch's call as its condition method's stored signature states it, by participant type. */
+        static BranchWhere ofGlue(Map<String, no.sikt.graphitron.command.GlueCall> byParticipant) {
+            return (participant, alias) -> {
+                var glue = byParticipant.get(participant.typeName());
+                if (glue == null) return null;
+                var call = CodeBlock.builder().add("$T.$L($L, env.getArguments()",
+                    ClassName.get(glue.method().owner().packageName(), glue.method().owner().simpleName()),
+                    glue.method().methodName(), alias);
+                if (glue.takesEnv()) call.add(", env");
+                if (glue.takesDsl()) call.add(", dsl");
+                return call.add(")").build();
+            };
+        }
     }
 
     /** ANDs two nullable branch WHERE predicates; returns whichever is non-null, or null if both are. */

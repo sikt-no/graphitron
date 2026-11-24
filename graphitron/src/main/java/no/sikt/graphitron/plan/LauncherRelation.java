@@ -44,6 +44,9 @@ import java.util.Optional;
  * <p>{@link #nodeFetchers} is each node fetcher the store states, keyed by coordinate: its root
  * method is rendered from it rather than from the walk's field.
  *
+ * <p>{@link #multiTables} is each root over several tables the store states, keyed by coordinate:
+ * its participants and their condition calls are read from it rather than from the walk's field.
+ *
  * <p><b>Method-name census.</b> Coordinate uniqueness does not imply method-name uniqueness:
  * the {@code rows} / {@code load} / {@code lookup} formulas upper-camel a field name, which is
  * not injective, and several naming schemes mint onto one fetchers class. This relation
@@ -66,7 +69,8 @@ import java.util.Optional;
 public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDsl carrierDsl,
         no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
         Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
-        Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers) {
+        Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
+        Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables) {
 
     /** The relation over {@code rows}, indexed on the coordinate key it is declared to have. */
     public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
@@ -86,8 +90,17 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
             no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
             Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers) {
+        this(rows, carrierDsl, connections, argumentOrders, nodeFetchers, Map.of());
+    }
+
+    /** The relation over {@code rows}, with the root order specs, node fetchers and multi-table roots the store states. */
+    public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
+            Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables) {
         this(CoordinateIndex.of(rows, LauncherCommand::coordinate, "launcher"), carrierDsl, connections,
-            argumentOrders, nodeFetchers);
+            argumentOrders, nodeFetchers, multiTables);
     }
 
     public LauncherRelation {
@@ -96,6 +109,7 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         Objects.requireNonNull(connections, "connections");
         argumentOrders = Map.copyOf(argumentOrders);
         nodeFetchers = Map.copyOf(nodeFetchers);
+        multiTables = Map.copyOf(multiTables);
         var byMethod = new LinkedHashMap<UnitMethodRef, LauncherCommand>();
         for (var row : index.rows()) {
             var existing = byMethod.putIfAbsent(row.unit(), row);
@@ -141,5 +155,11 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
     public Optional<no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetcherFor(String parentTypeName,
             String fieldName) {
         return Optional.ofNullable(nodeFetchers.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
+    }
+
+    /** The root over several tables the store states at this coordinate, if it states one. */
+    public Optional<no.sikt.graphitron.emit.RootQuery.MultiTable> multiTableFor(String parentTypeName,
+            String fieldName) {
+        return Optional.ofNullable(multiTables.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
     }
 }

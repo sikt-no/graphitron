@@ -233,15 +233,20 @@ public final class LauncherCommands {
         var argumentOrders = new java.util.LinkedHashMap<FieldCoordinates, OrderBySpec.Argument>();
         // And each node fetcher the store states, whose root method is rendered from it.
         var nodeFetchers = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher>();
+        // And each root over several tables the store states, whose participants are read from it.
+        var multiTables = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable>();
         for (var root : roots.values()) {
             if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted && emitted.choice() != null) {
                 argumentOrders.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()),
                     argumentOrderOf(emitted));
             } else if (root instanceof no.sikt.graphitron.emit.RootQuery.NodeFetcher node) {
                 nodeFetchers.put(FieldCoordinates.coordinates(node.parentType(), node.fieldName()), node);
+            } else if (root instanceof no.sikt.graphitron.emit.RootQuery.MultiTable multiTable) {
+                multiTables.put(FieldCoordinates.coordinates(multiTable.parentType(), multiTable.fieldName()),
+                    multiTable);
             }
         }
-        return new LauncherRelation(rows, carrierDsl, connections, argumentOrders, nodeFetchers);
+        return new LauncherRelation(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables);
     }
 
     /**

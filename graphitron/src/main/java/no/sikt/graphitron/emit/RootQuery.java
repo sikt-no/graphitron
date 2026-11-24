@@ -81,8 +81,15 @@ public final class RootQuery {
         LOOKUP_NODE_ID,
         /** A {@code @lookupKey} key's value is converted on its way to the column: an {@code ID} or an enum. */
         LOOKUP_KEY_CONVERTED,
-        /** Its rows may be several types', told apart by the table each is a row of. */
+        /**
+         * Its rows may be several types', told apart by the table each is a row of, and it is a
+         * connection or a lookup over them.
+         */
         POLYMORPHIC,
+        /** Its rows are several tables', and an order other than each table's own key sorts them. */
+        POLYMORPHIC_ORDERED,
+        /** Its rows are several tables', and a node-id argument names one of them by the id's type. */
+        NODE_ID_DISPATCH,
         /**
          * Its rows are told apart by a discriminator, and a participant on a detail table of its own reads
          * a field the joined read does not project: a node id, or an inherited reference it would alias
@@ -155,6 +162,29 @@ public final class RootQuery {
             Objects.requireNonNull(table, "table");
             order = List.copyOf(order);
             keys = List.copyOf(keys);
+        }
+    }
+
+    /**
+     * A root whose rows are several tables', each type's rows those of its own table: its occurrence
+     * and field, whether it reads a list, and each participant with its table and the condition method
+     * that table has, {@code null} where it has none. Its rows come in key order, then by type.
+     */
+    public record MultiTable(String coordinate, String parentType, String fieldName, boolean list,
+                             List<Branch> branches) implements Result {
+        public MultiTable {
+            Objects.requireNonNull(coordinate, "coordinate");
+            Objects.requireNonNull(parentType, "parentType");
+            Objects.requireNonNull(fieldName, "fieldName");
+            branches = List.copyOf(branches);
+        }
+    }
+
+    /** One participant of a root over several tables: its type, its table and that table's condition method. */
+    public record Branch(String typeName, TableRef table, Signature condition) {
+        public Branch {
+            Objects.requireNonNull(typeName, "typeName");
+            Objects.requireNonNull(table, "table");
         }
     }
 
@@ -318,8 +348,11 @@ public final class RootQuery {
                 connection ? row.value17() : row.value6(), row.value7(), row.value8(), row.value9());
             Reason reason = null;
             var told = discriminated.get(at.coordinate());
-            if (Boolean.TRUE.equals(row.value10()) && told == null) reason = Reason.POLYMORPHIC;
-            else if (told != null && told.reason() != null) reason = told.reason();
+            if (Boolean.TRUE.equals(row.value10()) && told == null) {
+                out.put(at.coordinate(), multiTable(store, at, connection, signatures));
+                continue;
+            }
+            if (told != null && told.reason() != null) reason = told.reason();
             // A discriminated lookup joins its keys' rows on the shared table, a source of its own.
             else if (told != null && "LOOKUP".equals(at.kind())) reason = Reason.POLYMORPHIC;
             else if (Boolean.TRUE.equals(row.value11())) reason = Reason.FACETED;
@@ -359,6 +392,61 @@ public final class RootQuery {
                 told == null ? null : told.discriminated()));
         }
         return out;
+    }
+
+    /**
+     * A root over several tables, each participant's rows those of its own table: stated whole where it
+     * is a list or a record read in each table's key order, no node-id argument names a participant
+     * by the id's type, and no participant's table carries the tenant column.
+     */
+    private static Result multiTable(StoreHandle store, Producer at, boolean connection,
+                                     Map<List<String>, Signature> signatures) {
+        var graph = store.graphName();
+        String coordinate = at.coordinate();
+        if (connection || "LOOKUP".equals(at.kind())
+                || !("RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
+            return new NotYet(coordinate, Reason.POLYMORPHIC);
+        }
+        var x = GRAPHITRON_OCCURRENCE_PARTICIPANT;
+        var participants = store.dsl()
+            .select(x.PARTICIPANT_TYPE, x.TABLE_SOURCE_NAME, x.TABLE_SCHEMA, x.TABLE_NAME)
+            .from(x)
+            .where(x.GRAPH_NAME.eq(graph), x.COORDINATE.eq(coordinate), x.RECOGNIZED_BY.eq("TABLE"))
+            .orderBy(x.PARTICIPANT_TYPE)
+            .fetch();
+        var od = GRAPHITRON_OCCURRENCE_ORDER;
+        if (store.dsl().fetchExists(od, od.GRAPH_NAME.eq(graph), od.COORDINATE.eq(coordinate),
+                od.KIND.eq("CHOICE").or(od.SURFACE.notIn("PRIMARY_KEY", "IMPLICIT_PRIMARY_KEY"))
+                    .or(od.DIRECTION.eq("DESC")))) {
+            return new NotYet(coordinate, Reason.POLYMORPHIC_ORDERED);
+        }
+        var ni = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var oa = GRAPHITRON_OCCURRENCE;
+        if (store.dsl().fetchExists(selectOne().from(ni)
+                .join(oa).on(oa.GRAPH_NAME.eq(ni.GRAPH_NAME), oa.COORDINATE.eq(ni.COORDINATE))
+                .where(ni.GRAPH_NAME.eq(graph), oa.FIELD_COORDINATE.eq(coordinate),
+                    oa.ARGUMENT_COORDINATE.eq(oa.COORDINATE),
+                    ni.NODE_TYPE_NAME.in(participants.map(r -> r.value1()))))) {
+            return new NotYet(coordinate, Reason.NODE_ID_DISPATCH);
+        }
+        var tc = GRAPHITRON_TENANT_COLUMN;
+        var branches = new ArrayList<Branch>();
+        for (var participant : participants) {
+            if (store.dsl().fetchExists(tc, tc.GRAPH_NAME.eq(graph), tc.SOURCE_NAME.eq(participant.value2()),
+                    tc.TABLE_SCHEMA.eq(participant.value3()), tc.TABLE_NAME.eq(participant.value4()))) {
+                return new NotYet(coordinate, Reason.TENANTED);
+            }
+            var table = tableRef(store, participant.value2(), participant.value3(), participant.value4());
+            if (table == null) {
+                return new NotYet(coordinate, Reason.NOT_ONE_TABLE);
+            }
+            branches.add(new Branch(participant.value1(), table,
+                signatures.get(List.of(coordinate, participant.value3() + "." + participant.value4()))));
+        }
+        if (branches.isEmpty()) {
+            return new NotYet(coordinate, Reason.POLYMORPHIC);
+        }
+        return new MultiTable(coordinate, at.parentType(), at.fieldName(), "RECORD_LIST".equals(at.shape()), branches);
     }
 
     /**

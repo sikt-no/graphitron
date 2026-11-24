@@ -330,21 +330,29 @@ class EmissionCensusTest {
     void theCensusOfTheExampleSchemasRootReads() {
         var emitted = new ArrayList<String>();
         var nodes = new ArrayList<String>();
+        var multiTables = new ArrayList<String>();
         var held = new TreeMap<String, List<String>>();
         for (var result : roots.values()) {
             switch (result) {
                 case RootQuery.Emitted e -> emitted.add(e.coordinate());
                 case RootQuery.NodeFetcher n -> nodes.add(n.coordinate());
+                case RootQuery.MultiTable m -> multiTables.add(m.coordinate());
                 case RootQuery.NotYet n -> held.computeIfAbsent(n.reason().name(), k -> new ArrayList<>())
                     .add(n.coordinate());
             }
         }
         java.util.Collections.sort(emitted);
         java.util.Collections.sort(nodes);
+        java.util.Collections.sort(multiTables);
         held.values().forEach(java.util.Collections::sort);
         org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
             soft.assertThat(nodes).as("the node fetchers the store emits")
                 .containsExactly("Query.internalNode", "Query.node", "Query.nodes");
+            soft.assertThat(multiTables).as("the roots over several tables the store emits").containsExactly(
+                "Query.documents", "Query.occupantsByAddress", "Query.occupantsByFilter",
+                "Query.occupantsByMixedNamePrefix", "Query.occupantsByName", "Query.occupantsByNamePrefix",
+                "Query.occupantsByStoreId", "Query.occupantsByTypedNamePrefix", "Query.occupantsStartingWithM",
+                "Query.search", "Query.stockByLanguage", "Query.stockByLanguageOverride");
             soft.assertThat(emitted).as("the roots the store emits").containsExactly(
                 "Query.actorsByFilmFilter", "Query.actorsByFilmFilterConnection", "Query.actorsByFilmIds",
                 "Query.addressesByCountryName", "Query.addressesByCustomerIds",
@@ -414,25 +422,25 @@ class EmissionCensusTest {
                 .containsEntry("ORDER_ARGUMENT_LIST", List.of(
                     "Query.filmsByLanguagesComposed", "Query.filmsByLanguagesComposedList",
                     "Query.filmsOrdered", "Query.filmsOrderedConnection", "Query.squadMembers"))
+                .containsEntry("NODE_ID_DISPATCH", List.of(
+                    "Query.occupantById", "Query.occupantByOptionalId", "Query.occupantsByIds",
+                    "Query.occupantsByNullableIds"))
                 .containsEntry("POLYMORPHIC", List.of(
-                    "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documents",
-                    "Query.documentsConnection", "Query.occupantById", "Query.occupantByOptionalId",
-                    "Query.occupantsByAddress", "Query.occupantsByFilter", "Query.occupantsByIds",
-                    "Query.occupantsByIdsConnection", "Query.occupantsByLastName",
-                    "Query.occupantsByMixedNamePrefix", "Query.occupantsByName",
-                    "Query.occupantsByNameConnection", "Query.occupantsByNamePrefix",
-                    "Query.occupantsByNullableIds", "Query.occupantsByStoreId",
-                    "Query.occupantsByTypedNamePrefix", "Query.occupantsOrdered",
-                    "Query.occupantsOrderedByKey", "Query.occupantsOrderedByList",
-                    "Query.occupantsOrderedConnection", "Query.occupantsStartingWithM", "Query.pagedItems",
-                    "Query.pagedItemsByName", "Query.search", "Query.searchConnection",
-                    "Query.stockByLanguage", "Query.stockByLanguageOverride"))
+                    "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documentsConnection",
+                    "Query.occupantsByIdsConnection", "Query.occupantsByNameConnection",
+                    "Query.occupantsOrderedConnection", "Query.pagedItems", "Query.pagedItemsByName",
+                    "Query.searchConnection"))
+                .containsEntry("POLYMORPHIC_ORDERED", List.of(
+                    "Query.occupantsByLastName", "Query.occupantsOrdered", "Query.occupantsOrderedByKey",
+                    "Query.occupantsOrderedByList"))
                 .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
                     "Query.allContentByFilmTitle", "Query.allContentConnectionByFilmTitle",
                     "Query.filmsByLanguages", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
                     "Query.filmsByOriginalLanguage", "Query.filmsByOriginalLanguageDescList",
                     "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList"))
-                .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
+                .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID",
+                    "NODE_ID_DISPATCH", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "POLYMORPHIC_ORDERED",
+                    "SORT_KEY_NOT_A_COLUMN");
         });
     }
 }

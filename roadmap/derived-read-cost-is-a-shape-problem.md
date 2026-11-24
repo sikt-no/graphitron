@@ -999,8 +999,16 @@ static method needs no holder.
     table. That detail-to-shared key is read in `RootQuery` and becomes a relation at its second reader,
     the child discriminated flip. A joined participant binding a node id, or one with an inherited
     field that is a single-table participant of another interface, still waits as `JOINED_DETAIL`.
-    Multi-table interfaces and unions come next with
-    no order, then ordered across participants (the order rows per participant table are the slots, and
+    A list or a record read over a multi-table interface or union, each participant in its own key
+    order, is the store's too: its participants off `graphitron_occurrence_participant`, each branch's
+    condition call off `graphitron_occurrence_condition_signature` at the participant's table, fed to
+    `MultiTablePolymorphicEmitter` in place of the walk's field. One a node-id argument dispatches by
+    the id's type waits as `NODE_ID_DISPATCH`; one in another order waits as `POLYMORPHIC_ORDERED`
+    for the ordered slice. The walk's refusals of a multi-table root are store codes owed before this
+    route's walk code goes: a participant table without a primary key, participants whose keys
+    differ in arity, and a filter argument the branch call cannot extract (an input bean); the shared
+    table is `PARTICIPANTS_SHARE_A_TABLE` already.
+    Ordered across participants comes next (the order rows per participant table are the slots, and
     `ORDERING_ACROSS_PARTICIPANTS` moves onto the producer facts), then the connections over them. Faceted connections and
     an order argument taking a list remain beside them. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
