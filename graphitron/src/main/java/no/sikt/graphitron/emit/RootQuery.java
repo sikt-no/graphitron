@@ -2,6 +2,7 @@ package no.sikt.graphitron.emit;
 
 import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.ForeignKeyRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -18,6 +19,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INTERFACE_SHARED_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CROSS_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
@@ -37,6 +43,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -72,8 +79,10 @@ public final class RootQuery {
         LOOKUP_NODE_ID,
         /** A {@code @lookupKey} key's value is converted on its way to the column: an {@code ID} or an enum. */
         LOOKUP_KEY_CONVERTED,
-        /** Its rows may be several types', told apart by table or discriminator. */
+        /** Its rows may be several types', told apart by the table each is a row of. */
         POLYMORPHIC,
+        /** Its rows are told apart by a discriminator, and a participant reads a detail table of its own. */
+        JOINED_DETAIL,
         /** It builds a connection that surfaces facets. */
         FACETED,
         /** It builds a connection the store states no order for, which paging needs. */
@@ -130,7 +139,7 @@ public final class RootQuery {
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
-                          List<LookupKey> keys, Choice choice, Integer pageSize)
+                          List<LookupKey> keys, Choice choice, Integer pageSize, Discriminated discriminated)
             implements Result {
         public Emitted {
             Objects.requireNonNull(coordinate, "coordinate");
@@ -142,6 +151,40 @@ public final class RootQuery {
             keys = List.copyOf(keys);
         }
     }
+
+    /**
+     * The participants of a root whose rows are told apart by a discriminator on the one table they
+     * share: the discriminating column, each participant with its value and the fields it reads one
+     * step off that table, and the fields its interface's participants answer under one alias.
+     */
+    public record Discriminated(ColumnRef column, List<Participant> participants, List<String> sharedFields) {
+        public Discriminated {
+            Objects.requireNonNull(column, "column");
+            participants = List.copyOf(participants);
+            sharedFields = List.copyOf(sharedFields);
+        }
+    }
+
+    /** One participant of a discriminated root: its type, its discriminator value and its cross columns. */
+    public record Participant(String typeName, String value, List<Cross> crossColumns) {
+        public Participant {
+            crossColumns = List.copyOf(crossColumns);
+        }
+    }
+
+    /**
+     * A participant's scalar field read one step off the shared table: the field, the column read, the
+     * table the step reaches, the step's column pairs, each from the shared table to the reached one,
+     * and the foreign key the step rides, written or inferred.
+     */
+    public record Cross(String fieldName, ColumnRef column, TableRef target, List<Pair> pairs, ForeignKeyRef key) {
+        public Cross {
+            pairs = List.copyOf(pairs);
+        }
+    }
+
+    /** One column pair of a step: the column on the table the step leaves and the one on the table it reaches. */
+    public record Pair(ColumnRef from, ColumnRef to) {}
 
     /** One key of a lookup: the argument the caller hands it in, the column it matches, and whether it is a list. */
     public record LookupKey(String argument, ColumnRef column, boolean list) {}
@@ -229,6 +272,7 @@ public final class RootQuery {
         var lookups = lookups(store);
         var choices = choices(store);
         var maxPageSize = maxPageSize(store);
+        var discriminated = discriminated(store);
         boolean multiTenant = store.dsl().fetchExists(STORE_GRAPH_TENANT_COLUMN,
             STORE_GRAPH_TENANT_COLUMN.GRAPH_NAME.eq(graph));
         var out = new LinkedHashMap<String, Result>();
@@ -242,7 +286,11 @@ public final class RootQuery {
             var at = new Producer(row.value1(), row.value2(), row.value3(), row.value4(), row.value5(),
                 connection ? row.value17() : row.value6(), row.value7(), row.value8(), row.value9());
             Reason reason = null;
-            if (Boolean.TRUE.equals(row.value10())) reason = Reason.POLYMORPHIC;
+            var told = discriminated.get(at.coordinate());
+            if (Boolean.TRUE.equals(row.value10()) && told == null) reason = Reason.POLYMORPHIC;
+            else if (told != null && told.reason() != null) reason = told.reason();
+            // A discriminated lookup joins its keys' rows on the shared table, a source of its own.
+            else if (told != null && "LOOKUP".equals(at.kind())) reason = Reason.POLYMORPHIC;
             else if (Boolean.TRUE.equals(row.value11())) reason = Reason.FACETED;
             else if (at.table() == null || at.returnType() == null
                 || !(connection || Boolean.TRUE.equals(row.value16()))
@@ -276,7 +324,8 @@ public final class RootQuery {
             out.put(at.coordinate(), new Emitted(at.coordinate(), at.parentType(), at.fieldName(), at.returnType(),
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
                 signatures.get(List.of(at.coordinate(), at.schema() + "." + at.table())),
-                lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()), pageSize));
+                lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()), pageSize,
+                told == null ? null : told.discriminated()));
         }
         return out;
     }
@@ -356,6 +405,160 @@ public final class RootQuery {
             head.nonNull(), head.sortField(), head.directionField(),
             keys.getOrDefault(coordinate, Map.of()))));
         return out;
+    }
+
+    /** A discriminated root's participants, or the reason the store does not state them whole yet. */
+    private record Told(Discriminated discriminated, Reason reason) {}
+
+    /**
+     * Each root whose participants are told apart by a discriminator: where every participant is a row
+     * of the one table they share, the discriminating column, each participant's value and cross
+     * columns, and the shared fields of the interface the root answers; where one reads a detail table
+     * of its own, that reason. A root whose participants are told apart by table is none of these.
+     */
+    private static Map<String, Told> discriminated(StoreHandle store) {
+        var x = GRAPHITRON_OCCURRENCE_PARTICIPANT;
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var o = GRAPHITRON_OCCURRENCE;
+        var f = GRAPHITRON_FIELD;
+        var ft = GRAPHITRON_FIELD_TARGET;
+        var c = SQL_COLUMN;
+        var graph = store.graphName();
+        record Stated(String coordinate, String type, String recognizedBy, String source, String schema, String table,
+                      String base, String column, String value, String target) {}
+        var byCoordinate = new LinkedHashMap<String, List<Stated>>();
+        store.dsl()
+            .select(x.COORDINATE, x.PARTICIPANT_TYPE, x.RECOGNIZED_BY, x.TABLE_SOURCE_NAME, x.TABLE_SCHEMA,
+                x.TABLE_NAME, x.BASE_NAME, x.DISCRIMINATOR_COLUMN, x.DISCRIMINATOR_VALUE, ft.TARGET_TYPE_NAME)
+            .from(x)
+            .join(p).on(p.GRAPH_NAME.eq(x.GRAPH_NAME), p.COORDINATE.eq(x.COORDINATE), p.START.eq("ROOT"))
+            .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
+            .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME), ft.FIELD_NAME.eq(f.FIELD_NAME))
+            .where(x.GRAPH_NAME.eq(graph))
+            .orderBy(x.COORDINATE, x.PARTICIPANT_TYPE)
+            .forEach(r -> byCoordinate.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(new Stated(r.value1(),
+                r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7(), r.value8(), r.value9(),
+                r.value10())));
+        var sf = GRAPHITRON_INTERFACE_SHARED_FIELD;
+        var shared = new LinkedHashMap<String, List<String>>();
+        store.dsl().select(sf.INTERFACE_TYPE, sf.FIELD_NAME).from(sf).where(sf.GRAPH_NAME.eq(graph))
+            .orderBy(sf.INTERFACE_TYPE, sf.FIELD_NAME)
+            .forEach(r -> shared.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(r.value2()));
+        var out = new LinkedHashMap<String, Told>();
+        byCoordinate.forEach((coordinate, stated) -> {
+            if (stated.stream().noneMatch(s -> "DISCRIMINATOR".equals(s.recognizedBy()))) {
+                return;
+            }
+            if (stated.stream().anyMatch(s -> !"DISCRIMINATOR".equals(s.recognizedBy()) || !s.table().equals(s.base()))) {
+                out.put(coordinate, new Told(null, Reason.JOINED_DETAIL));
+                return;
+            }
+            var first = stated.getFirst();
+            var column = store.dsl().select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+                .from(c)
+                .where(c.SOURCE_NAME.eq(first.source()), c.TABLE_SCHEMA.eq(first.schema()), c.TABLE_NAME.eq(first.table()),
+                    c.COLUMN_NAME.equalIgnoreCase(first.column()))
+                .fetchOne(r -> new ColumnRef(r.value1(), r.value2(), r.value3(), r.value4()));
+            var participants = new ArrayList<Participant>();
+            boolean whole = column != null;
+            for (var s : stated) {
+                var crosses = crossColumns(store, s.type());
+                if (crosses == null) {
+                    whole = false;
+                    break;
+                }
+                participants.add(new Participant(s.type(), s.value(), crosses));
+            }
+            out.put(coordinate, whole
+                ? new Told(new Discriminated(column, participants, shared.getOrDefault(first.target(), List.of())), null)
+                : new Told(null, Reason.NOT_ONE_TABLE));
+        });
+        return out;
+    }
+
+    /**
+     * A participant type's cross columns, graphitron_field_cross_column's, each with its step's column
+     * pairs, the foreign key it rides (graphitron_join_path_step_key where written,
+     * graphitron_join_path_step_inferred_key where inferred) and the column it reads past it;
+     * {@code null} where one has no column bound past its step or rides no foreign key.
+     */
+    private static List<Cross> crossColumns(StoreHandle store, String type) {
+        var cc = GRAPHITRON_FIELD_CROSS_COLUMN;
+        var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        var oc = GRAPHITRON_OCCURRENCE_COLUMN;
+        var fc = SQL_COLUMN.as("fc");
+        var tc = SQL_COLUMN.as("tc");
+        var c = SQL_COLUMN;
+        var graph = store.graphName();
+        var out = new ArrayList<Cross>();
+        for (var field : store.dsl().select(cc.FIELD_NAME).from(cc)
+                .where(cc.GRAPH_NAME.eq(graph), cc.TYPE_NAME.eq(type)).orderBy(cc.FIELD_NAME).fetch(cc.FIELD_NAME)) {
+            String coordinate = type + "." + field;
+            var steps = store.dsl()
+                .select(sc.TO_SOURCE_NAME, sc.TO_SCHEMA, sc.TO_TABLE,
+                    fc.COLUMN_NAME, fc.JOOQ_NAME, fc.BINDING_TYPE, fc.DATABASE_TYPE,
+                    tc.COLUMN_NAME, tc.JOOQ_NAME, tc.BINDING_TYPE, tc.DATABASE_TYPE)
+                .from(sc)
+                .join(fc).on(fc.SOURCE_NAME.eq(sc.FROM_SOURCE_NAME), fc.TABLE_SCHEMA.eq(sc.FROM_SCHEMA),
+                    fc.TABLE_NAME.eq(sc.FROM_TABLE), fc.COLUMN_NAME.eq(sc.FROM_COLUMN))
+                .join(tc).on(tc.SOURCE_NAME.eq(sc.TO_SOURCE_NAME), tc.TABLE_SCHEMA.eq(sc.TO_SCHEMA),
+                    tc.TABLE_NAME.eq(sc.TO_TABLE), tc.COLUMN_NAME.eq(sc.TO_COLUMN))
+                .where(sc.GRAPH_NAME.eq(graph), sc.COORDINATE.eq(coordinate), sc.POSITION.eq(0))
+                .orderBy(sc.ORDINAL)
+                .fetch();
+            if (steps.isEmpty()) {
+                return null;
+            }
+            var head = steps.getFirst();
+            var column = store.dsl().select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+                .from(oc)
+                .join(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
+                    c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
+                .where(oc.GRAPH_NAME.eq(graph), oc.COORDINATE.eq(coordinate), oc.TABLE_SOURCE_NAME.eq(head.value1()),
+                    oc.TABLE_SCHEMA.eq(head.value2()), oc.TABLE_NAME.eq(head.value3()))
+                .fetchOne(r -> new ColumnRef(r.value1(), r.value2(), r.value3(), r.value4()));
+            var target = tableRef(store, head.value1(), head.value2(), head.value3());
+            var key = foreignKey(store, coordinate);
+            if (column == null || target == null || key == null) {
+                return null;
+            }
+            var pairs = steps.stream().map(r -> new Pair(
+                new ColumnRef(r.value4(), r.value5(), r.value6(), r.value7()),
+                new ColumnRef(r.value8(), r.value9(), r.value10(), r.value11()))).toList();
+            out.add(new Cross(field, column, target, pairs, key));
+        }
+        return out;
+    }
+
+    /**
+     * The foreign key the first step of {@code coordinate}'s path rides, written or inferred, as the
+     * catalog names it: its SQL name, the schema's Keys class and its constant there.
+     */
+    private static ForeignKeyRef foreignKey(StoreHandle store, String coordinate) {
+        var wk = GRAPHITRON_JOIN_PATH_STEP_KEY;
+        var ik = GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
+        var k = SQL_CONSTRAINT;
+        var s = SQL_SCHEMA;
+        var graph = store.graphName();
+        var written = store.dsl()
+            .select(wk.CONSTRAINT_SOURCE_NAME, wk.CONSTRAINT_SCHEMA, wk.CONSTRAINT_TABLE, wk.CONSTRAINT_NAME)
+            .from(wk).where(wk.GRAPH_NAME.eq(graph), wk.COORDINATE.eq(coordinate), wk.POSITION.eq(0))
+            .unionAll(store.dsl()
+                .select(ik.CONSTRAINT_SOURCE_NAME, ik.CONSTRAINT_SCHEMA, ik.CONSTRAINT_TABLE, ik.CONSTRAINT_NAME)
+                .from(ik).where(ik.GRAPH_NAME.eq(graph), ik.COORDINATE.eq(coordinate), ik.POSITION.eq(0)))
+            .fetch();
+        if (written.size() != 1) {
+            return null;
+        }
+        var fk = written.getFirst();
+        return store.dsl()
+            .select(k.CONSTRAINT_NAME, s.KEYS_CLASS_FQN, k.JOOQ_NAME)
+            .from(k)
+            .join(s).on(s.SOURCE_NAME.eq(k.SOURCE_NAME), s.TABLE_SCHEMA.eq(k.TABLE_SCHEMA))
+            .where(k.SOURCE_NAME.eq(fk.value1()), k.TABLE_SCHEMA.eq(fk.value2()), k.TABLE_NAME.eq(fk.value3()),
+                k.CONSTRAINT_NAME.eq(fk.value4()), s.KEYS_CLASS_FQN.isNotNull())
+            .fetchOne(r -> new ForeignKeyRef(r.value1(), r.value2(), r.value3()));
     }
 
     /** The largest page the graph's build lets a connection serve, where it set one. */

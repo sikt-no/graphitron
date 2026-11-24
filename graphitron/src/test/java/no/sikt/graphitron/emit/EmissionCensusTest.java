@@ -348,24 +348,27 @@ class EmissionCensusTest {
             soft.assertThat(emitted).as("the roots the store emits").containsExactly(
                 "Query.actorsByFilmFilter", "Query.actorsByFilmFilterConnection", "Query.actorsByFilmIds",
                 "Query.addressesByCountryName", "Query.addressesByCustomerIds",
-                "Query.addressesByCustomerIdsInferred", "Query.allActors", "Query.allFanOwners",
-                "Query.allIndividuals", "Query.categoryById", "Query.citiesByCountryFilter",
-                "Query.citiesByCountryName", "Query.computedTitleFilm", "Query.converterCampusTermByNodeId",
-                "Query.converterCampusTerms", "Query.converterCampusTermsByNodeIds",
-                "Query.converterCampuses", "Query.converterCampusesByOrgCode",
-                "Query.converterCampusesByOrgCodes", "Query.converterIdChangeByNodeId",
-                "Query.converterIdChanges", "Query.converterIdChangesConnection", "Query.converterOrgs",
-                "Query.customerByPk", "Query.customers", "Query.customersByAddressDistrict",
+                "Query.addressesByCustomerIdsInferred", "Query.allActors", "Query.allContent",
+                "Query.allContentConnection", "Query.allFanItems", "Query.allFanLabelled",
+                "Query.allFanOwners", "Query.allIndividuals", "Query.categoryById",
+                "Query.citiesByCountryFilter", "Query.citiesByCountryName", "Query.computedTitleFilm",
+                "Query.converterCampusTermByNodeId", "Query.converterCampusTerms",
+                "Query.converterCampusTermsByNodeIds", "Query.converterCampuses",
+                "Query.converterCampusesByOrgCode", "Query.converterCampusesByOrgCodes",
+                "Query.converterIdChangeByNodeId", "Query.converterIdChanges",
+                "Query.converterIdChangesConnection", "Query.converterOrgs", "Query.customerByPk",
+                "Query.customers", "Query.customersByAddressDistrict",
                 "Query.customersByAddressDistrictActive", "Query.customersByAddresses",
                 "Query.customersByCityFilter", "Query.customersByCityId",
                 "Query.customersByConditionDistrict", "Query.customersByDistrictBean",
                 "Query.customersByMultiFieldFilter", "Query.customersByNullableAddressIds",
                 "Query.customersByTwoNames", "Query.customersOfPrincipal", "Query.customersSeenByUser",
                 "Query.divergedRefChildren", "Query.divergedRefOrgs", "Query.endorsementsByNodeId",
-                "Query.filmActorBySingularCompositeNodeId", "Query.filmActorsByCompositeNodeIds",
-                "Query.filmActorsByNullableNodeIds", "Query.filmActorsByPairList", "Query.filmActorsByPairs",
-                "Query.filmSameRows", "Query.films", "Query.filmsByBridgedActorFirstName",
-                "Query.filmsByCastNames", "Query.filmsByEffectiveNullability", "Query.filmsByJunctionActorId",
+                "Query.fanItem", "Query.filmActorBySingularCompositeNodeId",
+                "Query.filmActorsByCompositeNodeIds", "Query.filmActorsByNullableNodeIds",
+                "Query.filmActorsByPairList", "Query.filmActorsByPairs", "Query.filmSameRows", "Query.films",
+                "Query.filmsByBridgedActorFirstName", "Query.filmsByCastNames",
+                "Query.filmsByEffectiveNullability", "Query.filmsByJunctionActorId",
                 "Query.filmsByLanguagePairs", "Query.filmsByNodeIdArg",
                 "Query.filmsByNodeIdArgWithTitleFilter", "Query.filmsByNullableNodeIds", "Query.filmsByOneOf",
                 "Query.filmsByOptionalLanguage", "Query.filmsByOptionalLanguages",
@@ -401,6 +404,8 @@ class EmissionCensusTest {
             soft.assertThat(held).as("the roots the walk keeps")
                 .containsEntry("FACETED", List.of(
                     "Query.citiesFaceted", "Query.filmActorsFaceted", "Query.filmsFaceted"))
+                .containsEntry("JOINED_DETAIL", List.of(
+                    "Query.allParties", "Query.allPartiesConnection", "Query.allSubjects"))
                 .containsEntry("LOOKUP_INPUT_FIELD", List.of(
                     "Query.filmActorsByKey"))
                 .containsEntry("LOOKUP_KEY_CONVERTED", List.of(
@@ -411,13 +416,10 @@ class EmissionCensusTest {
                     "Query.filmsByLanguagesComposed", "Query.filmsByLanguagesComposedList",
                     "Query.filmsOrdered", "Query.filmsOrderedConnection", "Query.squadMembers"))
                 .containsEntry("POLYMORPHIC", List.of(
-                    "Query.allContent", "Query.allContentByFilmTitle", "Query.allContentConnection",
-                    "Query.allContentConnectionByFilmTitle", "Query.allFanItems", "Query.allFanLabelled",
-                    "Query.allParties", "Query.allPartiesConnection", "Query.allSubjects",
                     "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documents",
-                    "Query.documentsConnection", "Query.fanItem", "Query.occupantById",
-                    "Query.occupantByOptionalId", "Query.occupantsByAddress", "Query.occupantsByFilter",
-                    "Query.occupantsByIds", "Query.occupantsByIdsConnection", "Query.occupantsByLastName",
+                    "Query.documentsConnection", "Query.occupantById", "Query.occupantByOptionalId",
+                    "Query.occupantsByAddress", "Query.occupantsByFilter", "Query.occupantsByIds",
+                    "Query.occupantsByIdsConnection", "Query.occupantsByLastName",
                     "Query.occupantsByMixedNamePrefix", "Query.occupantsByName",
                     "Query.occupantsByNameConnection", "Query.occupantsByNamePrefix",
                     "Query.occupantsByNullableIds", "Query.occupantsByStoreId",
@@ -427,10 +429,11 @@ class EmissionCensusTest {
                     "Query.pagedItemsByName", "Query.search", "Query.searchConnection",
                     "Query.stockByLanguage", "Query.stockByLanguageOverride"))
                 .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
+                    "Query.allContentByFilmTitle", "Query.allContentConnectionByFilmTitle",
                     "Query.filmsByLanguages", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
                     "Query.filmsByOriginalLanguage", "Query.filmsByOriginalLanguageDescList",
                     "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList"))
-                .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
+                .containsOnlyKeys("FACETED", "JOINED_DETAIL", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
         });
     }
 }

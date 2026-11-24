@@ -1015,7 +1015,9 @@ public class TypeFetcherGenerator {
                     arg, names, tableRef, outputPackage, sortKeys));
                 collectSortKeyMethods(sortKeyMethods, helperOrders(arg), sortKeys);
             } else if (field instanceof QueryField.QueryTableInterfaceField qtif
-                    && qtif.orderBy() instanceof OrderBySpec.Argument arg) {
+                    && launchers.argumentOrderFor(qtif.parentTypeName(), qtif.name())
+                        .orElse(qtif.orderBy() instanceof OrderBySpec.Argument walk ? walk : null)
+                        instanceof OrderBySpec.Argument arg) {
                 // The interface root's launcher references the same minted helper ref as the
                 // table root's; before the launcher migration the legacy body spelled the call
                 // inline while nothing emitted the helper, so an @orderBy argument on this

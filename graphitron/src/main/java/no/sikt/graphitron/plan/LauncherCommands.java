@@ -295,12 +295,49 @@ public final class LauncherCommands {
         return new LauncherCommand(
             units.launcherMethod(root.parentType(), root.fieldName()),
             FieldCoordinates.coordinates(root.parentType(), root.fieldName()),
-            new LaunchSource.AnchorTable(root.table(), units.typeClass(root.returnType())),
+            root.discriminated() != null ? discriminatedSourceOf(root, units)
+                : new LaunchSource.AnchorTable(root.table(), units.typeClass(root.returnType())),
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
             result,
             units.selectionOccurrences());
+    }
+
+    /**
+     * A discriminated root's source, read off the store: the shared table and its discriminating
+     * column, one branch per participant on it with its projection unit and its cross columns lowered
+     * as the walk lowers them, and the interface's shared fields as the selection restriction. A
+     * participant reading a detail table of its own is not stated whole, so no base slice is needed.
+     * A cross column's hop is keyed by the foreign key its step rides, as the store states it.
+     */
+    private static LaunchSource.DiscriminatedTable discriminatedSourceOf(no.sikt.graphitron.emit.RootQuery.Emitted root,
+            GeneratedUnits units) {
+        var told = root.discriminated();
+        var branches = new ArrayList<LaunchSource.DiscriminatedTable.Branch>();
+        for (var participant : told.participants()) {
+            var crosses = participant.crossColumns().stream()
+                .map(cross -> new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound.CrossTableField(
+                    cross.fieldName(), cross.column(),
+                    new no.sikt.graphitron.rewrite.model.JoinStep.Hop(
+                        new no.sikt.graphitron.rewrite.model.TableExpr.Catalog(cross.target()),
+                        new no.sikt.graphitron.rewrite.model.On.ColumnPairs(
+                            new no.sikt.graphitron.rewrite.model.On.Keying.ForeignKey(cross.key()),
+                            cross.pairs().stream()
+                                .map(pair -> new no.sikt.graphitron.rewrite.model.JoinSlot.FkSlot(pair.from(), pair.to()))
+                                .toList()),
+                        root.table(), null, cross.target().javaFieldName()),
+                    participant.typeName() + "_" + cross.fieldName()))
+                .toList();
+            var tb = new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound(participant.typeName(),
+                root.table(), participant.value(), crosses);
+            branches.add(new LaunchSource.DiscriminatedTable.Branch.SingleTable(tb, units.typeClass(tb.typeName()),
+                crossTableTerms(tb, told.column())));
+        }
+        return new LaunchSource.DiscriminatedTable(root.table(), told.column(),
+            told.participants().stream().map(no.sikt.graphitron.emit.RootQuery.Participant::value).toList(),
+            List.of(), branches,
+            new LaunchSource.DiscriminatedTable.SelectionRestriction(units.selectionOccurrences(), told.sharedFields()));
     }
 
     /** An order's keys as a fixed order, ascending throughout where every key is. */

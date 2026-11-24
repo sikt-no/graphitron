@@ -971,9 +971,12 @@ static method needs no holder.
     connections. That page-size rule is restated from `PaginationResolver` in `RootQuery`; it becomes
     one stored fact when the child-connection flip arrives as its second reader. A node fetcher's root
     method is the store's (`graphitron_occurrence_producer_node`, its tenancy `store_graph_tenant_column`),
-    all five of FS main's among them. Polymorphic roots go in slices: discriminated interfaces on one
-    shared table next, then multi-table interfaces and unions with no order, then ordering across
-    participants, which needs a stored relation, and the connections over it. Faceted connections and
+    all five of FS main's among them. A root whose participants a discriminator tells apart on one
+    shared table is the store's too, its cross columns and shared fields read off
+    `graphitron_field_cross_column` and `graphitron_interface_shared_field`; one with a participant on a
+    detail table of its own waits as `JOINED_DETAIL`. Multi-table interfaces and unions come next with
+    no order, then ordered across participants (the order rows per participant table are the slots, and
+    `ORDERING_ACROSS_PARTICIPANTS` moves onto the producer facts), then the connections over them. Faceted connections and
     an order argument taking a list remain beside them. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
