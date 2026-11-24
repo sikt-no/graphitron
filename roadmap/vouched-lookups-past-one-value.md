@@ -1,7 +1,7 @@
 ---
 id: R1199
 title: "An _entities lookup with vouchers for several values resolves on one connection"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: service

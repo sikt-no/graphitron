@@ -32,8 +32,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1168` | An error handler that an earlier handler shadows is reported, as a warning or an error <sub>blocked by: [error-dispatch-matches-graphitron-9](error-dispatch-matches-graphitron-9.md)</sub> | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](shadowed-error-handler-is-reported.md) |
 | `R1167` | Error-channel dispatch routes every throw where Graphitron 9 routed it | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](error-dispatch-matches-graphitron-9.md) |
 | `R454` | A routine write takes the shapes opptak's slice needs | In Progress | 2026-11-24 <sub>created 2026-07-09</sub> | [plan](routine-write-result-shapes.md) |
-| `R1199` | An _entities lookup with vouchers for several values resolves on one connection | In Progress | 2026-11-24 <sub>created 2026-11-18</sub> | [plan](vouched-lookups-past-one-value.md) |
 | `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | In Progress | 2026-11-23 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
+| `R1199` | An _entities lookup with vouchers for several values resolves on one connection | In Review | 2026-11-24 <sub>created 2026-11-18</sub> | [plan](vouched-lookups-past-one-value.md) |
 | `R881` | No write carrier reads column nullability, so a clear or a write into a NOT NULL column is only the database's to refuse | Spec | 2026-11-19 <sub>created 2026-08-31</sub> | [plan](write-carriers-never-read-column-nullability.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -559,7 +559,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R1206` [**A class in a declared dependency is nameable where the schema names it**](declared-dependency-class-nameable.md) — Ready, feature
-- `R1199` [**An _entities lookup with vouchers for several values resolves on one connection**](vouched-lookups-past-one-value.md) — In Progress, feature
+- `R1199` [**An _entities lookup with vouchers for several values resolves on one connection**](vouched-lookups-past-one-value.md) — In Review, feature
 - `R1207` [**An accepting type guards its vouched fields with @requires, so an issuer can be an ordinary entity**](vouched-fields-guarded-by-requires.md) — Backlog, feature, blocked by [vouched-lookups-past-one-value](vouched-lookups-past-one-value.md)
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
