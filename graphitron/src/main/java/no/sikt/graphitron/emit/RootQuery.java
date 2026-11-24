@@ -19,6 +19,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
@@ -29,6 +30,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_SIGNATURE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -81,7 +83,11 @@ public final class RootQuery {
         LOOKUP_KEY_CONVERTED,
         /** Its rows may be several types', told apart by the table each is a row of. */
         POLYMORPHIC,
-        /** Its rows are told apart by a discriminator, and a participant reads a detail table of its own. */
+        /**
+         * Its rows are told apart by a discriminator, and a participant on a detail table of its own reads
+         * a field the joined read does not project: a node id, or an inherited reference it would alias
+         * apart from another interface's read of the same type.
+         */
         JOINED_DETAIL,
         /** It builds a connection that surfaces facets. */
         FACETED,
@@ -157,12 +163,37 @@ public final class RootQuery {
      * share: the discriminating column, each participant with its value and the fields it reads one
      * step off that table, and the fields its interface's participants answer under one alias.
      */
-    public record Discriminated(ColumnRef column, List<Participant> participants, List<String> sharedFields) {
+    public record Discriminated(ColumnRef column, List<Participant> participants, List<Joined> joined,
+                                List<BaseTerm> baseSlice, List<String> sharedFields) {
         public Discriminated {
             Objects.requireNonNull(column, "column");
             participants = List.copyOf(participants);
+            joined = List.copyOf(joined);
+            baseSlice = List.copyOf(baseSlice);
             sharedFields = List.copyOf(sharedFields);
         }
+    }
+
+    /**
+     * A participant on a detail table of its own, joined to the shared one by its key: its type and
+     * value, the detail table, the step from it back to the shared table with the foreign key it rides,
+     * and the detail columns only it projects, with their fields.
+     */
+    public record Joined(String typeName, String value, TableRef detail, List<Pair> toBase, ForeignKeyRef key,
+                         Map<String, ColumnRef> details) {
+        public Joined {
+            toBase = List.copyOf(toBase);
+            details = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(details));
+        }
+    }
+
+    /** One term the shared table projects for the joined participants, once under one alias. */
+    public sealed interface BaseTerm {
+        /** An inherited field read off the shared table, under its field name. */
+        record Inherited(String fieldName, ColumnRef baseColumn) implements BaseTerm {}
+
+        /** A key column the detail table shares with the shared table, under the detail column's name. */
+        record SharedKey(ColumnRef baseColumn, String alias) implements BaseTerm {}
     }
 
     /** One participant of a discriminated root: its type, its discriminator value and its cross columns. */
@@ -425,11 +456,12 @@ public final class RootQuery {
         var c = SQL_COLUMN;
         var graph = store.graphName();
         record Stated(String coordinate, String type, String recognizedBy, String source, String schema, String table,
-                      String base, String column, String value, String target) {}
+                      String base, String column, String value, String target, String baseSource, String baseSchema) {}
         var byCoordinate = new LinkedHashMap<String, List<Stated>>();
         store.dsl()
             .select(x.COORDINATE, x.PARTICIPANT_TYPE, x.RECOGNIZED_BY, x.TABLE_SOURCE_NAME, x.TABLE_SCHEMA,
-                x.TABLE_NAME, x.BASE_NAME, x.DISCRIMINATOR_COLUMN, x.DISCRIMINATOR_VALUE, ft.TARGET_TYPE_NAME)
+                x.TABLE_NAME, x.BASE_NAME, x.DISCRIMINATOR_COLUMN, x.DISCRIMINATOR_VALUE, ft.TARGET_TYPE_NAME,
+                x.BASE_SOURCE_NAME, x.BASE_SCHEMA)
             .from(x)
             .join(p).on(p.GRAPH_NAME.eq(x.GRAPH_NAME), p.COORDINATE.eq(x.COORDINATE), p.START.eq("ROOT"))
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
@@ -439,42 +471,165 @@ public final class RootQuery {
             .orderBy(x.COORDINATE, x.PARTICIPANT_TYPE)
             .forEach(r -> byCoordinate.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(new Stated(r.value1(),
                 r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7(), r.value8(), r.value9(),
-                r.value10())));
+                r.value10(), r.value11(), r.value12())));
         var sf = GRAPHITRON_INTERFACE_SHARED_FIELD;
         var shared = new LinkedHashMap<String, List<String>>();
         store.dsl().select(sf.INTERFACE_TYPE, sf.FIELD_NAME).from(sf).where(sf.GRAPH_NAME.eq(graph))
             .orderBy(sf.INTERFACE_TYPE, sf.FIELD_NAME)
             .forEach(r -> shared.computeIfAbsent(r.value1(), k -> new ArrayList<>()).add(r.value2()));
+        // The types some discriminated read takes as participants on the shared table: one of them on a
+        // detail table elsewhere would alias its inherited references two ways.
+        var singleTableParticipants = new java.util.HashSet<String>();
+        byCoordinate.values().forEach(stated -> stated.stream()
+            .filter(st -> "DISCRIMINATOR".equals(st.recognizedBy()) && st.table().equals(st.base()))
+            .forEach(st -> singleTableParticipants.add(st.type())));
         var out = new LinkedHashMap<String, Told>();
         byCoordinate.forEach((coordinate, stated) -> {
             if (stated.stream().noneMatch(s -> "DISCRIMINATOR".equals(s.recognizedBy()))) {
                 return;
             }
-            if (stated.stream().anyMatch(s -> !"DISCRIMINATOR".equals(s.recognizedBy()) || !s.table().equals(s.base()))) {
-                out.put(coordinate, new Told(null, Reason.JOINED_DETAIL));
+            if (stated.stream().anyMatch(s -> !"DISCRIMINATOR".equals(s.recognizedBy()))) {
+                out.put(coordinate, new Told(null, Reason.POLYMORPHIC));
                 return;
             }
             var first = stated.getFirst();
             var column = store.dsl().select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
                 .from(c)
-                .where(c.SOURCE_NAME.eq(first.source()), c.TABLE_SCHEMA.eq(first.schema()), c.TABLE_NAME.eq(first.table()),
-                    c.COLUMN_NAME.equalIgnoreCase(first.column()))
+                .where(c.SOURCE_NAME.eq(first.baseSource()), c.TABLE_SCHEMA.eq(first.baseSchema()),
+                    c.TABLE_NAME.eq(first.base()), c.COLUMN_NAME.equalIgnoreCase(first.column()))
                 .fetchOne(r -> new ColumnRef(r.value1(), r.value2(), r.value3(), r.value4()));
             var participants = new ArrayList<Participant>();
-            boolean whole = column != null;
+            var joined = new ArrayList<Joined>();
+            var baseSlice = new ArrayList<BaseTerm>();
+            var seen = new java.util.HashSet<String>();
+            Reason reason = column == null ? Reason.NOT_ONE_TABLE : null;
             for (var s : stated) {
-                var crosses = crossColumns(store, s.type());
-                if (crosses == null) {
-                    whole = false;
+                if (reason != null) {
                     break;
                 }
-                participants.add(new Participant(s.type(), s.value(), crosses));
+                if (s.table().equals(s.base())) {
+                    var crosses = crossColumns(store, s.type());
+                    if (crosses == null) {
+                        reason = Reason.NOT_ONE_TABLE;
+                    } else {
+                        participants.add(new Participant(s.type(), s.value(), crosses));
+                    }
+                } else {
+                    var detail = tableRef(store, s.source(), s.schema(), s.table());
+                    var join = detail == null ? null : joined(store, s.type(), s.value(), detail, s.base(),
+                        singleTableParticipants, baseSlice, seen);
+                    if (join == null) {
+                        reason = Reason.JOINED_DETAIL;
+                    } else {
+                        joined.add(join);
+                    }
+                }
             }
-            out.put(coordinate, whole
-                ? new Told(new Discriminated(column, participants, shared.getOrDefault(first.target(), List.of())), null)
-                : new Told(null, Reason.NOT_ONE_TABLE));
+            out.put(coordinate, reason == null
+                ? new Told(new Discriminated(column, participants, joined, baseSlice,
+                    shared.getOrDefault(first.target(), List.of())), null)
+                : new Told(null, reason));
         });
         return out;
+    }
+
+    /**
+     * A participant on a detail table of its own, or {@code null} where the joined read does not state it
+     * whole. Its step back to the shared table is the one key path of a field of its own reaching that
+     * table in one step, the inherited field that names the join. Each field reading a column is placed
+     * by the table the column is on: one on the shared table is an inherited field the shared table
+     * projects under the field's name, one of the step's own columns a key it projects under the
+     * detail column's name, any other a detail column only this participant projects. The shared
+     * table's terms are added to {@code baseSlice} once per alias, the first participant's winning.
+     */
+    private static Joined joined(StoreHandle store, String type, String value, TableRef detail, String base,
+                                 java.util.Set<String> singleTableParticipants, List<BaseTerm> baseSlice,
+                                 java.util.Set<String> seen) {
+        var f = GRAPHITRON_FIELD;
+        var oc = GRAPHITRON_OCCURRENCE_COLUMN;
+        var ni = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var sp = GRAPHITRON_JOIN_PATH_STEP;
+        var c = SQL_COLUMN;
+        var graph = store.graphName();
+        String toBase = null;
+        List<Pair> pairs = null;
+        for (var field : store.dsl().select(f.FIELD_NAME).from(f)
+                .where(f.GRAPH_NAME.eq(graph), f.TYPE_NAME.eq(type)).orderBy(f.ORDINAL).fetch(f.FIELD_NAME)) {
+            String coordinate = type + "." + field;
+            var steps = store.dsl().select(sp.POSITION, sp.FROM_TABLE, sp.TO_TABLE).from(sp)
+                .where(sp.GRAPH_NAME.eq(graph), sp.COORDINATE.eq(coordinate)).fetch();
+            if (steps.size() == 1 && steps.getFirst().value1() == 0 && detail.tableName().equals(steps.getFirst().value2())
+                    && base.equals(steps.getFirst().value3())) {
+                toBase = coordinate;
+                pairs = stepPairs(store, coordinate);
+                break;
+            }
+        }
+        if (toBase == null || pairs.isEmpty()) {
+            return null;
+        }
+        var key = foreignKey(store, toBase);
+        if (key == null) {
+            return null;
+        }
+        var details = new LinkedHashMap<String, ColumnRef>();
+        for (var field : store.dsl().select(f.FIELD_NAME).from(f)
+                .where(f.GRAPH_NAME.eq(graph), f.TYPE_NAME.eq(type)).orderBy(f.ORDINAL).fetch(f.FIELD_NAME)) {
+            String coordinate = type + "." + field;
+            if (store.dsl().fetchExists(ni, ni.GRAPH_NAME.eq(graph), ni.COORDINATE.eq(coordinate))) {
+                return null;
+            }
+            var read = store.dsl().select(oc.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+                .from(oc)
+                .join(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
+                    c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
+                .where(oc.GRAPH_NAME.eq(graph), oc.COORDINATE.eq(coordinate))
+                .fetch();
+            if (read.size() != 1) {
+                continue;
+            }
+            var row = read.getFirst();
+            var column = new ColumnRef(row.value2(), row.value3(), row.value4(), row.value5());
+            if (base.equals(row.value1())) {
+                if (singleTableParticipants.contains(type)) {
+                    return null;
+                }
+                if (seen.add(field)) {
+                    baseSlice.add(new BaseTerm.Inherited(field, column));
+                }
+            } else if (detail.tableName().equals(row.value1())) {
+                var shared = pairs.stream()
+                    .filter(pair -> pair.from().sqlName().equalsIgnoreCase(column.sqlName()))
+                    .findFirst();
+                if (shared.isPresent()) {
+                    if (seen.add(column.sqlName())) {
+                        baseSlice.add(new BaseTerm.SharedKey(shared.get().to(), column.sqlName()));
+                    }
+                } else {
+                    details.put(field, column);
+                }
+            }
+        }
+        return new Joined(type, value, detail, pairs, key, details);
+    }
+
+    /** The column pairs of the one step of {@code coordinate}'s path, each from the table it leaves to the one it reaches. */
+    private static List<Pair> stepPairs(StoreHandle store, String coordinate) {
+        var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        var fc = SQL_COLUMN.as("fc");
+        var tc = SQL_COLUMN.as("tc");
+        return store.dsl()
+            .select(fc.COLUMN_NAME, fc.JOOQ_NAME, fc.BINDING_TYPE, fc.DATABASE_TYPE,
+                tc.COLUMN_NAME, tc.JOOQ_NAME, tc.BINDING_TYPE, tc.DATABASE_TYPE)
+            .from(sc)
+            .join(fc).on(fc.SOURCE_NAME.eq(sc.FROM_SOURCE_NAME), fc.TABLE_SCHEMA.eq(sc.FROM_SCHEMA),
+                fc.TABLE_NAME.eq(sc.FROM_TABLE), fc.COLUMN_NAME.eq(sc.FROM_COLUMN))
+            .join(tc).on(tc.SOURCE_NAME.eq(sc.TO_SOURCE_NAME), tc.TABLE_SCHEMA.eq(sc.TO_SCHEMA),
+                tc.TABLE_NAME.eq(sc.TO_TABLE), tc.COLUMN_NAME.eq(sc.TO_COLUMN))
+            .where(sc.GRAPH_NAME.eq(store.graphName()), sc.COORDINATE.eq(coordinate), sc.POSITION.eq(0))
+            .orderBy(sc.ORDINAL)
+            .fetch(r -> new Pair(new ColumnRef(r.value1(), r.value2(), r.value3(), r.value4()),
+                new ColumnRef(r.value5(), r.value6(), r.value7(), r.value8())));
     }
 
     /**

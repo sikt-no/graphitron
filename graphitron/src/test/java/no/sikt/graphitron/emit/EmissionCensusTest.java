@@ -350,7 +350,8 @@ class EmissionCensusTest {
                 "Query.addressesByCountryName", "Query.addressesByCustomerIds",
                 "Query.addressesByCustomerIdsInferred", "Query.allActors", "Query.allContent",
                 "Query.allContentConnection", "Query.allFanItems", "Query.allFanLabelled",
-                "Query.allFanOwners", "Query.allIndividuals", "Query.categoryById",
+                "Query.allFanOwners", "Query.allIndividuals", "Query.allParties",
+                "Query.allPartiesConnection", "Query.allSubjects", "Query.categoryById",
                 "Query.citiesByCountryFilter", "Query.citiesByCountryName", "Query.computedTitleFilm",
                 "Query.converterCampusTermByNodeId", "Query.converterCampusTerms",
                 "Query.converterCampusTermsByNodeIds", "Query.converterCampuses",
@@ -404,8 +405,6 @@ class EmissionCensusTest {
             soft.assertThat(held).as("the roots the walk keeps")
                 .containsEntry("FACETED", List.of(
                     "Query.citiesFaceted", "Query.filmActorsFaceted", "Query.filmsFaceted"))
-                .containsEntry("JOINED_DETAIL", List.of(
-                    "Query.allParties", "Query.allPartiesConnection", "Query.allSubjects"))
                 .containsEntry("LOOKUP_INPUT_FIELD", List.of(
                     "Query.filmActorsByKey"))
                 .containsEntry("LOOKUP_KEY_CONVERTED", List.of(
@@ -433,7 +432,7 @@ class EmissionCensusTest {
                     "Query.filmsByLanguages", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
                     "Query.filmsByOriginalLanguage", "Query.filmsByOriginalLanguageDescList",
                     "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList"))
-                .containsOnlyKeys("FACETED", "JOINED_DETAIL", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
+                .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
         });
     }
 }

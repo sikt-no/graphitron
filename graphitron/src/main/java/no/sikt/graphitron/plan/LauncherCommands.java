@@ -307,9 +307,11 @@ public final class LauncherCommands {
     /**
      * A discriminated root's source, read off the store: the shared table and its discriminating
      * column, one branch per participant on it with its projection unit and its cross columns lowered
-     * as the walk lowers them, and the interface's shared fields as the selection restriction. A
-     * participant reading a detail table of its own is not stated whole, so no base slice is needed.
-     * A cross column's hop is keyed by the foreign key its step rides, as the store states it.
+     * as the walk lowers them, one branch per participant on a detail table of its own with the
+     * detail columns only it projects, the shared table's terms for those as the base slice, and the
+     * interface's shared fields as the selection restriction. A cross column's hop, and a detail
+     * table's step back to the shared table, is keyed by the foreign key its step rides, as the store
+     * states it.
      */
     private static LaunchSource.DiscriminatedTable discriminatedSourceOf(no.sikt.graphitron.emit.RootQuery.Emitted root,
             GeneratedUnits units) {
@@ -334,9 +336,36 @@ public final class LauncherCommands {
             branches.add(new LaunchSource.DiscriminatedTable.Branch.SingleTable(tb, units.typeClass(tb.typeName()),
                 crossTableTerms(tb, told.column())));
         }
-        return new LaunchSource.DiscriminatedTable(root.table(), told.column(),
-            told.participants().stream().map(no.sikt.graphitron.emit.RootQuery.Participant::value).toList(),
-            List.of(), branches,
+        for (var joined : told.joined()) {
+            var hop = new no.sikt.graphitron.rewrite.model.JoinStep.Hop(
+                new no.sikt.graphitron.rewrite.model.TableExpr.Catalog(root.table()),
+                new no.sikt.graphitron.rewrite.model.On.ColumnPairs(
+                    new no.sikt.graphitron.rewrite.model.On.Keying.ForeignKey(joined.key()),
+                    joined.toBase().stream()
+                        .map(pair -> new no.sikt.graphitron.rewrite.model.JoinSlot.FkSlot(pair.from(), pair.to()))
+                        .toList()),
+                joined.detail(), null, root.table().javaFieldName());
+            var jtb = new no.sikt.graphitron.rewrite.model.ParticipantRef.JoinedTableBound(joined.typeName(),
+                joined.detail(), joined.value(), hop);
+            branches.add(new LaunchSource.DiscriminatedTable.Branch.JoinedDetail(jtb,
+                joined.details().entrySet().stream()
+                    .map(e -> new LaunchSource.DiscriminatedTable.DetailField(e.getKey(), e.getValue()))
+                    .toList()));
+        }
+        var knownValues = new ArrayList<String>();
+        told.participants().forEach(participant -> knownValues.add(participant.value()));
+        told.joined().forEach(joined -> knownValues.add(joined.value()));
+        return new LaunchSource.DiscriminatedTable(root.table(), told.column(), knownValues,
+            told.baseSlice().stream()
+                .<LaunchSource.DiscriminatedTable.BaseSliceTerm>map(term -> switch (term) {
+                    case no.sikt.graphitron.emit.RootQuery.BaseTerm.Inherited inherited ->
+                        new LaunchSource.DiscriminatedTable.BaseSliceTerm.InheritedRef(inherited.fieldName(),
+                            inherited.baseColumn());
+                    case no.sikt.graphitron.emit.RootQuery.BaseTerm.SharedKey key ->
+                        new LaunchSource.DiscriminatedTable.BaseSliceTerm.SharedKey(key.baseColumn(), key.alias());
+                })
+                .toList(),
+            branches,
             new LaunchSource.DiscriminatedTable.SelectionRestriction(units.selectionOccurrences(), told.sharedFields()));
     }
 

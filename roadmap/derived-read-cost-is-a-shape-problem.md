@@ -973,8 +973,14 @@ static method needs no holder.
     method is the store's (`graphitron_occurrence_producer_node`, its tenancy `store_graph_tenant_column`),
     all five of FS main's among them. A root whose participants a discriminator tells apart on one
     shared table is the store's too, its cross columns and shared fields read off
-    `graphitron_field_cross_column` and `graphitron_interface_shared_field`; one with a participant on a
-    detail table of its own waits as `JOINED_DETAIL`. Multi-table interfaces and unions come next with
+    `graphitron_field_cross_column` and `graphitron_interface_shared_field`. So is one with a participant
+    on a detail table of its own: its step back to the shared table is the one-step key path of its
+    own field reaching that table, keyed by the step's foreign key, and its fields read off
+    `graphitron_occurrence_column` place themselves on the shared table, the step's key, or the detail
+    table. That detail-to-shared key is read in `RootQuery` and becomes a relation at its second reader,
+    the child discriminated flip. A joined participant binding a node id, or one with an inherited
+    field that is a single-table participant of another interface, still waits as `JOINED_DETAIL`.
+    Multi-table interfaces and unions come next with
     no order, then ordered across participants (the order rows per participant table are the slots, and
     `ORDERING_ACROSS_PARTICIPANTS` moves onto the producer facts), then the connections over them. Faceted connections and
     an order argument taking a list remain beside them. Whether a type's
