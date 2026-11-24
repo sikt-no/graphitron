@@ -38,10 +38,10 @@ retires, it plans that consumer's migration: what A and B write instead, and whe
 accepted for a while.
 
 The migration reaches the consumer's Java too. A `VouchedFor` component is named for its vouched-for
-field (`ConnectionKeyShape.VouchedForPart.name`), so kreg's source reads `VouchedFor::nasjonalIdForVoucher`
-after R1199, and narrowing the refusal so the key field itself is vouched for renames it: a second source
-break, after R1199's. The how-to's per-entity variant is written here, once the narrowing's ruling says
-whether the second-field form is a valid schema; R1199 pins the form as accepted but does not teach it.
+field (`ConnectionKeyShape.VouchedForPart.name`). R1199 lets `vouchesFor` name the key's own fields, each
+key field supplied by exactly one section (Filip, 2026-11-24), so kreg can drop its second field in the
+same migration as R1199's source change; this item starts from that shape, and renames nothing further
+unless it changes what the vouched-for fields are.
 
 ## Guarding with `@requires`
 
@@ -93,9 +93,9 @@ type Sak @table(name: "sak") @key(fields: "id")
 * *B.* `@accept` mints its voucher field `@external` and mints `@requires(fields: "internalGraphitronVoucher")`
   on every field below the accepting type that it reads on the vouched connection. Both directives are
   published in the subgraph SDL and imported through the federation `@link`.
-* *The key part.* `VOUCHER_VOUCHED_FOR_IN_KEY` is narrowed as in *Narrowing `VOUCHER_VOUCHED_FOR_IN_KEY`*
-  below, so the vouched-for fields may be B's authored key with an empty lookup section; if the lookup
-  part goes altogether (see *Open*), the refusal goes with it.
+* *The key part.* R1199 already lets the vouched-for fields be B's authored key, the lookup section
+  carrying the key's other fields; if the lookup part goes altogether (see *Open*), the per-field
+  section `EntityKeyQuery` computes for R1199 goes with it.
 * *The set key* (R1199) is what makes the list resolve: N saker present N vouched-for values in one
   `_entities` call.
 * *A `null` voucher* in a representation fails that representation alone, not the request
@@ -122,7 +122,7 @@ type Sak @table(name: "sak") @key(fields: "id")
   field-declaration grain (`graphitron_voucher_guard`, say), not worked out inside the minting view.
 * *The lookup part probably dissolves.* The representation now carries B's key, so the voucher's lookup
   section repeats navigation. Dropping it deletes `graphitron_accept_key`, `@accept(key:)`, its three
-  key refusals, `VOUCHER_VOUCHED_FOR_IN_KEY` and the codec's lookup section. The cost: a voucher for a value
+  key refusals, the per-field section R1199 computes and the codec's lookup section. The cost: a voucher for a value
   is no longer bound to one row, and unlocks any row B's policies admit for that value under whatever key
   is presented.
 * No reason found that the old form must stay, short of a consumer whose A can publish no key it shares
@@ -188,45 +188,3 @@ type Sak @table(name: "sak") @key(fields: "id")
   also keys by, checked with a real composition before implementation.
 * Whether Graphitron's classification passes an authored `@requires` or `@external` through untouched
   today; it names neither.
-
-## Narrowing `VOUCHER_VOUCHED_FOR_IN_KEY`
-
-Moved here from R1199. It is a question of the first form, so it is decided together with "whether the
-lookup part goes" above: if the representation carries B's key and the lookup section dissolves, the
-refusal goes with it and the narrowing is never built; if the first form stays, the narrowing removes a
-duplicate field.
-
-The per-entity voucher works today without it. The rule in `graphitron-model.sql` matches vouched-for
-fields to key fields by field name, so a second field reading the key's column passes it: kreg vouches for
-`nasjonalIdForVoucher` beside its key `nasjonalId`, both reading `NASJONAL_ID`, and opptak absorbs both.
-That form defeats the refusal's stated reason, "the two parts never share a value", since the two fields
-share a column. Either the reason does not hold, and the refusal narrows; or the form is a loophole, and
-the rule closes it by comparing columns, which needs the narrowing first or it breaks that consumer. The
-ruling decides which.
-
-*The refusal it narrows.* `VOUCHER_VOUCHED_FOR_IN_KEY` refuses a vouched-for field that is also a field
-of the key the voucher decodes to, "so the two parts never share a value". That was R1119's slice
-decision, not one of its rulings. The proposed framing, consistent with the 2026-11-16 ruling (the
-vouched-for values are the access decision, the lookup part navigation only): when the vouched-for fields
-are exactly B's authored key, the lookup section is empty and the voucher decodes onto that key from the
-vouched-for values. A changes nothing: an `@issue` absorbing only its vouched-for fields is not refused
-today, and it signs an empty lookup section. B's check "the lookup section names exactly B's key fields"
-becomes "the lookup section names exactly the key fields the vouched-for section does not supply", which
-is empty here. Refused still:
-
-* *A partial overlap*, some key fields vouched for and some looked up: it would split one key between an
-  access decision and navigation.
-* *A superset*, the vouched-for fields being the whole key and more: the proposal is to accept it, since
-  the key is still supplied whole by one section and the extra vouched-for fields only narrow the grant.
-  The ruling should say which.
-
-**Needs a ruling from Alf or Filip before Ready.**
-
-*Where the split lives.* Narrowed, the defect is a set comparison, and the voucher arm needs the same
-split in Java (which key fields the codec expects in the lookup section, which columns are filled from
-vouched-for values). Derived once in the store instead (`fact-model.adoc`, "a derivation gets a relation
-as soon as a second reader asks it"): a relation whose grain is *one field of the key an `@accept`
-decodes to, with the voucher section that supplies it*, written by the stage that writes
-`graphitron_accept_key` in its anchoring step, hanging off `graphitron_accept_key` by a cascading
-foreign key so its sweep follows. The defect rule reads it ("the key is supplied from both sections"),
-and `EntityKeyQuery` reads the section per field for the dispatch.

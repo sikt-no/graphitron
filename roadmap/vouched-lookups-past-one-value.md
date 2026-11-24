@@ -32,19 +32,19 @@ Two shapes become usable:
   item they all resolve.
 * *A voucher per entity* ([GitHub issue 584](https://github.com/sikt-no/graphitron/issues/584)). The
   vouched-for value is the entity's own key (a sak's id, with B's policies testing `sak_id`), so a list
-  of N rows always presents N values. The voucher can be written today, vouching for a second field that
-  reads the key's column (see *The per-entity voucher*); what it lacks is a limit sized to a list, which
-  the cap gives it.
+  of N rows always presents N values. After this item `vouchesFor` may name the key's own fields, so the
+  voucher needs no second field reading the key's column, and the cap sizes the limit to a list (see *The
+  per-entity voucher*).
 
 What a consumer sees: its connection source reads a set off the `ConnectionKey` instead of one value
 per field, and its policies test `= ANY(...)` instead of `=`. Both are breaking for an accepting
-consumer. Nothing changes in the SDL either side writes or in the SQL Graphitron generates.
+consumer. Its SDL keeps working unchanged, the second-field form included (Filip, 2026-11-24: a
+legitimate schema); a consumer that vouches for its key through a second field may drop it, on both sides
+together. The SQL Graphitron generates does not change.
 
-Two things are not in this item and do not block it. Letting `Sak` itself carry the voucher, guarded by
+One thing is not in this item and does not block it: letting `Sak` itself carry the voucher, guarded by
 `@requires` in B (Alf's ruling of 2026-11-23), changes what both sides write and is R1207, which depends
-on this item. Narrowing `VOUCHER_VOUCHED_FOR_IN_KEY`, so the per-entity voucher needs no second field,
-moved there with it, since whether the voucher keeps a lookup part decides whether there is a refusal
-left to narrow.
+on this item.
 
 ## Why
 
@@ -252,14 +252,72 @@ The vouched-for value is the sak id, so every row in the list is a distinct valu
 them into one `_entities` call. Under the set key that is one connection whose session holds the sak ids,
 B's policy `sak_id = ANY(...)`, and one SELECT. That is why the cap's default is sized to a list.
 
-The consumer's shape uses today's vocabulary only, provided B owns a `sak(sak_id)` table that its events
-reference. `VOUCHER_VOUCHED_FOR_IN_KEY` refuses a vouched-for field that is also a field of the key the
-voucher decodes to, and it compares fields by name, so the voucher vouches for a second field reading the
-key's column. kreg is written this way today (`nasjonalIdForVoucher` beside its key `nasjonalId`, both
-reading `NASJONAL_ID`). Whether that second field goes is R1207's, as is letting `Sak` itself issue.
-Until R1207 rules whether the form is a valid schema or a loophole, this item pins it as accepted (see
-*Tests*), since a consumer depends on it, but does not teach it in the how-to, since publishing it would
-give that ruling.
+### A key field supplied by the voucher
+
+Today a vouched-for field may not be a field of the key the voucher decodes to
+(`VOUCHER_VOUCHED_FOR_IN_KEY`), because A signs each absorbed field into one section, the lookup section
+holding every field `vouchesFor` does not name, and B requires the lookup section to name exactly its key
+fields. A key field that is also the vouched-for value would have to sit in both. The refusal compares
+fields by name, so a consumer gets round it with a second field reading the key's column: kreg vouches for
+`nasjonalIdForVoucher` beside its key `nasjonalId`, both reading `NASJONAL_ID`, and opptak absorbs both.
+That form is a legitimate schema (Filip, 2026-11-24) and keeps working; this item makes it unnecessary.
+
+*The rule (Filip, 2026-11-24).* Each field of the key the voucher decodes to is supplied by exactly one
+section: a key field `vouchesFor` names takes its value from the vouched-for section, and every other key
+field from the lookup section. The lookup section names exactly the key's fields less the vouched-for
+ones, no more and no fewer, and the vouched-for section names exactly `vouchesFor`, as today; a voucher
+that differs is rejected as today (`KEY`, `VOUCHED_FOR`). Every vouched-for value still goes onto the
+connection key, a key field's included, so a vouched-for key field both finds the row and decides access.
+A signs each field into one section, so a key field never arrives twice and B never compares two values.
+
+| B's key | `vouchesFor` | lookup section | key filled from |
+|---|---|---|---|
+| `nasjonalId` | `eierId` | `nasjonalId` | the lookup section, as today |
+| `nasjonalId` | `nasjonalId` | empty | the vouched-for section |
+| `orgId sakId` | `orgId` | `sakId` | `orgId` from vouched-for, `sakId` from lookup |
+| `sakId` | `sakId orgId` | empty | the vouched-for section; `orgId` only narrows access |
+
+One rule rather than the exact cover alone: refusing a mixed key or a superset would refuse shapes that
+grant nothing new, since A signs both sections in one token, and would need a refusal, a message and
+tests of their own.
+
+*A changes nothing.* An `@issue` whose `vouchesFor` names every absorbed field is not refused today and
+signs an empty lookup section; the token format and A's generated code are unchanged.
+
+*Decided once, in the one reader's query.* Once `VOUCHER_VOUCHED_FOR_IN_KEY` retires, the only reader of
+"which section supplies this key field" is the dispatch, through `EntityKeyQuery`, which already reads
+`graphitron_accept_key`, `graphitron_key_field_binding` and `graphitron_accept_vouched_for`. The answer is
+a plain join over them (the key's fields by its ordinal, then an `EXISTS` against
+`graphitron_accept_vouched_for` on its unique key), so it is stated in that query with no stage
+(`fact-model.adoc`, Alf 2026-11-15); no surviving defect rule asks it. A second reader stores it, as the
+subset relation "one vouched-for field of an `@accept` that is a field of the key its vouchers decode
+to", with foreign keys to `graphitron_accept_vouched_for` and `graphitron_key_field_binding`.
+
+*One list in the dispatch.* `EntityKeyQuery.Alternative.Voucher` carries the authored key's fields in key
+order, each with its column and its section, read in the same query as the `Direct` alternative. The
+key columns (`cols[]`) and the verifier's lookup set both come from that one list, so the emitter pairs
+no lists by name, and a vouched-for key field is coerced once, its local used for both the connection
+key and the row lookup, so the two cannot disagree.
+
+*What it retires.* With every combination accepted, `VOUCHER_VOUCHED_FOR_IN_KEY` has nothing left to
+refuse, and it goes: its branch of the defect rule in `graphitron-model.sql`, its `graphitron_defect_type`
+row, the guidance fragment `defects/VOUCHER_VOUCHED_FOR_IN_KEY.adoc`, and its row in `accept.adoc`'s
+constraints. `ClaimInKey` in `facts/defects/voucher-accept-keys.graphqls`, a superset (key `countryId`,
+vouching for `countryId country`), leaves that document with its claim. Every text that states the old
+"the lookup section is the key" rule is restated:
+
+* `VoucherRuntime`: `Reason.KEY`'s message ("names other fields than the entity's key"), which reaches a
+  consumer through `VoucherRejectedException`, and the `verify` javadoc and its `keyFields` parameter.
+* `accept.adoc`: the example's "The voucher's lookup part decodes to `id`", and *How a voucher is read*,
+  whose sections "name exactly ... the fields of the key it decodes to" and whose lookup values "are read
+  through the authored key's own SELECT".
+* `voucher-handover.adoc`'s "the rest are the lookup part, named and typed as B's key fields", and
+  `issue.adoc`'s "the remaining absorbed fields are the key of the vouched row".
+* `voucher-accept-keys.graphqls`: its header's "and none is a field of that key" and the `Named` comment.
+* `EntityKeyQuery.Alternative.Voucher`'s "The vouched-for values filter nothing", false once a vouched-for
+  key field finds the row, and `emitVoucherArm`'s "the lookup columns".
+
+The consumer's shape, provided B owns a `sak(sak_id)` table that its events reference:
 
 ```graphql
 # Subgraph A: the issuer. Sak itself cannot issue (it is a node, keyed, and a root field returns it),
@@ -269,19 +327,24 @@ type Sak @table(name: "sak") @key(fields: "id") {
   hendelseLogg: SakHendelseLogg      # same row, read as the issuing type
 }
 type SakHendelseLogg @table(name: "sak")
-    @issue(scope: "sakshendelser", ttl: "PT5M", vouchesFor: "sakIdForVoucher") {
-  sakId: ID! @field(name: "sak_id")            # the lookup part, named as B's key
-  sakIdForVoucher: ID! @field(name: "sak_id")  # the vouched-for value, the same column
+    @issue(scope: "sakshendelser", ttl: "PT5M", vouchesFor: "sakId") {
+  sakId: ID! @field(name: "sak_id")            # vouched for, and B's key
 }
 
-# Subgraph B: the lookup part is the key; the vouched-for field reads the same column.
+# Subgraph B: vouches for its own key; the lookup section is empty.
 type SakHendelseLogg @table(name: "sak") @key(fields: "sakId")
-    @accept(scope: "sakshendelser", vouchesFor: "sakIdForVoucher") {
+    @accept(scope: "sakshendelser", vouchesFor: "sakId") {
   sakId: ID! @field(name: "sak_id") @inaccessible
-  sakIdForVoucher: ID! @field(name: "sak_id") @inaccessible
   hendelser: [Sakshendelse!]! @reference(path: [{key: "sakshendelse_sak_fkey"}])
 }
 ```
+
+*Moving off the second field* is the consumer's choice, and it goes on both sides together. A kreg that
+vouches for `nasjonalId` expects it in the vouched-for section, where an older opptak's voucher carries
+`nasjonalIdForVoucher`, so the two deploy as one; a voucher lives five minutes (`PT5M`), so that is the
+window a split deploy fails in. The `VouchedFor` component is named for the vouched-for field, so the
+consumer's source reads `VouchedFor::nasjonalId` after the move; taken with this item's own source change,
+that is one migration, not two.
 
 *Outside this item.*
 
@@ -326,14 +389,24 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
   `load<Type>` is also reached from `Query.node` and `Query.nodes` (through `load` and `loadKeyed`), where
   no `fetchEntities` closes a set; that path never meets the voucher arm, since a representation built
   from a node id carries no voucher field, so it gains no close of its own.
+  The voucher arm fills each key column from its entry on the voucher alternative, `token.vouchedFor()`
+  or `token.lookup()` as the entry's section says, and asks the verifier for a lookup section naming the
+  entries whose section is lookup (`VoucherCodec.Verifier.verify`'s lookup set), from the one list.
+* *A key field supplied by the voucher* (`EntityKeyQuery`, `graphitron-model.sql`): the voucher
+  alternative's key-field entries with their sections, computed in `EntityKeyQuery`'s query (see *A key
+  field supplied by the voucher*), and `VOUCHER_VOUCHED_FOR_IN_KEY` retired with every text its
+  *What it retires* lists.
 * *The runtime* (`ConnectionRuntimeClassGenerator`, beside `withBatchSizeLimit`; `VoucherRuntime`): in an
   accepting build, the generated `VouchedValueLimit` interface (`maxVouchedValues(env)`), the runtime's
   `withVouchedValueLimit` copy method and its accessor, the default of 1000 without one, an answer below 1
   admitting none, a throwing hook leaving the default, and the reworded `LIMIT_MESSAGE`.
 * *Docs*: `voucher-handover.adoc` (step 4's source and policy, step 5's limit bullet, the precision
-  note, and what a per-entity voucher means for a consumer: one value per row, a cap sized to a list, one
-  accepting shape per build; not the second-field form, see *The per-entity voucher*), `accept.adoc`
-  (the limit paragraph, the audit outcome name), `docs/manual/reference/runtime-api.adoc` (a
+  note, and the per-entity voucher as a variant, vouching for the key directly, with what it means for
+  a consumer: one value per row, a cap sized to a list, one accepting shape per build, and moving off a
+  second field on both sides together), `accept.adoc` (the limit paragraph, the audit outcome name,
+  `vouchesFor` and `key` restated under the rule, and `VOUCHER_VOUCHED_FOR_IN_KEY`'s constraint row
+  removed), `issue.adoc` (`vouchesFor`'s "the remaining absorbed fields are the key of the vouched row"
+  becomes the key fields `vouchesFor` does not name), `docs/manual/reference/runtime-api.adoc` (a
   `VouchedValueLimit` row in the consumer hooks table, beside `BatchSizeLimit`, its default and why it
   fails closed), and `docs/architecture/reference/runtime-extension-points.adoc`
   (the key's parts restated as above, the limit sentence). The same page's one-request-rejection
@@ -350,7 +423,11 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
   `VouchedValueLimit` asked once per operation, 1000 without one, an answer below 1 admitting none, a
   throwing hook leaving 1000; a forged
   voucher after admitted ones still rejecting the request; a second `_entities` field seeing a closed set;
-  `VouchedFor`'s and the key's `toString` naming no value.
+  `VouchedFor`'s and the key's `toString` naming no value. Under the key-field rule, reading the two
+  scenarios below as input: `EntityKeyQuery`'s voucher alternative carrying each key field's section, a
+  key wholly vouched for loading from the vouched-for section with an empty lookup section, a mixed key
+  taking each column from its own section, a vouched-for key field coerced once for both the connection
+  key and the row, and a voucher whose lookup section names a vouched-for key field rejected (`KEY`).
   `VoucherDispatchTest` and `RequestRejectionCarrierTest` move from the one-value key to the set.
 * *Execution tier* (sakila's federated fixture, `VoucherAcceptExecutionTest`, with the fixture's
   source and policies moved to the set):
@@ -361,14 +438,19 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
     their own index, naming no value, and take no connection.
   * A split query and a `@service` below entities of two owners read on the one lease, in one batch.
   * A plain-key representation beside vouchers still reads on the request's own connection.
-  * The per-entity shape: representations carrying only a voucher, one per row, each vouching for its
-    own row's key through a second field on the key's column, resolve every row on one lease, acquired
-    once, each answering its own row.
-* *Pipeline tier*: a near miss in `facts/defects/voucher-accept-keys.graphqls`, beside `ClaimInKey`: an
-  `@accept` whose vouched-for field reads its key's column under another name draws no
-  `VOUCHER_VOUCHED_FOR_IN_KEY`, and a `graphitron_occurrence_column` claim states that both fields read
-  the one column. A change to the rule that compares columns then has to face the shared column in rows
-  rather than surface at a consumer.
+* *Execution tier* (`graphitron`, on the code the per-entity scenario below generates; `testing.adoc`,
+  "Execution tier"): representations carrying only a voucher, one per row, each vouching for its own
+  row's key directly (`vouchesFor` naming the key field, kreg's shape after the move), resolve every row
+  on one lease, acquired once, each answering its own row, under a fixture policy that tests the key
+  against the set. Not in sakila's accepting build: it vouches for `eierId`, and one graph holds one
+  vouched-for shape (`VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS`).
+* *Pipeline tier*:
+  * Two scenarios under `facts/scenarios/`, each a graph of its own, since one graph holds one
+    vouched-for shape: the per-entity voucher (the key wholly vouched for, issue 584's shape), which is
+    also the example `voucher-handover.adoc` renders for its per-entity variant, and a mixed key (part
+    vouched for, part looked up). Each holds no defect.
+  * `facts/defects/voucher-accept-keys.graphqls` loses `ClaimInKey` and the `VOUCHER_VOUCHED_FOR_IN_KEY`
+    row of its claim.
 
 ## Retired vocabulary
 
@@ -379,6 +461,10 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
 * `app.vouched_owner` in the how-to and the fixture: becomes `app.vouched_owners`.
 * "Group by vouched-for value" and "one vouched connection per group" (R1119's *How it works*, step 4):
   every admitted voucher of an operation is in one group, on one connection.
+* `VOUCHER_VOUCHED_FOR_IN_KEY`, and its reason "the vouched-for fields and the lookup part never share a
+  value": retired; a key field may be vouched for, and the lookup section carries the key's other fields.
+* "The remaining absorbed fields are the key of the vouched row" (`issue.adoc`): the lookup section is
+  the key's fields that `vouchesFor` does not name.
 
 ## Other solutions we've considered
 
@@ -391,16 +477,25 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
   row. Filip chose the set key (2026-11-23); a consumer needing per-entity isolation gets it from the
   per-entity voucher instead.
 * *Per-field arrays on the key.* Simpler for a one-field shape, wrong for two: see *The key's shape*.
+* *Accepting the exact cover only* (an earlier proposal): vouched-for fields exactly the key, a partial
+  overlap refused, a superset for ruling. Each refused shape grants nothing new, and refusing it costs a
+  rule of its own; the one rule covers all four (Filip, 2026-11-24).
+* *Graphitron writing the second field itself*, signing a vouched-for key field into both sections.
+  It changes the token format, and A cannot know which of its fields are B's key.
+* *Dropping the lookup section* (R1207's direction): the representation carries B's key, so A publishes
+  it and B guards fields with `@requires`. The larger redesign; a first-form consumer, whose
+  representations carry the voucher alone, needs a lookup section, and this rule serves it now.
 * *A `VouchedFor` that names its accepting type.* Each row would carry the type it was admitted for, so
   two types' equal values stay apart and per-entity vouchers could span several accepting types. It
   costs a component no policy reads today and lifts a limit no consumer has met;
   `VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS` already holds a build to one shape. Not proposed, but if Alf or
   Filip want it, it belongs in this item, since `VouchedFor` is the source consumers code against here.
 * *Failing the whole lookup past the limit.* What shipped before slice 8g; rejected by Alf (2026-11-18).
-* *The `@requires` guard and the narrowed refusal in this item.* Folded in for one revision, split out
-  to R1207 at the Spec review (2026-11-23): the set key needs neither, the guard's shape is still open,
-  and its leading directions retire the voucher key the first form's representations match on, which a
-  consumer of the first form needs a migration for.
+* *The `@requires` guard in this item.* Folded in for one revision, split out to R1207 at the Spec review
+  (2026-11-23): the set key does not need it, its shape is still open, and its leading directions retire
+  the voucher key the first form's representations match on, which a consumer of the first form needs a
+  migration for. The narrowed refusal went with it and came back once ruled (2026-11-24), since it serves
+  that consumer whatever R1207 decides.
 
 ## Smaller items from the same trace
 
@@ -436,6 +531,10 @@ whole does not pass, because the second half is a design still open.
 
    *Author (2026-11-24):* Filip ruled the cap: a runtime hook taking the field's environment, shaped like
    `BatchSizeLimit` (`withVouchedValueLimit`), default 1000. *The cap* states it.
+
+   *Author (2026-11-24):* Filip ruled the narrowing: the second-field form is legitimate, and each key
+   field is supplied by exactly one section, vouched-for when `vouchesFor` names it, otherwise lookup.
+   That retires `VOUCHER_VOUCHED_FOR_IN_KEY`; *A key field supplied by the voucher* states it.
 
 2. **The goal promises a change the plan does not build (question 1).** The Goal's second bullet and
    *What a consumer sees* ("the `@requires` guard does change what both sides write and what Graphitron
@@ -482,6 +581,10 @@ whole does not pass, because the second half is a design still open.
    migration. *The per-entity voucher* here shows the second-field form, valid today, and the Goal's
    "usable once ... narrowed" is gone.
 
+   *Author (2026-11-24):* the narrowing is back in this item, ruled, and independent of the lookup-part
+   question: it serves a first-form consumer, whose representations carry the voucher alone, whatever
+   R1207 decides. Taken with the set key it is one source migration for kreg, not two.
+
 4. **The per-entity execution test is conditional on the narrowing (question 2).** "An execution test
    of the per-entity shape" sits inside the "*Pipeline tier*, if the refusal narrows" bullet, so it
    leaves the plan if the narrowing does. It is the shape the item exists for, and per finding 3 it
@@ -491,6 +594,11 @@ whole does not pass, because the second half is a design still open.
 
    *Author (2026-11-23):* it is an unconditional execution-tier bullet now, and a near miss in the
    defect's fact document pins the second-field form as accepted.
+
+   *Author (2026-11-24):* with `VOUCHER_VOUCHED_FOR_IN_KEY` retired there is no refusal left to pin a
+   near miss against. The per-entity shape is a scenario of its own, the how-to's example, and its
+   execution test runs in `graphitron` on that scenario's generated code, since sakila's accepting build
+   holds the `eierId` shape.
 
 Not blocking:
 
