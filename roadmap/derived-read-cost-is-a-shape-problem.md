@@ -970,7 +970,9 @@ static method needs no holder.
     five of FS main's among them; a key read off an input object's field, a node-id key, and a key an
     `ID` or an enum converts stay the walk's. The conversion is the decision `ConditionEmitter` makes
     for a term at emit time, so it lands as one stored fact both read, not a second emit-time copy.
-    `@orderBy` choices (3 in FS main) are the next reason to close, then connections. Whether a type's
+    A root list whose `@orderBy` argument takes one order is the store's, its helper rendered from the
+    store's choices, all three of FS main's among them; one taking a list of orders, completed as the
+    client lists it, stays the walk's. Connections are the next reason to close. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
     it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a

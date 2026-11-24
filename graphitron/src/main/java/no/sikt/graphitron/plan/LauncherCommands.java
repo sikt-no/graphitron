@@ -229,7 +229,15 @@ public final class LauncherCommands {
         if (!dslProjections.isEmpty()) {
             rows.replaceAll(row -> row.withDslProjections(dslProjections));
         }
-        return new LauncherRelation(rows, carrierDsl, connections);
+        // The @orderBy spec of each root the store states, which its row's helper renders.
+        var argumentOrders = new java.util.LinkedHashMap<FieldCoordinates, OrderBySpec.Argument>();
+        for (var root : roots.values()) {
+            if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted && emitted.choice() != null) {
+                argumentOrders.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()),
+                    argumentOrderOf(emitted));
+            }
+        }
+        return new LauncherRelation(rows, carrierDsl, connections, argumentOrders);
     }
 
     /**
@@ -262,14 +270,12 @@ public final class LauncherCommands {
                 units.selectionOccurrences());
         }
         ResultShape result;
-        if (root.list()) {
-            var entries = root.order().stream()
-                .<OrderBySpec.OrderEntry>map(key -> new OrderBySpec.ColumnOrderEntry(key.column(), key.collation(),
-                    OrderBySpec.SortDirection.valueOf(key.direction()), key.nullable()))
-                .toList();
-            result = new ResultShape.RecordList(entries.isEmpty() ? null
-                : new Ordering.Columns(new OrderBySpec.Fixed(entries,
-                    entries.stream().allMatch(e -> e.direction() == OrderBySpec.SortDirection.ASC))));
+        if (root.list() && root.choice() != null) {
+            result = new ResultShape.RecordList(new Ordering.Helper(
+                units.orderByHelperMethod(root.parentType(), root.fieldName()), units.orderByResult()));
+        } else if (root.list()) {
+            var fixed = fixedOf(root.order());
+            result = new ResultShape.RecordList(fixed.entries().isEmpty() ? null : new Ordering.Columns(fixed));
         } else {
             result = new ResultShape.SingleRecord();
         }
@@ -282,6 +288,32 @@ public final class LauncherCommands {
             new TenantStrategy.Single(),
             result,
             units.selectionOccurrences());
+    }
+
+    /** An order's keys as a fixed order, ascending throughout where every key is. */
+    private static OrderBySpec.Fixed fixedOf(List<no.sikt.graphitron.emit.RootQuery.Key> keys) {
+        var entries = keys.stream()
+            .<OrderBySpec.OrderEntry>map(key -> new OrderBySpec.ColumnOrderEntry(key.column(), key.collation(),
+                OrderBySpec.SortDirection.valueOf(key.direction()), key.nullable()))
+            .toList();
+        return new OrderBySpec.Fixed(entries,
+            entries.stream().allMatch(e -> e.direction() == OrderBySpec.SortDirection.ASC));
+    }
+
+    /**
+     * A root's {@code @orderBy} argument taking one order, as the spec its helper renders: each value
+     * its sort field takes a named order, and the default order the one read when the client picks
+     * none.
+     */
+    private static OrderBySpec.Argument argumentOrderOf(no.sikt.graphitron.emit.RootQuery.Emitted root) {
+        var choice = root.choice();
+        var named = choice.orders().entrySet().stream()
+            .map(e -> new OrderBySpec.NamedOrder(e.getKey(), fixedOf(e.getValue())))
+            .toList();
+        var base = fixedOf(root.order());
+        return new OrderBySpec.Argument(choice.argument(), choice.inputType(), choice.nonNull(),
+            new OrderBySpec.Composition.Single(named), choice.sortField(), choice.directionField(),
+            base.entries().isEmpty() ? new OrderBySpec.None() : base);
     }
 
     /**

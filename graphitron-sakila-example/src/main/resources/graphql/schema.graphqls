@@ -202,6 +202,9 @@ type Query {
     the root-launcher SQL baseline pins it.
     """
     filmsOrdered(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+    # The single-valued form on a plain root list whose every choice sorts by columns of film: the
+    # store states its order and renders its helper.
+    filmsOrderedByOne(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
     # Bean-typed @condition parameters: graphql-java delivers each input object as a Map, and the
     # conditions class builds the declared bean from it before the call. A record bound by
     # argMapping, a list of records at an argument-level condition, and a setter bean with a nested

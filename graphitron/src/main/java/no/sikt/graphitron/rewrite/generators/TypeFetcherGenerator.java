@@ -999,7 +999,7 @@ public class TypeFetcherGenerator {
         var sortKeyMethods = launcherSortKeyMethods(typeName, fields, launchers);
         for (var field : fields) {
             if (field instanceof QueryField.QueryTableField qtf
-                    && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
+                    && argumentOrderOf(qtf, launchers) instanceof OrderBySpec.Argument arg) {
                 var tableRef = qtf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
                 var sortKeys = sortKeyNames(typeName, qtf.name(), outputPackage);
@@ -4552,6 +4552,17 @@ public class TypeFetcherGenerator {
 
     // -----------------------------------------------------------------------
     // OrderBy helper method generation
+    /**
+     * The {@code @orderBy} spec a root's helper renders: the store's, where the store states the root,
+     * so the helper and the row naming it come off one source, and the walk field's otherwise.
+     * {@code null} where the root has no {@code @orderBy} argument.
+     */
+    private static OrderBySpec.Argument argumentOrderOf(QueryField.QueryTableField qtf,
+            no.sikt.graphitron.plan.LauncherRelation launchers) {
+        return launchers.argumentOrderFor(qtf.parentTypeName(), qtf.name())
+            .orElse(qtf.orderBy() instanceof OrderBySpec.Argument walk ? walk : null);
+    }
+
     // -----------------------------------------------------------------------
 
     /**

@@ -362,7 +362,7 @@ class EmissionCensusTest {
             "Query.filmsByRentalRateRange", "Query.filmsByRentalRateRangeDefaulted",
             "Query.filmsByRentalRateRangeExplicit", "Query.filmsBySameTableNodeId", "Query.filmsBySearchBean",
             "Query.filmsByTitleBean", "Query.filmsByTitleBeans", "Query.filmsByTitlePrefix",
-            "Query.filmsNestedInput", "Query.filmsOuterOverrideFilterInput",
+            "Query.filmsNestedInput", "Query.filmsOrderedByOne", "Query.filmsOuterOverrideFilterInput",
             "Query.filmsOuterOverridePlainInput", "Query.filmsWithImplicitInput",
             "Query.filmsWithImplicitInputOuterOverride", "Query.filmsWithInputFieldCondition",
             "Query.filmsWithInputFieldOverride", "Query.filmsWithMultiImplicit",
@@ -398,8 +398,8 @@ class EmissionCensusTest {
                 "Query.customerById", "Query.filmById"))
             .containsEntry("LOOKUP_NODE_ID", List.of(
                 "Query.filmActorByNodeId", "Query.filmsByNodeIdArgWithLookupKey"))
-            .containsEntry("ORDER_ARGUMENT", List.of(
-                "Query.filmsByLanguagesComposedList", "Query.filmsByLanguagesList", "Query.filmsOrdered"))
+            .containsEntry("ORDER_ARGUMENT_LIST", List.of(
+                "Query.filmsByLanguagesComposedList", "Query.filmsOrdered"))
             .containsEntry("POLYMORPHIC", List.of(
                 "Query.allContent", "Query.allContentByFilmTitle", "Query.allContentConnection",
                 "Query.allContentConnectionByFilmTitle", "Query.allFanItems", "Query.allFanLabelled",
@@ -416,7 +416,8 @@ class EmissionCensusTest {
                 "Query.occupantsStartingWithM", "Query.pagedItems", "Query.pagedItemsByName", "Query.search",
                 "Query.searchConnection", "Query.stockByLanguage", "Query.stockByLanguageOverride"))
             .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
-                "Query.filmsByOriginalLanguageDescList", "Query.filmsByOriginalLanguageList"))
-            .containsOnlyKeys("CONNECTION", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
+                "Query.filmsByLanguagesList", "Query.filmsByOriginalLanguageDescList",
+                "Query.filmsByOriginalLanguageList"))
+            .containsOnlyKeys("CONNECTION", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
     }
 }
