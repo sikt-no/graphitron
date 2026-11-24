@@ -176,9 +176,9 @@ its arms are the build's:
   a check. Its `reason()` names the check, and its message carries nothing from
   the token.
 
-A representation whose voucher vouches for a second value is not a request
-rejection: it fails alone, at its own index, as a client error naming the limit
-and no value, and the rest of the request is answered. Nor is a representation
+A representation whose voucher vouches for a value past the cap on the request's
+vouched-for set is not a request rejection: it fails alone, at its own index, as a
+client error naming the limit and no value, and the rest of the request is answered. Nor is a representation
 whose voucher is `null`, which an issuing subgraph gives a row it cannot sign: it
 carries no voucher, and its slot is `null`.
 
@@ -337,11 +337,12 @@ among them; a key whose tenant part is empty is a key like any other, and what i
 source's decision, not a fallback graphitron picks. The key is a value, so graphitron knows when a
 child's key differs from its parent's and acquires again only then.
 
-One request rejection (Alf, 2026-11-17). A failed acquisition, a failed voucher check and a second
-vouched-for value in one request all reject the request the same way: one generated sealed request
-rejection, remembered once per request by the carrier and thrown in place of the result. The facade's
-`requestRejection(thrown)` answers what rejected it (the source's own exception for a failed acquisition,
-the rejection itself for a voucher check or the limit, which carries no token content), and
+One request rejection (Alf, 2026-11-17). A failed acquisition and a failed voucher check reject the
+request the same way: one generated sealed request rejection, remembered once per request by the carrier
+and thrown in place of the result. A vouched-for value past the limit is not one: it fails only its own
+representation. The facade's `requestRejection(thrown)` answers what rejected it (the source's own
+exception for a failed acquisition, the rejection itself for a voucher check, which carries no token
+content), and
 graphitron-jakarta-rest's `rejectedRequest(Throwable)` receives that value, so an adapter tells an
 identity fault from an outage by it.
 
