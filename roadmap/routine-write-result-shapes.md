@@ -153,15 +153,27 @@ array names no class. With this slice, `SakNoekkelRecord[]` delivers `SakNoekkel
 
 ### 1. A routine returning one row of a table
 
-"Returns one row of `T`" is a join. A root routine's call pins its holder method in
-`graphitron_occurrence_call_method`, as a service's call does: every producer is a call
-(`code-generation-triggers.adoc`, "Bind"). The arm `graphitron_occurrence_producer_result_rule` already
-has for a service then answers for a routine too. That arm joins `code_method.result_element_class` to
-`sql_table.record_class_fqn` of a `TABLE`, by `result_delivery`. The ROUTINE case and its join of
-`graphitron_routine_result` go.
+"Returns one row of `T`" is a join. What a root routine's call pins, and so what decides its
+producer result, follows its shape:
 
-A `SETOF <table>` function's execute form delivers `T`'s record, many, so its rows are rows of `T` by
-the same join, with no name matching. Name matching stays only for `RETURNS TABLE(...)`.
+| Shape | jOOQ's holder forms | The call pins | Producer result |
+| --- | --- | --- | --- |
+| One row of `T` (`RETURNS t`) | execute `TRecord f(Configuration, ...)`, value `Field<TRecord>` | the execute form, in `graphitron_occurrence_call_method`, as a service's call is pinned: every producer is a call (`code-generation-triggers.adoc`, "Bind") | `SINGLE_RECORD` of `T`, where `T`'s `TABLE` row carries the execute form's result class (`code_method.result_element_class` = `sql_table.record_class_fqn`, `table_type = 'TABLE'`) |
+| `SETOF t` | execute `Result<TRecord>`, table `FTable f(...)` | no method, as today | unchanged: the function's own `FUNCTION` row through `graphitron_routine_result` |
+| `RETURNS TABLE(...)` | execute `Result<FRecord>`, table `FTable f(...)` | no method, as today | unchanged: the function's own `FUNCTION` row through `graphitron_routine_result` |
+
+The ROUTINE case of `graphitron_occurrence_producer_result_rule` therefore splits on the pinned
+method. A routine whose call pins an execute form answers through the record-class join the service
+arm already makes. A table-valued function keeps today's join of `graphitron_routine_result`, so a root
+read over `RETURNS TABLE(...)` keeps its `FUNCTION` row as its result table, and a `SETOF t` read keeps
+its own row too.
+
+The `TABLE` filter is what keeps the join from matching twice: a `SETOF t` function's `FUNCTION` row
+carries `T`'s record class as well. With the filter, only the one-row shape reaches `T` this way.
+
+Serving `SETOF t` as rows of `T`, and retiring `graphitron_routine_result` with the Mikado node "A
+routine's result is an object of its function's record class", stays with that node. This item needs
+neither.
 
 **In a mutation** (Alf, 2026-11-23, written into `code-generation-triggers.adoc`, "Producer"):
 
@@ -208,7 +220,10 @@ column.
 
 What the routine receives is decided by the parameter's element class, as the census states it:
 
-1. **A UDT record**, as in `saksbehandling.sak_nokkel[]`. This is opptak's case and comes first. Each id
+1. **A UDT record**, as in `saksbehandling.sak_nokkel[]`. This is opptak's case and comes first: a bunt's
+   elements are nodes, and `utsendingsbunt_legg_til_elementer` and `utsendingsbunt_fjern_elementer` take
+   `sakIder: [ID!]! @nodeId(typeName: "Sak")` as an array of Sak's key type, writing
+   `utsendingsbunt_element` rows read back as `Utsendingsbunt.elementer`. Each id
    is decoded, and a record of the UDT is built with its attributes matched to the node type's key
    columns. This needs the UDT's attributes, which is a new catalog capture:
    - `sql_udt`: "this schema declares this composite type, whose record class is this";
@@ -276,7 +291,12 @@ column arms), 3 and 4. Slice 4 does not block 1 to 3, since opptak's slice write
     query's `FROM` and `LATERAL` forms;
   - execution tests: the mutation's payload read off the record, a nested field fetched after the call
     seeing the routine's change, the all-null record, and the query in one statement at the root and
-    under a parent.
+    under a parent;
+  - a regression guard: `scenarios/routine-result` claims the producer result of the existing root
+    reads over `RETURNS TABLE(...)` (`Query.tilganger`, `tilgangerAdmin`, `tilgangerSortert`,
+    `tilgangerConnection`) is unchanged, a `RECORD_LIST` (or a `CONNECTION`) whose table is the
+    function's own `FUNCTION` row, and that a `SETOF t` root read keeps its own row. Sakila has no
+    `SETOF t` function today, so the slice adds one to `init.sql` for this guard.
 - **Slice 2:**
   - a fixture composite key type and routines taking its array, a table record array and a key column
     array;
@@ -290,10 +310,8 @@ column arms), 3 and 4. Slice 4 does not block 1 to 3, since opptak's slice write
 
 ## Open questions
 
-- **opptak's utfylling data model** may change how kontekster reach the routine, and so the shape of
-  slice 2's parameter. That is Alf's ruling.
-- **`RETURNS TABLE(...)` writes.** With `SETOF <table>` served as rows of `T`, name matching is left only
-  for `RETURNS TABLE(...)`. Are routine writes over those still wanted? If not, the name-matched write
+- **Table-valued routine writes.** Once one-row returns are served, are routine writes over table-valued
+  functions still wanted? If not, the name-matched write
   and its reader of `sql_name_matched_key_column` could go, as a deliberate breaking change. A recommends
   keeping them. That is Alf's and Filip's decision.
 
@@ -341,3 +359,18 @@ table once the ROUTINE case goes. Either the record-class join resolves a `FUNCT
 producer result is unchanged).
 
 Verdict: stays in Spec.
+
+*Response (E, 2026-11-24):*
+- **The pinned form per shape.** Slice 1 now names it in a table:
+  - a routine returning one row of `T` pins its execute form in `graphitron_occurrence_call_method`;
+  - `SETOF t` and `RETURNS TABLE(...)` pin no method, as today.
+- **The ROUTINE case is split, not retired.** An execute form answers through the record-class join,
+  kept to `TABLE` rows so a `SETOF t` function's own row cannot match twice.
+- **Table-valued functions are unchanged.** They keep the `graphitron_routine_result` join, so a
+  `RETURNS TABLE(...)` root read keeps its `FUNCTION` row as its result table.
+- **What moved out of scope.** Serving `SETOF t` as rows of `T`, and retiring `graphitron_routine_result`,
+  stay with their Mikado node. The open question on table-valued writes is restored to cover both shapes.
+- **A regression guard.** Slice 1's tests add one to `scenarios/routine-result`: `Query.tilganger` and its
+  siblings, and a `SETOF t` root read, keep their producer result.
+- **Element renaming.** The example in slice 2 now uses opptak's element model, and the utfylling caveat
+  is gone, since the renaming changed no shape.
