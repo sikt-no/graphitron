@@ -23,13 +23,23 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 public final class TestDatabase {
 
     private static DSLContext dsl;
+    private static PGSimpleDataSource dataSource;
 
     private TestDatabase() {}
+
+    /**
+     * The shared database's data source, a new connection per call, for a test that hands connections
+     * to generated code itself, such as a connection source; the database started on the first call.
+     */
+    public static synchronized javax.sql.DataSource dataSource() {
+        dsl();
+        return dataSource;
+    }
 
     /** The shared database's {@code DSLContext}, the database started on the first call. */
     public static synchronized DSLContext dsl() {
         if (dsl == null) {
-            var dataSource = new PGSimpleDataSource();
+            dataSource = new PGSimpleDataSource();
             var url = System.getProperty("test.db.url");
             if (url != null) {
                 dataSource.setUrl(url);

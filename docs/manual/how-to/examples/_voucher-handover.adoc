@@ -53,3 +53,14 @@
 | `TRUE`
 |===
 // end::AcceptingEntity-graphitron_minted_key[]
+
+// tag::PerEntityAccepting-graphitron_accept_vouched_for[]
+[cols="1,1",options="header"]
+|===
+| type_name
+| field_name
+
+| `CaseEventLog`
+| `caseId`
+|===
+// end::PerEntityAccepting-graphitron_accept_vouched_for[]

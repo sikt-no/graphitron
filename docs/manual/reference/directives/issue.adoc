@@ -25,7 +25,7 @@ directive @issue(scope: String!, ttl: String!, vouchesFor: String!) on OBJECT
 
 | `vouchesFor`
 | `String!`
-| The absorbed fields the voucher vouches for, a field set as `@key(fields:)` spells one: whose rows are vouched for. The accepting subgraph's `@accept(vouchesFor:)` names the same fields; the remaining absorbed fields are the key of the vouched row.
+| The absorbed fields the voucher vouches for, a field set as `@key(fields:)` spells one: whose rows are vouched for. The accepting subgraph's `@accept(vouchesFor:)` names the same fields; the remaining absorbed fields are the fields of the vouched row's key that `vouchesFor` does not name, its lookup part. A vouched-for field may itself be a key field, and naming every absorbed field leaves the lookup part empty: the key is then vouched for whole.
 |===
 
 == Canonical example

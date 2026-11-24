@@ -1323,9 +1323,10 @@ CREATE POLICY secure_note_owner ON public.secure_note
     WITH CHECK (owner_id = nullif(current_setting('app.user_id', true), ''));
 
 -- Voucher fixture: one subgraph vouches, another grants through row-level security. The accepting
--- side's results are owned by a person and read under a policy on the owner a vouched connection's
--- source sets (app.vouched_owner); a result's details are read under a policy that admits the details
--- of a result the reader may see. The issuing side's applications reference results by id and owner,
+-- side's results are owned by a person and read under a policy testing the owner's membership in the
+-- set of owners a vouched connection's source sets (app.vouched_owners, a text array); a result's
+-- details are read under a policy that admits the details of a result the reader may see. The issuing
+-- side's applications reference results by id and owner,
 -- with no policy: its own rules are its reads. RLS is ENABLEd, not FORCEd, so the owner of these tables
 -- bypasses it; the execution tests read the accepting side through a role of their own.
 CREATE TABLE public.vouched_application (
@@ -1356,13 +1357,16 @@ INSERT INTO public.vouched_application (application_id, caseworker) VALUES (1, '
 INSERT INTO public.vouched_application_result (application_id, result_id, owner_id) VALUES
     (1, 1, 'olivia'), (1, 2, 'olivia'), (2, 3, 'peter');
 INSERT INTO public.vouched_result (result_id, owner_id, grade) VALUES
-    (1, 'olivia', 5), (2, 'olivia', 4), (3, 'peter', 6), (4, 'olivia', 3);
+    (1, 'olivia', 5), (2, 'olivia', 4), (3, 'peter', 6), (4, 'olivia', 3), (5, 'quinn', 2);
 INSERT INTO public.vouched_result_detail (detail_id, result_id, subject) VALUES
-    (1, 1, 'math'), (2, 1, 'norwegian'), (3, 2, 'english'), (4, 3, 'math'), (5, 4, 'history');
+    (1, 1, 'math'), (2, 1, 'norwegian'), (3, 2, 'english'), (4, 3, 'math'), (5, 4, 'history'), (6, 5, 'art');
 
+-- Membership is tested as IN over the unnested setting, which the planner runs as a hashed subplan: the
+-- set is parsed once per statement and each row is one hash probe, so a thousand owners cost what one
+-- does. An unset or empty setting is the empty set, admitting nothing.
 ALTER TABLE public.vouched_result ENABLE ROW LEVEL SECURITY;
 CREATE POLICY vouched_result_owner ON public.vouched_result
-    USING (owner_id = nullif(current_setting('app.vouched_owner', true), ''));
+    USING (owner_id IN (SELECT unnest(coalesce(nullif(current_setting('app.vouched_owners', true), ''), '{}')::text[])));
 ALTER TABLE public.vouched_result_detail ENABLE ROW LEVEL SECURITY;
 CREATE POLICY vouched_result_detail_result ON public.vouched_result_detail
     USING (EXISTS (SELECT 1 FROM public.vouched_result r
@@ -1381,6 +1385,53 @@ ALTER TABLE public.vouched_result_note ENABLE ROW LEVEL SECURITY;
 CREATE POLICY vouched_result_note_result ON public.vouched_result_note
     USING (EXISTS (SELECT 1 FROM public.vouched_result r
                     WHERE r.result_id = vouched_result_note.result_id));
+
+-- The per-entity voucher's fixture: a case vouched for by its own id, so a list of cases presents one
+-- vouched-for value per row, and the events below a case. Both are read under a policy testing the
+-- case id's membership in the set of case ids the vouched connection's source sets
+-- (app.vouched_cases, an integer array). ENABLEd, not FORCEd: the execution test reads as a role of its own.
+CREATE TABLE public.vouched_case (
+    case_id INTEGER PRIMARY KEY,
+    title   TEXT NOT NULL
+);
+
+CREATE TABLE public.vouched_case_event (
+    event_id INTEGER PRIMARY KEY,
+    case_id  INTEGER NOT NULL REFERENCES public.vouched_case (case_id),
+    what     TEXT NOT NULL
+);
+
+INSERT INTO public.vouched_case (case_id, title) VALUES (1, 'admission'), (2, 'appeal'), (3, 'transfer');
+INSERT INTO public.vouched_case_event (event_id, case_id, what) VALUES
+    (1, 1, 'admission opened'), (2, 1, 'admission decided'), (3, 2, 'appeal opened'), (4, 3, 'transfer opened');
+
+ALTER TABLE public.vouched_case ENABLE ROW LEVEL SECURITY;
+CREATE POLICY vouched_case_vouched ON public.vouched_case
+    USING (case_id IN (SELECT unnest(coalesce(nullif(current_setting('app.vouched_cases', true), ''), '{}')::int[])));
+ALTER TABLE public.vouched_case_event ENABLE ROW LEVEL SECURITY;
+CREATE POLICY vouched_case_event_vouched ON public.vouched_case_event
+    USING (case_id IN (SELECT unnest(coalesce(nullif(current_setting('app.vouched_cases', true), ''), '{}')::int[])));
+
+-- A voucher with two vouched-for fields, the organisation and the person, one of which is also a field of
+-- the key it decodes to (org_id, case_id): the key's org_id is supplied by the vouched-for section and
+-- its case_id by the lookup section. The policy tests the row's (org, person) pair against the set the
+-- source writes as a JSON array of objects (app.vouched_pairs), which keeps each voucher's pair whole.
+CREATE TABLE public.vouched_enrolment (
+    org_id    INTEGER NOT NULL,
+    case_id   INTEGER NOT NULL,
+    person_id INTEGER NOT NULL,
+    status    TEXT NOT NULL,
+    PRIMARY KEY (org_id, case_id)
+);
+
+INSERT INTO public.vouched_enrolment (org_id, case_id, person_id, status) VALUES
+    (10, 1, 100, 'admitted'), (10, 2, 200, 'waiting'), (20, 1, 100, 'declined');
+
+ALTER TABLE public.vouched_enrolment ENABLE ROW LEVEL SECURITY;
+CREATE POLICY vouched_enrolment_pair ON public.vouched_enrolment
+    USING ((org_id, person_id) IN (SELECT v.org, v.person
+                                     FROM jsonb_to_recordset(coalesce(nullif(current_setting('app.vouched_pairs', true), ''), '[]')::jsonb)
+                                          AS v(org int, person int)));
 
 -- R328 fixture: self-FK @nodeId reference on a Graphitron-owned DML input — the neutral
 -- `email` / `mailbox` form of the CAMPUS self-FK case. `email` has a composite PK

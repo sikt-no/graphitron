@@ -70,7 +70,7 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
      * {@code requestRejectionFinder}, so {@link #rejectedRequest(Throwable)} is called with what rejected
      * the request: the connection source's own exception when it fails to lease the request's connection
      * (for instance when the database rejects the caller's identity), the generated rejection itself for
-     * a failed voucher check or the one-vouched-value limit.
+     * a failed voucher check.
      *
      * @param schemaSupplier   builds the executable schema, typically {@code Graphitron::buildSchema};
      *                         invoked at most once, the result cached

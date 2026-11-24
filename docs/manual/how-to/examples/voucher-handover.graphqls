@@ -39,3 +39,40 @@ type Detail @table(name: "vouched_result_detail") {
   subject: String!
 }
 # end::AcceptingEntity[]
+
+# tag::PerEntityIssuing[]
+"Subgraph A, vouching for each case by its own id: a case cannot issue itself, since a root field returns it, so the voucher sits on its event log, the same row read again by joining the case to itself over its primary key. Every absorbed field is vouched for, so the voucher's lookup section is empty."
+type Query {
+  cases: [Case!]!
+}
+
+type Case @table(name: "vouched_case") {
+  title: String!
+  eventLog: CaseEventLog @reference(path: [{key : "vouched_case_pkey"}])
+}
+
+type CaseEventLog
+    @table(name: "vouched_case")
+    @issue(scope: "case-events", ttl: "PT5M", vouchesFor: "caseId") {
+  caseId: Int! @field(name: "case_id")
+}
+# end::PerEntityIssuing[]
+
+# tag::PerEntityAccepting[]
+"Subgraph B, vouching for its own key: a case's event log is vouched for by the case's id, which is also the key the voucher decodes to, so the voucher's lookup section is empty and every row of a list presents a vouched-for value of its own. The events are read on the connection your source leases for the set of case ids the operation admitted."
+type Query {
+  caseEventLogs: [CaseEventLog!]!
+}
+
+type CaseEventLog
+    @table(name: "vouched_case")
+    @key(fields: "caseId")
+    @accept(scope: "case-events", vouchesFor: "caseId") {
+  caseId: Int! @field(name: "case_id") @inaccessible
+  events: [CaseEvent!]! @reference(path: [{key : "vouched_case_event_case_id_fkey"}])
+}
+
+type CaseEvent @table(name: "vouched_case_event") {
+  what: String!
+}
+# end::PerEntityAccepting[]

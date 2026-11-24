@@ -73,14 +73,14 @@ public final class VoucherRuntime {
     /** The simple name of the sealed request rejection the voucher arm extends, in the connection runtime. */
     public static final String REQUEST_REJECTED = "RequestRejectedException";
     /**
-     * What a representation past the one-value limit answers at its own index, carried by the generated
-     * client exception: the limit, and nothing of any voucher, neither its own value nor the one the
-     * request admitted, since a vouched-for value is an owner's identifier and the error reaches the
-     * client.
+     * What a representation whose vouched-for value is past the cap on the operation's vouched-for set
+     * answers at its own index, carried by the generated client exception: the limit, and nothing of any
+     * voucher, neither its own value nor the ones the request admitted, since a vouched-for value is an
+     * owner's identifier and the error reaches the client.
      */
     public static final String LIMIT_MESSAGE =
-        "This representation's voucher vouches for another value than the one this request reads; "
-            + "a request reads vouchers for one vouched-for value";
+        "This representation's voucher vouches for a value past the most distinct vouched-for values "
+            + "one request reads";
 
     /** The token format version this runtime writes and the only one it reads. */
     public static final int VERSION = 2;
@@ -169,7 +169,7 @@ public final class VoucherRuntime {
             .addEnumConstant("EXPIRED", constant("the voucher has expired"))
             .addEnumConstant("SCOPE", constant("the voucher was issued for another scope"))
             .addEnumConstant("VOUCHED_FOR", constant("the voucher's vouched-for section names other fields than the accepting type's vouchesFor"))
-            .addEnumConstant("KEY", constant("the voucher's lookup part names other fields than the entity's key"))
+            .addEnumConstant("KEY", constant("the voucher's lookup part names other fields than the entity's key fields it does not vouch for"))
             .addEnumConstant("VALUE", constant("a value in the voucher is not a value of its field's column"))
             .addField(String.class, "check", Modifier.PRIVATE, Modifier.FINAL)
             .addMethod(MethodSpec.constructorBuilder()
@@ -502,8 +502,9 @@ public final class VoucherRuntime {
             .addJavadoc("Decodes and checks a voucher presented for an entity of {@code typeName}: its signature\n"
                 + "with the type name, its expiry within {@link VoucherCodec#CLOCK_SKEW}, its scope,\n"
                 + "that its vouched-for section names exactly {@code vouchedForFields} and its lookup part exactly\n"
-                + "{@code keyFields}. Each voucher is checked on its own; the vouch id is an audit handle and\n"
-                + "agrees with nothing. Needs no connection.\n"
+                + "{@code lookupFields}, the fields of the entity's key it does not vouch for: each key field is\n"
+                + "supplied by one section. Each voucher is checked on its own; the vouch id is an audit handle\n"
+                + "and agrees with nothing. Needs no connection.\n"
                 + "\n"
                 + "<p>Until the signature verifies, the token is only taken apart: a token over\n"
                 + "{@link #MAX_TOKEN} characters, or a number's text over {@link #MAX_NUMBER_TEXT}, is\n"
@@ -517,7 +518,7 @@ public final class VoucherRuntime {
             .addParameter(String.class, "voucher")
             .addParameter(String.class, "scope")
             .addParameter(STRING_SET, "vouchedForFields")
-            .addParameter(STRING_SET, "keyFields")
+            .addParameter(STRING_SET, "lookupFields")
             .beginControlFlow("if (voucher.length() > MAX_TOKEN)")
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
@@ -579,7 +580,7 @@ public final class VoucherRuntime {
             .beginControlFlow("if (!decoded.vouchedFor().keySet().equals(vouchedForFields))")
             .addStatement("throw new $T($T.VOUCHED_FOR)", rejected, reason)
             .endControlFlow()
-            .beginControlFlow("if (!decoded.lookup().keySet().equals(keyFields))")
+            .beginControlFlow("if (!decoded.lookup().keySet().equals(lookupFields))")
             .addStatement("throw new $T($T.KEY)", rejected, reason)
             .endControlFlow()
             .addStatement("return decoded")

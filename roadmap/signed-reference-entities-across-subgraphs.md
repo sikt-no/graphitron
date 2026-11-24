@@ -151,8 +151,9 @@ read simply once the spellings are chosen, the design is wrong.
  read rows under A's rules
  sign one voucher per row  --> fetch `voucher` from A
                                send _entities {voucher} -->   verify every voucher (fail request on any)
-                                                              group by vouched-for value
-                                                              one vouched connection per group:
+                                                              admit each vouched-for value into
+                                                                the operation's set, up to the cap
+                                                              one vouched connection for the set:
                                                                 source.acquire(key) reads it
                                                               SELECT the entity, and every field
                                                                 below it, on that connection
@@ -231,25 +232,26 @@ beginExecution ends      every lease is released, exactly once, on every path
 An operation that presents only vouchers never takes the request's own connection unless a field outside
 the vouched subtree asks for it.
 
-### One connection per vouched-for value
+### One connection for the operation's vouched-for values
 
-An operation takes one vouched connection, for one vouched-for value. Vouchers carrying it, from a list
-of results or several parents' lists, share that connection. The first vouched-for value an operation
-presents, in representation order, is admitted; a representation carrying another fails on its own,
-answering `null` with an error at its own index that names the limit and no value, and the rest resolve
-(slice 8g). The limit is never a request rejection, so it is not mistaken for a denial and never fails
-the lookup it occurs in. The limit lives in one place so it can be raised later.
+An operation takes one vouched connection, mounted for the set of vouched-for values it admitted (R1199,
+superseding the one-value rule of 2026-11-12). Every voucher of the operation, from a list of results,
+several parents' lists or several owners, shares that connection. The first distinct values in
+representation order are admitted, up to the cap the runtime's `VouchedValueLimit` gives (1000 by
+default); a representation whose value is past it fails on its own, answering `null` with an error at
+its own index that names the limit and no value, and the rest resolve (slice 8g's shape, kept). The cap
+is never a request rejection, so it is not mistaken for a denial and never fails the lookup it occurs in.
 
-Every entity of the group reads through a connection mounted for that value, so a subtree is scoped to
-its entities by the graph it was reached through, and its reads to the value by RLS. Sharing the
+Every vouched entity reads through a connection mounted for the set, so a subtree is scoped to its
+entities by the graph it was reached through, and its reads to the admitted values by RLS. Sharing the
 connection across operations and scopes on A grants nothing new: what it may read is decided by the
-value and B's policies on it, and every voucher on it was signed for that value.
+values and B's policies on them, and every voucher on it was signed for one of them, to the same caller.
 
 ### What B's policies test
 
 The grant is everything B's policies unlock for the vouched-for value; the lookup part is not part of
 it. B needs no notion of application or subject: the policies test the value, for example
-`eier_id = current_setting('app.vouched_owner')` on the result table and a join from each child to its
+`eier_id IN (SELECT unnest(current_setting('app.vouched_owners')::text[]))` on the result table and a join from each child to its
 result row, where the connection source's session wrote the setting from the key.
 
 The first client vouches for documents and their owner: A's issuing type absorbs `id` and `eierId` and
@@ -293,8 +295,9 @@ Decisions the user made on this item; each is stated where it applies below.
 * The vouched-for fields are required on both markers, and both name them, B refusing a voucher whose
   signed vouched-for section differs (2026-11-12). A voucher without them would have no connection of its
   own to read on.
-* One vouched-for value per operation, and vouchers sharing the value share a connection across
-  operations and scopes on A (2026-11-12).
+* Vouchers sharing a vouched-for value share a connection across operations and scopes on A
+  (2026-11-12). The same ruling's one vouched-for value per operation is superseded: an operation's
+  vouched-for values share one connection, mounted for the set (Filip, 2026-11-23, R1199).
 * The vouched-for fields are the access decision and the lookup part is navigation only (2026-11-16).
   The connection source needs only the vouched-for values, to set them on the connection; it reads them
   off the key it is asked for. No per-voucher detail reaches it: the covered lookup keys and a `Vouch`
@@ -323,8 +326,8 @@ Decisions the user made on this item; each is stated where it applies below.
   over the domain, one key and one lease per tenant, and a tenant the request may not see is simply not
   named (2026-11-16).
 * One request rejection (2026-11-17): a generated sealed `RequestRejectedException` with arms for a
-  failed acquisition (`AcquisitionFailedException`), a failed voucher check (`VoucherRejectedException`)
-  and the one-vouched-value limit; the carrier's one slot, the error router's decline, the
+  failed acquisition (`AcquisitionFailedException`) and a failed voucher check (`VoucherRejectedException`),
+  the limit on vouched-for values having left it in slice 8g; the carrier's one slot, the error router's decline, the
   instrumentation's throw and the facade read that one type. The facade's `acquisitionFailure` becomes
   `requestRejection`, answering the source's own exception for a failed acquisition and the rejection
   itself otherwise; graphitron-jakarta-rest's `failedAcquisition` becomes `rejectedRequest`.

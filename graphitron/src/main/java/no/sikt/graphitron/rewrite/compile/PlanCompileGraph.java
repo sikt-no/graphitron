@@ -323,6 +323,9 @@ public final class PlanCompileGraph {
                 // The codec signs with the keys and throws the rejection.
                 // The voucher fetchers sign through the codec's issuers.
                 case VOUCHER_FETCHERS -> precise(units.get(0), require(GlobalUnitKind.VOUCHER_CODEC));
+                // The cap's javadoc names the runtime's default.
+                case VOUCHED_VALUE_LIMIT -> runtimeUnit("GraphitronRuntime")
+                    .ifPresent(r -> declared(units.get(0), r));
                 case VOUCHER_CODEC -> {
                     precise(units.get(0), require(GlobalUnitKind.VOUCHER_KEYS));
                     precise(units.get(0), require(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION));
@@ -367,6 +370,8 @@ public final class PlanCompileGraph {
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
                     var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
                     var batchSizeLimit = runtimeUnit("BatchSizeLimit");
+                    // Written by the fixed runtime in a graph that accepts vouchers only.
+                    var vouchedValueLimit = refOf(GlobalUnitKind.VOUCHED_VALUE_LIMIT);
                     // The pinned connection wraps a lease from the request's source, keyed by the
                     // connection key, and turns a failure into the request-level rejection.
                     pinned.ifPresent(p -> {
@@ -405,6 +410,7 @@ public final class PlanCompileGraph {
                         fetcherErrorLog.ifPresent(l -> declared(r, l));
                         fetcherErrorResponse.ifPresent(l -> declared(r, l));
                         batchSizeLimit.ifPresent(l -> declared(r, l));
+                        vouchedValueLimit.ifPresent(l -> declared(r, l));
                         refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> declared(r, i));
                     });
                     ownedConnections.ifPresent(t -> {
@@ -420,6 +426,9 @@ public final class PlanCompileGraph {
                         // The fan-out failure path hands its throw to the consumer's log through
                         // the router's shared guard.
                         fetcherErrorLog.ifPresent(l -> declared(t, l));
+                        // The carrier asks the cap on an operation's vouched-for set, through the router's
+                        // containment, in a graph that accepts vouchers.
+                        vouchedValueLimit.ifPresent(l -> declared(t, l));
                         refOf(GlobalUnitKind.ERROR_ROUTER).ifPresent(er -> declared(t, er));
                         refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(t, tp));
                         // The tenant key's canonical form is the column trip's.

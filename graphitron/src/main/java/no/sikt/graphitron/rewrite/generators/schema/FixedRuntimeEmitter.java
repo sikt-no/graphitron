@@ -22,7 +22,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
  * exception, the error router and the outcome carrier. What they say depends on nothing but the package they are written under, so
  * there is nothing to plan: this reads the package off {@code store_graph_output} and renders. A graph
  * that issues or accepts vouchers adds the voucher runtime ({@link no.sikt.graphitron.emit.VoucherRuntime}),
- * whose gate is the store's.
+ * whose gate is the store's, and one that accepts adds the {@code VouchedValueLimit} hook the connection
+ * runtime names there.
  *
  * <p>Beside them it writes the runtime classes rendered from the store's facts rather than from
  * the package alone: {@code Connections}, the connection and edge classes every connection
@@ -60,6 +61,12 @@ public final class FixedRuntimeEmitter {
         var out = new ArrayList<>(render(outputPackage));
         if (vouchers.any()) {
             out.addAll(renderVoucherRuntime(outputPackage));
+        }
+        if (vouchers.accepts()) {
+            add(out, GlobalUnitKind.VOUCHED_VALUE_LIMIT, new GeneratedUnits(outputPackage).singleton(GeneratedUnits.SUB_SCHEMA,
+                    no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.VOUCHED_VALUE_LIMIT_CLASS_NAME),
+                List.of(no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator
+                    .renderVouchedValueLimit(outputPackage)));
         }
         var issues = no.sikt.graphitron.emit.VoucherIssueQuery.read(store);
         if (!issues.byCoordinate().isEmpty()) {

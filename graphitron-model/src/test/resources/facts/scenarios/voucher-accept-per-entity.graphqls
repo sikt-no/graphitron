@@ -1,0 +1,33 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@inaccessible"])
+
+"Subgraph B, vouching for its own key: a case's event log is vouched for by the case's id, which is also the key the voucher decodes to, so the voucher's lookup section is empty and every row of a list presents a vouched-for value of its own. The events are read on the connection your source leases for the set of case ids the operation admitted."
+type Query {
+  caseEventLogs: [CaseEventLog!]!
+}
+
+type CaseEventLog @table(name: "vouched_case") @key(fields: "caseId") @accept(scope: "case-events", vouchesFor: "caseId") {
+  caseId: Int! @field(name: "case_id") @inaccessible
+  events: [CaseEvent!]! @reference(path: [{key: "vouched_case_event_case_id_fkey"}])
+}
+
+type CaseEvent @table(name: "vouched_case_event") {
+  what: String!
+}
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site")
+
+# The voucher decodes onto the authored key, whose one field is also the one vouched-for field.
+extend schema @expectEquals(relation: "graphitron_accept_key", rows: """
+  type_name,    directive_name, ordinal
+  CaseEventLog, key,            0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_accept_vouched_for", rows: """
+  type_name,    field_name
+  CaseEventLog, caseId
+  """)
+
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name,    role,   fields,                    resolvable
+  CaseEventLog, ACCEPT, internalGraphitronVoucher, TRUE
+  """)

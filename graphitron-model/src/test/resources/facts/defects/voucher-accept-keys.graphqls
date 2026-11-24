@@ -1,6 +1,6 @@
 extend schema @withConfiguration(sessionState: true)
 
-"The accepting side's refusals the entity key stage decides, each at the @accept. A voucher decodes to an authored key this subgraph resolves the type by: the one key: names, field set for field set in any order, or the type's one such key where key: is left out, never a nested selection. Its vouched-for fields read one column of the type's own table each, and none is a field of that key."
+"The accepting side's refusals the entity key stage decides, each at the @accept. A voucher decodes to an authored key this subgraph resolves the type by: the one key: names, field set for field set in any order, or the type's one such key where key: is left out, never a nested selection. Its vouched-for fields read one column of the type's own table each."
 type NoKey @table(name: "actor") @accept(scope: "s", vouchesFor: "firstName") {
   actorId: Int @field(name: "actor_id")
   firstName: String @field(name: "first_name")
@@ -18,7 +18,7 @@ type TwoKeys @table(name: "customer") @key(fields: "customerId") @key(fields: "e
   firstName: String @field(name: "first_name")
 }
 
-# key: names the first key in another order; the vouched-for field is a field of the other key, which is allowed.
+# key: names the first key in another order.
 type Named @table(name: "inventory") @key(fields: "filmId storeId") @key(fields: "inventoryId") @accept(scope: "s", key: "storeId filmId", vouchesFor: "inventoryId") {
   inventoryId: Int @field(name: "inventory_id")
   filmId: Int @field(name: "film_id")
@@ -35,11 +35,6 @@ type Nested @table(name: "city") @key(fields: "cityId") @accept(scope: "s", key:
   city: String
 }
 
-type ClaimInKey @table(name: "country") @key(fields: "countryId") @accept(scope: "s", vouchesFor: "countryId country") {
-  countryId: Int @field(name: "country_id")
-  country: String
-}
-
 type NotColumn @table(name: "language") @key(fields: "languageId") @accept(scope: "s", vouchesFor: "tags") {
   languageId: Int @field(name: "language_id")
   tags: [String]
@@ -54,21 +49,19 @@ type Query {
   named: [Named!]!
   unknowns: [Unknown!]!
   nested: [Nested!]!
-  claimInKeys: [ClaimInKey!]!
   notColumns: [NotColumn!]!
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code IN ('VOUCHER_ACCEPT_WITHOUT_KEY', 'VOUCHER_ACCEPT_KEY_AMBIGUOUS', 'VOUCHER_ACCEPT_KEY_UNKNOWN',
-           'VOUCHER_VOUCHED_FOR_IN_KEY', 'VOUCHER_VOUCHED_FOR_NOT_A_COLUMN')
+           'VOUCHER_VOUCHED_FOR_NOT_A_COLUMN')
   """, rows: """
-  code,                         type_name,  detail
-  VOUCHER_ACCEPT_KEY_AMBIGUOUS, TwoKeys,    TwoKeys
-  VOUCHER_ACCEPT_KEY_UNKNOWN,   Unknown,    name
-  VOUCHER_ACCEPT_WITHOUT_KEY,   NoKey,      NoKey
-  VOUCHER_ACCEPT_WITHOUT_KEY,   StubKey,    StubKey
-  VOUCHER_VOUCHED_FOR_IN_KEY,         ClaimInKey, countryId
-  VOUCHER_VOUCHED_FOR_NOT_A_COLUMN,   NotColumn,  tags
+  code,                             type_name, detail
+  VOUCHER_ACCEPT_KEY_AMBIGUOUS,     TwoKeys,   TwoKeys
+  VOUCHER_ACCEPT_KEY_UNKNOWN,       Unknown,   name
+  VOUCHER_ACCEPT_WITHOUT_KEY,       NoKey,     NoKey
+  VOUCHER_ACCEPT_WITHOUT_KEY,       StubKey,   StubKey
+  VOUCHER_VOUCHED_FOR_NOT_A_COLUMN, NotColumn, tags
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
@@ -79,8 +72,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_accept_key", rows: """
-  type_name,  directive_name, ordinal
-  ClaimInKey, key,            0
-  Named,      key,            0
-  NotColumn,  key,            0
+  type_name, directive_name, ordinal
+  Named,     key,            0
+  NotColumn, key,            0
   """)

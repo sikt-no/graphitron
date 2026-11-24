@@ -44,17 +44,21 @@ import java.util.List;
  *   <li>In a build that accepts vouchers, a representation carrying a voucher is verified: the codec
  *       decodes and checks it ({@code VoucherCodec.Verifier.verify}: format, signature over the token
  *       and the {@code __typename}, expiry, scope, and the fields each section names), the dispatcher
- *       coerces each lookup and vouched-for value to its column through the column's {@code DataType},
- *       builds the connection key from the vouched-for values, and loads the lookup columns into the
- *       loader for the authored key the voucher decodes onto, under that key, reusing that key's batch
- *       and SELECT. A voucher that fails any check, or carries a value no column takes, rejects the
- *       request through the carrier's one rejection slot; registration happens before any loader
- *       dispatches, so nothing is acquired after it. A verified voucher whose vouched-for value is not
- *       the one the request admitted ({@code OwnedConnections.admitVouched}, the first in
- *       representation order) fails its own slot alone with the generated client exception, naming the
- *       limit and no value, and takes no connection. Every redemption, rejection and representation the
- *       limit turns away is logged on {@value #VOUCHER_AUDIT_LOGGER} at INFO by vouch id, scope and
- *       outcome, never the token, its values or the connection key.</li>
+ *       coerces each vouched-for value once and each lookup value to its column through the column's
+ *       {@code DataType}, fills the authored key's columns each from the section that supplies it, and
+ *       admits the vouched-for values into the operation's set ({@code OwnedConnections.admitVouched}):
+ *       the first values in representation order fill it, up to the runtime's
+ *       {@code VouchedValueLimit}. An admitted representation answers a pending load, and once
+ *       {@code fetchEntities} has walked every representation it closes the set and registers the
+ *       pending loads under the operation's one vouched key, in the loader for the authored key each
+ *       voucher decodes onto, reusing that key's batch and SELECT: one lease for every admitted value.
+ *       A voucher that fails any check, or carries a value no column takes, rejects the request
+ *       through the carrier's one rejection slot; registration happens before any loader dispatches,
+ *       so nothing is acquired after it. A verified voucher whose value is past the cap fails its own
+ *       slot alone with the generated client exception, naming the limit and no value, and takes no
+ *       connection. Every redemption, rejection and representation the cap turns away is logged on
+ *       {@value #VOUCHER_AUDIT_LOGGER} at INFO by vouch id, scope and outcome, never the token, its
+ *       values or the connection key.</li>
  *   <li>{@code batch<TypeName>Alt<N>(keys, batchEnv, key)}: the loader's batch, acquiring through
  *       {@code OwnedConnections.dslForIfPermitted} (a key the source refuses answers every slot
  *       {@code null} with no error) and running {@code select<TypeName>Alt<N>}; a throw fails only
@@ -121,6 +125,16 @@ public final class EntityFetcherDispatchClassGenerator {
      * scope and outcome of every redemption and rejection, never the token, its values or the key.
      */
     public static final String VOUCHER_AUDIT_LOGGER = "no.sikt.graphitron.voucher.audit";
+    /**
+     * The message a representation carrying a voucher fails with where it reaches the dispatch other than
+     * through {@code _entities}, the one field that closes an operation's vouched-for set: a generator
+     * fault, since a representation built from a node id carries no voucher.
+     */
+    public static final String VOUCHER_OUTSIDE_ENTITIES_MESSAGE =
+        "A representation carrying a voucher reached the entity dispatch outside _entities, where no"
+            + " vouched-for set closes";
+    /** The simple name of the dispatch's nested holder of an {@code _entities} field's pending loads. */
+    static final String PENDING_LOADS_CLASS_NAME = "PendingLoads";
 
     private static final ClassName ENV          = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName ENV_IMPL     = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
@@ -185,15 +199,20 @@ public final class EntityFetcherDispatchClassGenerator {
                         .initializer("$T.getLogger($S)", SLF4J_LOGGER_FACTORY, VOUCHER_AUDIT_LOGGER)
                         .addJavadoc("The voucher audit log: vouch id, scope and outcome, never the token or its values.\n")
                         .build())
-                    .addMethod(loaders.rejectVoucher());
+                    .addMethod(loaders.rejectVoucher())
+                    .addType(loaders.pendingLoads());
             }
             spec.addMethod(loaders.fetchEntities())
                 .addMethod(loaders.load(entities));
             if (accepts) {
-                spec.addMethod(loaders.loadKeyed(entities));
+                spec.addMethod(loaders.loadKeyed(entities))
+                    .addMethod(loaders.loadKeyedPending(entities));
+            }
+            spec.addMethod(loaders.loadSlot());
+            if (accepts) {
+                spec.addMethod(loaders.loadSlotPending());
             }
             spec
-                .addMethod(loaders.loadSlot())
                 .addMethod(loaders.inOrder())
                 .addMethod(loaders.slotEnv())
                 .addMethod(buildResolveTypeMethod());
@@ -432,6 +451,8 @@ public final class EntityFetcherDispatchClassGenerator {
         final ClassName connectionKey;
         final ClassName errorRouter;
         final ClassName clientException;
+        /** The private nested holder of an {@code _entities} field's admitted, not yet registered loads. */
+        final ClassName pendingLoads;
         /**
          * Whether each entity row carries the connection key it was read on: in a build that accepts
          * vouchers, so a field below a vouched entity runs on the vouched key.
@@ -443,6 +464,7 @@ public final class EntityFetcherDispatchClassGenerator {
             this.outputPackage = outputPackage;
             this.nodeIdEncoder = nodeIdEncoder;
             this.ownedConnections = ownedConnections;
+            this.pendingLoads = ClassName.get(nodeIdEncoder.packageName(), CLASS_NAME, PENDING_LOADS_CLASS_NAME);
             this.connectionKey = ConnectionKeyShape.className(outputPackage);
             this.errorRouter = no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.routerClass(outputPackage);
             var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
@@ -474,11 +496,20 @@ public final class EntityFetcherDispatchClassGenerator {
                 CF, DATA_FETCHER_RESULT, listOfObject, LIST);
             b.endControlFlow();
             b.addStatement("$T<$T<$T>> slots = new $T<>(received.size())", LIST, CF, slotResult(), ARRAY_LIST);
+            if (keyed) {
+                b.add("// Every voucher is verified and admitted, in representation order, before any loads: the\n");
+                b.add("// admitted ones wait here, and register under the operation's vouched key after the loop.\n");
+                b.addStatement("$T pending = new $T()", pendingLoads, pendingLoads);
+            }
             b.beginControlFlow("for (int i = 0; i < received.size(); i++)");
             b.addStatement("Object rep = received.get(i)");
             b.addStatement("Object tn = rep instanceof $T<?, ?> fields ? fields.get($S) : null", MAP, TYPENAME_COLUMN);
             b.beginControlFlow("if (tn instanceof String typeName && $L.contains(typeName))", RESOLVABLE_TYPENAMES_FIELD);
-            b.addStatement("slots.add($L(($T) rep, env, i))", LOAD_SLOT_METHOD, repType());
+            if (keyed) {
+                b.addStatement("slots.add($L(($T) rep, env, i, pending))", LOAD_SLOT_METHOD, repType());
+            } else {
+                b.addStatement("slots.add($L(($T) rep, env, i))", LOAD_SLOT_METHOD, repType());
+            }
             b.addStatement("continue");
             b.endControlFlow();
             b.add("// A representation this subgraph does not resolve keeps its slot null and gets an error\n");
@@ -489,6 +520,9 @@ public final class EntityFetcherDispatchClassGenerator {
                 + ".error($T.clientErrorAt(new $T(message), env, i)).build()))",
                 CF, DATA_FETCHER_RESULT, errorRouter, clientException);
             b.endControlFlow();
+            if (keyed) {
+                b.addStatement("pending.register(env)");
+            }
             b.addStatement("return $L(slots)", IN_ORDER_METHOD);
             return MethodSpec.methodBuilder(FETCH_ENTITIES_METHOD)
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -571,6 +605,27 @@ public final class EntityFetcherDispatchClassGenerator {
          * the vouched key. In a build that accepts vouchers only.
          */
         MethodSpec loadKeyed(List<EntityKeyQuery.Entity> entities) {
+            return MethodSpec.methodBuilder(LOAD_KEYED_METHOD)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, keyedRow()))
+                .addParameter(repType(), "rep")
+                .addParameter(ENV, "env")
+                .addStatement("return $L(rep, env, null)", LOAD_KEYED_METHOD)
+                .addJavadoc("Reads one representation's entity as {@link #$L} does, completing with the row\n"
+                    + "and, as its {@code localContext}, the connection key it was read on, so the entity's\n"
+                    + "subtree reads on that key; {@code null} where the representation names no row. Outside\n"
+                    + "{@code _entities} no operation's vouched-for set closes, so a representation carrying a\n"
+                    + "voucher fails here, as the generator fault it would be.\n"
+                    + "@param rep the representation, {@code __typename} and the key fields\n"
+                    + "@param env the dispatching field's environment\n", LOAD_METHOD)
+                .build();
+        }
+
+        /**
+         * {@code loadKeyed(rep, env, pending)}: the dispatch on {@code __typename}, with the
+         * {@code _entities} field's pending loads, {@code null} where no set closes.
+         */
+        MethodSpec loadKeyedPending(List<EntityKeyQuery.Entity> entities) {
             var b = CodeBlock.builder();
             b.addStatement("Object tn = rep == null ? null : rep.get($S)", TYPENAME_COLUMN);
             b.beginControlFlow("if (!(tn instanceof String typeName))");
@@ -578,20 +633,16 @@ public final class EntityFetcherDispatchClassGenerator {
             b.endControlFlow();
             for (var entity : entities) {
                 b.beginControlFlow("if ($S.equals(typeName))", entity.typeName());
-                b.addStatement("return load$L(rep, env)", entity.typeName());
+                b.addStatement("return load$L(rep, env, pending)", entity.typeName());
                 b.endControlFlow();
             }
             b.addStatement("return $T.completedFuture(null)", CF);
             return MethodSpec.methodBuilder(LOAD_KEYED_METHOD)
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                 .returns(ParameterizedTypeName.get(CF, keyedRow()))
                 .addParameter(repType(), "rep")
                 .addParameter(ENV, "env")
-                .addJavadoc("Reads one representation's entity as {@link #$L} does, completing with the row\n"
-                    + "and, as its {@code localContext}, the connection key it was read on, so the entity's\n"
-                    + "subtree reads on that key; {@code null} where the representation names no row.\n"
-                    + "@param rep the representation, {@code __typename} and the key fields\n"
-                    + "@param env the dispatching field's environment\n", LOAD_METHOD)
+                .addParameter(pendingLoads, "pending")
                 .addCode(b.build())
                 .build();
         }
@@ -605,13 +656,15 @@ public final class EntityFetcherDispatchClassGenerator {
                 emitLoad(arm, entity, altIndex);
             }, (arm, voucher) -> emitVoucherArm(arm, entity, voucher));
             b.addStatement("return $T.completedFuture(null)", CF);
-            return MethodSpec.methodBuilder("load" + entity.typeName())
+            var method = MethodSpec.methodBuilder("load" + entity.typeName())
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                 .returns(ParameterizedTypeName.get(CF, loaded()))
                 .addParameter(repType(), "rep")
-                .addParameter(ENV, "env")
-                .addCode(b.build())
-                .build();
+                .addParameter(ENV, "env");
+            if (keyed) {
+                method.addParameter(pendingLoads, "pending");
+            }
+            return method.addCode(b.build()).build();
         }
 
         /**
@@ -635,15 +688,18 @@ public final class EntityFetcherDispatchClassGenerator {
         }
 
         /**
-         * A representation carrying a voucher, {@code rep} in scope: the codec decodes and checks it,
-         * each lookup and vouched-for value is coerced to its column through the column's
-         * {@code DataType}, the connection key is built from the vouched-for values, and the lookup
-         * columns load into the loader for the authored key the voucher decodes onto, under that key. A
+         * A representation carrying a voucher, {@code rep} and {@code pending} in scope: the codec decodes
+         * and checks it, each vouched-for value is coerced once to its column through the column's
+         * {@code DataType}, the authored key's columns are filled each from the section that supplies it
+         * (a vouched-for key field from its coerced value, every other from the lookup section), and the
+         * vouched-for values are admitted into the operation's set. An admitted representation answers a
+         * pending load, which {@code fetchEntities} registers under the operation's vouched key once every
+         * representation was admitted, in the loader for the authored key the voucher decodes onto. A
          * failed check, or a value no column takes, rejects the request ({@code rejectVoucher}); a value
-         * past the one-value limit fails this representation alone; a null voucher is none, and its slot
-         * is {@code null}, as a key value that is null matches no row. The
-         * per-type data (scope, the fields each section names, their columns) is read off the voucher
-         * alternative and the authored key it pairs with by identity, the one list the SELECT also reads.
+         * past the cap fails this representation alone; a null voucher is none, and its slot is
+         * {@code null}, as a key value that is null matches no row. The per-type data (scope, the fields
+         * each section names, their columns) is read off the voucher alternative, its key fields in the
+         * order the authored key's SELECT binds them.
          */
         private void emitVoucherArm(CodeBlock.Builder arm, EntityKeyQuery.Entity entity,
                                     EntityKeyQuery.Alternative.Voucher voucher) {
@@ -651,6 +707,11 @@ public final class EntityFetcherDispatchClassGenerator {
             if (!(authored instanceof EntityKeyQuery.Alternative.Direct lookup)) {
                 throw new IllegalStateException("Entity '" + entity.typeName() + "' accepts vouchers decoding onto "
                     + voucher.decodesOnto() + ", which is not a key over its columns");
+            }
+            if (lookup.fields().size() != voucher.key().size()) {
+                throw new IllegalStateException("Entity '" + entity.typeName() + "' accepts vouchers decoding onto "
+                    + voucher.decodesOnto() + ", whose " + lookup.fields().size() + " fields the voucher fills "
+                    + voucher.key().size() + " of");
             }
             int lookupIndex = entity.indexOf(voucher.decodesOnto());
             var pkg = outputPackage + ".schema";
@@ -661,13 +722,18 @@ public final class EntityFetcherDispatchClassGenerator {
             var set = ClassName.get("java.util", "Set");
             var vouchedForNames = voucher.vouchedFor().stream().map(f -> CodeBlock.of("$S", f.fieldName()))
                 .collect(CodeBlock.joining(", "));
-            var lookupNames = lookup.fields().stream().map(f -> CodeBlock.of("$S", f.fieldName()))
+            var lookupNames = voucher.lookupFields().stream().map(name -> CodeBlock.of("$S", name))
                 .collect(CodeBlock.joining(", "));
             arm.addStatement("Object presented = rep.get($S)", voucher.voucherField());
             arm.add("// A null voucher is none: the issuing side gives a row it cannot sign none, and a key value\n");
             arm.add("// that is null matches no row, so the slot is null and nothing is checked or acquired.\n");
             arm.beginControlFlow("if (presented == null)");
             arm.addStatement("return $T.completedFuture(null)", CF);
+            arm.endControlFlow();
+            arm.add("// Only _entities closes an operation's vouched-for set; a representation built from a node id\n");
+            arm.add("// carries no voucher, so one reaching here by another path is a generator fault.\n");
+            arm.beginControlFlow("if (pending == null)");
+            arm.addStatement("throw new $T($S)", IllegalStateException.class, VOUCHER_OUTSIDE_ENTITIES_MESSAGE);
             arm.endControlFlow();
             arm.add("// A voucher is verified, never matched: checked whole, or the request is rejected.\n");
             arm.addStatement("$T token", codec.nestedClass("Token"));
@@ -681,18 +747,8 @@ public final class EntityFetcherDispatchClassGenerator {
             arm.addStatement("return rejectVoucher(env, $S, null, failed)", voucher.scope());
             arm.endControlFlow();
             arm.add("// Each value takes its column's coercion, a representation's own; one no column takes is a\n");
-            arm.add("// failed check, not a row that does not exist.\n");
-            var fields = lookup.fields();
-            arm.addStatement("Object[] cols = new Object[$L]", fields.size());
-            for (int i = 0; i < fields.size(); i++) {
-                arm.addStatement("cols[$L] = $T.coerce($L.getDataType(), token.lookup().get($S))", i, columnValues,
-                    HandleMethodBody.columnRef(entity, EntityKeys.columnRef(fields.get(i).column())),
-                    fields.get(i).fieldName());
-                arm.beginControlFlow("if (cols[$L] == null)", i);
-                arm.addStatement("return rejectVoucher(env, $S, token.vouchId(), new $T($T.VALUE))",
-                    voucher.scope(), rejected, reason);
-                arm.endControlFlow();
-            }
+            arm.add("// failed check, not a row that does not exist. A vouched-for value is coerced once, for both\n");
+            arm.add("// the connection key and, where it is a key field, the row.\n");
             var parts = new java.util.ArrayList<CodeBlock>();
             for (int i = 0; i < voucher.vouchedFor().size(); i++) {
                 var field = voucher.vouchedFor().get(i);
@@ -711,13 +767,29 @@ public final class EntityFetcherDispatchClassGenerator {
                 arm.endControlFlow();
                 parts.add(CodeBlock.of("$L", local));
             }
-            arm.add("// The vouched-for values key the connection; the lookup part is navigation only.\n");
-            arm.addStatement("$T key = $T.forVouchedFor($L)", connectionKey, connectionKey,
-                CodeBlock.join(parts, ", "));
-            arm.add("// The one-value limit, applied here while representations register, in their order, and\n");
-            arm.add("// only once the voucher verified: one past it fails alone, naming no value, and takes no\n");
-            arm.add("// connection.\n");
-            arm.beginControlFlow("if (!$T.of(env).admitVouched(key))", ownedConnections);
+            arm.add("// The authored key's columns, in the order its SELECT binds them, each from the section that\n");
+            arm.add("// supplies it: a vouched-for key field finds the row and decides access, the rest navigate.\n");
+            arm.addStatement("Object[] cols = new Object[$L]", voucher.key().size());
+            for (int i = 0; i < voucher.key().size(); i++) {
+                switch (voucher.key().get(i)) {
+                    case EntityKeyQuery.KeySource.VouchedFor vouched ->
+                        arm.addStatement("cols[$L] = vouched$L", i, vouched.component());
+                    case EntityKeyQuery.KeySource.Lookup field -> {
+                        arm.addStatement("cols[$L] = $T.coerce($L.getDataType(), token.lookup().get($S))", i,
+                            columnValues, HandleMethodBody.columnRef(entity, EntityKeys.columnRef(field.column())),
+                            field.fieldName());
+                        arm.beginControlFlow("if (cols[$L] == null)", i);
+                        arm.addStatement("return rejectVoucher(env, $S, token.vouchId(), new $T($T.VALUE))",
+                            voucher.scope(), rejected, reason);
+                        arm.endControlFlow();
+                    }
+                }
+            }
+            arm.add("// The vouched-for values are admitted into the operation's set here, in representation\n");
+            arm.add("// order, and only once the voucher verified: one past the cap fails alone, naming no value,\n");
+            arm.add("// and takes no connection.\n");
+            arm.beginControlFlow("if (!$T.of(env).admitVouched(new $T($L), env))", ownedConnections,
+                ConnectionKeyShape.vouchedForClassName(outputPackage), CodeBlock.join(parts, ", "));
             arm.addStatement("VOUCHER_AUDIT.info($S, token.vouchId(), $S)",
                 "Voucher not admitted: vouch id {}, scope {}, reason LIMIT", voucher.scope());
             arm.addStatement("return $T.failedFuture(new $T($S))", CF, clientException,
@@ -726,7 +798,70 @@ public final class EntityFetcherDispatchClassGenerator {
             arm.addStatement("VOUCHER_AUDIT.info($S, token.vouchId(), $S)", "Voucher redeemed: vouch id {}, scope {}",
                 voucher.scope());
             arm.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()", ENV, ENV_IMPL);
+            arm.add("// Loaded under the operation's vouched key once the field closes the set: every admitted\n");
+            arm.add("// representation of every accepting type shares that key, one loader per type, one lease.\n");
+            arm.add("return pending.defer(key -> {\n");
+            arm.indent();
             emitLoad(arm, entity, lookupIndex);
+            arm.unindent();
+            arm.add("});\n");
+        }
+
+        /**
+         * The dispatch's private holder of one {@code _entities} field's admitted loads, which wait while the
+         * field walks its representations: {@code defer} answers a load to register later, and
+         * {@code register} closes the operation's vouched-for set, through the carrier, and registers every
+         * deferred load under the operation's vouched key, completing each answer from it. A field that
+         * deferred nothing registers nothing and leaves the set open.
+         */
+        TypeSpec pendingLoads() {
+            var answer = ParameterizedTypeName.get(CF, keyedRow());
+            var load = ParameterizedTypeName.get(ClassName.get("java.util.function", "Function"), connectionKey, answer);
+            return TypeSpec.classBuilder(PENDING_LOADS_CLASS_NAME)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("One {@code _entities} field's admitted loads, registered under the operation's vouched\n"
+                    + "key once the field has walked every representation, so the vouched-for set is complete\n"
+                    + "before the first representation is keyed by it.\n")
+                .addField(FieldSpec.builder(listOf(load), "loads", Modifier.PRIVATE, Modifier.FINAL)
+                    .initializer("new $T<>()", ARRAY_LIST).build())
+                .addField(FieldSpec.builder(listOf(answer), "answers", Modifier.PRIVATE, Modifier.FINAL)
+                    .initializer("new $T<>()", ARRAY_LIST).build())
+                .addMethod(MethodSpec.methodBuilder("defer")
+                    .returns(answer)
+                    .addParameter(load, "load")
+                    .addStatement("$T answered = new $T<>()", answer, CF)
+                    .addStatement("loads.add(load)")
+                    .addStatement("answers.add(answered)")
+                    .addStatement("return answered")
+                    .addJavadoc("Defers {@code load}, a representation's load under a key, to {@link #register}.\n"
+                        + "@param load the representation's load under the key it is given\n"
+                        + "@return the representation's answer, completed from the load once registered\n")
+                    .build())
+                .addMethod(MethodSpec.methodBuilder("register")
+                    .addParameter(ENV, "env")
+                    .beginControlFlow("if (loads.isEmpty())")
+                    .addStatement("return")
+                    .endControlFlow()
+                    .addStatement("$T key = $T.of(env).closeVouched()", connectionKey, ownedConnections)
+                    .beginControlFlow("for (int i = 0; i < loads.size(); i++)")
+                    .addStatement("$T answered = answers.get(i)", answer)
+                    .beginControlFlow("try")
+                    .addCode("loads.get(i).apply(key).whenComplete((value, thrown) -> {\n")
+                    .addCode("    if (thrown == null) {\n")
+                    .addCode("        answered.complete(value);\n")
+                    .addCode("    } else {\n")
+                    .addCode("        answered.completeExceptionally(thrown);\n")
+                    .addCode("    }\n")
+                    .addCode("});\n")
+                    .nextControlFlow("catch ($T thrown)", RuntimeException.class)
+                    .addStatement("answered.completeExceptionally(thrown)")
+                    .endControlFlow()
+                    .endControlFlow()
+                    .addJavadoc("Closes the operation's vouched-for set, where this field admitted a value, and\n"
+                        + "registers every deferred load under the operation's vouched key.\n"
+                        + "@param env the {@code _entities} field's environment\n")
+                    .build())
+                .build();
         }
 
         /**
@@ -790,20 +925,7 @@ public final class EntityFetcherDispatchClassGenerator {
         }
 
         MethodSpec loadSlot() {
-            var b = CodeBlock.builder();
-            b.addStatement("$T<$T> loaded", CF, loaded());
-            b.beginControlFlow("try");
-            // In a keyed build the slot answers the row with its key, so each element of the list
-            // carries the key it was read on to the entity's subtree.
-            b.addStatement("loaded = $L(rep, env)", keyed ? LOAD_KEYED_METHOD : LOAD_METHOD);
-            b.nextControlFlow("catch ($T thrown)", Exception.class);
-            b.addStatement("loaded = $T.failedFuture(thrown)", CF);
-            b.endControlFlow();
-            b.addStatement("return loaded.handle((value, thrown) -> thrown == null\n"
-                + "    ? $T.<Object>newResult().data(value).build()\n"
-                + "    : $T.<Object>surfaceClientErrorOrRedact(thrown, slotEnv(env, index)))",
-                DATA_FETCHER_RESULT, errorRouter);
-            return MethodSpec.methodBuilder(LOAD_SLOT_METHOD)
+            var method = MethodSpec.methodBuilder(LOAD_SLOT_METHOD)
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(ParameterizedTypeName.get(CF, slotResult()))
                 .addParameter(repType(), "rep")
@@ -814,9 +936,46 @@ public final class EntityFetcherDispatchClassGenerator {
                     + "failed batch takes down only its own slots.\n"
                     + "@param rep the slot's representation\n"
                     + "@param env the list field's environment\n"
-                    + "@param index the slot's index in the list\n", LOAD_METHOD)
-                .addCode(b.build())
+                    + "@param index the slot's index in the list\n", LOAD_METHOD);
+            if (keyed) {
+                // Outside _entities no vouched-for set closes, so this path defers nothing.
+                return method.addStatement("return $L(rep, env, index, null)", LOAD_SLOT_METHOD).build();
+            }
+            return method.addCode(slotBody(CodeBlock.of("$L(rep, env)", LOAD_METHOD))).build();
+        }
+
+        /**
+         * {@code loadSlot(rep, env, index, pending)}, in a keyed build: the slot read with the
+         * {@code _entities} field's pending loads, {@code null} where no set closes.
+         */
+        MethodSpec loadSlotPending() {
+            return MethodSpec.methodBuilder(LOAD_SLOT_METHOD)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, slotResult()))
+                .addParameter(repType(), "rep")
+                .addParameter(ENV, "env")
+                .addParameter(int.class, "index")
+                .addParameter(pendingLoads, "pending")
+                // The slot answers the row with its key, so each element of the list carries the key it
+                // was read on to the entity's subtree.
+                .addCode(slotBody(CodeBlock.of("$L(rep, env, pending)", LOAD_KEYED_METHOD)))
                 .build();
+        }
+
+        /** A slot's body: {@code load}'s answer, its failure answered at the slot. */
+        private CodeBlock slotBody(CodeBlock load) {
+            var b = CodeBlock.builder();
+            b.addStatement("$T<$T> loaded", CF, loaded());
+            b.beginControlFlow("try");
+            b.addStatement("loaded = $L", load);
+            b.nextControlFlow("catch ($T thrown)", Exception.class);
+            b.addStatement("loaded = $T.failedFuture(thrown)", CF);
+            b.endControlFlow();
+            b.addStatement("return loaded.handle((value, thrown) -> thrown == null\n"
+                + "    ? $T.<Object>newResult().data(value).build()\n"
+                + "    : $T.<Object>surfaceClientErrorOrRedact(thrown, slotEnv(env, index)))",
+                DATA_FETCHER_RESULT, errorRouter);
+            return b.build();
         }
 
         MethodSpec inOrder() {

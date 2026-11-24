@@ -717,7 +717,8 @@ directive @issue(
   """
   The absorbed fields the voucher vouches for, a field set as `@key(fields:)` spells one: whose
   rows are vouched for. The accepting subgraph's `@accept(vouchesFor:)` must name the same fields; the
-  remaining absorbed fields are the key of the vouched row.
+  remaining absorbed fields are the fields of the vouched row's key that `vouchesFor` does not name. A
+  vouched-for field may itself be a key field, and naming every absorbed field vouches for the key whole.
   """
   vouchesFor: String!
 ) on OBJECT
@@ -740,14 +741,15 @@ directive @accept(
   """
   scope: String!
   """
-  The field set of the authored `@key` the voucher's lookup part decodes to, as `@key(fields:)` spells
-  it. May be left out when the type has exactly one authored resolvable key.
+  The field set of the authored `@key` the voucher decodes to, as `@key(fields:)` spells it. May be left
+  out when the type has exactly one authored resolvable key.
   """
   key: String
   """
   The fields of this type the voucher's vouched-for values parse into, a field set as `@key(fields:)` spells one:
   whose rows are vouched for. Must name the same fields as the issuing subgraph's `@issue(vouchesFor:)`,
-  and may be `@inaccessible`.
+  and may be `@inaccessible`. A vouched-for field may be a field of the key the voucher decodes to, and is
+  then supplied by the vouched-for values; the key's other fields are supplied by the voucher's lookup part.
   """
   vouchesFor: String!
 ) on OBJECT

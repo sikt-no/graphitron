@@ -506,6 +506,76 @@ rejection ruling's "and the one-vouched-value limit"), if R1119 is still on the 
 * Fields below a vouched entity with fetchers of their own hold the vouched lease to the operation's end.
   Releasing it earlier is R1192's per-worker release, unchanged by this item.
 
+## Implementation notes
+
+*The thousand-value measurement* (PostgreSQL 18.3, a laptop; a table of 100,000 rows and 5,000 owners, a
+set of 1,000 owners admitting 20,000 rows; "lookup" is the entity SELECT of 1,000 keys joined by primary
+key, as `_entities` reads them):
+
+| Policy form | Scan | Lookup |
+|---|---|---|
+| `owner_id = ANY (coalesce(nullif(current_setting(..), ''), '{}')::text[])`, the bare form | 8,275 ms | 91 ms |
+| `owner_id = ANY ((SELECT ...::text[])::text[])`, the InitPlan form | 840 ms | 834 ms |
+| `owner_id IN (SELECT unnest(coalesce(nullif(current_setting(..), ''), '{}')::text[]))` | 10.5 ms | 8 to 13 ms |
+
+A set of one owner costs 7 ms on either workload, so with the hashed-subplan form a thousand values cost
+what one does, and the default of 1000 stands. The Round 2 note's `= ANY ((SELECT ...))` does not parse
+(PostgreSQL reads `ANY (subquery)` as a row-wise comparison), and its working spelling, an InitPlan, makes
+the planner trade the index nested loop for a sequential scan and a hash join, about ten times slower on
+the lookup. The fixture and the how-to state the `IN (SELECT unnest(...))` form. For two vouched-for
+fields, `(org_id, person_id) IN (SELECT v.org, v.person FROM jsonb_to_recordset(..) AS v(org int, person
+int))` costs 10.5 ms and 11 ms; the correlated `EXISTS` the plan first wrote is as fast on PostgreSQL 18,
+which rewrites it into the same hashed subplan, but the row-`IN` form does not depend on that rewrite. A
+crossed pair, one voucher's organisation with another's person, is admitted nothing.
+
+*Where the implementation departs from the plan.*
+
+* `VoucherDispatchTest` and `RequestRejectionCarrierTest` carry the unit-tier cases, and
+  `VoucherKeyFieldDispatchTest` the `KEY` rejections on the two new scenarios' generated code. Which column
+  a section filled (a key wholly vouched for, a mixed key) is only visible in the row read, so it runs at
+  the execution tier in `VoucherKeyFieldExecutionTest`. `EntityKeyQueryTest` pins each key field's
+  section at the query.
+* A third scenario, `voucher-issue-per-entity`, is A's side of the per-entity voucher, so the how-to
+  renders both sides from checked documents. Its issuing type is reached by
+  `@reference(path: [{key: "vouched_case_pkey"}])`, the Round 2 correction.
+* The mixed scenario vouches for a field outside the key beside one in it (key `orgId caseId`,
+  `vouchesFor: "orgId personId"`), so the superset shape `ClaimInKey` pinned leaves no gap, and its
+  fixture's policy is the two-field form the how-to states.
+* `EntityKeyQuery.Alternative.Voucher.key()` is a sealed `KeySource` per key field, `VouchedFor(component)`
+  or `Lookup(fieldName, column)`, read off the authored key's own field rows and paired in the reader, so
+  the emitter pairs no lists by name (the architect's shape at take-up).
+* The cap's call goes through a package-private `ErrorRouter.contained(hookClass, hook, call, env)`, the
+  existing containment with the field's path as its subject, since the fixed router cannot name a hook
+  only accepting builds generate. `VouchedValueLimit` is written by `FixedRuntimeEmitter` where the run's
+  one reading of `VoucherRuntime.Roles` says the graph accepts (`GlobalUnitKind.VOUCHED_VALUE_LIMIT`), so
+  the connection runtime's planned unit set stays the same in every build.
+* Pending loads are a private `PendingLoads` nested in `EntityFetcherDispatch`, passed as a parameter
+  through private overloads of `loadSlot` and `loadKeyed`; the public ones pass none, and a voucher
+  reaching the dispatch through them fails with `VOUCHER_OUTSIDE_ENTITIES_MESSAGE`.
+* The javadoc of the request rejection, the instrumentation, the error router and graphitron-jakarta-rest
+  listed "the one-vouched-value limit" among request rejections; each is corrected here, with the
+  retired term. `runtime-extension-points.adoc`'s request-rejection paragraph is its own `docs` commit.
+
+*Architect at take-up* (principles-architect): fork 1, contain the cap through the router, taken as a
+package-private overload; fork 2, pending loads as a parameter, taken; fork 3, a sealed per-field source
+paired in the reader, taken; retire the refusal in the same commit as the new voucher arm, done; two
+further tests (a voucher through the public `loadKeyed`, a lookup that admitted nothing leaving the set
+open), added to `VoucherDispatchTest`.
+
+*Architect before review* (principles-architect): prose still stating the retired rule (the
+`@issue(vouchesFor:)` and `@accept(key:)` descriptions in `directives.graphqls`, `accept.adoc`'s
+`VOUCHER_ACCEPT_WITHOUT_KEY` row, `runtime-extension-points.adoc`'s "a second value"), fixed; the hook
+planned in `EmitPlan` off a fresh "does the graph accept" query, moved to the fixed runtime as above; the
+`KEY` rejections needing no database, moved to the unit tier. Not acted on, as a follow-up predating this
+item: `new VouchedFor(vouched0, ...)` relies on `EntityKeyQuery`'s vouched-for order (by field name)
+agreeing with `AcceptVouchedForQuery`'s, which builds the record; two same-typed components swapped would
+compile, and only the execution tier's pair policy would catch it. Building the arguments in
+`ConnectionKeyShape.vouchedFor()` order, checked by name at generate time, closes it.
+
+Open for Alf and Filip, raised by the architect: retiring a defect code whose basis is `GRAPHITRON` is
+unwritten in `defects-as-facts.adoc`, and "every consumer hook is called through one containment" is
+stated only in emitted javadoc.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready, revisions requested (session_a75e11ee-4af6-4577-afbe-0ef4ebf3fdd5, 2026-11-23)

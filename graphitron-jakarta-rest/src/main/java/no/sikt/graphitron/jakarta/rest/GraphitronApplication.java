@@ -132,7 +132,7 @@ public interface GraphitronApplication {
      * Answers a rejected request as a client fault, from what rejected it: for a failed acquisition the
      * connection source's own exception (a rejected-identity {@code SQLState} to
      * {@link jakarta.ws.rs.NotAuthorizedException}, a pool fault to a {@code 503}, say), for a failed
-     * voucher check or the one-vouched-value limit the generated rejection itself, usually a
+     * voucher check the generated rejection itself, usually a
      * {@code 401} or {@code 403}. Called only when {@link #requestRejection(Throwable)} found one, and
      * before {@link #clientFault(Throwable)}, so an application that overrides both gets this one for
      * a rejected request and {@code clientFault} for everything else.

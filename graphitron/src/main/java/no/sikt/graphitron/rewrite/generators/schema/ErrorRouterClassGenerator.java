@@ -30,7 +30,8 @@ import java.util.function.Supplier;
  * {@code FetcherErrorResponse}, all contained by one private helper),
  * {@code describe}, the one-line summary a database failure is logged as,
  * {@code loaderOptions}, the {@code DataLoaderOptions} every loader is built with, which carry the
- * consumer's {@code BatchSizeLimit},
+ * consumer's {@code BatchSizeLimit}, a package-private {@code contained} for a hook generated beside
+ * the router in some graphs only (the accepting carrier's {@code VouchedValueLimit}),
  * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
  *
@@ -278,6 +279,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(buildMessageOnPathMethod())
             .addMethod(buildConfiguredMethod())
             .addMethod(buildContainedMethod())
+            .addMethod(buildContainedAtFieldMethod())
             .addMethod(buildAnswerMethod(fetcherErrorResponse))
             .addMethod(buildPathOfMethod())
             .build();
@@ -614,8 +616,8 @@ public final class ErrorRouterClassGenerator {
                 + "source do neither, so a batch failure that reaches many fields logs once. A null\n"
                 + "{@code env} or context records nothing.\n"
                 + "\n"
-                + "<p>A request rejection (a failed acquisition, a failed voucher check, the\n"
-                + "one-vouched-value limit) is never claimed: it fails the request as a whole, so no\n"
+                + "<p>A request rejection (a failed acquisition, a failed voucher check) is never\n"
+                + "claimed: it fails the request as a whole, so no\n"
                 + "mapping may turn it into payload data. Nor is a failed outbox emit: it is an\n"
                 + "infrastructure fault, not business data, so it takes the redacted path.\n"
                 + "@param thrown the exception the fetcher caught\n"
@@ -955,8 +957,8 @@ public final class ErrorRouterClassGenerator {
             .addStatement("$T.Builder options = $T.newOptions()", DATA_LOADER_OPTIONS, DATA_LOADER_OPTIONS)
             .addStatement("$T limit = configured(env, $T.class)", batchSizeLimit, batchSizeLimit)
             .beginControlFlow("if (limit != null)")
-            .addStatement("$T max = contained($T.class, limit, hook -> hook.maxBatchSize(env), () -> $S + pathOf(env))",
-                Integer.class, batchSizeLimit, "path = ")
+            .addStatement("$T max = contained($T.class, limit, hook -> hook.maxBatchSize(env), env)",
+                Integer.class, batchSizeLimit)
             .beginControlFlow("if (max != null && max >= 1)")
             .addStatement("options.setMaxBatchSize(max)")
             .endControlFlow()
@@ -1025,6 +1027,32 @@ public final class ErrorRouterClassGenerator {
                 "{} {} returned null; {}")
             .endControlFlow()
             .addStatement("return answer")
+            .build();
+    }
+
+    /**
+     * {@code contained(hookClass, hook, call, env)}: {@code contained} for a hook asked on behalf of a
+     * field, its failure line naming the field's path. Package-private, so a consumer hook the fixed
+     * router cannot name, one only some graphs generate beside it, is called through the same
+     * containment by the class that asks it.
+     */
+    private static MethodSpec buildContainedAtFieldMethod() {
+        var typeH = TypeVariableName.get("H");
+        var typeR = TypeVariableName.get("R");
+        return MethodSpec.methodBuilder("contained")
+            .addModifiers(Modifier.STATIC)
+            .addTypeVariable(typeH)
+            .addTypeVariable(typeR)
+            .returns(typeR)
+            .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), typeH), "hookClass")
+            .addParameter(typeH, "hook")
+            .addParameter(ParameterizedTypeName.get(FUNCTION_CN, typeH, typeR), "call")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("Calls {@code call} on the consumer's {@code hook}, asked on behalf of the field\n"
+                + "{@code env} fetches, and returns what it returned, or {@code null} when it threw; the\n"
+                + "failure line names the field's path. The one containment every consumer hook is called\n"
+                + "through, here for a hook generated beside this class in some graphs only.\n")
+            .addStatement("return contained(hookClass, hook, call, () -> $S + pathOf(env))", "path = ")
             .build();
     }
 

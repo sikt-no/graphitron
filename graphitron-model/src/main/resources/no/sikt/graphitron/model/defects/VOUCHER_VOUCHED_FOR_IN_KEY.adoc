@@ -1,5 +1,0 @@
-Reported at the `@accept`, the detail naming the first such field.
-
-A voucher has two parts: the lookup part, which decodes to the key and finds the row, and the vouched-for values, which become the connection key your connection source reads. A field cannot be in both.
-
-*Next step.* Name in `vouchesFor` fields outside the key the voucher decodes to, or name another key with `key:`. See xref:directives/accept.adoc[`@accept`].

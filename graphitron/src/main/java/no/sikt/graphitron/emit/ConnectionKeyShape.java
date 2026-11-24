@@ -16,23 +16,28 @@ import java.util.Optional;
  * for itself what a key carries.
  *
  * <p>The record has exactly the parts the schema has: the tenant, typed by the tenant column, in a build
- * with a {@code <tenantColumn>}; one part per vouched-for field, typed by the column the field reads, in a
- * build that accepts vouchers; and no part at all in a build with neither. Each question a site asks is
- * its own method: {@link #hasTenant()} for the tenant machinery and the slot it writes,
- * {@link #vouchedFor()} for the vouched-for parts, {@link #hasParts()} for whether a key can be anything
- * but the empty one.
+ * with a {@code <tenantColumn>}; the set of vouched-for values an operation admitted, in a build that
+ * accepts vouchers, each value a row ({@value #VOUCHED_FOR_CLASS_NAME}) with one component per
+ * vouched-for field, typed by the column the field reads; and no part at all in a build with neither.
+ * Each question a site asks is its own method: {@link #hasTenant()} for the tenant machinery and the slot
+ * it writes, {@link #vouchedFor()} for the vouched-for row's components, {@link #hasParts()} for whether a
+ * key can be anything but the empty one.
  *
  * @param tenant     the tenant part's type, boxed, where the build has a tenant column
- * @param vouchedFor the vouched-for parts in name order, empty where the build accepts no vouchers
+ * @param vouchedFor the components of a vouched-for row in name order, empty where the build accepts no
+ *                   vouchers
  */
 public record ConnectionKeyShape(Optional<TypeName> tenant, List<VouchedForPart> vouchedFor) {
 
     /** The generated record's simple name, in the runtime's {@code schema} package. */
     public static final String CLASS_NAME = "ConnectionKey";
 
+    /** The simple name of the vouched-for row, a record nested in the key, in a build that accepts vouchers. */
+    public static final String VOUCHED_FOR_CLASS_NAME = "VouchedFor";
+
     /**
-     * One vouched-for part: the vouched-for field's name, which is the record component's, and the Java
-     * type of the column it reads, boxed.
+     * One component of the vouched-for row: the vouched-for field's name, which is the record component's,
+     * and the Java type of the column it reads, boxed.
      */
     public record VouchedForPart(String name, TypeName type) {
         public VouchedForPart {
@@ -101,5 +106,10 @@ public record ConnectionKeyShape(Optional<TypeName> tenant, List<VouchedForPart>
     /** The generated {@code ConnectionKey} class of a build writing into {@code outputPackage}. */
     public static ClassName className(String outputPackage) {
         return ClassName.get(outputPackage + ".schema", CLASS_NAME);
+    }
+
+    /** The vouched-for row nested in {@link #className}, in a build that accepts vouchers. */
+    public static ClassName vouchedForClassName(String outputPackage) {
+        return className(outputPackage).nestedClass(VOUCHED_FOR_CLASS_NAME);
     }
 }

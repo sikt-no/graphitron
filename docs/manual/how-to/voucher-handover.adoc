@@ -1,16 +1,16 @@
 = How-to: Hand a row's access to another subgraph with a voucher
-:description: One subgraph vouches for a row; another resolves the entity under row-level security on a connection your source mounts for the vouched-for value.
+:description: One subgraph vouches for a row; another resolves the entity under row-level security on a connection your source mounts for the request's vouched-for values.
 :!toc:
 
 Two subgraphs hold two halves of one story. Subgraph A knows that an application has results and who owns each; subgraph B owns the results themselves, behind row-level security on their owner. A client asking A for an application's results should see B's results for exactly those owners, without B trusting the client's word for whose rows they are.
 
-A voucher carries that word for you. A signs one per row it reads: the row's lookup key and its *vouched-for values*, here the owner. The router hands it to B as the entity's key, and B checks the signature, reads the owner off it, and resolves the entity on a connection your connection source sets up for that owner. Your database's policies then decide what the owner may see; Graphitron never reads the voucher's values as data.
+A voucher carries that word for you. A signs one per row it reads: the row's lookup key and its *vouched-for values*, here the owner. The router hands it to B as the entity's key, and B checks the signature, reads the owner off it, and resolves the entity on a connection your connection source sets up for the owners the request's vouchers carry. Your database's policies then decide what those owners' rows the request may see; Graphitron never reads the voucher's values as data.
 
 This page wires both halves end to end. The reference pages for the two directives are xref:../reference/directives/issue.adoc[`@issue`] and xref:../reference/directives/accept.adoc[`@accept`].
 
 == 1. Subgraph A issues
 
-Mark the type `@issue`. Graphitron gives it the voucher field `internalGraphitronVoucher`, and every field you write on the type is absorbed into the voucher, signed and withheld from what A publishes; `vouchesFor` names the absorbed fields whose values become the vouched-for part, and the rest are the lookup part, named and typed as B's key fields:
+Mark the type `@issue`. Graphitron gives it the voucher field `internalGraphitronVoucher`, and every field you write on the type is absorbed into the voucher, signed and withheld from what A publishes; `vouchesFor` names the absorbed fields whose values become the vouched-for part, and the rest are the lookup part, named and typed as the fields of B's key that B does not vouch for:
 
 [source,graphql]
 ----
@@ -83,41 +83,113 @@ var runtimeB = Graphitron.runtime(SQLDialect.POSTGRES, settings,
 
 To rotate, add the new public key to B under a new id and deploy B, then switch A to sign with it; drop the old id from B once the vouchers signed with it have expired, `ttl` after they were issued. `VoucherKeys` is an interface, so a key that must never leave a signing service can still be served by implementing it, at that round trip per voucher.
 
-== 4. B's connection source mounts the vouched-for value
+== 4. B's connection source mounts the vouched-for set
 
-A vouched-for value never filters anything in B's SQL. It becomes a part of the generated `ConnectionKey`, here `key.eierId()`, and B reads the entity on the connection its source leases for that key. Set the value where your policies read it:
+A vouched-for value never filters anything in B's SQL. Every value the request's vouchers carry goes into one set on the generated `ConnectionKey`, `key.vouchedFor()`: a set of `ConnectionKey.VouchedFor` rows, one per distinct value, with a component per vouched-for field, here `eierId()`. B reads every vouched entity of the request on the one connection its source leases for that key. Set the set where your policies read it:
 
 [source,java]
 ----
 var source = ConnectionSources.mounting(
     key -> dataSource,
     (connection, key) -> DSL.using(connection, SQLDialect.POSTGRES)
-        .execute("select set_config('app.vouched_owner', ?, false)", key.eierId().orElse("")),
+        .execute("select set_config('app.vouched_owners', ?::text, false)",
+            (Object) key.vouchedFor().stream().map(VouchedFor::eierId).toArray(String[]::new)),
     (connection, key) -> DSL.using(connection, SQLDialect.POSTGRES)
-        .execute("select set_config('app.vouched_owner', '', false)"));
+        .execute("select set_config('app.vouched_owners', '{}', false)"));
 
 var input = Graphitron.newOwnedExecutionInput(source).query(query).build();
 ----
 
-The key whose parts are empty is the request's own connection, for every field outside a vouched entity; here it gets the empty owner, so it sees no results. Every voucher carrying the same owner shares one connection.
+The key whose set is empty is the request's own connection, for every field outside a vouched entity; here it gets no owner, so it sees no results. The policy tests the row's membership in the set:
 
 [source,sql]
 ----
 ALTER TABLE vouched_result ENABLE ROW LEVEL SECURITY;
 CREATE POLICY vouched_result_owner ON vouched_result
-    USING (owner_id = nullif(current_setting('app.vouched_owner', true), ''));
+    USING (owner_id IN (SELECT unnest(coalesce(nullif(current_setting('app.vouched_owners', true), ''), '{}')::text[])));
 ----
+
+Write the membership as `IN (SELECT unnest(...))`. PostgreSQL runs it as a hashed subplan: the setting is parsed once per statement and each row is one hash probe, so a thousand owners cost what one does. `owner_id = ANY (current_setting(...)::text[])` admits the same rows but parses the setting again for every row it filters; measured against a thousand owners it is about ten times slower on an indexed lookup and several hundred times slower on a scan.
+
+With more than one vouched-for field, each voucher's values are one row of the set, so a policy never pairs one voucher's organisation with another's person. Write the set as a JSON array of objects and test the row's values together; here both are integers:
+
+[source,java]
+----
+(connection, key) -> DSL.using(connection, SQLDialect.POSTGRES)
+    .execute("select set_config('app.vouched_pairs', ?, false)",
+        key.vouchedFor().stream()
+            .map(v -> "{\"org\":" + v.orgId() + ",\"person\":" + v.personId() + "}")
+            .collect(Collectors.joining(",", "[", "]")))
+----
+
+[source,sql]
+----
+CREATE POLICY vouched_enrolment_pair ON vouched_enrolment
+    USING ((org_id, person_id) IN (
+        SELECT v.org, v.person
+          FROM jsonb_to_recordset(coalesce(nullif(current_setting('app.vouched_pairs', true), ''), '[]')::jsonb)
+               AS v(org int, person int)));
+----
+
+*One connection for every value.* A row read below one vouched entity is read on a connection that can also see the other admitted owners' rows, so a join that strays from one owner's rows to another's is not caught by the database. It grants the caller nothing it was not vouched: A vouched every admitted value to the same caller in the same request. Where each entity must be read in isolation, vouch for the entity's own key (step 6): each value is then one entity.
+
+*The set is type-blind.* A `VouchedFor` row names values, not the accepting type that admitted them, and every accepting type in a build vouches for fields of the same names and types (`VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS`). Types share values only by sharing those names, as owners do by design: `eierId` names one owner on every accepting type.
 
 A session variable is a convention any SQL on the connection could overwrite; see xref:../../security.adoc[the security guide] for the stronger fences, a definer-rights routine or a token verified in the database.
 
 == 5. What a client sees
 
 * A voucher that fails any check (signature, expiry, scope, the `__typename` it was signed for, a value no column takes) rejects the whole request, and no connection is taken for its representations: `GraphQL.execute` throws the generated `VoucherRejectedException`, naming the check and nothing from the token. Answer it from `Graphitron.requestRejection(thrown)`, usually with 401 or 403.
-* A request presenting vouchers for more than one owner reads the first owner's, in representation order. Each representation carrying another owner answers `null` with an error at its own index naming the limit and no owner, so the router places it at that row's path, and the rest of the request is answered. No connection is taken for the turned-away representations. A router sends every representation bound for this subgraph in one `_entities` call, so a list whose rows belong to different owners meets this limit.
+* A router sends every representation bound for this subgraph in one `_entities` call, so a list whose rows belong to different owners presents them all at once. Every owner they carry is read on the one connection, up to a cap on the distinct vouched-for values one request admits: a thousand unless your runtime says otherwise. The first values in representation order fill the set; each representation whose value is past the cap answers `null` with an error at its own index naming the limit and no value, so the router places it at that row's path, takes no connection, and the rest of the request is answered.
+* The cap bounds what one request costs B's database, since every row read under the policies tests membership in the set; it grants nothing. Set it with `Graphitron.runtime(...).withVouchedValueLimit(env -> limit)`, asked once per request with the `_entities` field's environment, so a batch integration can be given more. An answer below 1 admits no value; answer `Integer.MAX_VALUE` for no practical bound. If the limit throws, the thousand stands.
 * A plain representation of B's own key resolves on the request's own connection, under the caller's own access: a voucher only ever adds access.
 * A row A could not sign, its voucher too long or a number in it too long, has a `null` voucher and an error at its path on A, and the row is still answered there. On B, a representation carrying that `null` voucher answers `null` and never rejects the request.
-* Every redemption, rejection and representation turned away by the limit is logged with its vouch id, scope and outcome on the `no.sikt.graphitron.voucher.audit` logger at INFO; never the token or its values.
+* Every redemption, rejection and representation turned away by the cap is logged with its vouch id, scope and outcome on the `no.sikt.graphitron.voucher.audit` logger at INFO; never the token or its values.
 * A build that accepts vouchers has no escape hatch: `Graphitron.newExecutionInput(dsl, ...)` is not generated.
+
+== 6. A voucher per entity
+
+When B's access should follow A's access to each row rather than to an owner, vouch for the row's own key. Each field of the key a voucher decodes to is supplied by exactly one of its sections: a key field `vouchesFor` names by the vouched-for section, every other by the lookup section. With the key wholly vouched for, the lookup section is empty and the key both finds the row and decides access.
+
+A cannot issue on a type a root field returns, so the voucher sits on a type reached through a field: the case's event log, the same row read again by joining the case to itself over its primary key. Every absorbed field is vouched for:
+
+[source,graphql]
+----
+include::examples/voucher-handover.graphqls[tag=PerEntityIssuing]
+----
+
+B vouches for its own key, the case's id:
+
+[source,graphql]
+----
+include::examples/voucher-handover.graphqls[tag=PerEntityAccepting]
+----
+
+include::examples/_voucher-handover.adoc[tag=PerEntityAccepting-graphitron_accept_vouched_for]
+
+The source sets the case ids, and the policies on the case and its events test membership:
+
+[source,java]
+----
+(connection, key) -> DSL.using(connection, SQLDialect.POSTGRES)
+    .execute("select set_config('app.vouched_cases', ?::text, false)",
+        (Object) key.vouchedFor().stream().map(VouchedFor::caseId).toArray(Integer[]::new))
+----
+
+[source,sql]
+----
+CREATE POLICY vouched_case_vouched ON vouched_case
+    USING (case_id IN (SELECT unnest(coalesce(nullif(current_setting('app.vouched_cases', true), ''), '{}')::int[])));
+CREATE POLICY vouched_case_event_vouched ON vouched_case_event
+    USING (case_id IN (SELECT unnest(coalesce(nullif(current_setting('app.vouched_cases', true), ''), '{}')::int[])));
+----
+
+What it means for you:
+
+* A list of rows presents one vouched-for value per row, and the router sends them in one call, so the cap is sized to a list: a page of more than a thousand rows needs `withVouchedValueLimit`.
+* Each value is one entity, so what one connection for every value gives up (step 4) is nil: a row of one case's subtree is read on a connection that can see only cases A vouched for to the same caller.
+* It is in practice the build's one accepting type. Every accepting type vouches for fields of the same names and types, so a second type with a key of its own is refused, and one whose key is made to share the name shares values: a policy on either table admits the other's ids.
+* If your vouchers vouch for a second field reading the key's column today, a `nasjonalIdForVoucher` beside the key `nasjonalId`, that form keeps working. To drop it, vouch for the key field itself on both sides together: an older A's voucher carries the second field where the new B expects the key field, so the two deploy as one, and a voucher lives its `ttl`, the window a split deploy fails in. `VouchedFor`'s component is named for the vouched-for field, so your source reads `VouchedFor::nasjonalId` after the move.
 
 == Limits for now
 

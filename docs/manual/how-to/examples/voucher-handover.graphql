@@ -11,3 +11,14 @@ query AcceptingEntity
     @factRows(relation: "graphitron_minted_key") {
   results { id eierId grade details { subject } internalGraphitronVoucher }
 }
+
+query PerEntityIssuing
+    @factDocument(path: "scenarios/voucher-issue-per-entity") {
+  cases { title eventLog { caseId internalGraphitronVoucher } }
+}
+
+query PerEntityAccepting
+    @factDocument(path: "scenarios/voucher-accept-per-entity")
+    @factRows(relation: "graphitron_accept_vouched_for") {
+  caseEventLogs { caseId events { what } internalGraphitronVoucher }
+}

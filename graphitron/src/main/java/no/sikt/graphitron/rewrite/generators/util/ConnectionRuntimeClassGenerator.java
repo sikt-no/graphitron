@@ -135,6 +135,14 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code ErrorRouter.loaderOptions}.
      */
     public static final String BATCH_SIZE_LIMIT_CLASS_NAME = "BatchSizeLimit";
+    /**
+     * The consumer-implemented callback that caps how many distinct vouched-for values one operation
+     * admits, in a build that accepts vouchers; held by the runtime beside
+     * {@link #BATCH_SIZE_LIMIT_CLASS_NAME} and asked by the per-operation carrier at its first admission.
+     */
+    public static final String VOUCHED_VALUE_LIMIT_CLASS_NAME = "VouchedValueLimit";
+    /** What an operation admits without a {@code VouchedValueLimit}, or where the one given throws. */
+    public static final int DEFAULT_VOUCHED_VALUE_LIMIT = 1000;
 
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
     private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
@@ -157,6 +165,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
     private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName COLLECTION = ClassName.get("java.util", "Collection");
+    private static final ClassName COLLECTIONS = ClassName.get("java.util", "Collections");
     private static final ClassName DURATION = ClassName.get("java.time", "Duration");
     private static final ClassName FUNCTION = ClassName.get("java.util.function", "Function");
     private static final ClassName CONCURRENT_HASH_MAP = ClassName.get("java.util.concurrent", "ConcurrentHashMap");
@@ -307,20 +316,34 @@ public final class ConnectionRuntimeClassGenerator {
             multiTenant ? tenantKey : null));
         units.add(pinnedConnection(pinnedConnection, connectionSource, lease, connectionKey, keyNotPermitted,
             acquisitionFailed, handleType));
+        // The cap on an operation's vouched-for set is a hook of an accepting build alone, written by
+        // the fixed runtime (renderVouchedValueLimit) and named here.
+        boolean accepts = !shape.vouchedFor().isEmpty();
+        var vouchedValueLimit = accepts ? ClassName.get(schemaPackage, VOUCHED_VALUE_LIMIT_CLASS_NAME) : null;
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
             batchSizeLimit, multiTenant,
             vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS) : null,
-            failureMessages, connectionKey, connectionSource));
+            failureMessages, connectionKey, connectionSource, vouchedValueLimit));
         units.add(ownedConnections(ownedConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, identity, tenantColumn, errorRouter, columnValues, acquisitionFailed,
             keyNotPermitted, connectionSource, keyType, connectionKey, failureMessages, requestRejected,
-            !shape.vouchedFor().isEmpty(),
-            shape.vouchedFor().isEmpty() ? null
-                : ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)));
+            accepts,
+            accepts ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC) : null,
+            vouchedValueLimit));
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
         units.add(batchSizeLimit(batchSizeLimit));
         return List.copyOf(units);
+    }
+
+    /**
+     * The {@code VouchedValueLimit} hook of a build that accepts vouchers, written under
+     * {@code outputPackage + ".schema"} by the fixed runtime where the graph accepts, the one reading
+     * of {@link no.sikt.graphitron.emit.VoucherRuntime#roles}; this runtime's carrier and
+     * {@code GraphitronRuntime} name it in such a build. Its content depends on the package alone.
+     */
+    public static TypeSpec renderVouchedValueLimit(String outputPackage) {
+        return vouchedValueLimit(ClassName.get(outputPackage + ".schema", VOUCHED_VALUE_LIMIT_CLASS_NAME));
     }
 
     /**
@@ -648,7 +671,8 @@ public final class ConnectionRuntimeClassGenerator {
     private static TypeSpec runtime(ClassName runtime, ClassName pinnedConnection, ClassName instrumentation,
                                     ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
                                     ClassName batchSizeLimit, boolean multiTenant, ClassName voucherKeys,
-                                    boolean failureMessages, ClassName connectionKey, ClassName connectionSource) {
+                                    boolean failureMessages, ClassName connectionKey, ClassName connectionSource,
+                                    ClassName vouchedValueLimit) {
         // In a graph with failure messages the copy constructor carries the outbox acquisition bound
         // after the batch size limit, so every wither hands it on.
         String outboxArg = failureMessages ? ", outboxAcquisitionTimeout" : "";
@@ -658,6 +682,13 @@ public final class ConnectionRuntimeClassGenerator {
         java.util.function.UnaryOperator<String> delegating = call -> call.substring(0, call.length() - 1) + keysArg + ")";
         java.util.function.UnaryOperator<MethodSpec.Builder> takesKeys = b -> voucherKeys == null ? b
             : b.addParameter(voucherKeys, "voucherKeys");
+        // In a build that accepts vouchers the copy constructor also carries the cap on an operation's
+        // vouched-for set, after the keys, so every wither hands it on; copying is delegating plus it.
+        String limitArg = vouchedValueLimit == null ? "" : ", vouchedValueLimit";
+        java.util.function.UnaryOperator<String> copying = call -> {
+            String delegated = delegating.apply(call);
+            return delegated.substring(0, delegated.length() - 1) + limitArg + ")";
+        };
         String head = "dialect, settings" + (multiTenant ? ", fanOutExecutor, fanOutTimeout" : "");
 
         var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL)
@@ -736,6 +767,9 @@ public final class ConnectionRuntimeClassGenerator {
         canonicalBuilder.addStatement("this.fetcherErrorLog = null")
             .addStatement("this.fetcherErrorResponse = null")
             .addStatement("this.batchSizeLimit = null");
+        if (vouchedValueLimit != null) {
+            canonicalBuilder.addStatement("this.vouchedValueLimit = null");
+        }
         if (failureMessages) {
             canonicalBuilder.addStatement("this.outboxAcquisitionTimeout = DEFAULT_OUTBOX_ACQUISITION_TIMEOUT");
         }
@@ -770,7 +804,12 @@ public final class ConnectionRuntimeClassGenerator {
         if (failureMessages) {
             copyBuilder.addParameter(DURATION, "outboxAcquisitionTimeout");
         }
-        takesKeys.apply(copyBuilder)
+        takesKeys.apply(copyBuilder);
+        if (vouchedValueLimit != null) {
+            copyBuilder.addParameter(vouchedValueLimit, "vouchedValueLimit")
+                .addStatement("this.vouchedValueLimit = vouchedValueLimit");
+        }
+        copyBuilder
             .addStatement("this.dialect = dialect")
             .addStatement("this.settings = settings");
         if (multiTenant) {
@@ -791,7 +830,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(fetcherErrorLog, "log")
-            .addStatement(delegating.apply("return new $T(" + head + ", $T.requireNonNull(log, $S),"
+            .addStatement(copying.apply("return new $T(" + head + ", $T.requireNonNull(log, $S),"
                     + " fetcherErrorResponse, batchSizeLimit" + outboxArg + ")"),
                 runtime, OBJECTS, "log")
             .addJavadoc("A copy of this runtime that hands every fetcher exception no {@code @error} mapping\n"
@@ -805,7 +844,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(fetcherErrorResponse, "response")
-            .addStatement(delegating.apply("return new $T(" + head + ", fetcherErrorLog,"
+            .addStatement(copying.apply("return new $T(" + head + ", fetcherErrorLog,"
                     + " $T.requireNonNull(response, $S), batchSizeLimit" + outboxArg + ")"),
                 runtime, OBJECTS, "response")
             .addJavadoc("A copy of this runtime that asks {@code response} for the reference of every fetcher\n"
@@ -819,7 +858,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(batchSizeLimit, "limit")
-            .addStatement(delegating.apply("return new $T(" + head + ", fetcherErrorLog, fetcherErrorResponse,"
+            .addStatement(copying.apply("return new $T(" + head + ", fetcherErrorLog, fetcherErrorResponse,"
                     + " $T.requireNonNull(limit, $S)" + outboxArg + ")"),
                 runtime, OBJECTS, "limit")
             .addJavadoc("A copy of this runtime that asks {@code limit} how many keys one batched query may\n"
@@ -835,6 +874,32 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return $T.ofNullable(batchSizeLimit)", OPTIONAL)
             .addJavadoc("The limit set by {@link #withBatchSizeLimit}, or empty for unbounded batches.\n")
             .build();
+        MethodSpec withVouchedValueLimit = null;
+        MethodSpec vouchedValueLimitAccessor = null;
+        if (vouchedValueLimit != null) {
+            String withLimit = delegating.apply("return new $T(" + head
+                + ", fetcherErrorLog, fetcherErrorResponse, batchSizeLimit" + outboxArg + ")");
+            withVouchedValueLimit = MethodSpec.methodBuilder("withVouchedValueLimit")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(runtime)
+                .addParameter(vouchedValueLimit, "limit")
+                .addStatement(withLimit.substring(0, withLimit.length() - 1) + ", $T.requireNonNull(limit, $S))",
+                    runtime, OBJECTS, "limit")
+                .addJavadoc("A copy of this runtime that asks {@code limit}, once per operation, how many distinct\n"
+                    + "vouched-for values the operation admits. Without one an operation admits\n"
+                    + "{@value #DEFAULT_VOUCHED_VALUE_LIMIT}. The copy shares everything else with this runtime;\n"
+                    + "this runtime is unchanged.\n"
+                    + "@param limit the consumer's limit; must not be {@code null}\n"
+                    + "@return a runtime carrying {@code limit}\n")
+                .build();
+            vouchedValueLimitAccessor = MethodSpec.methodBuilder("vouchedValueLimit")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(ParameterizedTypeName.get(OPTIONAL, vouchedValueLimit))
+                .addStatement("return $T.ofNullable(vouchedValueLimit)", OPTIONAL)
+                .addJavadoc("The limit set by {@link #withVouchedValueLimit}, or empty for the default,\n"
+                    + "{@value #DEFAULT_VOUCHED_VALUE_LIMIT} values per operation.\n")
+                .build();
+        }
         var fetcherErrorLogAccessor = MethodSpec.methodBuilder("fetcherErrorLog")
             .addModifiers(Modifier.PUBLIC)
             .returns(ParameterizedTypeName.get(OPTIONAL, fetcherErrorLog))
@@ -1035,7 +1100,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addField(fetcherErrorResponseField)
             .addField(batchSizeLimitField);
         if (failureMessages) {
-            addOutboxAcquisition(builder, runtime, multiTenant, delegating);
+            addOutboxAcquisition(builder, runtime, multiTenant, copying);
         }
         if (voucherKeys != null) {
             builder.addField(FieldSpec.builder(voucherKeys, "voucherKeys", Modifier.PRIVATE, Modifier.FINAL)
@@ -1047,6 +1112,19 @@ public final class ConnectionRuntimeClassGenerator {
                     .returns(voucherKeys)
                     .addStatement("return voucherKeys")
                     .addJavadoc("The keys vouchers are signed and verified with.\n")
+                    .build());
+        }
+        if (vouchedValueLimit != null) {
+            builder.addField(FieldSpec.builder(int.class, "DEFAULT_VOUCHED_VALUE_LIMIT",
+                        Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$L", DEFAULT_VOUCHED_VALUE_LIMIT)
+                    .addJavadoc("The most distinct vouched-for values one operation admits without a\n"
+                        + "{@code VouchedValueLimit}, or where the one given throws: sized to a list or a page,\n"
+                        + "since a voucher per row presents one value per row.\n")
+                    .build())
+                .addField(FieldSpec.builder(vouchedValueLimit, "vouchedValueLimit", Modifier.PRIVATE, Modifier.FINAL)
+                    .addJavadoc("The consumer's cap on an operation's vouched-for set, or {@code null} for\n"
+                        + "{@link #DEFAULT_VOUCHED_VALUE_LIMIT}. Set by {@link #withVouchedValueLimit}.\n")
                     .build());
         }
         builder.addMethod(canonicalConstructor)
@@ -1067,6 +1145,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(fetcherErrorResponseAccessor)
             .addMethod(withBatchSizeLimit)
             .addMethod(batchSizeLimitAccessor);
+        if (vouchedValueLimit != null) {
+            builder.addMethod(withVouchedValueLimit)
+                .addMethod(vouchedValueLimitAccessor);
+        }
         if (multiTenant) {
             builder.addMethod(fanOutExecutorAccessor)
                 .addMethod(fanOutTimeoutAccessor)
@@ -1211,7 +1293,7 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName connectionSource, TypeName keyType,
                                               ClassName connectionKey, boolean failureMessages,
                                               ClassName requestRejected, boolean accepts,
-                                              ClassName voucherCodec) {
+                                              ClassName voucherCodec, ClassName vouchedValueLimit) {
         TypeName handleType = identity.handleType().orElse(null);
         boolean handled = handleType != null;
         var clientException = ClassName.get(self.packageName(),
@@ -1252,11 +1334,23 @@ public final class ConnectionRuntimeClassGenerator {
                 + "on any key rethrows it rather than asking the source again, and the request is rejected as\n"
                 + "a whole.\n")
             .build();
-        var vouchedKeyField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, keyType),
-                "vouchedKey", Modifier.PRIVATE, Modifier.FINAL)
-            .initializer("new $T<>()", ATOMIC_REFERENCE)
-            .addJavadoc("The one key with vouched-for parts this request reads on, set by the first such key\n"
-                + "the dispatch admits ({@link #admitVouched}). A representation carrying another fails alone.\n")
+        var vouchedForType = connectionKey.nestedClass(ConnectionKeyShape.VOUCHED_FOR_CLASS_NAME);
+        var admittedField = FieldSpec.builder(ParameterizedTypeName.get(SET, vouchedForType),
+                "admittedVouchedFor", Modifier.PRIVATE, Modifier.FINAL)
+            .initializer("new $T<>()", LINKED_HASH_SET)
+            .addJavadoc("The vouched-for values this operation admitted, in representation order\n"
+                + "({@link #admitVouched}); guarded by this carrier's lock.\n")
+            .build();
+        var capField = FieldSpec.builder(int.class, "vouchedValueCap", Modifier.PRIVATE)
+            .initializer("-1")
+            .addJavadoc("The most distinct vouched-for values this operation admits, asked of the runtime's\n"
+                + "{@code VouchedValueLimit} at the first admission and held for the operation; {@code -1}\n"
+                + "until then. Guarded by this carrier's lock.\n")
+            .build();
+        var vouchedKeyField = FieldSpec.builder(keyType, "vouchedKey", Modifier.PRIVATE, Modifier.VOLATILE)
+            .addJavadoc("The operation's vouched key, the admitted set as a {@code ConnectionKey}, set when the set\n"
+                + "closes ({@link #closeVouched}) and {@code null} while it is open. Written under this\n"
+                + "carrier's lock; read by acquisition without it.\n")
             .build();
         var keyIndexesField = FieldSpec.builder(ParameterizedTypeName.get(MAP, keyType, ClassName.get(Integer.class)),
                 "keyIndexes", Modifier.PRIVATE, Modifier.FINAL)
@@ -1358,12 +1452,13 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow();
         if (accepts) {
             entryForBuilder
-                .addComment("One vouched connection per request. The dispatch admits the key while it registers")
-                .addComment("representations, and nothing else builds a key with vouched-for parts, so any other")
-                .addComment("one here is a generator fault, not a request to refuse.")
-                .beginControlFlow("if (key.hasVouchedFor() && !key.equals(vouchedKey.get()))")
+                .addComment("One vouched connection per operation, for every value it admitted. The dispatch closes")
+                .addComment("the admitted set into the operation's vouched key before any representation loads under")
+                .addComment("it, and nothing else builds a key with vouched-for parts, so any other one here is a")
+                .addComment("generator fault, not a request to refuse.")
+                .beginControlFlow("if (key.hasVouchedFor() && !key.equals(vouchedKey))")
                 .addStatement("throw new $T($S)", IllegalStateException.class,
-                    "A key with vouched-for parts reached acquisition without being admitted")
+                    "A key with vouched-for parts reached acquisition without being the operation's vouched key")
                 .endControlFlow();
         }
         entryForBuilder
@@ -1604,8 +1699,12 @@ public final class ConnectionRuntimeClassGenerator {
             carrier.addMethod(dslFor);
         }
         if (accepts) {
-            carrier.addField(vouchedKeyField)
-                .addMethod(admitVouched(keyType));
+            carrier.addField(admittedField)
+                .addField(capField)
+                .addField(vouchedKeyField)
+                .addMethod(admitVouched(vouchedForType))
+                .addMethod(vouchedValueCap(runtime, vouchedValueLimit, errorRouter))
+                .addMethod(closeVouched(keyType));
         }
         if (voucherCodec != null) {
             var verifier = voucherCodec.nestedClass("Verifier");
@@ -1883,12 +1982,46 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
+     * {@code record VouchedFor(...)}, nested in the key of a build that accepts vouchers: one voucher's
+     * vouched-for values, a component per vouched-for field in name order, typed by the column it reads,
+     * so a policy testing a row of several fields keeps each voucher's grant whole. Its {@code toString}
+     * names the fields and never a value, as the key's does, so a set printed through the key leaks none.
+     */
+    private static TypeSpec vouchedForRow(ClassName self, List<ConnectionKeyShape.VouchedForPart> parts) {
+        var constructor = MethodSpec.constructorBuilder();
+        var compact = MethodSpec.compactConstructorBuilder().addModifiers(Modifier.PUBLIC);
+        var javadoc = CodeBlock.builder()
+            .add("One voucher's vouched-for values: the values the database's policies read off a vouched\n"
+                + "connection, one component per vouched-for field.\n");
+        for (var part : parts) {
+            constructor.addParameter(part.type(), part.name());
+            compact.addStatement("$T.requireNonNull($L, $S)", OBJECTS, part.name(), part.name());
+            javadoc.add("@param $L the vouched-for value of {@code $L}, never null\n", part.name(), part.name());
+        }
+        var names = String.join(", ", parts.stream().map(ConnectionKeyShape.VouchedForPart::name).toList());
+        return TypeSpec.recordBuilder(self)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addJavadoc(javadoc.build())
+            .recordConstructor(constructor.build())
+            .addMethod(compact.build())
+            .addMethod(MethodSpec.methodBuilder("toString")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(String.class)
+                .addStatement("return $S", ConnectionKeyShape.VOUCHED_FOR_CLASS_NAME + "[" + names + "]")
+                .addJavadoc("Names the vouched-for fields and never their values.\n")
+                .build())
+            .build();
+    }
+
+    /**
      * {@code record ConnectionKey(...)}: the value the carrier keys its connections by and the one value
      * graphql-java's per-subtree {@code localContext} slot carries in generated code, so an inherited
      * acquisition below a routed row takes the connection the row was read on. Its components are the
      * build's {@link ConnectionKeyShape}: none in a build with neither a tenant column nor an accepting
-     * field, the tenant in a {@code <tenantColumn>} build, one per vouched-for field in an accepting one,
-     * each an {@code Optional} empty for the request's own connection. Record equality is the map key's,
+     * field, the tenant in a {@code <tenantColumn>} build, an {@code Optional} empty for the default
+     * source, and in an accepting one the set of vouched-for rows the operation admitted
+     * ({@link #vouchedForRow}), empty for the request's own connection. Record equality is the map key's,
      * and the named factories say which connection a site means. {@code toString} names the parts
      * present and never a value, since a vouched-for value is a credential's content.
      */
@@ -1930,59 +2063,54 @@ public final class ConnectionRuntimeClassGenerator {
                     .build());
             toString.addStatement("return tenant.isPresent() ? $S : $S", "ConnectionKey[tenant]", "ConnectionKey[]");
         } else if (!shape.vouchedFor().isEmpty()) {
-            var parts = shape.vouchedFor();
-            var javadoc = CodeBlock.builder()
-                .add("The key a connection is acquired under: the vouched-for values a voucher carried, each\n"
-                    + "typed by the column its field reads, all present for a vouched connection and all empty\n"
-                    + "for the request's own. The connection source reads them off the key and sets them where\n"
-                    + "the database's policies read them.\n");
-            var compact = MethodSpec.compactConstructorBuilder().addModifiers(Modifier.PUBLIC);
-            var factory = MethodSpec.methodBuilder("forVouchedFor")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(self)
-                .addJavadoc("The key of the vouched connection for these vouched-for values.\n");
-            var empties = new ArrayList<CodeBlock>();
-            var presents = new ArrayList<CodeBlock>();
-            var presence = new ArrayList<String>();
-            for (var part : parts) {
-                constructor.addParameter(ParameterizedTypeName.get(OPTIONAL, part.type()), part.name());
-                javadoc.add("@param $L the vouched-for value of {@code $L}, or empty for the request's own key\n",
-                    part.name(), part.name());
-                compact.addStatement("$T.requireNonNull($L, $S)", OBJECTS, part.name(), part.name());
-                factory.addParameter(part.type(), part.name())
-                    .addJavadoc("@param $L the vouched-for value of {@code $L}, never null\n", part.name(), part.name());
-                empties.add(CodeBlock.of("$T.empty()", OPTIONAL));
-                presents.add(CodeBlock.of("$T.of($L)", OPTIONAL, part.name()));
-                presence.add(part.name() + ".isPresent()");
-            }
-            String first = presence.get(0);
-            if (presence.size() > 1) {
-                compact.beginControlFlow("if ($L)", presence.stream().skip(1)
-                        .map(p -> "(" + p + " != " + first + ")").reduce((a, b) -> a + " || " + b).orElseThrow())
-                    .addStatement("throw new $T($S)", IllegalArgumentException.class,
-                        "A connection key carries every vouched-for value or none")
-                    .endControlFlow();
-            }
-            builder.addJavadoc(javadoc.build())
-                .addMethod(compact.build())
+            var vouchedFor = self.nestedClass(ConnectionKeyShape.VOUCHED_FOR_CLASS_NAME);
+            var setOfVouchedFor = ParameterizedTypeName.get(SET, vouchedFor);
+            var names = String.join(", ", shape.vouchedFor().stream().map(ConnectionKeyShape.VouchedForPart::name).toList());
+            constructor.addParameter(setOfVouchedFor, "vouchedFor");
+            builder.addJavadoc("The key a connection is acquired under: the set of vouched-for values the operation\n"
+                    + "admitted, each a {@link $T} row of the values one voucher vouched for, empty for the\n"
+                    + "request's own connection. The connection source reads the set off the key and sets it\n"
+                    + "where the database's policies read it, so a policy tests a row's membership in the set.\n"
+                    + "The set is type-blind: a row names values, not the accepting type that admitted them.\n"
+                    + "@param vouchedFor the admitted vouched-for values, in admission order; empty for the\n"
+                    + "request's own key\n", vouchedFor)
+                .addType(vouchedForRow(vouchedFor, shape.vouchedFor()))
+                .addMethod(MethodSpec.compactConstructorBuilder()
+                    .addModifiers(Modifier.PUBLIC)
+                    .addStatement("$T copy = new $T<>($T.requireNonNull(vouchedFor, $S))",
+                        ParameterizedTypeName.get(LINKED_HASH_SET, vouchedFor), LINKED_HASH_SET, OBJECTS, "vouchedFor")
+                    .beginControlFlow("for ($T value : copy)", vouchedFor)
+                    .addStatement("$T.requireNonNull(value, $S)", OBJECTS, "a vouched-for value")
+                    .endControlFlow()
+                    .addStatement("vouchedFor = $T.unmodifiableSet(copy)", COLLECTIONS)
+                    .build())
                 .addMethod(MethodSpec.methodBuilder("defaultSource")
                     .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                     .returns(self)
-                    .addStatement("return new $T($L)", self, CodeBlock.join(empties, ", "))
+                    .addStatement("return new $T($T.of())", self, SET)
                     .addJavadoc("The key with no parts: the request's own connection.\n")
                     .build())
-                .addMethod(factory
-                    .addStatement("return new $T($L)", self, CodeBlock.join(presents, ", "))
+                .addMethod(MethodSpec.methodBuilder("forVouchedFor")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(self)
+                    .addParameter(setOfVouchedFor, "values")
+                    .beginControlFlow("if (values.isEmpty())")
+                    .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                        "A vouched connection's key carries at least one vouched-for value")
+                    .endControlFlow()
+                    .addStatement("return new $T(values)", self)
+                    .addJavadoc("The key of the vouched connection for {@code values}, the vouched-for values an\n"
+                        + "operation admitted.\n"
+                        + "@param values the admitted values, never empty\n")
                     .build())
                 .addMethod(MethodSpec.methodBuilder("hasVouchedFor")
                     .addModifiers(Modifier.PUBLIC)
                     .returns(boolean.class)
-                    .addStatement("return $L", first)
+                    .addStatement("return !vouchedFor.isEmpty()")
                     .addJavadoc("Whether this is a vouched connection's key, carrying vouched-for values.\n")
                     .build());
-            var names = parts.stream().map(ConnectionKeyShape.VouchedForPart::name).toList();
-            toString.addStatement("return $L ? $S : $S", first,
-                "ConnectionKey[" + String.join(", ", names) + "]", "ConnectionKey[]");
+            toString.addStatement("return vouchedFor.isEmpty() ? $S : $S", "ConnectionKey[]",
+                "ConnectionKey[" + names + "]");
         } else {
             builder.addJavadoc("The key a connection is acquired under. A build with neither a tenant column nor an\n"
                     + "accepting type has one connection per request, so the key has no parts.\n")
@@ -2270,8 +2398,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return $T.empty()", OPTIONAL)
             .addJavadoc("What rejected the request, when a request rejection is on {@code thrown}'s cause chain:\n"
                 + "for a failed acquisition the request's connection source's own exception, for a failed\n"
-                + "voucher check or the one-vouched-value limit the rejection itself, which carries nothing\n"
-                + "of any voucher; empty otherwise. The facade's {@code requestRejection} returns this, so an\n"
+                + "voucher check the rejection itself, which carries nothing of any voucher; empty\n"
+                + "otherwise. The facade's {@code requestRejection} returns this, so an\n"
                 + "application can answer a rejected request from what rejected it.\n"
                 + "@param thrown what was caught\n"
                 + "@return what rejected the request, if a request rejection is on the chain\n")
@@ -2297,27 +2425,95 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code public boolean admitVouched(ConnectionKey key)}: the one-vouched-value limit, in an accepting
-     * build. The first key with vouched-for parts the dispatch presents is the request's vouched key, and
-     * answers {@code true} again for the same key; any other answers {@code false}, and the dispatch fails
-     * that representation alone. The dispatch asks while it registers representations, in their order,
-     * so which value wins never depends on loader dispatch order. The limit lives here and nowhere else,
-     * so raising it is one change.
+     * {@code public synchronized boolean admitVouched(VouchedFor value, DataFetchingEnvironment env)}: the
+     * cap on the operation's vouched-for set, in an accepting build, and the one site that decides it. A
+     * value already in the set is admitted again; while the set is open a new value is admitted if the set
+     * has room under the cap, asked once at the first admission; once the set is closed nothing new is
+     * admitted, whatever room it has, since representations already registered under the operation's
+     * vouched key cannot move to another. The dispatch asks while it walks the representations, in their
+     * order, so which values are admitted never depends on loader dispatch order.
      */
-    private static MethodSpec admitVouched(TypeName keyType) {
+    private static MethodSpec admitVouched(ClassName vouchedForType) {
         return MethodSpec.methodBuilder("admitVouched")
-            .addModifiers(Modifier.PUBLIC)
+            .addModifiers(Modifier.PUBLIC, Modifier.SYNCHRONIZED)
             .returns(boolean.class)
-            .addParameter(keyType, "key")
-            .beginControlFlow("if (!key.hasVouchedFor())")
+            .addParameter(vouchedForType, "value")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("$T.requireNonNull(value, $S)", OBJECTS, "value")
+            .beginControlFlow("if (admittedVouchedFor.contains(value))")
             .addStatement("return true")
             .endControlFlow()
-            .addStatement("return vouchedKey.updateAndGet(current -> current == null ? key : current).equals(key)")
-            .addJavadoc("Admits {@code key}'s vouched-for value if it is the request's first, or the same one\n"
-                + "again: one request reads on one vouched connection. A key without vouched-for parts is\n"
-                + "admitted unchecked.\n"
-                + "@param key the key a representation is about to load under\n"
-                + "@return whether the representation may load under it; {@code false} fails it alone\n")
+            .beginControlFlow("if (vouchedKey != null)")
+            .addComment("The set closed when the first lookup field that admitted a voucher registered its loads.")
+            .addStatement("return false")
+            .endControlFlow()
+            .beginControlFlow("if (vouchedValueCap < 0)")
+            .addStatement("vouchedValueCap = vouchedValueCap(env)")
+            .endControlFlow()
+            .beginControlFlow("if (admittedVouchedFor.size() >= vouchedValueCap)")
+            .addStatement("return false")
+            .endControlFlow()
+            .addStatement("admittedVouchedFor.add(value)")
+            .addStatement("return true")
+            .addJavadoc("Admits {@code value} into the operation's vouched-for set: a value already in it, or a new\n"
+                + "one while the set is open and has room under the cap. The cap is asked of the runtime's\n"
+                + "{@code VouchedValueLimit} at the first admission and held for the operation. Every admitted\n"
+                + "representation of the operation reads on one vouched connection, mounted for the whole set.\n"
+                + "@param value the vouched-for values of a verified voucher\n"
+                + "@param env the environment of the lookup field presenting it, which the limit is asked with\n"
+                + "@return whether the representation may load; {@code false} fails it alone, past the cap\n")
+            .build();
+    }
+
+    /**
+     * {@code private int vouchedValueCap(DataFetchingEnvironment env)}: the most distinct vouched-for values
+     * this operation admits. The runtime's {@code VouchedValueLimit} answers, its call contained by the
+     * error router as every consumer hook's is; without one, or where it throws, the runtime's default
+     * stands. Unlike {@code BatchSizeLimit} it fails closed: an answer below 1 admits no value.
+     */
+    private static MethodSpec vouchedValueCap(ClassName runtime, ClassName vouchedValueLimit, ClassName errorRouter) {
+        return MethodSpec.methodBuilder("vouchedValueCap")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(int.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("$T limit = runtime.vouchedValueLimit().orElse(null)", vouchedValueLimit)
+            .beginControlFlow("if (limit == null)")
+            .addStatement("return $T.DEFAULT_VOUCHED_VALUE_LIMIT", runtime)
+            .endControlFlow()
+            .addStatement("$T answer = $T.contained($T.class, limit, hook -> hook.maxVouchedValues(env), env)",
+                Integer.class, errorRouter, vouchedValueLimit)
+            .beginControlFlow("if (answer == null)")
+            .addStatement("return $T.DEFAULT_VOUCHED_VALUE_LIMIT", runtime)
+            .endControlFlow()
+            .addStatement("return $T.max(0, answer)", Math.class)
+            .build();
+    }
+
+    /**
+     * {@code public synchronized ConnectionKey closeVouched()}: closes the operation's vouched-for set and
+     * answers its vouched key, the same key on every later call. The dispatch closes it once a lookup
+     * field that admitted a voucher has walked its representations, and registers their loads under the
+     * key; a field that admitted none does not close it.
+     */
+    private static MethodSpec closeVouched(TypeName keyType) {
+        return MethodSpec.methodBuilder("closeVouched")
+            .addModifiers(Modifier.PUBLIC, Modifier.SYNCHRONIZED)
+            .returns(keyType)
+            .beginControlFlow("if (vouchedKey == null)")
+            .beginControlFlow("if (admittedVouchedFor.isEmpty())")
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "The vouched-for set was closed with nothing admitted; a lookup that admitted no voucher"
+                    + " leaves it open")
+            .endControlFlow()
+            .addStatement("vouchedKey = $T.forVouchedFor(admittedVouchedFor)", keyType)
+            .endControlFlow()
+            .addStatement("return vouchedKey")
+            .addJavadoc("Closes the operation's vouched-for set, if open, and answers the operation's vouched key:\n"
+                + "every value it admitted, as one {@code ConnectionKey}. A value not in the set is admitted no\n"
+                + "more once it is closed, since the key is a value the admitted representations already load\n"
+                + "under.\n"
+                + "@return the operation's vouched key\n"
+                + "@throws IllegalStateException when nothing was admitted, which leaves the set open\n")
             .build();
     }
 
@@ -2567,6 +2763,47 @@ public final class ConnectionRuntimeClassGenerator {
                 + "Graphitron logs one ERROR line naming the limit's class, the class of what it threw and\n"
                 + "the field's path; only JVM-fatal errors propagate.\n")
             .addMethod(maxBatchSize)
+            .build();
+    }
+
+    /**
+     * The consumer-implemented {@code VouchedValueLimit}, in a build that accepts vouchers: one abstract
+     * method and nothing else, so a lambda is a complete limit. It carries only the consumer's contract;
+     * the call into it, contained by the error router, is the carrier's {@code vouchedValueCap}.
+     */
+    private static TypeSpec vouchedValueLimit(ClassName self) {
+        var maxVouchedValues = MethodSpec.methodBuilder("maxVouchedValues")
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .returns(int.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("The most distinct vouched-for values one operation admits. Asked once per operation,\n"
+                + "when the first voucher is admitted, with that lookup field's environment, and held for the\n"
+                + "operation, so the answer can depend on the request (a larger one for a batch\n"
+                + "integration, say) but never changes partway through it.\n"
+                + "@param env the environment of the {@code _entities} field that admitted the first voucher\n"
+                + "@return the limit; a value below 1 admits no value, so every vouched representation fails\n"
+                + "as past it; answer {@code Integer.MAX_VALUE} for no practical bound\n")
+            .build();
+        return TypeSpec.interfaceBuilder(self)
+            .addModifiers(Modifier.PUBLIC)
+            .addAnnotation(FunctionalInterface.class)
+            .addJavadoc("Caps how many distinct vouched-for values one operation admits. A router batches every\n"
+                + "representation bound for this subgraph into one {@code _entities} call, so a list whose\n"
+                + "rows were vouched for different owners, or a voucher per row, presents a value per row.\n"
+                + "Every admitted value is read on one vouched connection, mounted for the whole set, and\n"
+                + "every row read under the database's policies tests membership in it, so the cap bounds\n"
+                + "what one request costs the database. It grants nothing: every admitted value was vouched\n"
+                + "for to the same caller.\n"
+                + "\n"
+                + "<p>Give the runtime one of these ({@code GraphitronRuntime.withVouchedValueLimit}); without\n"
+                + "one an operation admits {@value $T#DEFAULT_VOUCHED_VALUE_LIMIT} values. The first values in\n"
+                + "representation order fill the set; a representation whose value is past the cap answers\n"
+                + "{@code null} and an error at its own index, naming the limit and no value, and takes no\n"
+                + "connection. Unlike {@code BatchSizeLimit} it fails closed: an answer below 1 admits no\n"
+                + "value. If the limit throws, the default stands and Graphitron logs one ERROR line naming\n"
+                + "the limit's class, the class of what it threw and the field's path; only JVM-fatal errors\n"
+                + "propagate.\n", ClassName.get(self.packageName(), RUNTIME_CLASS_NAME))
+            .addMethod(maxVouchedValues)
             .build();
     }
 
@@ -3796,7 +4033,7 @@ public final class ConnectionRuntimeClassGenerator {
     /**
      * {@code RequestRejectedException}: the one sealed request rejection, abstract, whose arms are a
      * failed acquisition in every build and, in a build that writes the voucher runtime, a failed voucher
-     * check and the one-vouched-value limit. The carrier's one slot, the error router's decline, the
+     * check. The carrier's one slot, the error router's decline, the
      * instrumentation's throw and the facade's {@code requestRejection} read this one type. Sealed, so a
      * consumer's {@code switch} over it is exhaustive in its own build.
      */
@@ -3812,7 +4049,8 @@ public final class ConnectionRuntimeClassGenerator {
                 + "rejection and acquires nothing after it, the error router never logs or claims it per field,\n"
                 + "and {@code Graphitron.requestRejection} answers what rejected the request. Its arms are the\n"
                 + "build's: a failed acquisition always, and where the build issues or accepts vouchers a failed\n"
-                + "voucher check. A second vouched-for value is not one: it fails only its own representation.\n")
+                + "voucher check. A vouched-for value past the cap on the operation's vouched-for set is not\n"
+                + "one: it fails only its own representation.\n")
             .addField(FieldSpec.builder(long.class, "serialVersionUID",
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("1L")

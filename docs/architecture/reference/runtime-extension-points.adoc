@@ -389,9 +389,10 @@ tenant set are gone; the source names the fan-out domain:
   itself before releasing; the source never sees it.
 * A throwing `acquire` rejects the request as a whole and nothing more is acquired. A throwing `release`
   is logged, the remaining leases are still released, and the first failure surfaces.
-* Tenancy is not a mode. `ConnectionKey` is a record with one `Optional` per part the schema has, the
-  tenant where it has a tenant column and each vouched-for field where it accepts vouchers, generated in
-  every build and empty in one with neither. What an empty part means is the source's decision.
+* Tenancy is not a mode. `ConnectionKey` is a record with one component per part the schema has, each
+  possibly empty: an `Optional` tenant where it has a tenant column, a set of vouched-for rows where it
+  accepts vouchers, generated in every build and with no component in one with neither. What an empty
+  part means is the source's decision.
 * Which tenants are valid and whether a request may reach one is the source's to decide: it refuses a key
   by throwing the generated key-not-permitted refusal from `acquire`, which answers as a field error and as
   `null` in the entity and node dispatch, like a row that does not exist; any other throw rejects the

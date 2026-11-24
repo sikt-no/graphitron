@@ -44,10 +44,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The one request rejection in the runtime of a build that accepts vouchers, compiled at Java 17: the
  * sealed {@code RequestRejectedException} and its two arms, the carrier's one slot that acquires
- * nothing once a rejection is remembered, the one-vouched-value limit as an admission that answers
- * rather than rejects, with acquisition refusing a vouched key nothing admitted, the error router
- * declining every arm, and a {@code ConnectionKey} whose {@code toString} names its parts and never
- * their values.
+ * nothing once a rejection is remembered, the cap on the operation's vouched-for set as an admission
+ * that answers rather than rejects (the first values in order fill it, the runtime's
+ * {@code VouchedValueLimit} is asked once, failing closed below 1 and leaving the default where it
+ * throws), the set closing into the operation's one vouched key, with acquisition refusing any other
+ * vouched key, the error router declining every arm, and a {@code ConnectionKey} of two vouched-for
+ * fields whose rows and key name their fields and never their values.
  */
 @UnitTier
 class RequestRejectionCarrierTest {
@@ -73,6 +75,8 @@ class RequestRejectionCarrierTest {
         for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, identity, shape, null, true)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
+        var limit = ConnectionRuntimeClassGenerator.renderVouchedValueLimit(PACKAGE);
+        units.put(SCHEMA_PACKAGE + "." + limit.name(), limit);
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
@@ -166,43 +170,141 @@ class RequestRejectionCarrierTest {
         assertThat(later).as("the first rejection wins").isSameAs(rejection);
 
         assertThatThrownBy(() -> dslFor(carrier, defaultKey())).isSameAs(rejection);
-        assertThatThrownBy(() -> dslFor(carrier, vouchedKey("olivia", 1))).isSameAs(rejection);
+        assertThatThrownBy(() -> dslFor(carrier, vouchedKey(row("olivia", 1)))).isSameAs(rejection);
         assertThat(asked).isEmpty();
         assertThat(requestRejection(carrier)).containsSame(rejection);
         releaseAll(carrier);
     }
 
+    // --- the operation's vouched-for set ------------------------------------------------------------
+
     @Test
-    void oneVouchedKeyPerRequest_theFirstAdmitted_aSecondAnsweredNotAdmitted_andNothingRejected() throws Throwable {
+    void theFirstValuesInOrderFillTheSetUpToTheCap_aRepeatedValueIsAdmittedAgain_andNothingIsRejected()
+            throws Throwable {
+        var carrier = carrier(env -> 2);
+        assertThat(admitVouched(carrier, row("olivia", 1))).isTrue();
+        assertThat(admitVouched(carrier, row("peter", 1))).isTrue();
+        assertThat(admitVouched(carrier, row("olivia", 1))).as("an admitted value again").isTrue();
+        assertThat(admitVouched(carrier, row("quinn", 1))).as("past the cap").isFalse();
+        assertThat(admitVouched(carrier, row("olivia", 2))).as("another row, though one part was admitted").isFalse();
+        assertThat(asked).as("admission acquires nothing").isEmpty();
+        Object key = closeVouched(carrier);
+        assertThat(key).isEqualTo(vouchedKey(row("peter", 1), row("olivia", 1)));
+        assertThat(vouchedForOf(key)).as("in admission order").containsExactly(row("olivia", 1), row("peter", 1));
+        dslFor(carrier, defaultKey());
+        dslFor(carrier, key);
+        assertThat(asked).as("one lease for every admitted value").containsExactly(defaultKey(), key);
+        assertThat(requestRejection(carrier)).as("the cap is never a request rejection").isEmpty();
+        releaseAll(carrier);
+    }
+
+    @Test
+    void aCapOfOneAdmitsTheFirstValueInRepresentationOrderAlone() throws Throwable {
         for (var order : List.of(List.of("olivia", "peter"), List.of("peter", "olivia"))) {
-            asked.clear();
-            var carrier = carrier();
-            Object first = vouchedKey(order.get(0), 1);
-            Object second = vouchedKey(order.get(1), 1);
-            assertThat(admitVouched(carrier, defaultKey())).as("a key without vouched-for parts").isTrue();
-            assertThat(admitVouched(carrier, first)).isTrue();
-            assertThat(admitVouched(carrier, first)).as("the admitted key again").isTrue();
-            assertThat(admitVouched(carrier, second)).isFalse();
-            assertThat(admitVouched(carrier, vouchedKey(order.get(0), 2))).as("another value of a second part").isFalse();
-            assertThat(asked).as("admission acquires nothing").isEmpty();
-            dslFor(carrier, defaultKey());
-            dslFor(carrier, first);
-            assertThat(asked).containsExactly(defaultKey(), first);
-            assertThat(requestRejection(carrier)).as("the limit is never a request rejection").isEmpty();
+            var carrier = carrier(env -> 1);
+            assertThat(admitVouched(carrier, row(order.get(0), 1))).isTrue();
+            assertThat(admitVouched(carrier, row(order.get(1), 1))).isFalse();
+            assertThat(admitVouched(carrier, row(order.get(0), 1))).isTrue();
+            assertThat(closeVouched(carrier)).isEqualTo(vouchedKey(row(order.get(0), 1)));
             releaseAll(carrier);
         }
     }
 
     @Test
-    void acquisitionRefusesAVouchedKeyNothingAdmitted_asAGeneratorFault() throws Throwable {
-        var carrier = carrier();
-        Object olivia = vouchedKey("olivia", 1);
-        assertThatThrownBy(() -> dslFor(carrier, olivia)).as("nothing admitted yet")
+    void theLimitIsAskedOncePerOperation_withTheEnvironmentOfTheFirstAdmission() throws Throwable {
+        var envs = Collections.synchronizedList(new ArrayList<DataFetchingEnvironment>());
+        IntLimit limit = env -> {
+            envs.add(env);
+            return 5;
+        };
+        var first = env();
+        var carrier = carrier(limit);
+        assertThat(admitVouched(carrier, row("olivia", 1), first)).isTrue();
+        assertThat(admitVouched(carrier, row("peter", 1), env())).isTrue();
+        assertThat(admitVouched(carrier, row("quinn", 1), env())).isTrue();
+        assertThat(envs).singleElement().isSameAs(first);
+        var another = carrier(limit);
+        assertThat(admitVouched(another, row("olivia", 1))).isTrue();
+        assertThat(envs).as("asked again for another operation").hasSize(2);
+    }
+
+    @Test
+    void withoutALimitAnOperationAdmitsTheDefault() throws Throwable {
+        var carrier = carrier(null);
+        for (int i = 0; i < ConnectionRuntimeClassGenerator.DEFAULT_VOUCHED_VALUE_LIMIT; i++) {
+            assertThat(admitVouched(carrier, row("owner" + i, i))).as("value %d", i).isTrue();
+        }
+        assertThat(admitVouched(carrier, row("one too many", -1))).isFalse();
+        assertThat(ConnectionRuntimeClassGenerator.DEFAULT_VOUCHED_VALUE_LIMIT).isEqualTo(1000);
+        assertThat(harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime").getField("DEFAULT_VOUCHED_VALUE_LIMIT")
+            .getInt(null)).isEqualTo(1000);
+    }
+
+    @Test
+    void anAnswerBelowOneAdmitsNoValue_failingClosed() throws Throwable {
+        for (int answer : new int[]{0, -1, Integer.MIN_VALUE}) {
+            var carrier = carrier(env -> answer);
+            assertThat(admitVouched(carrier, row("olivia", 1))).as("answer %d", answer).isFalse();
+            assertThatThrownBy(() -> closeVouched(carrier)).as("nothing admitted leaves the set open")
+                .isInstanceOf(IllegalStateException.class);
+            assertThat(admitVouched(carrier, row("olivia", 1))).isFalse();
+        }
+    }
+
+    @Test
+    void aLimitThatThrowsLeavesTheDefaultStanding_andIsLoggedOnceNamingItsClassAndNoMessage() throws Throwable {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SCHEMA_PACKAGE + ".ErrorRouter");
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            var carrier = carrier(env -> {
+                throw new IllegalStateException("secret detail");
+            });
+            for (int i = 0; i < ConnectionRuntimeClassGenerator.DEFAULT_VOUCHED_VALUE_LIMIT; i++) {
+                assertThat(admitVouched(carrier, row("owner" + i, i))).isTrue();
+            }
+            assertThat(admitVouched(carrier, row("one too many", -1))).isFalse();
+            assertThat(appender.list).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.ERROR);
+                assertThat(event.getFormattedMessage())
+                    .startsWith(ConnectionRuntimeClassGenerator.VOUCHED_VALUE_LIMIT_CLASS_NAME + " ")
+                    .contains(IllegalStateException.class.getName())
+                    .contains("path = " + ResultPath.rootPath().segment("_entities").segment(0))
+                    .doesNotContain("secret detail");
+                assertThat(event.getThrowableProxy()).isNull();
+            });
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void onceClosed_aValueInTheSetIsAdmittedAndNoOtherWhateverRoomTheCapHas() throws Throwable {
+        var carrier = carrier(null);
+        assertThat(admitVouched(carrier, row("olivia", 1))).isTrue();
+        Object key = closeVouched(carrier);
+        assertThat(admitVouched(carrier, row("olivia", 1))).as("a later lookup field's value in the set").isTrue();
+        assertThat(admitVouched(carrier, row("peter", 1))).as("the key is a value, so it cannot grow").isFalse();
+        assertThat(closeVouched(carrier)).as("the same key on every close").isEqualTo(key);
+        assertThat(vouchedForOf(key)).containsExactly(row("olivia", 1));
+        releaseAll(carrier);
+    }
+
+    @Test
+    void acquisitionRefusesAVouchedKeyOtherThanTheOperationsVouchedKey_asAGeneratorFault() throws Throwable {
+        var carrier = carrier(null);
+        Object olivia = vouchedKey(row("olivia", 1));
+        assertThatThrownBy(() -> dslFor(carrier, olivia)).as("nothing closed yet")
             .isInstanceOf(IllegalStateException.class);
-        assertThat(admitVouched(carrier, olivia)).isTrue();
-        assertThatThrownBy(() -> dslFor(carrier, vouchedKey("peter", 1))).as("another key than the admitted one")
+        assertThat(admitVouched(carrier, row("olivia", 1))).isTrue();
+        assertThat(closeVouched(carrier)).isEqualTo(olivia);
+        assertThatThrownBy(() -> dslFor(carrier, vouchedKey(row("peter", 1)))).as("another key than the operation's")
             .isInstanceOf(IllegalStateException.class);
-        assertThat(asked).isEmpty();
+        assertThatThrownBy(() -> dslFor(carrier, vouchedKey(row("olivia", 1), row("peter", 1))))
+            .as("a larger set than the operation's").isInstanceOf(IllegalStateException.class);
+        dslFor(carrier, olivia);
+        assertThat(asked).containsExactly(olivia);
         assertThat(requestRejection(carrier)).isEmpty();
         releaseAll(carrier);
     }
@@ -210,15 +312,26 @@ class RequestRejectionCarrierTest {
     // --- the key ------------------------------------------------------------------------------------
 
     @Test
-    void theKeyNamesItsPartsAndNeverTheirValues() throws Throwable {
-        assertThat(vouchedKey("olivia", 42)).hasToString("ConnectionKey[eierId, orgId]");
+    void theKeyIsASetOfRows_eachNamingItsFieldsAndNeverTheirValues() throws Throwable {
+        Object key = vouchedKey(row("olivia", 42), row("peter", 7));
+        assertThat(key).hasToString("ConnectionKey[eierId, orgId]");
+        assertThat(row("olivia", 42)).hasToString("VouchedFor[eierId, orgId]");
+        assertThat(String.valueOf(vouchedForOf(key))).doesNotContain("olivia").doesNotContain("42");
         assertThat(defaultKey()).hasToString("ConnectionKey[]");
-        assertThat((boolean) keyClass.getMethod("hasVouchedFor").invoke(vouchedKey("olivia", 42))).isTrue();
+        assertThat(vouchedForOf(defaultKey())).isEmpty();
+        assertThat((boolean) keyClass.getMethod("hasVouchedFor").invoke(key)).isTrue();
         assertThat((boolean) keyClass.getMethod("hasVouchedFor").invoke(defaultKey())).isFalse();
-        assertThat(vouchedKey("olivia", 42)).isEqualTo(vouchedKey("olivia", 42)).isNotEqualTo(vouchedKey("peter", 42));
-        assertThatThrownBy(() -> invoke(() -> keyClass.getConstructor(Optional.class, Optional.class)
-                .newInstance(Optional.of("olivia"), Optional.empty())))
+        assertThat(key).as("a set: order does not matter")
+            .isEqualTo(vouchedKey(row("peter", 7), row("olivia", 42)))
+            .isNotEqualTo(vouchedKey(row("olivia", 42)))
+            .isNotEqualTo(vouchedKey(row("olivia", 7), row("peter", 42)));
+        assertThatThrownBy(() -> vouchedKey()).as("a vouched key is never empty")
             .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> vouchedForOf(key).add(row("quinn", 1)))
+            .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> invoke(() -> vouchedForClass().getConstructor(String.class, Integer.class)
+                .newInstance(null, 1)))
+            .isInstanceOf(NullPointerException.class);
     }
 
     // --- helpers -------------------------------------------------------------------------------------
@@ -234,8 +347,23 @@ class RequestRejectionCarrierTest {
         return keyClass.getMethod("defaultSource").invoke(null);
     }
 
-    private static Object vouchedKey(String owner, int org) throws Exception {
-        return keyClass.getMethod("forVouchedFor", String.class, Integer.class).invoke(null, owner, org);
+    private static Class<?> vouchedForClass() {
+        return harness.load(SCHEMA_PACKAGE + ".ConnectionKey$VouchedFor");
+    }
+
+    /** One voucher's vouched-for row: the owner and the organisation, in the shape's name order. */
+    private static Object row(String owner, int org) throws Exception {
+        return vouchedForClass().getConstructor(String.class, Integer.class).newInstance(owner, org);
+    }
+
+    private static Object vouchedKey(Object... rows) throws Throwable {
+        var values = new java.util.LinkedHashSet<>(Arrays.asList(rows));
+        return invoke(() -> keyClass.getMethod("forVouchedFor", java.util.Set.class).invoke(null, values));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Set<Object> vouchedForOf(Object key) throws Exception {
+        return (java.util.Set<Object>) keyClass.getMethod("vouchedFor").invoke(key);
     }
 
     @SuppressWarnings("unchecked")
@@ -249,13 +377,37 @@ class RequestRejectionCarrierTest {
         return (Optional<Object>) invoke(() -> carrier.getClass().getMethod("requestRejection").invoke(carrier));
     }
 
+    /** The test's stand-in for the generated {@code VouchedValueLimit}, proxied onto it in {@link #carrier}. */
+    @FunctionalInterface
+    private interface IntLimit {
+        int maxVouchedValues(DataFetchingEnvironment env);
+    }
+
     private Object carrier() throws Throwable {
+        return carrier(null);
+    }
+
+    /** A carrier over a runtime given {@code limit} as its {@code VouchedValueLimit}, or none where null. */
+    private Object carrier(IntLimit limit) throws Throwable {
         Class<?> runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         Class<?> keysClass = harness.load(SCHEMA_PACKAGE + "." + VoucherRuntime.KEYS);
         var pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         Object keys = keysClass.getMethod("ed25519", String.class, PrivateKey.class, Map.class)
             .invoke(null, "k1", pair.getPrivate(), Map.<String, PublicKey>of("k1", pair.getPublic()));
         Object runtime = runtimeClass.getConstructor(SQLDialect.class, keysClass).newInstance(SQLDialect.POSTGRES, keys);
+        if (limit != null) {
+            Class<?> limitClass = harness.load(SCHEMA_PACKAGE + "."
+                + ConnectionRuntimeClassGenerator.VOUCHED_VALUE_LIMIT_CLASS_NAME);
+            Object hook = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{limitClass},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "maxVouchedValues" -> limit.maxVouchedValues((DataFetchingEnvironment) args[0]);
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    case "toString" -> "TestLimit";
+                    default -> null;
+                });
+            runtime = runtimeClass.getMethod("withVouchedValueLimit", limitClass).invoke(runtime, hook);
+        }
         Class<?> providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
         Class<?> policy = Arrays.stream(providerClass.getDeclaredClasses())
             .filter(c -> c.getSimpleName().equals("CommitPolicy")).findFirst().orElseThrow();
@@ -303,8 +455,17 @@ class RequestRejectionCarrierTest {
             });
     }
 
-    private static boolean admitVouched(Object carrier, Object key) throws Throwable {
-        return (boolean) invoke(() -> carrier.getClass().getMethod("admitVouched", keyClass).invoke(carrier, key));
+    private static boolean admitVouched(Object carrier, Object value) throws Throwable {
+        return admitVouched(carrier, value, env());
+    }
+
+    private static boolean admitVouched(Object carrier, Object value, DataFetchingEnvironment env) throws Throwable {
+        return (boolean) invoke(() -> carrier.getClass()
+            .getMethod("admitVouched", vouchedForClass(), DataFetchingEnvironment.class).invoke(carrier, value, env));
+    }
+
+    private static Object closeVouched(Object carrier) throws Throwable {
+        return invoke(() -> carrier.getClass().getMethod("closeVouched").invoke(carrier));
     }
 
     private static void dslFor(Object carrier, Object key) throws Throwable {

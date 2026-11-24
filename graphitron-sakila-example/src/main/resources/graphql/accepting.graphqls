@@ -2,8 +2,9 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["
 
 # Accepting fixture (VoucherAcceptExecutionTest): the subgraph owning the results the issuing fixture
 # vouches for. A result and everything below it, the details its SELECT nests, the details a split query
-# and a child service read and the items a polymorphic child reads, are read on the vouched connection
-# for the owner a voucher carries, where the policies on app.vouched_owner admit them. Query.results
+# and a child service read and the items a polymorphic child reads, are read on the operation's one
+# vouched connection, mounted for every owner its vouchers carry, where the policies testing membership
+# in app.vouched_owners admit them. Query.results
 # reads outside any vouched subtree, on the request's own connection, where the policies admit nothing.
 
 type Query {

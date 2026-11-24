@@ -1,0 +1,27 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@inaccessible"])
+
+"Subgraph B, vouching for part of its key: an enrolment is keyed by its organisation and case, and its voucher vouches for the organisation and the person, so the key's orgId is supplied by the vouched-for section, its caseId by the lookup section, and personId only narrows access. The source sets each voucher's (organisation, person) pair, and the policy tests the row's pair against the set."
+type Query {
+  enrolments: [Enrolment!]!
+}
+
+type Enrolment @table(name: "vouched_enrolment") @key(fields: "orgId caseId") @accept(scope: "enrolments", vouchesFor: "orgId personId") {
+  orgId: Int! @field(name: "org_id")
+  caseId: Int! @field(name: "case_id")
+  personId: Int! @field(name: "person_id") @inaccessible
+  status: String!
+}
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site")
+
+extend schema @expectEquals(relation: "graphitron_accept_key", rows: """
+  type_name, directive_name, ordinal
+  Enrolment, key,            0
+  """)
+
+# Two vouched-for fields, the key's orgId among them: the connection key's row has a component for each.
+extend schema @expectEquals(relation: "graphitron_accept_vouched_for", rows: """
+  type_name, field_name
+  Enrolment, orgId
+  Enrolment, personId
+  """)

@@ -1,0 +1,27 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+"Subgraph A, vouching for each case by its own id: a case cannot issue itself, since a root field returns it, so the voucher sits on its event log, the same row read again by joining the case to itself over its primary key. Every absorbed field is vouched for, so the voucher's lookup section is empty."
+type Query {
+  cases: [Case!]!
+}
+
+type Case @table(name: "vouched_case") {
+  title: String!
+  eventLog: CaseEventLog @reference(path: [{key: "vouched_case_pkey"}])
+}
+
+type CaseEventLog @table(name: "vouched_case") @issue(scope: "case-events", ttl: "PT5M", vouchesFor: "caseId") {
+  caseId: Int! @field(name: "case_id")
+}
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site")
+
+extend schema @expectEquals(relation: "graphitron_voucher_vouched_for", rows: """
+  position, type_name,    field_name
+  0,        CaseEventLog, caseId
+  """)
+
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name,    role,  fields,                    resolvable
+  CaseEventLog, ISSUE, internalGraphitronVoucher, FALSE
+  """)

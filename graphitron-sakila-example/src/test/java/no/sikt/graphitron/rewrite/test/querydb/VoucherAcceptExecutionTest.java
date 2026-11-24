@@ -4,12 +4,14 @@ import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.accepting.Graphitron;
 import no.sikt.graphitron.generated.accepting.schema.ConnectionKey;
+import no.sikt.graphitron.generated.accepting.schema.ConnectionKey.VouchedFor;
 import no.sikt.graphitron.generated.accepting.schema.ConnectionSource;
 import no.sikt.graphitron.generated.accepting.schema.ConnectionSources;
 import no.sikt.graphitron.generated.accepting.schema.VoucherCodec;
 import no.sikt.graphitron.generated.accepting.schema.VoucherKeys;
 import no.sikt.graphitron.generated.accepting.schema.VoucherRejectedException;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
+import no.sikt.graphitron.rewrite.test.services.VouchedResultService;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -40,11 +42,12 @@ import static org.assertj.core.groups.Tuple.tuple;
  * The voucher handover end to end: the {@code issuing} package vouches for each result an application
  * references, and the {@code accepting} package verifies those vouchers and reads the vouched results
  * and everything below them, the details their SELECT nests and what a split query, a polymorphic
- * child and a service below them read, on the connection its source leases for the key carrying the
- * owner each voucher vouches for. The accepting side reads as a role the row-level security policies
- * apply to, which admit a result and its details only to a connection whose session set
- * {@code app.vouched_owner} to the result's owner; the test's source sets it from the key's vouched-for
- * part, and empty for the key with no parts, so a read outside a vouched subtree is admitted nothing.
+ * child and a service below them read, on the one connection its source leases for the key carrying
+ * every owner the operation's vouchers vouch for, up to the cap. The accepting side reads as a role the
+ * row-level security policies apply to, which admit a result and its details only to a connection whose
+ * session set {@code app.vouched_owners} to a set naming the result's owner; the test's source sets it
+ * from the key's vouched-for set, as the how-to writes it, and to the empty set for the key with no
+ * parts, so a read outside a vouched subtree is admitted nothing.
  */
 @ExecutionTier
 class VoucherAcceptExecutionTest {
@@ -133,8 +136,9 @@ class VoucherAcceptExecutionTest {
     }
 
     /**
-     * The accepting side's source, as a consumer writes one: the session setting the policies read is
-     * set from the key's vouched-for part, and empty for the key with no parts, the request's own.
+     * The accepting side's source, as the how-to writes one: the session setting the policies read is
+     * set to the set of owners the key carries, and to the empty set for the key with no parts, the
+     * request's own.
      */
     private static ConnectionSource acceptingSource() {
         return ConnectionSources.mounting(
@@ -142,9 +146,19 @@ class VoucherAcceptExecutionTest {
             (connection, key) -> {
                 LEASED.add(key);
                 DSL.using(connection, SQLDialect.POSTGRES)
-                    .execute("select set_config('app.vouched_owner', ?, false)", key.eierId().orElse(""));
+                    .execute("select set_config('app.vouched_owners', ?::text, false)",
+                        (Object) key.vouchedFor().stream().map(VouchedFor::eierId).toArray(String[]::new));
             },
             (connection, key) -> RELEASED.add(key));
+    }
+
+    /** The vouched key for {@code owners}. */
+    private static ConnectionKey owners(String... owners) {
+        var values = new java.util.LinkedHashSet<VouchedFor>();
+        for (var owner : owners) {
+            values.add(new VouchedFor(owner));
+        }
+        return ConnectionKey.forVouchedFor(values);
     }
 
     /** The vouchers the issuing side signs for one application's results. */
@@ -209,8 +223,7 @@ class VoucherAcceptExecutionTest {
     @Test
     void anOwnersVouchersShareOneLeaseForAKeyCarryingTheOwnerReleasedAtTheEnd() {
         entities(present(ENTITIES, representations(vouchers(1))));
-        assertThat(LEASED).singleElement()
-            .satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(LEASED).singleElement().isEqualTo(owners("olivia"));
         assertThat(RELEASED).containsExactlyElementsOf(LEASED);
     }
 
@@ -223,8 +236,40 @@ class VoucherAcceptExecutionTest {
         assertThat(found).extracting(e -> ((List<Map<String, Object>>) e.get("servicedDetails")).stream()
                 .map(d -> d.get("subject")).toList())
             .containsExactly(List.of("math", "norwegian"), List.of("english"));
-        assertThat(LEASED).singleElement()
-            .satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(LEASED).singleElement().isEqualTo(owners("olivia"));
+        assertThat(RELEASED).containsExactlyElementsOf(LEASED);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aChildServiceBelowTwoOwnersEntitiesReadsOnTheOneLease_inOneBatch() {
+        var both = new ArrayList<>(vouchers(1));
+        both.addAll(vouchers(2));
+        VouchedResultService.BATCHES.clear();
+        var found = new ArrayList<>(entities(present(ENTITIES.replace("details {", "servicedDetails { subject } details {"),
+            representations(both))));
+        found.sort(Comparator.comparing(e -> (String) e.get("id")));
+        assertThat(found).extracting(e -> ((List<Map<String, Object>>) e.get("servicedDetails")).stream()
+                .map(d -> d.get("subject")).toList())
+            .containsExactly(List.of("math", "norwegian"), List.of("english"), List.of("math"));
+        assertThat(VouchedResultService.BATCHES).as("every admitted owner's results in one call")
+            .containsExactly(java.util.Set.of(1, 2, 3));
+        assertThat(LEASED).singleElement().isEqualTo(owners("olivia", "peter"));
+        assertThat(RELEASED).containsExactlyElementsOf(LEASED);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aSplitQueryBelowTwoOwnersEntitiesReadsOnTheOneLease() {
+        var both = new ArrayList<>(vouchers(1));
+        both.addAll(vouchers(2));
+        var found = new ArrayList<>(entities(present(ENTITIES.replace("details {", "splitDetails { subject } details {"),
+            representations(both))));
+        found.sort(Comparator.comparing(e -> (String) e.get("id")));
+        assertThat(found).extracting(e -> ((List<Map<String, Object>>) e.get("splitDetails")).stream()
+                .map(d -> d.get("subject")).sorted().toList())
+            .containsExactly(List.of("math", "norwegian"), List.of("english"), List.of("math"));
+        assertThat(LEASED).singleElement().isEqualTo(owners("olivia", "peter"));
         assertThat(RELEASED).containsExactlyElementsOf(LEASED);
     }
 
@@ -241,8 +286,7 @@ class VoucherAcceptExecutionTest {
             .containsExactly(List.of("math", "norwegian"), List.of("english"));
         assertThat(found).extracting(e -> subjectsOf.apply(e.get("items")))
             .containsExactly(List.of("late", "math", "norwegian"), List.of("english"));
-        assertThat(LEASED).singleElement()
-            .satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(LEASED).singleElement().isEqualTo(owners("olivia"));
         assertThat(RELEASED).containsExactlyElementsOf(LEASED);
     }
 
@@ -281,25 +325,61 @@ class VoucherAcceptExecutionTest {
     }
 
     @Test
+    void aPlainKeyRepresentationBesideVouchersReadsOnTheRequestsOwnConnection_gainingNothingFromTheSet() {
+        var representations = new ArrayList<>(representations(vouchers(1)));
+        representations.add(Map.of("__typename", "VgsResultat", "id", "1"));
+        var found = entities(present(ENTITIES, representations));
+        assertThat(found).hasSize(3);
+        assertThat(found.get(2)).as("olivia's result, by its plain key, on the request's own connection").isNull();
+        assertThat(found.subList(0, 2)).extracting(e -> e.get("id")).containsExactlyInAnyOrder("1", "2");
+        assertThat(LEASED).containsExactlyInAnyOrder(owners("olivia"), ConnectionKey.defaultSource());
+    }
+
+    @Test
+    void representationsForTwoOwnersInOneLookupResolveEveryEntityOfBoth_onOneLeaseAcquiredOnce() {
+        var mixed = new ArrayList<>(vouchers(1));
+        mixed.addAll(vouchers(2));
+        var found = entities(present(ENTITIES, representations(mixed)));
+        assertThat(found).extracting(e -> e.get("id")).containsExactlyInAnyOrder("1", "2", "3");
+        assertThat(LEASED).singleElement().isEqualTo(owners("olivia", "peter"));
+        assertThat(RELEASED).containsExactlyElementsOf(LEASED);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
-    void vouchersForTwoOwnersInOneLookupResolveTheFirstOwnersAndFailEachOfTheSecondsAtItsIndex() {
-        var first = vouchers(1);
-        var second = vouchers(2);
-        var mixed = new ArrayList<>(first);
-        mixed.addAll(second);
-        var result = present(ENTITIES, representations(mixed));
+    void pastTheCap_aThirdOwnersRepresentationsEachFailAtTheirOwnIndex_namingNoValue_andTakeNoConnection() {
+        var capped = Graphitron.runtime(SQLDialect.POSTGRES, acceptingKeys)
+            .withVouchedValueLimit(env -> 2)
+            .newGraphQL(Graphitron.buildSchema(b -> {}))
+            .build();
+        var later = Instant.now().plus(Duration.ofMinutes(5));
+        var olivia = vouchers(1);
+        var quinn = voucherRep(forge("VgsResultat", SCOPE, later, Map.of("eierId", "quinn"), Map.of("id", "5")));
+        // olivia, peter, quinn, olivia, quinn: the cap of two admits olivia and peter, the first two in order.
+        var representations = new ArrayList<Map<String, Object>>();
+        representations.add(voucherRep(olivia.get(0)));
+        representations.addAll(representations(vouchers(2)));
+        representations.add(quinn);
+        representations.add(voucherRep(olivia.get(1)));
+        representations.add(quinn);
+        var result = capped.execute(Graphitron.newOwnedExecutionInput(acceptingSource())
+            .query(ENTITIES)
+            .variables(Map.of("representations", representations))
+            .build());
         var found = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("_entities");
-        assertThat(found).hasSize(mixed.size());
-        assertThat(found.subList(0, first.size())).extracting(e -> e.get("id"))
-            .containsExactlyInAnyOrder("1", "2");
-        assertThat(found.subList(first.size(), mixed.size())).containsOnlyNulls();
-        assertThat(result.getErrors()).hasSize(second.size()).allSatisfy(error -> {
-            assertThat(error.getMessage()).doesNotContain("olivia").doesNotContain("peter").contains("one vouched-for value");
+        assertThat(found).hasSize(5);
+        assertThat(found.get(2)).isNull();
+        assertThat(found.get(4)).isNull();
+        assertThat(List.of(found.get(0), found.get(1), found.get(3))).extracting(e -> e.get("id"))
+            .containsExactlyInAnyOrder("1", "2", "3");
+        assertThat(result.getErrors()).hasSize(2).allSatisfy(error -> {
+            assertThat(error.getMessage()).isEqualTo(no.sikt.graphitron.emit.VoucherRuntime.LIMIT_MESSAGE)
+                .doesNotContain("olivia").doesNotContain("peter").doesNotContain("quinn");
             assertThat(error.getPath()).first().isEqualTo("_entities");
         });
-        assertThat(result.getErrors()).extracting(error -> error.getPath().get(1))
-            .containsExactlyElementsOf(java.util.stream.IntStream.range(first.size(), mixed.size()).boxed().toList());
-        assertThat(LEASED).singleElement().satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(result.getErrors()).extracting(error -> error.getPath().get(1)).containsExactly(2, 4);
+        assertThat(LEASED).as("the admitted owners' one lease, no other").singleElement()
+            .isEqualTo(owners("olivia", "peter"));
         assertThat(RELEASED).containsExactlyElementsOf(LEASED);
     }
 

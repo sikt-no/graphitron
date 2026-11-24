@@ -51,6 +51,7 @@ class EmitPlanTest {
         GlobalUnitKind.VOUCHER_KEYS,
         GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION,
         GlobalUnitKind.VOUCHER_FETCHERS,
+        GlobalUnitKind.VOUCHED_VALUE_LIMIT,
         GlobalUnitKind.GENERATED_SCALARS,
         GlobalUnitKind.CONNECTIONS));
 

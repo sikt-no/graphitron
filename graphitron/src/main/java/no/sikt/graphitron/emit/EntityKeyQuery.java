@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
@@ -84,6 +85,27 @@ public final class EntityKeyQuery {
     /** One field of a direct key: the field the representation carries and the column it matches. */
     public record KeyField(String fieldName, Column column) {}
 
+    /**
+     * Which section of a voucher supplies one field of the authored key it decodes onto. A signed voucher
+     * carries each absorbed field in one section, so a key field is supplied by exactly one.
+     */
+    public sealed interface KeySource {
+        /**
+         * A key field {@code vouchesFor} names: its value is the vouched-for row's component at
+         * {@code component}, an index into {@link Alternative.Voucher#vouchedFor()}, coerced once for both
+         * the connection key and the row.
+         */
+        record VouchedFor(int component) implements KeySource {}
+
+        /** A key field the lookup section carries under {@code fieldName}, read into {@code column}. */
+        record Lookup(String fieldName, Column column) implements KeySource {
+            public Lookup {
+                Objects.requireNonNull(fieldName, "fieldName");
+                Objects.requireNonNull(column, "column");
+            }
+        }
+    }
+
     /** One key alternative of an entity, and whether this subgraph resolves the entity by it. */
     public sealed interface Alternative {
         Identity identity();
@@ -104,25 +126,46 @@ public final class EntityKeyQuery {
 
         /**
          * A key minted for an {@code @accept}: its one field is the voucher, verified rather than matched,
-         * whose lookup part decodes onto the authored key {@code decodesOnto} names, paired by identity,
-         * and whose vouched-for values key the connection the entity is read on. The vouched-for values
-         * filter nothing: they are the access decision, and the database's policies test them. It selects
-         * by the authored key's columns, so it carries no column of its own for the lookup part.
+         * which decodes onto the authored key {@code decodesOnto} names, paired by identity, and whose
+         * vouched-for values key the connection the entity is read on. Each field of the authored key is
+         * supplied by exactly one of the voucher's sections ({@code key}, in key order): a field
+         * {@code vouchesFor} names takes the vouched-for value, so it both finds the row and decides
+         * access, and every other field takes the lookup section's, which is navigation only. It selects
+         * by the authored key's columns, the same rows {@code key} was read from.
          *
          * @param ordinal      the minted key's {@code @key} application ordinal, its identity
          * @param voucherField the voucher field's name, the minted key's one field
          * @param scope        the scope the {@code @accept} accepts
-         * @param decodesOnto  the authored key the lookup part decodes onto
-         * @param vouchedFor   the vouched-for fields, each with the column it reads, in name order
+         * @param decodesOnto  the authored key the voucher decodes onto
+         * @param vouchedFor   the vouched-for fields, each with the column it reads, in name order: the
+         *                     components of the connection key's vouched-for row
+         * @param key          the authored key's fields in key order, each with the section it is
+         *                     supplied by
          * @param resolvable   whether this subgraph resolves the entity by the voucher key
          */
         record Voucher(int ordinal, String voucherField, String scope, Identity.Key decodesOnto,
-                       List<KeyField> vouchedFor, boolean resolvable) implements Alternative {
+                       List<KeyField> vouchedFor, List<KeySource> key, boolean resolvable) implements Alternative {
             public Voucher {
                 Objects.requireNonNull(voucherField, "voucherField");
                 Objects.requireNonNull(scope, "scope");
                 Objects.requireNonNull(decodesOnto, "decodesOnto");
                 vouchedFor = List.copyOf(vouchedFor);
+                key = List.copyOf(key);
+                for (var source : key) {
+                    if (source instanceof KeySource.VouchedFor v
+                            && (v.component() < 0 || v.component() >= vouchedFor.size())) {
+                        throw new IllegalArgumentException("A key field supplied by the voucher's vouched-for"
+                            + " section names component " + v.component() + " of " + vouchedFor.size());
+                    }
+                }
+            }
+
+            /** The fields the voucher's lookup section names: the key's fields it does not vouch for. */
+            public List<String> lookupFields() {
+                return key.stream()
+                    .filter(KeySource.Lookup.class::isInstance)
+                    .map(source -> ((KeySource.Lookup) source).fieldName())
+                    .toList();
             }
 
             @Override
@@ -177,7 +220,8 @@ public final class EntityKeyQuery {
         }
     }
 
-    private record RawField(String fieldName, String kind, Column column) {}
+    /** A key field; {@code vouchedFor} where the {@code @accept} decoding onto its key vouches for it. */
+    private record RawField(String fieldName, String kind, Column column, boolean vouchedFor) {}
 
     private record RawKey(int ordinal, boolean resolvable, List<RawField> fields) {}
 
@@ -202,9 +246,21 @@ public final class EntityKeyQuery {
         var sc = SQL_SCHEMA;
         var s = GRAPHITRON_NODE_SERVED_BY_ID;
 
-        // A key's fields in position order, each COLUMN field with the column it reads.
+        // A key's fields in position order, each COLUMN field with the column it reads, and whether the
+        // @accept whose vouchers decode onto this key vouches for it: such a field is supplied by the
+        // voucher's vouched-for section, every other by its lookup section.
+        var vk = GRAPHITRON_ACCEPT_KEY.as("vk");
+        var vv = GRAPHITRON_ACCEPT_VOUCHED_FOR.as("vv");
+        var vouchedForField = field(exists(selectOne()
+            .from(vk)
+            .join(vv).on(vv.GRAPH_NAME.eq(vk.GRAPH_NAME), vv.SOURCE_NAME.eq(vk.SOURCE_NAME),
+                vv.SOURCE_LINE.eq(vk.SOURCE_LINE), vv.SOURCE_COLUMN.eq(vk.SOURCE_COLUMN))
+            .where(vk.GRAPH_NAME.eq(k.GRAPH_NAME), vk.TYPE_NAME.eq(k.TYPE_NAME),
+                vk.DIRECTIVE_NAME.eq(k.DIRECTIVE_NAME), vk.ORDINAL.eq(k.ORDINAL),
+                vv.FIELD_NAME.eq(k.FIELD_NAME))));
         var fields = multiset(
-            select(k.FIELD_NAME, k.KIND, oc.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+            select(k.FIELD_NAME, k.KIND, oc.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE,
+                    vouchedForField)
                 .from(k)
                 .leftJoin(oc).on(oc.GRAPH_NAME.eq(k.GRAPH_NAME), oc.COORDINATE.eq(k.COORDINATE),
                     oc.BOUND.eq(k.BOUND))
@@ -214,7 +270,8 @@ public final class EntityKeyQuery {
                     k.DIRECTIVE_NAME.eq(a.DIRECTIVE_NAME), k.ORDINAL.eq(a.ORDINAL))
                 .orderBy(k.POSITION))
             .convertFrom(r -> r.map(f -> new RawField(f.value1(), f.value2(),
-                f.value3() == null ? null : new Column(f.value3(), f.value4(), f.value5(), f.value6()))));
+                f.value3() == null ? null : new Column(f.value3(), f.value4(), f.value5(), f.value6()),
+                Boolean.TRUE.equals(f.value7()))));
         // A key's resolvable: an authored key's as written, true where the author left it out; a
         // minted key's as the rule that minted it states.
         var keys = multiset(
@@ -307,19 +364,20 @@ public final class EntityKeyQuery {
             if (key.fields().isEmpty()) {
                 continue;
             }
-            // A voucher key is resolved by verifying the voucher, not by matching columns: its lookup
-            // part decodes onto the authored key the store pairs the @accept with, by identity.
+            // A voucher key is resolved by verifying the voucher, not by matching columns: it decodes
+            // onto the authored key the store pairs the @accept with, by identity, each of that key's
+            // fields from the section that supplies it.
             if (key.fields().stream().anyMatch(field -> "VOUCHER".equals(field.kind()))) {
                 if (accept == null || accept.ordinal() != key.ordinal()) {
                     throw new IllegalStateException("Entity '" + typeName + "' carries a voucher key #"
                         + key.ordinal() + " the store states no @accept for");
                 }
-                if (keys.stream().noneMatch(k -> k.ordinal() == accept.decodesOnto())) {
-                    throw new IllegalStateException("Entity '" + typeName + "' accepts vouchers decoding onto"
-                        + " key #" + accept.decodesOnto() + ", which it does not carry");
-                }
+                var authored = keys.stream().filter(k -> k.ordinal() == accept.decodesOnto()).findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Entity '" + typeName + "' accepts vouchers"
+                        + " decoding onto key #" + accept.decodesOnto() + ", which it does not carry"));
                 alternatives.add(new Alternative.Voucher(key.ordinal(), accept.voucherField(), accept.scope(),
-                    new Identity.Key(accept.decodesOnto()), accept.vouchedFor(), key.resolvable()));
+                    new Identity.Key(accept.decodesOnto()), accept.vouchedFor(),
+                    keySources(typeName, authored, accept.vouchedFor()), key.resolvable()));
                 continue;
             }
             boolean nodeId = key.fields().size() == 1 && "NODE_ID".equals(key.fields().getFirst().kind());
@@ -339,5 +397,36 @@ public final class EntityKeyQuery {
         }
         return java.util.Optional.of(new Entity(typeName, schema, table, tableClass, tableField, tablesClass,
             alternatives));
+    }
+
+    /**
+     * The section each field of {@code authored}, the key a voucher decodes onto, is supplied by, in key
+     * order: a field the store marks vouched for points at its component among {@code vouchedFor}, paired
+     * here once, so no emitter pairs the two lists; every other field is the lookup section's.
+     */
+    private static List<KeySource> keySources(String typeName, RawKey authored, List<KeyField> vouchedFor) {
+        var sources = new ArrayList<KeySource>(authored.fields().size());
+        for (var field : authored.fields()) {
+            if (field.column() == null) {
+                throw new IllegalStateException("Entity '" + typeName + "' accepts vouchers decoding onto key #"
+                    + authored.ordinal() + ", whose field '" + field.fieldName() + "' reads no column");
+            }
+            if (!field.vouchedFor()) {
+                sources.add(new KeySource.Lookup(field.fieldName(), field.column()));
+                continue;
+            }
+            int component = -1;
+            for (int i = 0; i < vouchedFor.size(); i++) {
+                if (vouchedFor.get(i).fieldName().equals(field.fieldName())) {
+                    component = i;
+                }
+            }
+            if (component < 0) {
+                throw new IllegalStateException("Entity '" + typeName + "' vouches for key field '"
+                    + field.fieldName() + "', which is not among its vouched-for fields");
+            }
+            sources.add(new KeySource.VouchedFor(component));
+        }
+        return sources;
     }
 }

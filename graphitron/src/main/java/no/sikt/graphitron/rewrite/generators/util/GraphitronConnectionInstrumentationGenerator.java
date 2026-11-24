@@ -90,7 +90,7 @@ import java.util.List;
  *
  * <h2>A request rejection rejects the request ({@code instrumentExecutionResult})</h2>
  * When the request's connection source threw (anything but {@code KeyNotPermitted}) during the
- * operation, a voucher failed its check, or the request presented a second vouched-for value, the
+ * operation, or a voucher failed its check, the
  * carrier remembers the first {@code RequestRejectedException}, and this override throws it in place
  * of the result, so it escapes {@code GraphQL.execute}.
  *

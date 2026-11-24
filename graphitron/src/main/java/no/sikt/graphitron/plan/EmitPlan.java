@@ -452,7 +452,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * {@code AcquisitionFailedException} any other throwing source becomes, the sealed
      * {@code RequestRejectedException} it is an arm of, and the ready-made {@code ConnectionSources}),
      * plus the {@code ConnectionKey} the carrier is keyed by in every build.
-     * The set is the same in every build.
+     * The set is the same in every build; the {@code VouchedValueLimit} hook of a graph that accepts
+     * vouchers is the fixed runtime's ({@link no.sikt.graphitron.command.GlobalUnitKind#VOUCHED_VALUE_LIMIT}).
      */
     private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionIdentityRows sessionHooks) {
         var refs = new ArrayList<UnitRef>();

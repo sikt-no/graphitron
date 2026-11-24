@@ -12,7 +12,9 @@ import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.KeyNotP
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.VoucherCodec;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.VoucherKeys;
 import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.schema.VoucherRejectedException;
+import no.sikt.graphitron.generated.facts.voucher_accept_subgraph.util.EntityFetcherDispatch;
 import no.sikt.graphitron.emit.VoucherRuntime;
+import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
 import org.junit.jupiter.api.AfterEach;
@@ -28,6 +30,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,10 +43,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * generated engine on plain representations with real keys and no database: the connection source
  * records the key it is asked for and refuses it, so a batch answers {@code null} without SQL and
  * what the test reads is which key the dispatch built. A voucher the codec decodes and checks, and
- * whose values the dispatcher coerces to their columns, is read on a key carrying its vouched-for
- * value; one that fails any check rejects the request before any key is asked for, among plain-key and
- * valid representations alike; a representation whose vouched-for value is not the first one presented
- * fails alone, at its own index, naming the limit and no value. A null voucher is none: the issuing
+ * whose values the dispatcher coerces to their columns, is read on the operation's one vouched key,
+ * carrying every vouched-for value the operation admitted; one that fails any check rejects the request
+ * before any key is asked for, among plain-key and valid representations alike; a representation whose
+ * vouched-for value is past the cap, or not in a set an earlier lookup field closed, fails alone, at its
+ * own index, naming the limit and no value. A voucher reaching the dispatch other than through
+ * {@code _entities}, where no set closes, fails loudly. A null voucher is none: the issuing
  * side gives a row it cannot sign none, so its slot is {@code null}, as a key value that is null matches
  * no row, and it never rejects the request.
  */
@@ -57,9 +62,18 @@ class VoucherDispatchTest {
           _entities(representations: $representations) { ... on VgsResultat { grade } }
         }""";
 
+    /** Two aliased lookup fields in one operation, each with its own representations. */
+    private static final String TWO_LOOKUPS = """
+        query ($first: [_Any!]!, $second: [_Any!]!) {
+          first: _entities(representations: $first) { ... on VgsResultat { grade } }
+          second: _entities(representations: $second) { ... on VgsResultat { grade } }
+        }""";
+
     private static KeyPair pair;
     private static VoucherKeys keys;
     private static GraphQL engine;
+    /** An engine whose runtime caps an operation's vouched-for set at two values. */
+    private static GraphQL capped;
 
     private final List<ConnectionKey> asked = Collections.synchronizedList(new ArrayList<>());
     private ListAppender<ILoggingEvent> audit;
@@ -69,6 +83,8 @@ class VoucherDispatchTest {
         pair = KeyPairGenerator.getInstance(VoucherKeys.ALGORITHM).generateKeyPair();
         keys = VoucherKeys.ed25519("k1", pair.getPrivate(), Map.of("k1", pair.getPublic()));
         engine = Graphitron.runtime(SQLDialect.POSTGRES, keys).newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        capped = Graphitron.runtime(SQLDialect.POSTGRES, keys).withVouchedValueLimit(env -> 2)
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
     @BeforeEach
@@ -101,9 +117,13 @@ class VoucherDispatchTest {
     }
 
     private ExecutionResult present(List<Map<String, Object>> representations) {
-        return engine.execute(Graphitron.newOwnedExecutionInput(refusingSource())
-            .query(ENTITIES)
-            .variables(Map.of("representations", representations))
+        return present(engine, ENTITIES, Map.of("representations", representations));
+    }
+
+    private ExecutionResult present(GraphQL on, String query, Map<String, Object> variables) {
+        return on.execute(Graphitron.newOwnedExecutionInput(refusingSource())
+            .query(query)
+            .variables(variables)
             .build());
     }
 
@@ -127,12 +147,21 @@ class VoucherDispatchTest {
         return Map.of("__typename", TYPE, "id", id);
     }
 
+    /** The vouched key for {@code owners}, in admission order. */
+    private static ConnectionKey owners(String... owners) {
+        var values = new LinkedHashSet<ConnectionKey.VouchedFor>();
+        for (var owner : owners) {
+            values.add(new ConnectionKey.VouchedFor(owner));
+        }
+        return ConnectionKey.forVouchedFor(values);
+    }
+
     @Test
     void aValidVoucherIsReadOnAKeyCarryingItsVouchedForValue() {
         var result = present(List.of(rep(valid("olivia", "1")), rep(valid("olivia", "2"))));
         assertThat(result.getErrors()).isEmpty();
         assertThat(asked).singleElement().satisfies(key -> {
-            assertThat(key.eierId()).contains("olivia");
+            assertThat(key.vouchedFor()).containsExactly(new ConnectionKey.VouchedFor("olivia"));
             assertThat(key.hasVouchedFor()).isTrue();
         });
     }
@@ -141,7 +170,7 @@ class VoucherDispatchTest {
     void aPlainKeyIsReadOnTheKeyWithNoParts_besideAVouchedOne() {
         var result = present(List.of(plain("1"), rep(valid("olivia", "1"))));
         assertThat(result.getErrors()).isEmpty();
-        assertThat(asked).containsExactlyInAnyOrder(ConnectionKey.defaultSource(), ConnectionKey.forVouchedFor("olivia"));
+        assertThat(asked).containsExactlyInAnyOrder(ConnectionKey.defaultSource(), owners("olivia"));
     }
 
     @Test
@@ -149,7 +178,19 @@ class VoucherDispatchTest {
         var result = present(List.of(rep(voucher(TYPE, SCOPE, Instant.now().minusSeconds(10),
             Map.of("eierId", "olivia"), Map.of("id", "1")))));
         assertThat(result.getErrors()).isEmpty();
-        assertThat(asked).singleElement().satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(asked).singleElement().isEqualTo(owners("olivia"));
+    }
+
+    @Test
+    void vouchersForSeveralOwnersInOneLookupAreReadOnOneKeyCarryingEveryOwner_askedForOnce() {
+        var result = present(List.of(rep(valid("olivia", "1")), rep(valid("peter", "3")), plain("4"),
+            rep(valid("olivia", "2")), rep(valid("anna", "5"))));
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(asked).containsExactlyInAnyOrder(ConnectionKey.defaultSource(), owners("olivia", "peter", "anna"));
+        assertThat(asked).filteredOn(ConnectionKey::hasVouchedFor).singleElement()
+            .satisfies(key -> assertThat(key.vouchedFor()).as("in representation order").containsExactly(
+                new ConnectionKey.VouchedFor("olivia"), new ConnectionKey.VouchedFor("peter"),
+                new ConnectionKey.VouchedFor("anna")));
     }
 
     @Test
@@ -193,7 +234,7 @@ class VoucherDispatchTest {
         var entities = (List<Object>) ((Map<String, Object>) result.getData()).get("_entities");
         assertThat(entities).hasSize(3);
         assertThat(entities.get(1)).isNull();
-        assertThat(asked).containsExactlyInAnyOrder(ConnectionKey.forVouchedFor("olivia"), ConnectionKey.defaultSource());
+        assertThat(asked).containsExactlyInAnyOrder(owners("olivia"), ConnectionKey.defaultSource());
         assertThat(auditLines()).as("a null voucher is neither redeemed nor rejected").hasSize(1);
     }
 
@@ -208,22 +249,23 @@ class VoucherDispatchTest {
     }
 
     @Test
-    void theFirstVouchedForValueInRepresentationOrderIsAdmitted_eachOtherFailsAloneAtItsIndex() {
+    void theFirstValuesInRepresentationOrderFillTheSetUpToTheCap_eachValuePastItFailsAloneAtItsIndex() {
         for (var owners : List.of(List.of("olivia", "peter", "anna"), List.of("peter", "olivia", "anna"))) {
             asked.clear();
-            var result = present(List.of(rep(valid(owners.get(0), "1")), rep(valid(owners.get(1), "3")),
-                rep(valid(owners.get(0), "2")), plain("4"), rep(valid(owners.get(2), "5"))));
+            var result = present(capped, ENTITIES, Map.of("representations", List.of(
+                rep(valid(owners.get(0), "1")), rep(valid(owners.get(1), "3")), rep(valid(owners.get(2), "5")),
+                rep(valid(owners.get(0), "2")), plain("4"), rep(valid(owners.get(2), "6")))));
             assertThat(result.getErrors()).as(owners.toString()).hasSize(2).allSatisfy(error -> {
                 assertThat(error.getMessage()).isEqualTo(VoucherRuntime.LIMIT_MESSAGE);
                 assertThat(error.getMessage()).doesNotContain("olivia").doesNotContain("peter").doesNotContain("anna");
             });
             assertThat(result.getErrors()).extracting(error -> error.getPath())
-                .containsExactly(List.of("_entities", 1), List.of("_entities", 4));
+                .containsExactly(List.of("_entities", 2), List.of("_entities", 5));
             @SuppressWarnings("unchecked")
             var entities = (List<Object>) ((Map<String, Object>) result.getData()).get("_entities");
-            assertThat(entities).hasSize(5);
-            assertThat(asked).as("only the admitted value's key and the plain one are asked for")
-                .containsExactlyInAnyOrder(ConnectionKey.forVouchedFor(owners.get(0)), ConnectionKey.defaultSource());
+            assertThat(entities).hasSize(6);
+            assertThat(asked).as("the admitted values' one key and the plain one are asked for, once each")
+                .containsExactlyInAnyOrder(owners(owners.get(0), owners.get(1)), ConnectionKey.defaultSource());
         }
     }
 
@@ -231,10 +273,44 @@ class VoucherDispatchTest {
     void aFailedCheckBehindAnAdmittedAndANotAdmittedValueStillRejectsTheRequest() {
         var good = valid("olivia", "1");
         var tampered = good.substring(0, good.length() - 4) + "AAAA";
-        assertThatThrownBy(() -> present(List.of(rep(good), rep(valid("peter", "3")), rep(tampered))))
+        assertThatThrownBy(() -> present(capped, ENTITIES, Map.of("representations",
+                List.of(rep(good), rep(valid("peter", "3")), rep(valid("anna", "5")), rep(tampered)))))
             .isInstanceOfSatisfying(VoucherRejectedException.class,
                 e -> assertThat(e.reason()).isEqualTo(VoucherRejectedException.Reason.SIGNATURE));
         assertThat(asked).isEmpty();
+    }
+
+    @Test
+    void aSecondLookupFieldSeesTheSetClosed_aValueInItResolvesOnTheSameKey_anyOtherFailsAtItsOwnIndex() {
+        var result = present(engine, TWO_LOOKUPS, Map.of(
+            "first", List.of(rep(valid("olivia", "1"))),
+            "second", List.of(rep(valid("peter", "3")), rep(valid("olivia", "2")))));
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage()).isEqualTo(VoucherRuntime.LIMIT_MESSAGE);
+            assertThat(error.getPath()).isEqualTo(List.of("second", 0));
+        });
+        assertThat(asked).as("one vouched key for the operation").containsExactly(owners("olivia"));
+    }
+
+    @Test
+    void aLookupFieldThatAdmittedNoVoucherLeavesTheSetOpenForALaterOne() {
+        var result = present(engine, TWO_LOOKUPS, Map.of(
+            "first", List.of(plain("1"), rep(null)),
+            "second", List.of(rep(valid("peter", "3")), rep(valid("olivia", "2")))));
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(asked).containsExactlyInAnyOrder(ConnectionKey.defaultSource(), owners("peter", "olivia"));
+    }
+
+    @Test
+    void aVoucherReachingTheDispatchOutsideEntitiesFailsLoudly_whereNoSetCloses() {
+        var env = graphql.schema.DataFetchingEnvironmentImpl.newDataFetchingEnvironment()
+            .graphQLContext(graphql.GraphQLContext.newContext().build()).build();
+        assertThatThrownBy(() -> EntityFetcherDispatch.loadKeyed(rep(valid("olivia", "1")), env))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage(EntityFetcherDispatchClassGenerator.VOUCHER_OUTSIDE_ENTITIES_MESSAGE);
+        assertThatThrownBy(() -> EntityFetcherDispatch.load(rep(valid("olivia", "1")), env))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(EntityFetcherDispatch.loadKeyed(rep(null), env).join()).as("a null voucher is still none").isNull();
     }
 
     @Test
@@ -255,8 +331,9 @@ class VoucherDispatchTest {
         assertThat(auditLines()).singleElement().asString()
             .matches("Voucher rejected: vouch id [0-9a-f-]{36}, scope " + SCOPE + ", reason VALUE");
         audit.list.clear();
-        present(List.of(rep(valid("olivia", "1")), rep(valid("peter", "3"))));
-        assertThat(auditLines()).hasSize(2).last().asString()
+        present(capped, ENTITIES, Map.of("representations",
+            List.of(rep(valid("olivia", "1")), rep(valid("peter", "3")), rep(valid("anna", "5")))));
+        assertThat(auditLines()).hasSize(3).last().asString()
             .matches("Voucher not admitted: vouch id [0-9a-f-]{36}, scope " + SCOPE + ", reason LIMIT");
         assertThat(String.join("\n", auditLines())).doesNotContain(good).doesNotContain("olivia").doesNotContain("peter")
             .doesNotContain("one,");

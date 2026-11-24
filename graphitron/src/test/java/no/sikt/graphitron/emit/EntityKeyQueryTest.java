@@ -21,8 +21,9 @@ import static org.assertj.core.api.Assertions.tuple;
  * {@code scenarios/entity-key-alternatives}, keys over columns, an authored id key, minted node keys
  * and a compound key beside one this subgraph does not resolve by; over
  * {@code scenarios/node-id-decode-record}, a graph with nodes and no federation, where every
- * resolvable node is an entity by its id; and over {@code scenarios/synthesized-node-type-id}, a
- * federation stub, which is no entity here.
+ * resolvable node is an entity by its id; over {@code scenarios/synthesized-node-type-id}, a
+ * federation stub, which is no entity here; and over the accepting voucher scenarios, the section each
+ * field of the key a voucher decodes onto is supplied by.
  */
 @PipelineTier
 class EntityKeyQueryTest {
@@ -114,6 +115,43 @@ class EntityKeyQueryTest {
     @Test
     void aStubIsNoEntityHere() {
         assertThat(withStub).extracting(Entity::typeName).contains("Film").doesNotContain("Level");
+    }
+
+    @Test
+    void aVoucherKeyFieldNotVouchedForIsSuppliedByTheLookupSection() {
+        var voucher = voucherOf(FACTS.read("scenarios/voucher-accept-subgraph",
+            graph -> EntityKeyQuery.read(graph.handle())), "VgsResultat");
+        assertThat(voucher.vouchedFor()).extracting(f -> f.fieldName()).containsExactly("eierId");
+        assertThat(voucher.key()).singleElement().isInstanceOfSatisfying(EntityKeyQuery.KeySource.Lookup.class,
+            lookup -> assertThat(lookup.fieldName()).isEqualTo("id"));
+        assertThat(voucher.lookupFields()).containsExactly("id");
+    }
+
+    @Test
+    void aKeyWhollyVouchedForIsSuppliedByTheVouchedForSection_leavingTheLookupSectionEmpty() {
+        var voucher = voucherOf(FACTS.read("scenarios/voucher-accept-per-entity",
+            graph -> EntityKeyQuery.read(graph.handle())), "CaseEventLog");
+        assertThat(voucher.vouchedFor()).extracting(f -> f.fieldName()).containsExactly("caseId");
+        assertThat(voucher.key()).containsExactly(new EntityKeyQuery.KeySource.VouchedFor(0));
+        assertThat(voucher.lookupFields()).isEmpty();
+    }
+
+    @Test
+    void aMixedKeyTakesEachFieldFromItsOwnSection_inKeyOrder() {
+        var voucher = voucherOf(FACTS.read("scenarios/voucher-accept-mixed-key",
+            graph -> EntityKeyQuery.read(graph.handle())), "Enrolment");
+        assertThat(voucher.vouchedFor()).extracting(f -> f.fieldName()).containsExactly("orgId", "personId");
+        assertThat(voucher.key()).hasSize(2);
+        assertThat(voucher.key().get(0)).isEqualTo(new EntityKeyQuery.KeySource.VouchedFor(0));
+        assertThat(voucher.key().get(1)).isInstanceOfSatisfying(EntityKeyQuery.KeySource.Lookup.class,
+            lookup -> assertThat(lookup.column().columnName()).isEqualTo("case_id"));
+        assertThat(voucher.lookupFields()).containsExactly("caseId");
+    }
+
+    private static Alternative.Voucher voucherOf(List<Entity> entities, String typeName) {
+        return entity(entities, typeName).alternatives().stream()
+            .filter(Alternative.Voucher.class::isInstance).map(Alternative.Voucher.class::cast)
+            .findFirst().orElseThrow();
     }
 
     /** The type id of the entity's one alternative, which must be a resolvable node id alternative. */

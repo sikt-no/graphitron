@@ -19,11 +19,18 @@ import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.VOUCHED_RESULT
  */
 public final class VouchedResultService {
 
+    /**
+     * The result ids of each call, in call order, so the execution tier sees how the children of the
+     * vouched results were batched; a test clears it before it reads it.
+     */
+    public static final List<Set<Integer>> BATCHES = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     private VouchedResultService() {}
 
     /** The details of each result, read on the connection handed to the service. */
     public static Map<VouchedResultRecord, List<VouchedResultDetailRecord>> servicedDetails(
             Set<VouchedResultRecord> results, DSLContext dsl) {
+        BATCHES.add(results.stream().map(VouchedResultRecord::getResultId).collect(Collectors.toUnmodifiableSet()));
         Map<Integer, List<VouchedResultDetailRecord>> details = dsl.selectFrom(VOUCHED_RESULT_DETAIL)
             .where(VOUCHED_RESULT_DETAIL.RESULT_ID.in(results.stream().map(VouchedResultRecord::getResultId).toList()))
             .orderBy(VOUCHED_RESULT_DETAIL.DETAIL_ID)

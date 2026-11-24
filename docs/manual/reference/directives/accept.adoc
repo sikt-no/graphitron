@@ -23,11 +23,11 @@ directive @accept(scope: String!, key: String, vouchesFor: String!) on OBJECT
 
 | `key`
 | `String`
-| The field set of the authored `@key` the voucher's lookup part decodes to, as `@key(fields:)` spells it. Leave it out when the type has exactly one authored resolvable key.
+| The field set of the authored `@key` the voucher decodes to, as `@key(fields:)` spells it. Leave it out when the type has exactly one authored resolvable key.
 
 | `vouchesFor`
 | `String!`
-| The fields of this type the voucher's vouched-for values parse into, a field set as `@key(fields:)` spells one: whose rows are vouched for. Names the same fields as the issuing subgraph's `@issue(vouchesFor:)`. A vouched-for field may be `@inaccessible`, so the owner is not published to clients.
+| The fields of this type the voucher's vouched-for values parse into, a field set as `@key(fields:)` spells one: whose rows are vouched for. Names the same fields as the issuing subgraph's `@issue(vouchesFor:)`. A vouched-for field may be a field of the key the voucher decodes to, and then it is supplied by the vouched-for section; the key's other fields are supplied by the lookup section. A vouched-for field may be `@inaccessible`, so the owner is not published to clients.
 |===
 
 == Canonical example
@@ -43,23 +43,24 @@ type VgsResultat @table(name: "vgs_resultat") @key(fields: "id")
 }
 ----
 
-The voucher's lookup part decodes to `id`, the type's one authored key, and its vouched-for values parse into `eierId`. Name and type both exactly as the issuing subgraph's absorbed fields.
+The voucher decodes to `id`, the type's one authored key, which its lookup part supplies since `vouchesFor` does not name it, and its vouched-for values parse into `eierId`. Name and type both exactly as the issuing subgraph's absorbed fields. Vouching for the key itself, `vouchesFor: "id"`, leaves the lookup part empty: the key's value is then the vouched-for one, and it both finds the row and decides access.
 
 == How a voucher is read
 
 For each `_entities` representation carrying the voucher, before any type is resolved:
 
-. The voucher is decoded and checked: its format, its signature over the token and the representation's `__typename` against your verification keys, its expiry (with 30 seconds of tolerance for clock skew), its scope, and that its sections name exactly this type's `vouchesFor` fields and the fields of the key it decodes to. A voucher longer than `VoucherCodec.MAX_TOKEN` characters (16384), or carrying a number whose text is longer than `VoucherCodec.MAX_NUMBER_TEXT`, is malformed before it is decoded, and no value in it is read until its signature verifies, so a forged token costs work in proportion to its bounded length. A representation that carries the voucher is always read through it, never past it by plain key fields.
-. Each value is coerced to its field's column, as a plain representation's key values are; a value no column takes is a failed check, not a missing row.
-. The vouched-for values become the parts of the generated `ConnectionKey`, one `Optional` per vouched-for field typed by its column (`key.eierId()` in the example), and the lookup values are read through the authored key's own SELECT on the connection your source leases for that key. Vouchers carrying the same value share one connection.
+. The voucher is decoded and checked: its format, its signature over the token and the representation's `__typename` against your verification keys, its expiry (with 30 seconds of tolerance for clock skew), its scope, and that its vouched-for section names exactly this type's `vouchesFor` fields and its lookup section exactly the fields of the key it decodes to that `vouchesFor` does not name. Each key field is supplied by one section, so no value arrives twice. A voucher longer than `VoucherCodec.MAX_TOKEN` characters (16384), or carrying a number whose text is longer than `VoucherCodec.MAX_NUMBER_TEXT`, is malformed before it is decoded, and no value in it is read until its signature verifies, so a forged token costs work in proportion to its bounded length. A representation that carries the voucher is always read through it, never past it by plain key fields.
+. Each value is coerced to its field's column once, as a plain representation's key values are; a value no column takes is a failed check, not a missing row.
+. The vouched-for values are admitted into the request's set: a `ConnectionKey.VouchedFor` row with a component per vouched-for field, typed by its column (`VouchedFor::eierId` in the example). The first distinct values in representation order are admitted, up to the cap.
+. Once every representation of the `_entities` field has been checked, the key's values, each from the section that supplies it, are read through the authored key's own SELECT on the one connection your source leases for the request's vouched key, the generated `ConnectionKey` whose `vouchedFor()` is the whole admitted set.
 
-Your `ConnectionSource` reads the vouched-for values off the key and returns a connection whose session sets them where your policies read them; for the key whose parts are empty it returns the request's own connection. A build that accepts vouchers has no escape hatch: `Graphitron.newExecutionInput(dsl, ...)` is not generated, since a vouched connection can only come from the request's source.
+Your `ConnectionSource` reads the set off the key and returns a connection whose session sets it where your policies read it, so a policy tests a row's membership in the set; for the key whose set is empty it returns the request's own connection. A build that accepts vouchers has no escape hatch: `Graphitron.newExecutionInput(dsl, ...)` is not generated, since a vouched connection can only come from the request's source.
 
 The voucher is verified with the generated `VoucherKeys`, the last argument of every `Graphitron.runtime(...)` overload: `VoucherKeys.accepting(Map.of(keyId, publicKey))` holds the issuing subgraph's Ed25519 public keys by the key id each voucher carries, so a key is rotated by adding the new id beside the old one. xref:../../how-to/voucher-handover.adoc[How-to: Voucher handover] makes the keys, wires both subgraphs and writes the connection source and policies.
 
-A voucher that fails any check rejects the request as a whole, before any connection is taken: `GraphQL.execute` throws the generated `VoucherRejectedException` in place of a result, its message naming the check that failed and nothing from the token. It is an arm of the generated `RequestRejectedException`, which the facade's `Graphitron.requestRejection(thrown)` answers; see xref:../../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A request rejection rejects the request]. A request reads vouchers for one vouched-for value: the first one its representations present, in their order, is admitted, and a representation carrying another answers `null` with an error at its own index that names the limit and no value, while the rest resolve. The limit never rejects the request, so it is not mistaken for a denial. A plain representation of the type's authored key resolves on the request's own connection, under the caller's own access: a voucher only ever adds access. A representation whose voucher is null carries none: its slot is `null`, as a key value that is null matches no row, no connection is taken for it, and it never rejects the request.
+A voucher that fails any check rejects the request as a whole, before any connection is taken: `GraphQL.execute` throws the generated `VoucherRejectedException` in place of a result, its message naming the check that failed and nothing from the token. It is an arm of the generated `RequestRejectedException`, which the facade's `Graphitron.requestRejection(thrown)` answers; see xref:../../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A request rejection rejects the request]. A request admits at most a thousand distinct vouched-for values, or what the runtime's `VouchedValueLimit` answers (`Graphitron.runtime(...).withVouchedValueLimit(env -> limit)`, asked once per request; an answer below 1 admits none): a representation whose value is past the cap answers `null` with an error at its own index that names the limit and no value, and takes no connection, while the rest resolve. The cap never rejects the request, so it is not mistaken for a denial. A second `_entities` field in the same operation reads on the same connection: a value the first field admitted resolves, and any other fails as past the cap. A plain representation of the type's authored key resolves on the request's own connection, under the caller's own access: a voucher only ever adds access. A representation whose voucher is null carries none: its slot is `null`, as a key value that is null matches no row, no connection is taken for it, and it never rejects the request.
 
-Every redemption and rejection is logged at `INFO` on the logger `no.sikt.graphitron.voucher.audit`, by vouch id, scope and outcome (redeemed, rejected with the check that failed, or not admitted because of the one-value limit); never the token, its values or the connection key.
+Every redemption and rejection is logged at `INFO` on the logger `no.sikt.graphitron.voucher.audit`, by vouch id, scope and outcome (redeemed, rejected with the check that failed, or not admitted because of the cap, `LIMIT`); never the token, its values or the connection key.
 
 == What the subgraph publishes
 
@@ -98,11 +99,8 @@ Each refusal below is reported at the `@accept`.
 | `VOUCHER_VOUCHED_FOR_NOT_A_COLUMN`
 | Each vouched-for field reads one column of the type's own table, as a key field does: not a list, not a field read some other way.
 
-| `VOUCHER_VOUCHED_FOR_IN_KEY`
-| No vouched-for field is a field of the key the voucher decodes to: the vouched-for fields and the lookup part never share a value.
-
 | `VOUCHER_ACCEPT_WITHOUT_KEY`
-| The type has an authored `@key` this subgraph resolves it by, which the voucher's lookup part decodes to.
+| The type has an authored `@key` this subgraph resolves it by, which the voucher decodes to.
 
 | `VOUCHER_ACCEPT_KEY_AMBIGUOUS`
 | `key` is given when the type has more than one authored resolvable key.

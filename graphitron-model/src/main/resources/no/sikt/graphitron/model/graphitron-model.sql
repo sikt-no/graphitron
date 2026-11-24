@@ -20151,20 +20151,6 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACC
                     WHERE ak.graph_name = e.graph_name AND ak.source_name = e.source_name
                       AND ak.source_line = e.source_line AND ak.source_column = e.source_column)
 UNION ALL
--- A vouched-for field that is also a field of the key the vouchers decode to: the vouched-for fields and the lookup
--- part never share a value. One row per @accept, the detail the first such field by name.
-SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_VOUCHED_FOR_IN_KEY',
-       MIN(c.field_name), 'entity-key-alternatives'
-  FROM graphitron_accept_vouched_for c
-  JOIN graphitron_accept_key ak
-    ON ak.graph_name = c.graph_name AND ak.source_name = c.source_name
-   AND ak.source_line = c.source_line AND ak.source_column = c.source_column
-  JOIN graphitron_key_field_binding kf
-    ON kf.graph_name = ak.graph_name AND kf.type_name = ak.type_name
-   AND kf.directive_name = ak.directive_name AND kf.ordinal = ak.ordinal
-   AND kf.field_name = c.field_name
- GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
-UNION ALL
 -- A vouched-for field that does not read one column of the accepting type's own table, the test a key
 -- field passes: the voucher's vouched-for values parse into it as one scalar value, as a key field's value does.
 -- One row per @accept, the detail the first such field by name.
@@ -33528,8 +33514,6 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    '@accept''s key: has a nested selection, and a voucher''s lookup part carries top-level scalar fields: name a key of top-level fields.'),
   ('VOUCHER_ACCEPT_KEY_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_KEY_UNKNOWN',
    '@accept''s key: names no authored resolvable @key of the type, field set for field set: name the fields of one.'),
-  ('VOUCHER_VOUCHED_FOR_IN_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_VOUCHED_FOR_IN_KEY',
-   '@accept''s vouchesFor names a field of the key the voucher decodes to, and the vouched-for fields and the lookup part never share a value: vouched-for fields outside the key.'),
   ('VOUCHER_VOUCHED_FOR_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_VOUCHED_FOR_NOT_A_COLUMN',
    '@accept''s vouchesFor names a field that does not read one column of the type''s own table, a list or a field read some other way, and the voucher''s vouched-for values parse into each as one scalar value, as a key field''s value does: vouched-for fields that read the table''s columns.'),
   ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
