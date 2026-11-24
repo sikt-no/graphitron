@@ -181,24 +181,16 @@ Serving `SETOF t` as rows of `T`, and retiring `graphitron_routine_result` with 
 routine's result is an object of its function's record class", stays with that node. This item needs
 neither.
 
-**In a mutation** (Alf, 2026-11-23, written into `code-generation-triggers.adoc`, "Producer"):
+**In a mutation** (Alf, 2026-11-24, written into `code-generation-triggers.adoc`, "Producer"; it
+replaces his 2026-11-23 ruling that the record itself be the answer):
 
 - The routine's statement is the call alone, through the execute form, and nothing else is read in it.
-  That statement would see the old rows.
-- The call returns the routine's record, and that record is the answer. The payload's data field is
-  the record, handed over whole: no projection of the selected columns, and no re-read of `T`. The
-  routine prepared the row, and it is just a row.
-- The row stands as the routine returned it, under the routine's read policy and not the caller's.
-  `routine.adoc`'s post-commit re-read, and the nullable data field it justifies by row-level security,
-  change for this shape in the same commit, with every emitter site that relies on the old rule.
-- The record carries `T`'s whole row, unlike a record a DML write or a `@service` hands back, which
-  guarantees only its key. The producer result states this as a fact, so readers branch on what it
-  says and not on `kind = 'ROUTINE'`. A foreign key read off the record is therefore as good as the
-  row's own.
-- A field under the data field that needs more than the row's columns, such as `Utsending.innhold`,
-  starts a query of its own after the call, from the record's key, through the lift's
-  `key_constraint`.
+- The result is a single record of `T`, as a `@service` returning `T`'s record is one. The record hands
+  its key to the payload's data field, which re-reads `T` by that key in a statement of its own, through
+  the lift's `key_constraint`, under the caller's read policy as after any write.
 - A record whose key columns are all null is no row, and the data field is then `null`.
+- `RoutineWriteQuery` gains a third row arm for this producer, the call through the execute form with
+  no `FROM` capture, and `RoutineWriteEmitter` renders it.
 
 **In a query:**
 
