@@ -1,7 +1,7 @@
 ---
 id: R1202
 title: "A list of node ids' key column reaches a List parameter at a @condition through argMapping"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 6
 theme: nodeid
