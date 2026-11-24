@@ -63,7 +63,7 @@ key carrying vouched-for values, a connection whose session sets them for the po
 | *Lookup part* | The other absorbed fields: the key of the vouched row in B. Navigation only. |
 | *Scope* | A name both markers agree on, so a voucher issued for one purpose is not accepted for another. |
 | *Vouch id* | A random id shared by the vouchers one operation issues under one scope. An audit field only: Graphitron logs it at issue and on every redemption or rejection. |
-| *Connection key* | The generated record a connection is acquired for: one `Optional` per part the schema has, the tenant where it has a tenant column and each vouched-for field where it accepts vouchers, and no part at all in a build with neither. Equal keys share a connection within a request. |
+| *Connection key* | The generated record a connection is acquired for: one component per part the schema has, each possibly empty: an `Optional` tenant where it has a tenant column, and the set of vouched-for rows the operation admitted where it accepts vouchers (R1199), and no part at all in a build with neither. Equal keys share a connection within a request. |
 | *Connection source* | The consumer's `ConnectionSource`, given with each request: `Lease acquire(ConnectionKey key)`. Built when the request is, it captures what the consumer needs of the request and takes nothing until Graphitron calls it. |
 | *Lease* | What `acquire` returns: the mounted `connection()`, the session `handle()` where `<handle>` is configured, and `release()`, which Graphitron calls exactly once. |
 | *Vouched connection* | The lease B's connection source returns for a key carrying vouched-for values, one per value per request. What it may read is what B's policies unlock for that value. |
@@ -313,6 +313,8 @@ Decisions the user made on this item; each is stated where it applies below.
 * Tenancy is not a mode (2026-11-16): a tenant is one part of the connection key, the vouched-for values
   another. `ConnectionKey` is a record with one `Optional` per part the schema has, generated in every
   build, with no part in a build that has neither; what an empty part means is the source's decision.
+  The ruling's meaning stands and its words do not: the vouched-for part is a set of rows, empty for
+  the request's own key, not an `Optional` per field (R1199).
 * Which tenants are valid, and whether a request may reach one, is the source's to decide (2026-11-16):
   it refuses a key by throwing the generated `KeyNotPermitted` from `acquire`, which answers as a refused
   tenant does today: an error located at the field, and `null` with no error in the entity and node
@@ -342,7 +344,8 @@ Decisions the user made on this item; each is stated where it applies below.
 * Entities and nodes are read one way in every build without a tenant column (2026-11-16): DataLoaders
   per (type, alternative, connection key), every representation's key built from its alternative and
   empty unless a voucher fills it; the codec only decodes, the dispatcher coerces, builds the key and
-  logs, and the one-vouched-value limit lives where the carrier takes connections. First round kept
+  logs, and the cap on an operation's vouched-for set lives in the carrier, its one admission site
+  (a set since R1199). First round kept
   tight: a build that accepts vouchers has owned connections and no tenant column, and tenanted builds
   keep their dispatch until R876.
 * Vouchers require Graphitron's owned connections (2026-11-16): a build that accepts vouchers has no
@@ -547,8 +550,8 @@ Decisions the user made on this item; each is stated where it applies below.
     field that does not bind a column at the type's table (the test key fields pass, read off the
     occurrence binding, so B's vouched-for fields need no copy of A's value-giving directive list, which A
     needed only because its members have no bindings); and a vouched-for field that is also a field of the
-    key the voucher decodes to (refused rather than allowed, so the two parts never share a value), which
-    reads `graphitron_accept_key` and so cannot be the voucher stage's. A rule broken the same way by
+    key the voucher decodes to, which reads `graphitron_accept_key` and so cannot be the voucher stage's
+    (retired by R1199: such a key field is supplied by the voucher's vouched-for section). A rule broken the same way by
     either marker is one code for both: the federation-link, empty-vouched-for and repeated-vouched-for
     refusals say "a voucher marker" (and the session-state refusal did, until slice 8b).
 * *Voucher codec.* One generated class owns the format: version byte, vouch id, scope, expiry,
@@ -620,18 +623,21 @@ Decisions the user made on this item; each is stated where it applies below.
   failed check rejects the request the way a failed `acquire` does: the carrier remembers the first
   rejection in its one slot, `instrumentExecutionResult` throws it in place of the result, and once one is
   remembered the carrier acquires nothing more, so a representation registered before the failing one
-  never gets a connection either. Throwing from the fetcher alone would make a field error. The
-  one-value limit lives where connections are taken: the carrier acquires at most one key with
-  vouched-for values per request, and a second fails with an error naming the limit. The dispatcher logs
+  never gets a connection either. Throwing from the fetcher alone would make a field error. The cap on
+  the vouched-for set lives in the carrier: it admits an operation's distinct vouched-for values in
+  representation order up to the cap, all read on one vouched key, and a representation past it fails
+  alone with an error naming the limit (slice 8g; a set since R1199). The dispatcher logs
   the vouch id, scope and outcome of every redemption and rejection; the codec logs nothing. The voucher
   alternative is a sealed arm of `EntityKeyQuery.Alternative` with its own identity, the minted `ACCEPT`
   key, carrying the scope, the vouched-for fields, and the authored key it decodes onto by identity with
-  that key's fields; the vouched-for values filter nothing. Builds with a tenant column keep today's
+  that key's fields; the vouched-for values decide access and filter only where one is a key field
+  (R1199). Builds with a tenant column keep today's
   dispatch until R876 states their tenant routing in the store; tenant pairing, after version 1, gives the
   voucher alternative the tenant source of the authored key it decodes onto (`graphitron_accept_key`).
-* *Connection key.* Every build emits a generated `ConnectionKey`, a record with one `Optional` per part
-  its schema has: the tenant, typed by the tenant column, where it has a `<tenantColumn>`, and one per
-  vouched-for field, typed by the column the field reads, where it accepts vouchers. A build with neither
+* *Connection key.* Every build emits a generated `ConnectionKey`, a record with one component per part
+  its schema has: an `Optional` tenant, typed by the tenant column, where it has a `<tenantColumn>`, and,
+  where it accepts vouchers, the set of vouched-for rows the operation admitted, each with one component
+  per vouched-for field typed by the column the field reads (R1199). A build with neither
   emits a record with no component, and the carrier keys by it all the same, so the
   `Optional<tenantKey>` keying of today's single-tenant carrier goes. Factories name the keys a site
   means (the request's own, a tenant's, a vouched value's); a compact constructor refuses some
@@ -693,7 +699,7 @@ Decisions the user made on this item; each is stated where it applies below.
   configuration. `<sessionState>` keeps only what it names, the handle class; a voucher marker no longer
   needs it (*Retired vocabulary*).
 * *Audit logging.* Graphitron logs the vouch id, scope and outcome at issue and on every redemption and
-  rejection, and on every representation the one-value limit turns away, at a named level and logger
+  rejection, and on every representation the cap on the vouched-for set turns away, at a named level and logger
   the docs state. Nothing reads the vouch id otherwise.
 * *Redaction.* The voucher is a credential: confirm generated code and the dispatcher never log
   representations, the token or its values, or echo the voucher in errors, and that
