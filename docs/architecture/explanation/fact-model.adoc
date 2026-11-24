@@ -74,6 +74,19 @@ A row's phase is decided by what its rows are a function of, never by what progr
 
 A rule reading two corpora is anchor-phase work, and this is the one corollary of the recompute test that a gate can close. A crawler answers for a corpus that exists independently of the others: the `.graphqls` files are what they are whether or not a jOOQ package was generated, and the generated classes are what they are whether or not any schema mentions them. So the rows a crawler's capture phase writes about its own corpus must not vary with another corpus's contents, and a rule whose answer needs both is a derivation over their captured facts rather than a decision either crawler may make. Federation's key synthesis is the worked case: it fires on nodehood, and nodehood conjoins the SDL's claim (`@node`, or `@table` plus `implements Node`) with node-identity metadata a generated jOOQ class publishes. Run inside the SDL capture it made an unchanged `.graphqls` file write different `graphql_` and `graphitron_` rows when a generated class changed, which is an anchor phase's work running inside a capture phase and landing its output where nothing tells it apart from a transcription.
 
+The rule binds what a row says, not which rows a capture writes (Alf, 2026-11-24). Another corpus
+may decide which of a corpus's things are read at all, while every row written about one of them
+says only what that corpus says. The code gatherer's population of a declared dependency is the
+case. Reading every class of every declared jar costs more than any schema uses, so a declared
+jar's class is read where some graph's code references name it:
+
+* The schema decides which classes of that entry have member rows.
+* What a class's rows say is still read from its classfile alone, at the grain of the entry.
+* The rows go when no reference names the class any longer.
+
+The session handle class, read because the configuration names it, is the same case. A row whose
+content varied with the other corpus would still break the rule, and that is still anchor work.
+
 No foreign key could have caught that, which is why the rule needs a gate of its own rather than a constraint. A key constrains *references*, and the schema already refuses to model SDL-to-jOOQ resolution as one: there is no `graphql_` to `sql_` edge anywhere, and a `@table(name:)` row holds a string a crawler transcribed rather than a pointer at `sql_table`. A cross-corpus read inside a crawler adds no reference at all. It changes which rows exist, which no constraint expressible in the DDL can reject.
 
 The assembling gatherer reads two corpora, and says so. Its verdict is about the corpus as the generator composes it, and the composition is configured: a configured tag opts the graph in with a `@link` importing `@tag`, so the same documents under a different `<schemaInput tag>` are a different schema to judge. The tags and notes themselves are not in the composition: `graphitron_configured_tag` states the tags, the `graphitron_` part relations carry the descriptions the notes mint, and the emitted schema applies both. A crawler's rows may not vary with another corpus, so `meta_gatherer_corpus` declares `configuration` beside `sdl` on the `graphql-assembly` roster, which makes the configuration one of that gatherer's own corpora rather than a corpus it leaks. The decode does not take the same widening: it walks the merged corpus the composition started from, the documents and nothing else, so the `sdl` gatherer's roster stays one corpus and the tag configuration cannot reach a transcription by construction. Composing the verdict a second time, reader-neutrally, is what the store did before, and it reported a federation `@link`'s imports as undeclared directives the build never sees.
