@@ -54,11 +54,26 @@ extend schema @assertContains(relation: "sql_routine_parameter", rows: """
 
 # The generated catalog's classes are read with their members, wherever the entry carrying them sits:
 # the corpus declares the catalog as a jar, and its Routines holder and its records are code facts like
-# a reactor class's. A routine's Configuration-first method is one of the holder's methods.
+# a reactor class's. Each holder method states the jOOQ form its signature offers: the
+# Configuration-first method EXECUTE, a Field-returning one VALUE, a Table-returning one TABLE.
 extend schema @assertContains(relation: "code_method", rows: """
-  class_name,                                             method_name,            is_static, result_erased_class
-  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  rentalCountForCustomer, TRUE,      java.lang.Integer
-  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  outboxEmit,             TRUE,
+  class_name,                                             method_name,            is_static, result_erased_class, form
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  rentalCountForCustomer, TRUE,      java.lang.Integer,   EXECUTE
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  rentalCountForCustomer, TRUE,      org.jooq.Field,      VALUE
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  outboxEmit,             TRUE,      ,                    EXECUTE
+  """)
+
+extend schema @assertContains(relation: "code_method", rows: """
+  class_name,                                             method_name,   form
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  filmsForActor, TABLE
+  no.sikt.graphitron.rewrite.test.jooq.public_.Routines,  filmsForActor, EXECUTE
+  """)
+
+# A method of no jOOQ shape offers no form, a service's or a record's accessor alike.
+extend schema @assertAbsent(relation: "code_method", rows: """
+  class_name,                                                    method_name, form
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, getTitle, EXECUTE
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, getTitle, VALUE
   """)
 
 extend schema @assertContains(relation: "code_method_parameter", rows: """

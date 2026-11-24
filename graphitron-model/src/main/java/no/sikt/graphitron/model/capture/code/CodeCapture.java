@@ -93,6 +93,9 @@ public final class CodeCapture {
     /** The return type a lifter must have to be nameable in {@code @externalField(reference:)}. */
     private static final String JOOQ_FIELD = "org.jooq.Field";
 
+    /** The return type of a routine's aggregate form. */
+    private static final String JOOQ_AGGREGATE_FUNCTION = "org.jooq.AggregateFunction";
+
     /** The type that lifter's sole parameter must be, which is the table it lifts from. */
     private static final String JOOQ_TABLE = "org.jooq.Table";
     private static final String JOOQ_TABLE_LIKE = "org.jooq.TableLike";
@@ -503,11 +506,12 @@ public final class CodeCapture {
             d -> val(deliveryNameOf(deliveryOf(d.at().returnTypeRefs(), containers)),
                 m.RESULT_DELIVERY),
             d -> val(firstArgumentOf(d.at().returnTypeRefs()), m.RESULT_FIRST_ARGUMENT_CLASS),
+            d -> val(formOf(d.at(), ancestry), m.FORM),
             d -> val(touchedAt, m.TOUCHED_AT)));
         BindBatch.execute(dsl, methodRows, markers ->
             dsl.insertInto(m, m.SOURCE_NAME, m.CLASS_NAME, m.METHOD_NAME, m.DESCRIPTOR, m.IS_STATIC,
                     m.RESULT_TYPE, m.RESULT_ERASED_CLASS, m.RESULT_ELEMENT_CLASS, m.RESULT_DELIVERY,
-                    m.RESULT_FIRST_ARGUMENT_CLASS, m.TOUCHED_AT)
+                    m.RESULT_FIRST_ARGUMENT_CLASS, m.FORM, m.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(m.IS_STATIC, excluded(m.IS_STATIC))
@@ -516,6 +520,7 @@ public final class CodeCapture {
                 .set(m.RESULT_ELEMENT_CLASS, excluded(m.RESULT_ELEMENT_CLASS))
                 .set(m.RESULT_DELIVERY, excluded(m.RESULT_DELIVERY))
                 .set(m.RESULT_FIRST_ARGUMENT_CLASS, excluded(m.RESULT_FIRST_ARGUMENT_CLASS))
+                .set(m.FORM, excluded(m.FORM))
                 .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT)));
         exceptions(dsl, found.stream()
             .map(d -> new Member(d.source(), d.className(), d.at()))
@@ -1385,6 +1390,32 @@ public final class CodeCapture {
                     .filter(ref -> JAVA_BOOLEAN.equals(ref.referencedClass())
                         && "NONE".equals(ref.variance()))
                     .isPresent();
+    }
+
+    /**
+     * The jOOQ call form a method's signature offers, on {@code code_method.form}'s terms. Read off the
+     * signature alone, whoever wrote the method: a generated {@code Routines} holder offers the forms
+     * because its methods have these shapes, and a hand-written method of the same shape offers them
+     * too. Only a static method offers one, every form being a call graphitron makes without a holder.
+     */
+    private static String formOf(ClassfileCensus.MethodAt method, ClassAncestry ancestry) {
+        if (!method.isStatic()) {
+            return "NONE";
+        }
+        if (!method.parameters().isEmpty()
+                && JOOQ_CONFIGURATION.equals(method.parameters().getFirst().type())) {
+            return "EXECUTE";
+        }
+        if (JOOQ_FIELD.equals(method.returnType())) {
+            return "VALUE";
+        }
+        if (JOOQ_AGGREGATE_FUNCTION.equals(method.returnType())) {
+            return "AGGREGATE";
+        }
+        if (ancestry.isA(method.returnType(), JOOQ_TABLE)) {
+            return "TABLE";
+        }
+        return "NONE";
     }
 
     /** Whether the lifter arm admits this method, which is every clause of its contract. */

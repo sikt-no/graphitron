@@ -6902,6 +6902,7 @@ CREATE TABLE code_method (
   result_element_class VARCHAR,
   result_delivery      VARCHAR,
   result_first_argument_class VARCHAR,
+  form        VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
   FOREIGN KEY (source_name, class_name)
@@ -6910,7 +6911,8 @@ CREATE TABLE code_method (
     ON DELETE CASCADE,
   CHECK (result_delivery IS NULL OR result_delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
   -- A peel lands on a class or it does not land, so the two say the same silence together.
-  CHECK ((result_element_class IS NULL) = (result_delivery IS NULL))
+  CHECK ((result_element_class IS NULL) = (result_delivery IS NULL)),
+  CHECK (form IN ('EXECUTE', 'VALUE', 'TABLE', 'AGGREGATE', 'NONE'))
 );
 COMMENT ON TABLE code_method IS 'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from. For example filmsByRating(DSLContext, String) on a consumer''s FilmService.';
 COMMENT ON COLUMN code_method.source_name IS 'the classpath entry the declaring class was read from; the key''s leading dimension. With the class beside it this row hangs on code_class, so a class a compile removed takes its methods with it rather than leaving them until the whole entry goes';
@@ -6922,6 +6924,7 @@ COMMENT ON COLUMN code_method.result_delivery IS 'how the result delivers that c
 COMMENT ON COLUMN code_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads apart, which no rendering of the erased types can: two methods taking same-named types from different packages render alike';
 COMMENT ON COLUMN code_method.is_static IS 'whether the method is static. A property of the declaration rather than of any directive, though it is what @service reads to decide whether a holder is needed and what @condition folds on before admitting a set of overloads as one target';
 COMMENT ON COLUMN code_method.result_first_argument_class IS 'the class the result type names as its first type argument, on code_method_parameter.first_argument_class'' terms, or NULL where it names none. Field<FilmRecord> says FilmRecord, which no peel reaches, a jOOQ Field being an expression of its argument rather than a container of it: what an @externalField method hands a field is this class, and a Field<Boolean> is what a condition method may return besides a Condition';
+COMMENT ON COLUMN code_method.form IS 'the jOOQ call form the method''s signature offers, whoever wrote it: EXECUTE for a static method taking an org.jooq.Configuration first, which runs a routine and returns its value; VALUE for a static method returning an org.jooq.Field, a routine called inside a statement; TABLE for a static method returning an org.jooq.Table, a table-valued function called in FROM; AGGREGATE for one returning an org.jooq.AggregateFunction; NONE for any other method. Decided when the classfile is read, as a parameter''s role is, because the table form asks whether the result is a Table through any number of supertypes and a rule over the stored rows could not climb the jOOQ runtime the classpath may not carry. A generated Routines holder offers the forms for each routine, and a hand-written method of the same shape offers them too';
 COMMENT ON COLUMN code_method.result_type IS 'the type the method results in, by reference. Not a relation of its own beside the parameters, because a result is the one thing a method has exactly one of and it carries neither a name nor an ordinal to be bound at: a parameter binds a type to a named position, and a result is the type';
 COMMENT ON COLUMN code_method.touched_at IS 'when the reading that produced this row ran; swept by the reading that replaces it';
 

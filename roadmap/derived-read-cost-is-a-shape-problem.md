@@ -713,16 +713,11 @@ classpath and catalog, and every reader reads that resolution rather than a view
 * **A scalar routine is a path element that lands on a value** `blocked`, on the children below.
   A scalar function reads at a root or projects in its parent's statement. jOOQ's routine model and
   what the store takes from it are in `roadmap/audits/2026-10-22-jooq-routine-model.md`.
-  * **A method's form is read off its signature** `open`. The `code_` family states, for every
-    public static method whose signature is jOOQ-shaped, the form it offers: execute (`Configuration`
-    first), value (a `Field` returned, over values or over fields), table (a `Table` returned) and
-    aggregate. A method written to these rules is available as if jOOQ had generated it, whoever
-    wrote it, so jOOQ's holder classes are read for their members like any other class.
-  * **A routine is enriched by the database construct behind it** `blocked`, on "A method's form is read off its signature". The `sql_` family states each routine jOOQ generated, read from its
+  * **A routine is enriched by the database construct behind it** `open`. The `sql_` family states each routine jOOQ generated, read from its
     `AbstractRoutine` instance found by type: qualified name with package, parameters with mode,
     `DataType` and default, and return, tied to the holder methods that call it by name and arity. A
     generated class that does not load is a stored fact, not a skip.
-  * **`@externalField` is `@routine`** `blocked`, on "A method's form is read off its signature". A
+  * **`@externalField` is `@routine`** `open`. A
     value form bound to the parent's table; its readers move to the form, and the directive is
     deprecated later as an alias.
     * **An `@externalField` method read without parameter names is `PARAMETER_NAMES_MISSING`**

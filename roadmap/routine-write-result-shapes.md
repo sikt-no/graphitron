@@ -153,9 +153,9 @@ This gives a routine's return and parameters as the ordinary typed facts every m
 
 No relation is added for a routine's return.
 
-An array's element is a rule change, stated at the type's grain. Today `code_type_element` says an
-array names no class. With this slice, `SakNoekkelRecord[]` delivers `SakNoekkelRecord`, many, the way
-`List<SakNoekkelRecord>` does. The DDL comment changes with it.
+An array's element is a rule change, stated at the type's grain, and it lands with slice 2, its first
+reader. Readers branch on `MANY` in 41 places, and a `@service` parameter typed as an array must not
+start binding as a list in the same commit that reads holder methods.
 
 ### 1. A routine returning one row of a table
 
@@ -224,7 +224,12 @@ column.
 
 ### 2. A list of node ids at a routine parameter
 
-What the routine receives is decided by the parameter's element class, as the census states it:
+What the routine receives is decided by the parameter's element class, as the census states it. That
+needs the array rule slice 0 left for here: `SakNoekkelRecord[]` delivers `SakNoekkelRecord` at the
+type's grain (`code_type_element`), its DDL comment changes with it, and the readers branching on
+`MANY` are audited in the same commit, so a `@service` parameter typed as an array is not bound as a
+list.
+
 
 1. **A UDT record**, as in `saksbehandling.sak_nokkel[]`. This is opptak's case and comes first: a bunt's
    elements are nodes, and `utsendingsbunt_legg_til_elementer` and `utsendingsbunt_fjern_elementer` take
@@ -287,7 +292,7 @@ column arms), 3 and 4. Slice 4 does not block 1 to 3, since opptak's slice write
 
 - **Slice 0:**
   - a fact document claiming the `code_method` forms and result classes of fixture holder methods,
-    including an array's element;
+    and the form each offers;
   - a sis capture timed before and after.
 - **Slice 1:**
   - sakila fixture routines returning one row of a table: a `VOLATILE` write that returns NULL on one
