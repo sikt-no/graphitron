@@ -7,7 +7,7 @@ priority: 1
 theme: nodeid
 depends-on: []
 created: 2026-11-16
-last-updated: 2026-11-16
+last-updated: 2026-11-24
 ---
 
 # Bound the cost of coercing key and tenant values, and the number of keys _entities and nodes take
@@ -26,4 +26,4 @@ Details are held outside the public tree; ask the maintainers.
 * Adjacent: `derived-read-cost-is-a-shape-problem` changes the `exact` and `folded` signatures, so whichever lands second rebases onto the other.
 * Open for Spec: where the limit is configured (a Maven plugin parameter baked into the generated code, or a runtime setting on the generated wiring) and its default; and whether the magnitude bound comes from the jOOQ `DataType` or from a fixed ceiling, since a `NUMERIC` with no declared precision has no column bound to read.
 * `R1190` is the sibling at the `graphitron-jakarta-rest` HTTP boundary; neither depends on the other.
-* Progress: the coercion bound has landed (the user waived the Spec and Ready gates for it), as `ColumnValues.inRange`, which `exact`, `coerce`, `folded` and `fromDatabase` and the release-candidate cursor reading ask first. The representation limit is still open; the principles-architect leaned toward a build-time parameter captured as its own `store_graph_*` relation, two limits rather than one, and noted that a finite default refuses requests that succeed today.
+* Progress: the coercion bound has landed (the user waived the Spec and Ready gates for it), as a private precondition of every `ColumnValues` entry point, so a value read at a column through that class is bounded and a reading that goes around it is the defect; the release-candidate cursor reading goes through `fromWire`. The user manual states the bound once, in the federation reference, pinned to the emitted constants by `NumericValueSizeDocTest`. The representation limit is still open; the principles-architect leaned toward a build-time parameter captured as its own `store_graph_*` relation, two limits rather than one, and noted that a finite default refuses requests that succeed today.
