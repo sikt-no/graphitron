@@ -1655,6 +1655,14 @@ generated Java or SQL as text.
   anchor under a global terminus or the table an object result's re-reading child reads, comes out
   `UNSCOPED`; the walk's tenant binding still refuses those until it goes, and the rule reads every
   table the write's re-read touches first.
+* **A `Mutation` root's `@routine` is store-owned** `blocked`, E's, on "A routine write's refusals are codes a stage writes", "A root routine's refusals are codes a stage writes" and "What the model admits the emitters follow". The walk maps a `Mutation` field led by `@routine` to
+  `StoreOwnedField` by its directive alone, as it does a `@service`, neither resolving nor judging it.
+  Fetcher ownership and the silencing of walk errors cover routine-write occurrences as they cover
+  service ones. Dispatch renders `RoutineWriteQuery`'s row by coordinate, and the edge target and the
+  operation members read the store. `MutationRoutineWriteField`, `MutationRoutineWriteRecordField` and
+  `RoutineDirectiveResolver`'s write seat go, their tests becoming fact documents. R454's one-row
+  routine waits on it, the walk refusing a routine that is not table-valued (Alf, 2026-11-24: the walk
+  gets no fixes, and the cleanup comes first).
 * **Operation members and delivery are read from their relations alone** `open`. The readers of
   `OperationMembers.membersOf` and `DeliveryFact.leafDerivedOf` move to the relations,
   `LauncherCommands`' two productions merge, and the crosswalk goes.
