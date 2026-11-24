@@ -6,7 +6,10 @@ The rules a Graphitron subgraph applies to Apollo Federation's `@key`. `@key` is
 
 == How an entity is resolved
 
-An entity is resolved by selecting its row from its table: `_entities` matches the values a representation carries against that table's columns, one batched statement per key alternative. Each `@key` on a type is one alternative. A representation is matched by the most specific resolvable alternative whose fields it carries, ties broken by declaration order. A key with `resolvable: false` is declared for reference only and is never matched. A key value that is no value of its column matches no row, and its representation answers `null` without reaching the database: `"abc"` or a number outside the column's range on a numeric column, and on any numeric column a number with more than 1000 fraction digits or text longer than 2016 characters.
+An entity is resolved by selecting its row from its table: `_entities` matches the values a representation carries against that table's columns, one batched statement per key alternative. Each `@key` on a type is one alternative. A representation is matched by the most specific resolvable alternative whose fields it carries, ties broken by declaration order. A key with `resolvable: false` is declared for reference only and is never matched. A key value that is no value of its column matches no row, and its representation answers `null` without reaching the database: `"abc"` or a number outside the column's range on a numeric column, or a value too large to read.
+
+[#numeric-value-size]
+A value too large to read is refused on its size, before anything parses it: on a numeric column, a number with more than 1000 fraction digits, or text longer than 2016 characters. The same bound holds for a tenant value, where a refused value is a client error (xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping]).
 
 A key over the node's own `id` is decoded rather than matched: the representation's `id` is a global node ID, decoded into the node's key columns as `Query.node` decodes it. The node's own `id` is an `id` field on a node type with no `@field`; an `id` carrying `@field(name:)` reads a column like any other field.
 
