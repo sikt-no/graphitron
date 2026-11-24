@@ -1,0 +1,39 @@
+# An ordering of a read whose rows are several tables' sorts every table's rows together by position,
+# so the tables' sort keys line up in number and, at each position, in type. Refused where written:
+# an index of one name covering one column on one participant's table and two on the other's, and a
+# column both tables hold at different types, through @defaultOrder and through an @order value. The
+# near misses draw nothing: an index of one name covering a column of one type under two names, and a
+# column both tables hold at one type, through @defaultOrder and through an @order value.
+
+type EventA @table(name: "multischema_a.event") { name: String }
+type EventB @table(name: "multischema_b.event") { code: String }
+union Event = EventA | EventB
+
+type NoteA @table(name: "multischema_a.note") { body: String }
+type NoteB @table(name: "multischema_b.note") { body: String }
+union Note = NoteA | NoteB
+
+type Customer @table(name: "customer") { lastName: String @field(name: "last_name") }
+type Staff @table(name: "staff") { lastName: String @field(name: "last_name") }
+union Occupant = Customer | Staff
+
+enum OccupantSort {
+  ACTIVE    @order(fields: [{name: "active"}])
+  LAST_NAME @order(fields: [{name: "last_name"}])
+}
+input OccupantOrder { field: OccupantSort! direction: SortDirection }
+
+type Query {
+  eventsByIndex: [Event!]! @defaultOrder(index: "event_order_idx")
+  notesByIndex: [Note!]! @defaultOrder(index: "note_order_idx")
+  occupantsByActive: [Occupant!]! @defaultOrder(fields: [{name: "active"}])
+  occupantsByName: [Occupant!]! @defaultOrder(fields: [{name: "last_name"}])
+  occupantsChosen(order: OccupantOrder @orderBy): [Occupant!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code = 'ORDER_POSITIONS_DISAGREE'", rows: """
+  source_line, code,                     detail
+  21,          ORDER_POSITIONS_DISAGREE, Query.occupantsChosen
+  27,          ORDER_POSITIONS_DISAGREE, Query.eventsByIndex
+  29,          ORDER_POSITIONS_DISAGREE, Query.occupantsByActive
+  """)

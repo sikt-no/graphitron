@@ -27060,8 +27060,9 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_method.touched_at IS 'the readi
 -- function table having none; an index or a column the table does not have, a plural routine write's
 -- read on its function table; an @orderBy argument whose type is no order input, so it offers no
 -- choice; a value of an @orderBy argument's sort enum with no @order; a client choice on a list read
--- inline in its parent's statement, which is not generated yet; and such a list, over a table with
--- no primary key, with no order written at all.
+-- inline in its parent's statement, which is not generated yet; such a list, over a table with no
+-- primary key, with no order written at all; and an order over several tables' rows whose tables'
+-- keys do not line up by position.
 CREATE VIEW graphitron_occurrence_order_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ORDER_PRIMARY_KEY_MISSING',
@@ -27204,6 +27205,41 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                       AND ob.directive_name = 'orderBy'
                     WHERE k.graph_name = o.graph_name AND k.parent_coordinate = o.coordinate
                       AND k.kind = 'FIELD_ARGUMENT')
+UNION ALL
+-- An order over a read whose rows are several tables', the participants' sort keys differing in count,
+-- or at one position in the column's database or bound Java type: the branches sort together by
+-- position, so each position takes one type, though the columns' names may differ. An order that is
+-- each participant's own primary key on every one is the keys', not compared here.
+SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ORDER_POSITIONS_DISAGREE',
+       r.coordinate, 'occurrence-orderings'
+  FROM graphitron_occurrence_order r
+  JOIN graphitron_directive_application ra
+    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
+   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
+  JOIN graphitron_occurrence_order s
+    ON s.graph_name = r.graph_name AND s.coordinate = r.coordinate AND s.choice = r.choice
+   AND s.bound <> r.bound
+ WHERE (r.surface <> 'PRIMARY_KEY' OR s.surface <> 'PRIMARY_KEY')
+   AND ((SELECT COUNT(*) FROM graphitron_occurrence_sort_key k
+          WHERE k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
+            AND k.choice = r.choice)
+        <> (SELECT COUNT(*) FROM graphitron_occurrence_sort_key k
+             WHERE k.graph_name = s.graph_name AND k.coordinate = s.coordinate AND k.bound = s.bound
+               AND k.choice = s.choice)
+     OR EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_column a
+                  JOIN sql_column ca
+                    ON ca.source_name = a.table_source_name AND ca.table_schema = a.table_schema
+                   AND ca.table_name = a.table_name AND ca.column_name = a.column_name
+                  JOIN graphitron_occurrence_sort_key_column b
+                    ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate AND b.bound = s.bound
+                   AND b.choice = a.choice AND b.position = a.position
+                  JOIN sql_column cb
+                    ON cb.source_name = b.table_source_name AND cb.table_schema = b.table_schema
+                   AND cb.table_name = b.table_name AND cb.column_name = b.column_name
+                 WHERE a.graph_name = r.graph_name AND a.coordinate = r.coordinate AND a.bound = r.bound
+                   AND a.choice = r.choice
+                   AND (ca.database_type IS DISTINCT FROM cb.database_type
+                        OR ca.binding_type IS DISTINCT FROM cb.binding_type)))
 UNION ALL
 -- A field below the root returning one object, looked up by keys covering no identifying key of its
 -- table, its keys' columns direct, a node id's own or carried back: several rows could match.
@@ -33287,6 +33323,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A @defaultOrder or @order writes other than exactly one of index, primaryKey: true and fields, so it does not say what to sort by: write one.'),
   ('ORDER_PRIMARY_KEY_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_PRIMARY_KEY_MISSING',
    'An ordering sorts by the primary key of a table that has none, so there is nothing to sort by: name the columns with fields, or an index.'),
+  ('ORDER_POSITIONS_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_POSITIONS_DISAGREE',
+   'An ordering of a read whose rows are several tables'' sorts every table''s rows together by position, and the tables'' keys differ in number, or at one position in their SQL or bound Java type, so no one sort column holds them all: name columns of one type in the same places on every participant.'),
   ('ORDER_INPUT_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_INPUT_SHAPE',
    'An @orderBy argument''s type is not an input object with exactly one field typed as an enum whose values carry @order or @index and exactly one other enum field, the direction, so it offers the client no order to pick: give the input type one of each, told apart by type rather than name.'),
   ('ORDER_FIELD_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELD_SHAPE',
@@ -35217,7 +35255,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_order_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the ordering defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_entry_defect, @defaultOrder(primaryKey: true) on a list over a table with no primary key giving one ORDER_PRIMARY_KEY_MISSING row at the application.',
-   'What an ordering cannot state, stated beside the orders: a list whose order is not stated is read in whatever order the database returns. Six are rules the walk enforces (OrderByResolver and GraphitronSchemaValidator): a primary key, an index or a column the table lacks, a malformed element, a sort value without @order, an inline list over a keyless table with no order. ORDER_SURFACES is the manual''s rule, stricter than the walk, which takes the first surface written. ORDER_CHOICE_ON_INLINE_LIST is a deferral for a shape the walk throws on. Each sits at the written application or element, so an @order value used by two fields is one defect.'),
+   'What an ordering cannot state, stated beside the orders: a list whose order is not stated is read in whatever order the database returns. Six are rules the walk enforces (OrderByResolver and GraphitronSchemaValidator): a primary key, an index or a column the table lacks, a malformed element, a sort value without @order, an inline list over a keyless table with no order. ORDER_SURFACES is the manual''s rule, stricter than the walk, which takes the first surface written. ORDER_CHOICE_ON_INLINE_LIST is a deferral for a shape the walk throws on. ORDER_POSITIONS_DISAGREE is the walk''s fold of several tables'' orders by position (FieldBuilder.foldParticipantOrderings). Each sits at the written application or element, so an @order value used by two fields is one defect.'),
   ('graphitron_outbox_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.',

@@ -86,8 +86,6 @@ public final class RootQuery {
          * connection or a lookup over them.
          */
         POLYMORPHIC,
-        /** Its rows are several tables', and an order other than each table's own key sorts them. */
-        POLYMORPHIC_ORDERED,
         /** Its rows are several tables', and a node-id argument names one of them by the id's type. */
         NODE_ID_DISPATCH,
         /**
@@ -168,15 +166,53 @@ public final class RootQuery {
     /**
      * A root whose rows are several tables', each type's rows those of its own table: its occurrence
      * and field, whether it reads a list, and each participant with its table and the condition method
-     * that table has, {@code null} where it has none. Its rows come in key order, then by type.
+     * that table has, {@code null} where it has none, and how its rows are ordered, {@code null} where
+     * they come in each table's key order, then by type.
      */
     public record MultiTable(String coordinate, String parentType, String fieldName, boolean list,
-                             List<Branch> branches) implements Result {
+                             List<Branch> branches, Ordered ordered) implements Result {
         public MultiTable {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(parentType, "parentType");
             Objects.requireNonNull(fieldName, "fieldName");
             branches = List.copyOf(branches);
+        }
+    }
+
+    /**
+     * How a root over several tables orders its rows: the {@code @orderBy} argument a client picks an
+     * order by, {@code null} where it has none, the order read where the client picks none, and each
+     * order the argument offers, in its sort enum's order.
+     */
+    public record Ordered(OrderArgument argument, Order base, List<Order> named) {
+        public Ordered {
+            Objects.requireNonNull(base, "base");
+            named = List.copyOf(named);
+        }
+    }
+
+    /**
+     * An {@code @orderBy} argument of a root over several tables: its name, its input type, whether it
+     * is required and whether it takes a list of orders, and the input's sort and direction fields.
+     */
+    public record OrderArgument(String name, String inputType, boolean nonNull, boolean list, String sortField,
+                                String directionField) {}
+
+    /**
+     * One order of a root over several tables: the sort enum value naming it, {@code null} for the order
+     * read where the client picks none, and either the direction it reads every table's own key in, or
+     * its keys by position, each taking one column per participant type.
+     */
+    public record Order(String name, String keyDirection, List<Position> positions) {
+        public Order {
+            positions = List.copyOf(positions);
+        }
+    }
+
+    /** One position of an order over several tables: each participant type's key, and the position's direction and collation. */
+    public record Position(Map<String, Key> keyByType, String direction, String collation) {
+        public Position {
+            keyByType = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(keyByType));
         }
     }
 
@@ -414,11 +450,9 @@ public final class RootQuery {
             .where(x.GRAPH_NAME.eq(graph), x.COORDINATE.eq(coordinate), x.RECOGNIZED_BY.eq("TABLE"))
             .orderBy(x.PARTICIPANT_TYPE)
             .fetch();
-        var od = GRAPHITRON_OCCURRENCE_ORDER;
-        if (store.dsl().fetchExists(od, od.GRAPH_NAME.eq(graph), od.COORDINATE.eq(coordinate),
-                od.KIND.eq("CHOICE").or(od.SURFACE.notIn("PRIMARY_KEY", "IMPLICIT_PRIMARY_KEY"))
-                    .or(od.DIRECTION.eq("DESC")))) {
-            return new NotYet(coordinate, Reason.POLYMORPHIC_ORDERED);
+        var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
+        if (store.dsl().fetchExists(sk, sk.GRAPH_NAME.eq(graph), sk.COORDINATE.eq(coordinate), sk.KIND.ne("COLUMN"))) {
+            return new NotYet(coordinate, Reason.SORT_KEY_NOT_A_COLUMN);
         }
         var ni = GRAPHITRON_OCCURRENCE_NODE_ID;
         var oa = GRAPHITRON_OCCURRENCE;
@@ -431,6 +465,7 @@ public final class RootQuery {
         }
         var tc = GRAPHITRON_TENANT_COLUMN;
         var branches = new ArrayList<Branch>();
+        var byBound = new LinkedHashMap<String, Branch>();
         for (var participant : participants) {
             if (store.dsl().fetchExists(tc, tc.GRAPH_NAME.eq(graph), tc.SOURCE_NAME.eq(participant.value2()),
                     tc.TABLE_SCHEMA.eq(participant.value3()), tc.TABLE_NAME.eq(participant.value4()))) {
@@ -440,13 +475,144 @@ public final class RootQuery {
             if (table == null) {
                 return new NotYet(coordinate, Reason.NOT_ONE_TABLE);
             }
-            branches.add(new Branch(participant.value1(), table,
-                signatures.get(List.of(coordinate, participant.value3() + "." + participant.value4()))));
+            String bound = participant.value3() + "." + participant.value4();
+            var branch = new Branch(participant.value1(), table, signatures.get(List.of(coordinate, bound)));
+            branches.add(branch);
+            byBound.put(bound, branch);
         }
         if (branches.isEmpty()) {
             return new NotYet(coordinate, Reason.POLYMORPHIC);
         }
-        return new MultiTable(coordinate, at.parentType(), at.fieldName(), "RECORD_LIST".equals(at.shape()), branches);
+        return new MultiTable(coordinate, at.parentType(), at.fieldName(), "RECORD_LIST".equals(at.shape()), branches,
+            ordered(store, coordinate, byBound));
+    }
+
+    /**
+     * How a root over several tables orders its rows, read off its orders per participant table:
+     * {@code null} where its one order is each table's own key ascending and no argument chooses
+     * another. An order whose keys are each table's own primary key, in one direction, reads the keys;
+     * any other its keys by position, which line up across the tables, {@code ORDER_POSITIONS_DISAGREE}
+     * refusing an order whose do not.
+     */
+    private static Ordered ordered(StoreHandle store, String coordinate, Map<String, Branch> typeByBound) {
+        var graph = store.graphName();
+        var od = GRAPHITRON_OCCURRENCE_ORDER;
+        var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
+        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var ev = GRAPHITRON_ENUM_VALUE;
+        var c = SQL_COLUMN;
+        var rows = store.dsl()
+            .select(od.CHOICE, od.KIND, ev.VALUE_NAME, od.BOUND, sk.POSITION, sk.DIRECTION, sk.COLLATION,
+                c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE, c.NULLABLE)
+            .from(od)
+            .leftJoin(ev).on(ev.GRAPH_NAME.eq(od.GRAPH_NAME), ev.COORDINATE.eq(od.CHOICE), od.KIND.eq("CHOICE"))
+            .leftJoin(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.COORDINATE.eq(od.COORDINATE), sk.BOUND.eq(od.BOUND),
+                sk.CHOICE.eq(od.CHOICE))
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
+                kc.CHOICE.eq(sk.CHOICE), kc.POSITION.eq(sk.POSITION))
+            .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
+            .where(od.GRAPH_NAME.eq(graph), od.COORDINATE.eq(coordinate))
+            .orderBy(od.KIND.desc(), ev.ORDINAL, od.BOUND, sk.POSITION)
+            .fetch(r -> new SortRow(r.value1(), r.value2(), r.value3(), r.value4(),
+                r.value8() == null ? null : new Key(new ColumnRef(r.value8(), r.value9(), r.value10(), r.value11()),
+                    Boolean.TRUE.equals(r.value12()), r.value6(), r.value7())));
+        // Each order, by its choice, in the enum's order after the default, its keys by bound.
+        var byChoice = new LinkedHashMap<String, LinkedHashMap<String, List<Key>>>();
+        var kindOf = new LinkedHashMap<String, SortRow>();
+        for (var row : rows) {
+            kindOf.putIfAbsent(row.choice(), row);
+            var byBound = byChoice.computeIfAbsent(row.choice(), k -> new LinkedHashMap<>());
+            var keys = byBound.computeIfAbsent(row.bound(), k -> new ArrayList<>());
+            if (row.key() != null) {
+                keys.add(row.key());
+            }
+        }
+        Order base = null;
+        var named = new ArrayList<Order>();
+        for (var entry : byChoice.entrySet()) {
+            var head = kindOf.get(entry.getKey());
+            if ("CHOICE".equals(head.kind())) {
+                named.add(order(coordinate, head.valueName(), entry.getValue(), typeByBound));
+            } else {
+                base = order(coordinate, null, entry.getValue(), typeByBound);
+            }
+        }
+        if (base == null) {
+            base = new Order(null, "ASC", List.of());
+        }
+        var argument = orderArgument(store, coordinate);
+        if (argument == null && "ASC".equals(base.keyDirection())) {
+            return null;
+        }
+        return new Ordered(argument, base, argument == null ? List.of() : named);
+    }
+
+    /** One stored order row of a root over several tables: its choice, kind and enum value, its table, and one key. */
+    private record SortRow(String choice, String kind, String valueName, String bound, Key key) {}
+
+    /** One order over several tables from its keys by bound: on every table's own key, or by position. */
+    private static Order order(String coordinate, String name, Map<String, List<Key>> byBound,
+                               Map<String, Branch> typeByBound) {
+        String keyDirection = null;
+        boolean onKeys = true;
+        for (var entry : byBound.entrySet()) {
+            var keys = entry.getValue();
+            var primaryKey = typeByBound.get(entry.getKey()).table().primaryKeyColumns();
+            if (keys.size() != primaryKey.size()) {
+                onKeys = false;
+            }
+            for (int i = 0; onKeys && i < keys.size(); i++) {
+                var key = keys.get(i);
+                if (!key.column().sqlName().equalsIgnoreCase(primaryKey.get(i).sqlName())
+                        || keyDirection != null && !keyDirection.equals(key.direction())) {
+                    onKeys = false;
+                }
+                keyDirection = key.direction();
+            }
+        }
+        if (onKeys) {
+            return new Order(name, keyDirection == null ? "ASC" : keyDirection, List.of());
+        }
+        int arity = byBound.values().iterator().next().size();
+        if (byBound.values().stream().anyMatch(keys -> keys.size() != arity)) {
+            throw new IllegalStateException("Graphitron generator bug (root order across participants): order "
+                + (name == null ? "default" : name) + " of " + coordinate + " has keys differing in number"
+                + " across its tables, which ORDER_POSITIONS_DISAGREE refuses before generation");
+        }
+        var positions = new ArrayList<Position>();
+        for (int i = 0; i < arity; i++) {
+            var keyByType = new LinkedHashMap<String, Key>();
+            Key first = null;
+            for (var entry : byBound.entrySet()) {
+                var key = entry.getValue().get(i);
+                keyByType.put(typeByBound.get(entry.getKey()).typeName(), key);
+                if (first == null) {
+                    first = key;
+                }
+            }
+            positions.add(new Position(keyByType, first.direction(), first.collation()));
+        }
+        return new Order(name, null, positions);
+    }
+
+    /** The {@code @orderBy} argument a root over several tables offers its orders by, {@code null} where it has none. */
+    private static OrderArgument orderArgument(StoreHandle store, String coordinate) {
+        var od = GRAPHITRON_OCCURRENCE_ORDER;
+        var ao = GRAPHITRON_OCCURRENCE.as("ao");
+        var ga = GRAPHITRON_ARGUMENT;
+        var oi = GRAPHITRON_ORDER_INPUT;
+        return store.dsl()
+            .selectDistinct(ao.NAME, ga.NAMED_TYPE, ga.NON_NULL, ga.LIST_DEPTH, oi.SORT_FIELD_NAME,
+                oi.DIRECTION_FIELD_NAME)
+            .from(od)
+            .join(ao).on(ao.GRAPH_NAME.eq(od.GRAPH_NAME), ao.COORDINATE.eq(od.ARGUMENT_COORDINATE))
+            .join(ga).on(ga.GRAPH_NAME.eq(ao.GRAPH_NAME), ga.COORDINATE.eq(ao.ELEMENT_COORDINATE))
+            .join(oi).on(oi.GRAPH_NAME.eq(ga.GRAPH_NAME), oi.TYPE_NAME.eq(ga.NAMED_TYPE))
+            .where(od.GRAPH_NAME.eq(store.graphName()), od.COORDINATE.eq(coordinate), od.KIND.eq("CHOICE"))
+            .limit(1)
+            .fetchOne(r -> new OrderArgument(r.value1(), r.value2(), Boolean.TRUE.equals(r.value3()), r.value4() > 0,
+                r.value5(), r.value6()));
     }
 
     /**

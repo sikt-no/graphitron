@@ -1003,13 +1003,17 @@ static method needs no holder.
     order, is the store's too: its participants off `graphitron_occurrence_participant`, each branch's
     condition call off `graphitron_occurrence_condition_signature` at the participant's table, fed to
     `MultiTablePolymorphicEmitter` in place of the walk's field. One a node-id argument dispatches by
-    the id's type waits as `NODE_ID_DISPATCH`; one in another order waits as `POLYMORPHIC_ORDERED`
-    for the ordered slice. The walk's refusals of a multi-table root are store codes owed before this
+    the id's type waits as `NODE_ID_DISPATCH`. One ordered across its participants, by a
+    `@defaultOrder` or an `@orderBy` choice taking one order or a list, is the store's too, its order
+    read per participant table off `graphitron_occurrence_order` and its sort keys, lined up by
+    position; `ORDER_POSITIONS_DISAGREE` refuses an order whose tables' keys differ in number or, at a
+    position, in type, which the walk's fold refused, and the reader takes the alignment as an
+    invariant. `ORDERING_ACROSS_PARTICIPANTS` still exempts the root lists by their spelling; it moves
+    onto the producer facts when that defect's stage follows the producers'. The walk's refusals of a multi-table root are store codes owed before this
     route's walk code goes: a participant table without a primary key, participants whose keys
     differ in arity, and a filter argument the branch call cannot extract (an input bean); the shared
     table is `PARTICIPANTS_SHARE_A_TABLE` already.
-    Ordered across participants comes next (the order rows per participant table are the slots, and
-    `ORDERING_ACROSS_PARTICIPANTS` moves onto the producer facts), then the connections over them. Faceted connections and
+    The connections over several tables come next. Faceted connections and
     an order argument taking a list remain beside them. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds

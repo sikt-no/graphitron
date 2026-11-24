@@ -350,9 +350,11 @@ class EmissionCensusTest {
                 .containsExactly("Query.internalNode", "Query.node", "Query.nodes");
             soft.assertThat(multiTables).as("the roots over several tables the store emits").containsExactly(
                 "Query.documents", "Query.occupantsByAddress", "Query.occupantsByFilter",
-                "Query.occupantsByMixedNamePrefix", "Query.occupantsByName", "Query.occupantsByNamePrefix",
-                "Query.occupantsByStoreId", "Query.occupantsByTypedNamePrefix", "Query.occupantsStartingWithM",
-                "Query.search", "Query.stockByLanguage", "Query.stockByLanguageOverride");
+                "Query.occupantsByLastName", "Query.occupantsByMixedNamePrefix", "Query.occupantsByName",
+                "Query.occupantsByNamePrefix", "Query.occupantsByStoreId", "Query.occupantsByTypedNamePrefix",
+                "Query.occupantsOrdered", "Query.occupantsOrderedByKey", "Query.occupantsOrderedByList",
+                "Query.occupantsStartingWithM", "Query.search", "Query.stockByLanguage",
+                "Query.stockByLanguageOverride");
             soft.assertThat(emitted).as("the roots the store emits").containsExactly(
                 "Query.actorsByFilmFilter", "Query.actorsByFilmFilterConnection", "Query.actorsByFilmIds",
                 "Query.addressesByCountryName", "Query.addressesByCustomerIds",
@@ -430,16 +432,13 @@ class EmissionCensusTest {
                     "Query.occupantsByIdsConnection", "Query.occupantsByNameConnection",
                     "Query.occupantsOrderedConnection", "Query.pagedItems", "Query.pagedItemsByName",
                     "Query.searchConnection"))
-                .containsEntry("POLYMORPHIC_ORDERED", List.of(
-                    "Query.occupantsByLastName", "Query.occupantsOrdered", "Query.occupantsOrderedByKey",
-                    "Query.occupantsOrderedByList"))
                 .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
                     "Query.allContentByFilmTitle", "Query.allContentConnectionByFilmTitle",
                     "Query.filmsByLanguages", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
                     "Query.filmsByOriginalLanguage", "Query.filmsByOriginalLanguageDescList",
                     "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList"))
                 .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID",
-                    "NODE_ID_DISPATCH", "ORDER_ARGUMENT_LIST", "POLYMORPHIC", "POLYMORPHIC_ORDERED",
+                    "NODE_ID_DISPATCH", "ORDER_ARGUMENT_LIST", "POLYMORPHIC",
                     "SORT_KEY_NOT_A_COLUMN");
         });
     }

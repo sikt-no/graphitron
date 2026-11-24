@@ -218,17 +218,20 @@ public class TypeFetcherGenerator {
     /**
      * A root over several tables as the store states it: its participants and their tables, each
      * branch filtered by its table's condition method as its stored signature calls it, no node-id
-     * dispatch, and rows in key order, then by type.
+     * dispatch, and its rows in the order the store states, else in key order, then by type.
      */
     private static List<MethodSpec> storeMultiTableMethods(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.emit.RootQuery.MultiTable multiTable, CompositeDecodeHelperRegistry registry,
             String outputPackage) {
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
         var participants = new ArrayList<no.sikt.graphitron.rewrite.model.ParticipantRef>();
+        var byType = new LinkedHashMap<String, no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound>();
         var glue = new LinkedHashMap<String, no.sikt.graphitron.command.GlueCall>();
         for (var branch : multiTable.branches()) {
-            participants.add(new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound(branch.typeName(),
-                branch.table(), null, List.of()));
+            var participant = new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound(branch.typeName(),
+                branch.table(), null, List.of());
+            participants.add(participant);
+            byType.put(branch.typeName(), participant);
             if (branch.condition() != null) {
                 glue.put(branch.typeName(), new no.sikt.graphitron.command.GlueCall(
                     units.participantConditionMethod(multiTable.parentType(), multiTable.fieldName(), branch.typeName()),
@@ -237,7 +240,86 @@ public class TypeFetcherGenerator {
         }
         return MultiTablePolymorphicEmitter.emitMethods(ctx, multiTable.parentType(), multiTable.fieldName(),
             participants, MultiTablePolymorphicEmitter.BranchWhere.ofGlue(glue), List.of(), registry,
-            multiTable.list(), Optional.empty(), outputPackage);
+            multiTable.list(), Optional.ofNullable(multiTable.ordered()).map(ordered -> orderingOf(ordered, byType)),
+            outputPackage);
+    }
+
+    /**
+     * The store's order of a root over several tables as the emitter takes it: one slot per primary-key
+     * position, one per distinct set of the participants' columns its orders sort by, and each order on
+     * the slots, or on the keys where it reads every table's own key.
+     */
+    private static no.sikt.graphitron.rewrite.model.PolymorphicOrdering orderingOf(
+            no.sikt.graphitron.emit.RootQuery.Ordered ordered,
+            Map<String, no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound> byType) {
+        var participants = List.copyOf(byType.values());
+        var key = new ArrayList<no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Slot>();
+        int arity = participants.getFirst().table().primaryKeyColumns().size();
+        for (int i = 0; i < arity; i++) {
+            var columns = new LinkedHashMap<no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound,
+                no.sikt.graphitron.model.jooq.ColumnRef>();
+            for (var participant : participants) {
+                columns.put(participant, participant.table().primaryKeyColumns().get(i));
+            }
+            key.add(new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Slot(i,
+                participants.getFirst().table().primaryKeyColumns().get(i).columnClass(), columns, false));
+        }
+        var slots = new ArrayList<no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Slot>();
+        var named = new ArrayList<no.sikt.graphitron.rewrite.model.PolymorphicOrdering.SlotOrder>();
+        for (var order : ordered.named()) {
+            named.add(slotOrderOf(order, byType, slots));
+        }
+        var base = slotOrderOf(ordered.base(), byType, slots);
+        var argument = ordered.argument();
+        var surface = argument == null
+            ? (no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Surface)
+                new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Surface.Fixed()
+            : new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Surface.Argument(argument.name(),
+                argument.inputType(), argument.nonNull(), argument.list(), argument.sortField(),
+                argument.directionField());
+        return new no.sikt.graphitron.rewrite.model.PolymorphicOrdering(participants, surface, key, slots, named,
+            base);
+    }
+
+    /** One stored order on the slots, adding a slot for each set of the participants' columns not seen yet. */
+    private static no.sikt.graphitron.rewrite.model.PolymorphicOrdering.SlotOrder slotOrderOf(
+            no.sikt.graphitron.emit.RootQuery.Order order,
+            Map<String, no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound> byType,
+            List<no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Slot> slots) {
+        if (order.keyDirection() != null) {
+            var direction = no.sikt.graphitron.rewrite.model.OrderBySpec.SortDirection.valueOf(order.keyDirection());
+            return new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.SlotOrder.OnPrimaryKey(order.name(),
+                direction, direction == no.sikt.graphitron.rewrite.model.OrderBySpec.SortDirection.ASC);
+        }
+        var entries = new ArrayList<no.sikt.graphitron.rewrite.model.PolymorphicOrdering.SlotEntry>();
+        boolean uniformAsc = true;
+        for (var position : order.positions()) {
+            var columns = new LinkedHashMap<no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound,
+                no.sikt.graphitron.model.jooq.ColumnRef>();
+            boolean nullable = false;
+            for (var entry : position.keyByType().entrySet()) {
+                columns.put(byType.get(entry.getKey()), entry.getValue().column());
+                nullable |= entry.getValue().nullable();
+            }
+            int ordinal = -1;
+            for (var slot : slots) {
+                if (slot.columnByParticipant().equals(columns)) {
+                    ordinal = slot.ordinal();
+                    break;
+                }
+            }
+            if (ordinal < 0) {
+                ordinal = slots.size();
+                slots.add(new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Slot(ordinal,
+                    columns.firstEntry().getValue().columnClass(), columns, nullable));
+            }
+            var direction = no.sikt.graphitron.rewrite.model.OrderBySpec.SortDirection.valueOf(position.direction());
+            uniformAsc &= direction == no.sikt.graphitron.rewrite.model.OrderBySpec.SortDirection.ASC;
+            entries.add(new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.SlotEntry(ordinal, direction,
+                position.collation()));
+        }
+        return new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.SlotOrder.OnSlots(order.name(), entries,
+            uniformAsc);
     }
 
     /**
