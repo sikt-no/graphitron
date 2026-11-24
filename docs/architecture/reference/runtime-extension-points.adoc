@@ -345,6 +345,27 @@ the rejection itself for a voucher check or the limit, which carries no token co
 graphitron-jakarta-rest's `rejectedRequest(Throwable)` receives that value, so an adapter tells an
 identity fault from an outage by it.
 
+A request's vouched-for values share one vouched connection (Filip, 2026-11-23). A router batches every
+representation bound for a subgraph into one `_entities` call, so a list whose rows belong to different
+owners presents several vouched-for values at once. They are read on one connection mounted for the
+whole set, not on a connection per value: a value's connection is held until the subtree below its
+entities is read, so a connection per value grows with the list. The key's vouched-for part is a set of
+rows, one component per vouched-for field, so a voucher's grant stays whole where it vouches for several
+fields, and the database's policies test membership in the set.
+
+The set is type-blind (Filip, 2026-11-24). A row names values, not the accepting type a voucher was
+presented for, so two accepting types whose vouched-for fields share a name and a type share values, and
+a policy on either table admits values vouched for the other. That is accepted: there is no known case
+of an issuing subgraph vouching for a value to a caller for one accepting type and not for the other.
+
+The set is bounded by a runtime hook, not by the schema (Filip, 2026-11-24). How many distinct
+vouched-for values one request admits is asked of a limit the consumer gives the runtime
+(`withVouchedValueLimit`), a hook shaped like `BatchSizeLimit` and taking the `_entities` field's
+environment, once per request. Without one the limit is 1000, sized to a list, since a voucher per entity presents one
+value per row. It bounds what one request costs the database and grants nothing, since every admitted
+value was vouched for to the same caller. Unlike `BatchSizeLimit` it fails closed: an answer below 1
+admits no value.
+
 No default tenant and no `@defaultTenant` (Alf, 2026-11-17). The request names no default tenant:
 which pool serves the key whose tenant part is empty is the source's decision, so every read and write
 of a global table runs on that key and there is no separate global-read route. `@defaultTenant` goes
