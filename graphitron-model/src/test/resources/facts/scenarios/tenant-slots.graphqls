@@ -3,11 +3,21 @@
 # record binds to film_id, and a node id whose key is film_id. A value a call may be given none of
 # is said by graphitron_occurrence_optional, whatever its slot; how each is present, once or once per
 # element of a list the call's own argument holds, is stated on the slot, a fact of its occurrence.
+#
+# A stub node, one this subgraph does not fetch by its id, routes a call by its key all the same (Alf,
+# 2026-11-24): FilmActorCode's key holds film_id, so the decoded record names the call's tenant and
+# Query.filmActorByStub has a slot its call is routed by. InventoryCode's key leaves film_id out, so
+# Query.inventoryByStub has none and runs unscoped, its children inheriting that.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
+
+type FilmActorCode implements Node @table(name: "film_actor") @node(resolvable: false) { id: ID! }
+type InventoryCode implements Node @table(name: "inventory") @node(resolvable: false) { id: ID! }
+input FilmActorPick { id: ID! @nodeId(typeName: "FilmActorCode") }
+input InventoryPick { id: ID! @nodeId(typeName: "InventoryCode") }
 
 input FilmIn @table(name: "film") {
   filmId: Int! @field(name: "film_id")
@@ -30,6 +40,12 @@ type Query {
   filmByNode(in: ID! @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
       method: "modifyFilmRecord"})
+  filmActorByStub(in: FilmActorPick!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyFilmActorRecord"})
+  inventoryByStub(in: InventoryPick!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyInventoryRecord"})
 }
 
 # What an author wrote: the pair and the directive are one fact, told apart by where it was written.
@@ -48,6 +64,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows:
   Query.markedFilms,  AUTHORED,      Query.markedFilms(ids:),        ,             FALSE,      TRUE,        TRUE
   Query.filmByRecord, RECORD_COLUMN, Query.filmByRecord(in.filmId:), ,             TRUE,       FALSE,       TRUE
   Query.filmByNode,   NODE_ID_KEY,   Query.filmByNode(in:),          0,            TRUE,       FALSE,       TRUE
+  Query.filmActorByStub, NODE_ID_KEY, Query.filmActorByStub(in.id:), 1,          TRUE,       FALSE,       TRUE
   """)
 
 # Every tenant value here is required; the record's title, which names no tenant, may be left out.

@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.InventoryRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
 import org.jooq.Record1;
@@ -78,6 +79,17 @@ public final class FilmRecordService {
             return "none";
         }
         return "filmActor:" + in.getActorId() + ":" + in.getFilmId();
+    }
+
+    /**
+     * Inventory root: a jOOQ {@link InventoryRecord}, whose key {@code inventory_id} leaves out the
+     * table's {@code film_id}, so a node id decoding it carries no film. Reads the key back.
+     */
+    public static String modifyInventoryRecord(InventoryRecord in) {
+        if (in == null) {
+            return "none";
+        }
+        return "inventory:" + in.getInventoryId();
     }
 
     /**

@@ -1150,13 +1150,6 @@ static method needs no holder.
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
 * **A $context pair on @condition fills its parameter** `open`: the walk's `@condition` parse (`ArgMappingSigil.scan` at `Site.CONDITION`, read by `BuildContext.readConditionDirective`) rejects every `$context` pair, its errors on a condition are not silenced, and where `ConditionEmitter` defers the walk emits the condition with a context argument read by parameter name, so a pair keyed apart from its parameter has no walk equivalent. Once the walk stops judging and emitting conditions the node is one commit of two store changes. First, in `graphitron_occurrence_condition_parameter_rule` the `CONTEXT_KEY` rule's `NOT EXISTS paired` passes over a pair bound to `$context.%`, and its "no element has its name" condition holds only for `contextArguments` keys (`graphitron_call_context_key.origin` `CONTEXT_ARGUMENTS`), a written pair outranking an element of its name as `$session` does; `paired` keeps the pair, so the element and by-type rules stay off that parameter. Second, `CONTEXT_SITE_UNSUPPORTED`, in both rules that raise it, exempts `directive_name` `condition` with `owner` `condition` beside `@service`, a reference step's condition staying refused; its statement and the manual follow. `ConditionEmitter` already emits a `CONTEXT_KEY` fill.
-* **A stub node at a root @service is routed by its key, or refused, as Alf rules** `open`, off the
-  critical path. A stub node type whose key holds the tenant column mints a tenant slot at a root
-  `@service` taking its record, so the call is routed; the walk refused the same shape as the stub
-  being no node type. A stub whose key does not hold it routes nothing, the root running on the empty
-  tenant part and its children inheriting that, where the walk refused the child as having no tenant
-  established. Which verdict stands is Alf's; the chosen one is pinned in `tenant-slots` with its
-  near miss.
 * **A @reference written beside a child @service is refused under a code of its own** `open`, off
   the critical path. `Film.language: Language @service(...) @reference(path: [{key: "film_language_id_fkey"}])`,
   the service handing back language records, was accepted by the walk, which walked the key from
