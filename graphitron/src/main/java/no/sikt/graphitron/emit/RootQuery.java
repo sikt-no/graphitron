@@ -81,10 +81,7 @@ public final class RootQuery {
         LOOKUP_NODE_ID,
         /** A {@code @lookupKey} key's value is converted on its way to the column: an {@code ID} or an enum. */
         LOOKUP_KEY_CONVERTED,
-        /**
-         * Its rows may be several types', told apart by the table each is a row of, and it is a
-         * connection or a lookup over them.
-         */
+        /** Its rows may be several types', told apart by the table each is a row of, and it is a lookup over them. */
         POLYMORPHIC,
         /** Its rows are several tables', and a node-id argument names one of them by the id's type. */
         NODE_ID_DISPATCH,
@@ -166,11 +163,12 @@ public final class RootQuery {
     /**
      * A root whose rows are several tables', each type's rows those of its own table: its occurrence
      * and field, whether it reads a list, and each participant with its table and the condition method
-     * that table has, {@code null} where it has none, and how its rows are ordered, {@code null} where
-     * they come in each table's key order, then by type.
+     * that table has, {@code null} where it has none, how its rows are ordered, {@code null} where
+     * they come in each table's key order, then by type, and for a connection the page it serves where
+     * the client asks for none, {@code null} for a list or a record.
      */
     public record MultiTable(String coordinate, String parentType, String fieldName, boolean list,
-                             List<Branch> branches, Ordered ordered) implements Result {
+                             List<Branch> branches, Ordered ordered, Integer pageSize) implements Result {
         public MultiTable {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(parentType, "parentType");
@@ -385,7 +383,10 @@ public final class RootQuery {
             Reason reason = null;
             var told = discriminated.get(at.coordinate());
             if (Boolean.TRUE.equals(row.value10()) && told == null) {
-                out.put(at.coordinate(), multiTable(store, at, connection, signatures));
+                Integer pageSize = !connection ? null
+                    : row.value18() != null ? row.value18() : ConnectionDefaults.defaultPageSize(maxPageSize);
+                out.put(at.coordinate(), multiTable(store, at, Boolean.TRUE.equals(row.value11()), pageSize,
+                    signatures));
                 continue;
             }
             if (told != null && told.reason() != null) reason = told.reason();
@@ -432,16 +433,21 @@ public final class RootQuery {
 
     /**
      * A root over several tables, each participant's rows those of its own table: stated whole where it
-     * is a list or a record read in each table's key order, no node-id argument names a participant
-     * by the id's type, and no participant's table carries the tenant column.
+     * is a list, a record or a connection without facets, no node-id argument names a participant by the
+     * id's type, and no participant's table carries the tenant column. {@code pageSize} is a
+     * connection's page where the client asks for none, {@code null} for a list or a record.
      */
-    private static Result multiTable(StoreHandle store, Producer at, boolean connection,
+    private static Result multiTable(StoreHandle store, Producer at, boolean faceted, Integer pageSize,
                                      Map<List<String>, Signature> signatures) {
         var graph = store.graphName();
         String coordinate = at.coordinate();
-        if (connection || "LOOKUP".equals(at.kind())
-                || !("RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
+        boolean connection = pageSize != null;
+        if ("LOOKUP".equals(at.kind())
+                || !(connection || "RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
             return new NotYet(coordinate, Reason.POLYMORPHIC);
+        }
+        if (faceted) {
+            return new NotYet(coordinate, Reason.FACETED);
         }
         var x = GRAPHITRON_OCCURRENCE_PARTICIPANT;
         var participants = store.dsl()
@@ -483,18 +489,20 @@ public final class RootQuery {
         if (branches.isEmpty()) {
             return new NotYet(coordinate, Reason.POLYMORPHIC);
         }
-        return new MultiTable(coordinate, at.parentType(), at.fieldName(), "RECORD_LIST".equals(at.shape()), branches,
-            ordered(store, coordinate, byBound));
+        return new MultiTable(coordinate, at.parentType(), at.fieldName(),
+            connection || "RECORD_LIST".equals(at.shape()), branches, ordered(store, coordinate, byBound, connection),
+            pageSize);
     }
 
     /**
      * How a root over several tables orders its rows, read off its orders per participant table:
-     * {@code null} where its one order is each table's own key ascending and no argument chooses
-     * another. An order whose keys are each table's own primary key, in one direction, reads the keys;
+     * {@code null} where its one order is each table's own key ascending, no argument chooses another,
+     * and it is no connection, whose cursor encodes the order it reads. An order whose keys are each table's own primary key, in one direction, reads the keys;
      * any other its keys by position, which line up across the tables, {@code ORDER_POSITIONS_DISAGREE}
      * refusing an order whose do not.
      */
-    private static Ordered ordered(StoreHandle store, String coordinate, Map<String, Branch> typeByBound) {
+    private static Ordered ordered(StoreHandle store, String coordinate, Map<String, Branch> typeByBound,
+                                   boolean connection) {
         var graph = store.graphName();
         var od = GRAPHITRON_OCCURRENCE_ORDER;
         var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
@@ -542,7 +550,7 @@ public final class RootQuery {
             base = new Order(null, "ASC", List.of());
         }
         var argument = orderArgument(store, coordinate);
-        if (argument == null && "ASC".equals(base.keyDirection())) {
+        if (argument == null && "ASC".equals(base.keyDirection()) && !connection) {
             return null;
         }
         return new Ordered(argument, base, argument == null ? List.of() : named);

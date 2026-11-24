@@ -218,7 +218,8 @@ public class TypeFetcherGenerator {
     /**
      * A root over several tables as the store states it: its participants and their tables, each
      * branch filtered by its table's condition method as its stored signature calls it, no node-id
-     * dispatch, and its rows in the order the store states, else in key order, then by type.
+     * dispatch, and its rows in the order the store states, else in key order, then by type: a list or
+     * a record, or a connection paging by the store's page size.
      */
     private static List<MethodSpec> storeMultiTableMethods(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.emit.RootQuery.MultiTable multiTable, CompositeDecodeHelperRegistry registry,
@@ -238,10 +239,15 @@ public class TypeFetcherGenerator {
                     branch.condition().takesContext(), branch.condition().takesSession()));
             }
         }
+        var ordering = Optional.ofNullable(multiTable.ordered()).map(ordered -> orderingOf(ordered, byType));
+        var branchWhere = MultiTablePolymorphicEmitter.BranchWhere.ofGlue(glue);
+        if (multiTable.pageSize() != null) {
+            return MultiTablePolymorphicEmitter.emitRootConnectionMethods(ctx, multiTable.parentType(),
+                multiTable.fieldName(), participants, branchWhere, List.of(), registry, multiTable.pageSize(), ordering,
+                outputPackage, ctx.connectionAt(multiTable.parentType(), multiTable.fieldName()));
+        }
         return MultiTablePolymorphicEmitter.emitMethods(ctx, multiTable.parentType(), multiTable.fieldName(),
-            participants, MultiTablePolymorphicEmitter.BranchWhere.ofGlue(glue), List.of(), registry,
-            multiTable.list(), Optional.ofNullable(multiTable.ordered()).map(ordered -> orderingOf(ordered, byType)),
-            outputPackage);
+            participants, branchWhere, List.of(), registry, multiTable.list(), ordering, outputPackage);
     }
 
     /**
@@ -249,7 +255,7 @@ public class TypeFetcherGenerator {
      * position, one per distinct set of the participants' columns its orders sort by, and each order on
      * the slots, or on the keys where it reads every table's own key.
      */
-    private static no.sikt.graphitron.rewrite.model.PolymorphicOrdering orderingOf(
+    static no.sikt.graphitron.rewrite.model.PolymorphicOrdering orderingOf(
             no.sikt.graphitron.emit.RootQuery.Ordered ordered,
             Map<String, no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound> byType) {
         var participants = List.copyOf(byType.values());

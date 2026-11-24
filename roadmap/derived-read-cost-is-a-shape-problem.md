@@ -1013,7 +1013,11 @@ static method needs no holder.
     route's walk code goes: a participant table without a primary key, participants whose keys
     differ in arity, and a filter argument the branch call cannot extract (an input bean); the shared
     table is `PARTICIPANTS_SHARE_A_TABLE` already.
-    The connections over several tables come next. Faceted connections and
+    A connection over several tables is the store's too, its page size read as a single-table
+    connection's and its order always stated, so the cursor encodes the columns the walk's did and a
+    client's cursor survives the upgrade; `MultiTableConnectionOrderParityTest` holds the two orders
+    equal on what the cursor reads. One a node id dispatches waits as `NODE_ID_DISPATCH`, a faceted
+    one as `FACETED`, and a lookup over several tables as `POLYMORPHIC`. Faceted connections and
     an order argument taking a list remain beside them. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds

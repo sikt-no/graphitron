@@ -349,12 +349,14 @@ class EmissionCensusTest {
             soft.assertThat(nodes).as("the node fetchers the store emits")
                 .containsExactly("Query.internalNode", "Query.node", "Query.nodes");
             soft.assertThat(multiTables).as("the roots over several tables the store emits").containsExactly(
-                "Query.documents", "Query.occupantsByAddress", "Query.occupantsByFilter",
+                "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documents",
+                "Query.documentsConnection", "Query.occupantsByAddress", "Query.occupantsByFilter",
                 "Query.occupantsByLastName", "Query.occupantsByMixedNamePrefix", "Query.occupantsByName",
-                "Query.occupantsByNamePrefix", "Query.occupantsByStoreId", "Query.occupantsByTypedNamePrefix",
-                "Query.occupantsOrdered", "Query.occupantsOrderedByKey", "Query.occupantsOrderedByList",
-                "Query.occupantsStartingWithM", "Query.search", "Query.stockByLanguage",
-                "Query.stockByLanguageOverride");
+                "Query.occupantsByNameConnection", "Query.occupantsByNamePrefix", "Query.occupantsByStoreId",
+                "Query.occupantsByTypedNamePrefix", "Query.occupantsOrdered", "Query.occupantsOrderedByKey",
+                "Query.occupantsOrderedByList", "Query.occupantsOrderedConnection", "Query.occupantsStartingWithM",
+                "Query.pagedItems", "Query.pagedItemsByName", "Query.search", "Query.searchConnection",
+                "Query.stockByLanguage", "Query.stockByLanguageOverride");
             soft.assertThat(emitted).as("the roots the store emits").containsExactly(
                 "Query.actorsByFilmFilter", "Query.actorsByFilmFilterConnection", "Query.actorsByFilmIds",
                 "Query.addressesByCountryName", "Query.addressesByCustomerIds",
@@ -426,19 +428,14 @@ class EmissionCensusTest {
                     "Query.filmsOrdered", "Query.filmsOrderedConnection", "Query.squadMembers"))
                 .containsEntry("NODE_ID_DISPATCH", List.of(
                     "Query.occupantById", "Query.occupantByOptionalId", "Query.occupantsByIds",
-                    "Query.occupantsByNullableIds"))
-                .containsEntry("POLYMORPHIC", List.of(
-                    "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documentsConnection",
-                    "Query.occupantsByIdsConnection", "Query.occupantsByNameConnection",
-                    "Query.occupantsOrderedConnection", "Query.pagedItems", "Query.pagedItemsByName",
-                    "Query.searchConnection"))
+                    "Query.occupantsByIdsConnection", "Query.occupantsByNullableIds"))
                 .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
                     "Query.allContentByFilmTitle", "Query.allContentConnectionByFilmTitle",
                     "Query.filmsByLanguages", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
                     "Query.filmsByOriginalLanguage", "Query.filmsByOriginalLanguageDescList",
                     "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList"))
                 .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID",
-                    "NODE_ID_DISPATCH", "ORDER_ARGUMENT_LIST", "POLYMORPHIC",
+                    "NODE_ID_DISPATCH", "ORDER_ARGUMENT_LIST",
                     "SORT_KEY_NOT_A_COLUMN");
         });
     }

@@ -350,6 +350,24 @@ public final class MultiTablePolymorphicEmitter {
             Optional<PolymorphicOrdering> ordering,
             String outputPackage,
             no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
+        return emitRootConnectionMethods(ctx, parentTypeName, fieldName, participants,
+            BranchWhere.ofFilters(parentTypeName, fieldName, participantFilters, outputPackage), nodeIdArgDispatches,
+            registry, defaultPageSize, ordering, outputPackage, connection);
+    }
+
+    /** The root connection with each branch's filter as {@code branchWhere} states it. */
+    public static List<MethodSpec> emitRootConnectionMethods(
+            TypeFetcherEmissionContext ctx,
+            String parentTypeName,
+            String fieldName,
+            List<ParticipantRef> participants,
+            BranchWhere branchWhere,
+            List<NodeIdArgDispatch> nodeIdArgDispatches,
+            CompositeDecodeHelperRegistry registry,
+            int defaultPageSize,
+            Optional<PolymorphicOrdering> ordering,
+            String outputPackage,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
@@ -357,8 +375,7 @@ public final class MultiTablePolymorphicEmitter {
         var slots = ordering.map(PolymorphicOrdering::slots).orElse(List.of());
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildRootConnectionFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants,
-            BranchWhere.ofFilters(parentTypeName, fieldName, participantFilters, outputPackage), nodeIdArgDispatches,
-            registry, defaultPageSize, ordering, outputPackage, connection));
+            branchWhere, nodeIdArgDispatches, registry, defaultPageSize, ordering, outputPackage, connection));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true, slots,
                 outputPackage));
