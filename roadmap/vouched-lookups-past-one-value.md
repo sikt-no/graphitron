@@ -1,7 +1,7 @@
 ---
 id: R1199
 title: "An _entities lookup with vouchers for several values resolves on one connection"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: service
@@ -613,3 +613,51 @@ Not blocking:
 
   *Author (2026-11-23):* it stays open; point 3 now closes the set at the first field that admitted a
   voucher.
+
+### Round 2: Spec → Ready, signed off (session_b070efb8-e862-458f-8c25-6917aab02e02, 2026-11-24)
+
+Round 1's findings are met. Findings 2 to 4 are met in the body. Finding 1 was also satisfied by the
+rulings being recorded where CLAUDE.md puts them: the set key, the cap and the key-field rule were in the
+body only, and this session carried them to `runtime-extension-points.adoc` and `fact-model.adoc` in the
+commit before this one.
+
+Question 1 passes. When this lands, an accepting subgraph answers a batched `_entities` call whose
+vouchers name several owners, or one sak each, with every entity it can resolve, on one vouched
+connection. The consumer's source reads a set of `VouchedFor` rows off `ConnectionKey` and its policies
+test `= ANY`, both breaking. `vouchesFor` may name the key's own fields, so the second field becomes
+optional. The claims about code hold. Every class, method, generated unit, defect, relation, doc section,
+test, test method and fact document it names exists as named. Today's key, carrier, `admitVouched` and
+voucher arm are as described. The token format takes an empty lookup section. No issuing-side refusal
+stops a `vouchesFor` naming every absorbed field. `EntityKeyQuery` already reads the three relations the
+section derivation needs, and no other reader asks it.
+
+Question 2 passes. The set extends the one admission site, the carrier's single vouched key and the one
+alternative cascade. The cap mirrors `BatchSizeLimit`, and the carrier already holds the runtime it
+reads the hook from. The key-field rule is computed in the one reader's query.
+
+The one open fork, the type-blind set (*The key's shape*), was put to Filip at this review. He ruled to
+keep it type-blind (2026-11-24): there is no known case of an issuing subgraph vouching for a value for
+one accepting type and not another. It is recorded in `runtime-extension-points.adoc`. The how-to still
+states the limit, as *The key's shape* plans.
+
+Non-blocking, for the implementer:
+
+* *The per-entity voucher*'s subgraph A example: `hendelseLogg: SakHendelseLogg` with no `@reference`
+  is not "the same row". `reference.adoc` § Joining a row to itself: an unwritten path on one table is
+  a join over its self-referencing key, never the parent's own row. It needs `@reference(path: [{key:
+  <sak's primary key>}])`, and `@issue` needs a table-bound type. Correct it before the how-to renders
+  the per-entity variant.
+* Pending loads reached outside `fetchEntities`: `loadSlot` and `loadKeyed` are public, and
+  `Query.nodes` calls `loadSlot`. A node id's representation never meets the voucher arm, so that path
+  is safe. A pending load that no close will register should still fail loudly as an invariant, not
+  wait on a future nothing completes.
+* The cap hook's containment: `ErrorRouter.contained` is the one place calls into consumer hooks are
+  contained, `BatchSizeLimit` included. Have the carrier's call go through it, not a second try/catch.
+* `init.sql` does much of the test work and is not named: the fixture's policies move to the set, a
+  third owner is needed for the `env -> 2` test, and the per-entity test needs a table, a policy and a
+  role. The fixture's RLS is ENABLEd, not FORCEd, so the tables' owner bypasses it, and no `graphitron`
+  execution test reads under a policy yet. The per-entity test needs a role of its own, as
+  `VoucherAcceptExecutionTest` creates one.
+* The 1000-value measurement: include the policy with its setting in a scalar subquery,
+  `= ANY ((SELECT coalesce(...)::text[]))`. That is an InitPlan, evaluated once per statement, where
+  the bare form may re-parse the array for every row a sequential scan filters.
