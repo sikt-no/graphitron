@@ -340,7 +340,7 @@ class EmissionCensusTest {
         assertThat(emitted).as("the roots the store emits").containsExactly(
             "Query.actorsByFilmFilter", "Query.actorsByFilmIds", "Query.addressesByCountryName",
             "Query.addressesByCustomerIds", "Query.addressesByCustomerIdsInferred", "Query.allActors",
-            "Query.allFanOwners", "Query.allIndividuals", "Query.citiesByCountryFilter",
+            "Query.allFanOwners", "Query.allIndividuals", "Query.categoryById", "Query.citiesByCountryFilter",
             "Query.citiesByCountryName", "Query.computedTitleFilm", "Query.converterCampusTermByNodeId",
             "Query.converterCampusTerms", "Query.converterCampusTermsByNodeIds", "Query.converterCampuses",
             "Query.converterCampusesByOrgCode", "Query.converterCampusesByOrgCodes",
@@ -366,14 +366,16 @@ class EmissionCensusTest {
             "Query.filmsOuterOverridePlainInput", "Query.filmsWithImplicitInput",
             "Query.filmsWithImplicitInputOuterOverride", "Query.filmsWithInputFieldCondition",
             "Query.filmsWithInputFieldOverride", "Query.filmsWithMultiImplicit",
-            "Query.filmsWithNestedImplicit", "Query.hostLabelRows", "Query.inventoryItemsByIds",
-            "Query.levelIntervals", "Query.namedCitiesByCountryName", "Query.pivotHosts",
-            "Query.presenceDetail", "Query.presenceDetailNode", "Query.presenceDetailRequired",
+            "Query.filmsWithNestedImplicit", "Query.hostLabelRows", "Query.inventoryById",
+            "Query.inventoryItemsByIds", "Query.languageByKey", "Query.languageBySingleKey",
+            "Query.languagesByKeyFiltered", "Query.languagesByKeyGenerated", "Query.levelIntervals",
+            "Query.namedCitiesByCountryName", "Query.pivotHosts", "Query.presenceDetail",
+            "Query.presenceDetailByKey", "Query.presenceDetailNode", "Query.presenceDetailRequired",
             "Query.presenceHostRefs", "Query.presenceHosts", "Query.projectNotesByPlainFilter",
             "Query.projectNotesByProject", "Query.projects", "Query.rentalsByInventoryItem",
             "Query.roleHolders", "Query.secureNotes", "Query.sessionStores", "Query.splitFilterParents",
-            "Query.splitFilterParentsByTargetLabel", "Query.splitParents", "Query.studyLevels",
-            "Query.validityPeriodsByValidToDescList", "Query.xlatChildByParentId",
+            "Query.splitFilterParentsByTargetLabel", "Query.splitParents", "Query.storeById",
+            "Query.studyLevels", "Query.validityPeriodsByValidToDescList", "Query.xlatChildByParentId",
             "Query.xlatChildrenByFilter", "Query.xlatChildrenByParentIds",
             "Query.xlatCompChildrenByParentIds");
         // Each line goes as its shape is stated; a root moving between lines is a change to look at,
@@ -390,12 +392,12 @@ class EmissionCensusTest {
                 "Query.projectNotesByPlainFilterConnection", "Query.squadMembers", "Query.stores",
                 "Query.validityPeriodsByValidTo", "Query.validityPeriodsByValidToDesc",
                 "Query.validityPeriodsOrdered"))
-            .containsEntry("LOOKUP", List.of(
-                "Query.categoryById", "Query.customerById", "Query.filmActorByNodeId",
-                "Query.filmActorsByKey", "Query.filmById", "Query.filmsByNodeIdArgWithLookupKey",
-                "Query.inventoryById", "Query.languageByKey", "Query.languageBySingleKey",
-                "Query.languagesByKeyFiltered", "Query.languagesByKeyGenerated", "Query.presenceDetailByKey",
-                "Query.storeById"))
+            .containsEntry("LOOKUP_INPUT_FIELD", List.of(
+                "Query.filmActorsByKey"))
+            .containsEntry("LOOKUP_KEY_CONVERTED", List.of(
+                "Query.customerById", "Query.filmById"))
+            .containsEntry("LOOKUP_NODE_ID", List.of(
+                "Query.filmActorByNodeId", "Query.filmsByNodeIdArgWithLookupKey"))
             .containsEntry("ORDER_ARGUMENT", List.of(
                 "Query.filmsByLanguagesComposedList", "Query.filmsByLanguagesList", "Query.filmsOrdered"))
             .containsEntry("POLYMORPHIC", List.of(
@@ -415,6 +417,6 @@ class EmissionCensusTest {
                 "Query.searchConnection", "Query.stockByLanguage", "Query.stockByLanguageOverride"))
             .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
                 "Query.filmsByOriginalLanguageDescList", "Query.filmsByOriginalLanguageList"))
-            .containsOnlyKeys("CONNECTION", "LOOKUP", "ORDER_ARGUMENT", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
+            .containsOnlyKeys("CONNECTION", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID", "ORDER_ARGUMENT", "POLYMORPHIC", "SORT_KEY_NOT_A_COLUMN");
     }
 }

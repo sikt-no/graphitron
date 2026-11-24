@@ -965,8 +965,12 @@ static method needs no holder.
     order of columns or one record, with the condition method `graphitron_occurrence_condition_signature`
     states, is the store's, and every other root stays the walk's under a reason the root census in
     `EmissionCensusTest` pins (a lookup, an `@orderBy` choice, a connection, a polymorphic or
-    tenanted read, a pivot); the walk's root collapse went for every root at once. Lookups are the
-    next reason to close (FS main holds 5 root lookups), then `@orderBy` choices (3), then connections. Whether a type's
+    tenanted read, a pivot); the walk's root collapse went for every root at once. A root lookup whose
+    keys are scalar `@lookupKey` arguments binding columns of its own table is the store's too, all
+    five of FS main's among them; a key read off an input object's field, a node-id key, and a key an
+    `ID` or an enum converts stay the walk's. The conversion is the decision `ConditionEmitter` makes
+    for a term at emit time, so it lands as one stored fact both read, not a second emit-time copy.
+    `@orderBy` choices (3 in FS main) are the next reason to close, then connections. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
     it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a

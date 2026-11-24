@@ -235,14 +235,32 @@ public final class LauncherCommands {
     /**
      * A root the store states whole, read off its occurrence: the table its rows are of, projected by
      * its type's unit, its condition method where its table has one, called as the store says it is
-     * defined, and a list in its default order or one record. A single record is null exactly when
-     * the read finds no row.
+     * defined, and a list in its default order or one record. A lookup joins its keys' rows instead,
+     * its list following the keys. A single record is null exactly when the read finds no row.
      */
     private static LauncherCommand storeRootRow(no.sikt.graphitron.emit.RootQuery.Emitted root,
             GeneratedUnits units) {
         var where = root.condition() == null ? null
             : new GlueCall(units.conditionMethod(root.parentType(), root.fieldName()),
                 root.condition().takesContext(), root.condition().takesSession());
+        if (!root.keys().isEmpty()) {
+            var mapping = new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping(root.keys().stream()
+                .<no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg>map(key ->
+                    new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+                        key.argument(), key.column(), new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
+                        key.list()))
+                .toList(), root.table());
+            return new LauncherCommand(
+                units.lookupMethod(root.parentType(), root.fieldName()),
+                FieldCoordinates.coordinates(root.parentType(), root.fieldName()),
+                new LaunchSource.KeyedLookup(root.table(), units.typeClass(root.returnType()), mapping,
+                    units.inputRowsMethod(units.fetchers(root.parentType()), root.fieldName())),
+                where,
+                new Invocation.Direct(),
+                new TenantStrategy.Single(),
+                root.list() ? new ResultShape.RecordList(null) : new ResultShape.SingleRecord(),
+                units.selectionOccurrences());
+        }
         ResultShape result;
         if (root.list()) {
             var entries = root.order().stream()

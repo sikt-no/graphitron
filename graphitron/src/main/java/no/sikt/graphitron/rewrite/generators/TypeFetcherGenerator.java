@@ -683,7 +683,7 @@ public class TypeFetcherGenerator {
                     if (launcherRow.source()
                             instanceof no.sikt.graphitron.command.LaunchSource.KeyedLookup keyedLookup) {
                         var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                            .of(qtf.returnType().table(), qtf.returnType().returnTypeName(), outputPackage)
+                            .of(keyedLookup.table(), qtf.returnType().returnTypeName(), outputPackage)
                             .jooqTableClass();
                         builder.addMethod(no.sikt.graphitron.render.LookupRows.buildInputRowsMethod(
                             keyedLookup.mapping(), keyedLookup.inputRows().methodName(),
