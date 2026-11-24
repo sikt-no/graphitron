@@ -22,6 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * runtime direction flipping a uniformly ascending choice, a choice with directions of its own
  * keeping them, and the default order reading where the client picks none. Every order ends on
  * film_id, so tied rows answer in one order.
+ *
+ * <p>Other classes insert films into the database this one shares, between the request and the read
+ * it is compared with, so both are judged on the seeded films, as {@code SortKeyOrderExecutionTest}
+ * judges its own.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -30,25 +34,28 @@ class RootOrderChoiceExecutionTest {
     static DSLContext dsl;
     static GraphQL graphql;
 
+    private static final List<Integer> SEEDED_FILM_IDS = List.of(1, 2, 3, 4, 5);
+
     @BeforeAll
     static void startDatabase() {
         dsl = SakilaDatabase.dsl();
         graphql = Graphitron.newGraphQL().build();
     }
 
-    /** The film ids {@code Query.filmsOrderedByOne} answers under {@code arguments}, in its order. */
+    /** The seeded film ids {@code Query.filmsOrderedByOne} answers under {@code arguments}, in its order. */
     private List<Integer> filmIds(String arguments) {
         var input = Graphitron.newExecutionInput(dsl, "{}", "test-user")
             .query("{ filmsOrderedByOne" + arguments + " { filmId } }").build();
         ExecutionResult result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         var films = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("filmsOrderedByOne");
-        return films.stream().map(film -> (Integer) film.get("filmId")).toList();
+        return films.stream().map(film -> (Integer) film.get("filmId")).filter(SEEDED_FILM_IDS::contains).toList();
     }
 
-    /** The film ids the database answers in {@code order}. */
+    /** The seeded film ids the database answers in {@code order}. */
     private static List<Integer> inOrder(SortField<?>... order) {
-        return dsl.select(FILM.FILM_ID).from(FILM).orderBy(order).fetch(FILM.FILM_ID);
+        return dsl.select(FILM.FILM_ID).from(FILM).where(FILM.FILM_ID.in(SEEDED_FILM_IDS)).orderBy(order)
+            .fetch(FILM.FILM_ID);
     }
 
     @Test
