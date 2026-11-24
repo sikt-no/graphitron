@@ -98,15 +98,11 @@ this, measures it with load noted.
 - **The gatherer split:** `MetaDeclarationGateTest` and the stage roster pass with the new gatherer.
   `CaptureCorpusIsolationTest` keeps the transcription free of the catalog.
 
-## Open questions
+## Rulings
 
-- **Shape.** Alf's ruling as relayed was "a per-graph relation beside `code_method`". This plan keeps
-  the members source-keyed and lets only their population follow the schema, which leaves every reader
-  and foreign key of `code_method` unchanged. A per-graph mirror would state a classfile's members a
-  second time, at a grain they do not have (`fact-model.adoc`, "Grain", Alf 2026-11-13), and would put
-  a union at every reader. Alf decides.
-- **The rule this bends.** A crawler's rows about its own corpus must not vary with another corpus
-  (`fact-model.adoc`, "Gatherers"). Here a jar entry's member rows vary with the schema in which
-  classes have rows, never in what a row says. `('code', 'store')` with `handleSlots` already does the
-  same. If Alf and Filip accept the population-versus-content distinction, it is written into
-  `fact-model.adoc`, "Gatherers".
+- **Shape (Alf, 2026-11-24):** the members stay source-keyed in the `code_` family, and only their
+  population follows the schema, as the model above says. This is not a per-graph relation beside
+  `code_method`.
+- **The rule it bends (Alf, 2026-11-24):** a corpus's rows must not vary with another corpus in what
+  they say, while another corpus may decide which of its things are read. It is written into
+  `fact-model.adoc`, "Gatherers build the model in a declared order".
