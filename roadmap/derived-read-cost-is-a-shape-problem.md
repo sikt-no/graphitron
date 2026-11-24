@@ -753,7 +753,8 @@ static method needs no holder.
   with the store counterparts still missing for them: `NODE_ID_TARGET_UNRESOLVED`'s "nothing to take the node from"
   arm is `SERVICE`-only, so an untyped `@nodeId` at a routine or a condition has none; a keyless node type; the
   typing of a child routine's parameters; the list deferral
-  (`ArgmappingProjectionDefects.unemittableProjections`); and the other readers of `intent_resolved_node_key_projection`,
+  (`ArgmappingProjectionDefects.unemittableProjections`), which since R1202 defers at a child routine alone, the
+  conditions class taking a list projection at every `@condition` site; and the other readers of `intent_resolved_node_key_projection`,
   the walk's Query-root and child routine launchers and `NodeIdDecodeCoverageFacts`. Since the conditions are emitted
   from the store, `EMITTING_SITES` holds every `Site`, so the unwired-site disjunct and its message branch are dead,
   and go with the class. A composite id
