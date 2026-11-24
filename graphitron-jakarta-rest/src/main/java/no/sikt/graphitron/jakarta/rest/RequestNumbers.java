@@ -1,5 +1,12 @@
 package no.sikt.graphitron.jakarta.rest;
 
+import graphql.org.antlr.v4.runtime.BaseErrorListener;
+import graphql.org.antlr.v4.runtime.CharStreams;
+import graphql.org.antlr.v4.runtime.RecognitionException;
+import graphql.org.antlr.v4.runtime.Recognizer;
+import graphql.org.antlr.v4.runtime.Token;
+import graphql.parser.antlr.GraphqlLexer;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
@@ -23,11 +30,23 @@ import java.util.Map;
  * <p>Only {@link BigDecimal} and {@link BigInteger} are unbounded; every other {@link Number} the
  * JDK has is fixed-width and passes unchecked.
  *
- * <p>A number in the GraphQL document is bounded the same way, by {@link #literalsWithinBounds}.
- * The engine's parser builds an arbitrary-precision number for every integer and float token,
- * whatever type the token is headed for and before any scalar reads it, so nothing but the transport
- * stands in front of that. The document is read as characters, once: the digits of each numeric
- * token are counted, and no number is built.
+ * <p>A number in the GraphQL document is bounded the same way, by {@link #documentRefusal}. The
+ * engine's parser builds an arbitrary-precision number for every integer and float token, whatever
+ * type the token is headed for and before any scalar reads it, at a cost that grows with the square
+ * of the token's length, and its own limits count a token as one whatever its length. Nothing but
+ * the transport stands in front of that.
+ *
+ * <p>The tokens are found with the parser's own lexer, not with a scanner written here. Where a
+ * string or a comment ends is the lexer's to say, and a second reading of that grammar that differs
+ * from the first in one case leaves a number the check passed over and the parser then builds: a
+ * block string closed by the quotes of a {@code \"""} that nothing closes later is such a case.
+ *
+ * <p>That lexer spends some two hundred times as long on a character of a numeric token as on any
+ * other character of a document, so the document's numeric tokens are bounded together as well:
+ * {@link #MAX_LITERAL_CHARACTERS} characters between them. A document that is mostly digits
+ * otherwise costs every parse of it seconds with no single token out of bounds, and would cost
+ * this check the same. For the same reason the lexer never meets a long run of digits here: see
+ * {@link #withLongRunsCut(String)}.
  *
  * <p>What this bounds is the number, as JSON and as the document's grammar spell one, and nothing
  * else. A number written as text, a string variable or a string literal such as
@@ -54,6 +73,14 @@ final class RequestNumbers {
      * carries less than four bits), so the exact digit count is never computed on a large value.
      */
     private static final int MAX_BITS = 4 * (MAX_DIGITS + 1);
+
+    /**
+     * The most characters a document's integer and float tokens may be written with between them,
+     * signs, points and exponents included. Ten thousand is a thousand ten-digit numbers in one
+     * document, and holds what the lexer spends on a document's numbers to about what it spends on
+     * the rest of the largest document the parser accepts.
+     */
+    static final int MAX_LITERAL_CHARACTERS = 10_000;
 
     private RequestNumbers() {}
 
@@ -97,197 +124,134 @@ final class RequestNumbers {
     }
 
     /**
-     * Whether every integer and float token in a GraphQL {@code document} has at most
+     * Why a GraphQL {@code document} is refused for the numbers written in it, or {@code null} when
+     * there is no reason. It is refused when an integer or float token has more than
      * {@link #MAX_DIGITS} digits written out in full, by the rule {@link #withinBounds(Object)}
-     * applies to a JSON number.
+     * applies to a JSON number, or has more than that many digits in a row in any part of it; and
+     * when its integer and float tokens are written with more than {@link #MAX_LITERAL_CHARACTERS}
+     * characters between them.
      *
-     * <p>A token is found as the engine's lexer finds one: strings, block strings, comments and names
-     * are passed over, so digits inside them are not a number here. The scan is one pass over the
-     * characters and builds nothing, so its cost is linear in the document whatever the document
-     * holds, and it runs before anything parses the document.
+     * <p>A token is what the engine's lexer says is one, so digits in a string, a block string, a
+     * comment or a name are not a number here. The cost is linear in the document: one pass over
+     * its characters, then one pass of the lexer that ends at the first token past a bound and
+     * never meets a run of digits longer than the first pass left. It runs before anything parses
+     * the document.
+     *
+     * <p>Lexing ends without a refusal at the first character the lexer cannot place. Every parse
+     * of such a document fails at that same character, before any token is built into a number,
+     * so nothing reads what follows it.
      *
      * @param document the request's {@code query}, or {@code null}
-     * @return {@code false} as soon as one numeric token is out of bounds
+     * @return the message for the request error, or {@code null}
      */
-    static boolean literalsWithinBounds(String document) {
+    static String documentRefusal(String document) {
         if (document == null) {
-            return true;
+            return null;
         }
-        int length = document.length();
-        int at = 0;
-        while (at < length) {
-            char c = document.charAt(at);
-            if (c == '#') {
-                at = endOfComment(document, at);
-            } else if (c == '"') {
-                at = endOfString(document, at);
-            } else if (isNameStart(c)) {
-                at = endOfName(document, at);
-            } else if (isDigit(c) || (c == '-' && at + 1 < length && isDigit(document.charAt(at + 1)))) {
-                int end = endOfNumber(document, at);
-                if (!tokenWithinBounds(document, at, end)) {
-                    return false;
+        GraphqlLexer lexer = new GraphqlLexer(CharStreams.fromString(withLongRunsCut(document)));
+        lexer.removeErrorListeners();
+        lexer.addErrorListener(STOP_AT_FIRST_ERROR);
+        int written = 0;
+        try {
+            for (Token token = lexer.nextToken(); token.getType() != Token.EOF; token = lexer.nextToken()) {
+                if (token.getType() != GraphqlLexer.IntValue && token.getType() != GraphqlLexer.FloatValue) {
+                    continue;
                 }
-                at = end;
-            } else {
-                at++;
+                String literal = token.getText();
+                written += literal.length();
+                if (written > MAX_LITERAL_CHARACTERS) {
+                    return "The numbers in the GraphQL document are written with more than "
+                        + MAX_LITERAL_CHARACTERS + " characters in all.";
+                }
+                if (!literalWithinBounds(literal)) {
+                    return "A number in the GraphQL document has more than " + MAX_DIGITS
+                        + " digits written out in full.";
+                }
             }
+        } catch (Unlexable stop) {
+            // The document does not parse; see the method comment.
         }
-        return true;
-    }
-
-    /** The index after a comment that starts at {@code at}: it runs to the end of its line. */
-    private static int endOfComment(String document, int at) {
-        int end = at;
-        while (end < document.length() && document.charAt(end) != '\n' && document.charAt(end) != '\r') {
-            end++;
-        }
-        return end;
+        return null;
     }
 
     /**
-     * The index after the string that starts at {@code at}, a block string where three quotes open
-     * it. A block string ends at the next three quotes not written {@code \"""}; a string ends at the
-     * next quote not behind a backslash, or at the end of its line where it is never closed.
+     * {@code document} with every run of more than {@code MAX_DIGITS + 1} digits cut to its first
+     * {@code MAX_DIGITS + 1}, and the document itself where it has no such run, which is nearly
+     * always. Only the check reads the cut text; the engine is handed the document.
+     *
+     * <p>The cut changes no token's kind and moves no token's edge relative to its neighbours: no
+     * rule of the grammar tells a thousand and one digits in a row from more, in a number, a name,
+     * a string or a comment. A numeric token that held such a run still holds one past
+     * {@link #MAX_DIGITS} and is refused for it, and every other token reads as it did. What the
+     * cut buys is that the lexer, slow on the digits of a number, is never handed a long one.
      */
-    private static int endOfString(String document, int at) {
+    private static String withLongRunsCut(String document) {
         int length = document.length();
-        if (document.startsWith("\"\"\"", at)) {
-            int end = at + 3;
-            while (end < length) {
-                if (document.startsWith("\\\"\"\"", end)) {
-                    end += 4;
-                } else if (document.startsWith("\"\"\"", end)) {
-                    return end + 3;
-                } else {
-                    end++;
+        StringBuilder cut = null;
+        int copied = 0;
+        int run = 0;
+        for (int at = 0; at <= length; at++) {
+            if (at < length && isDigit(document.charAt(at))) {
+                run++;
+                continue;
+            }
+            if (run > MAX_DIGITS + 1) {
+                if (cut == null) {
+                    cut = new StringBuilder(length);
                 }
+                cut.append(document, copied, at - run + MAX_DIGITS + 1);
+                copied = at;
             }
-            return length;
+            run = 0;
         }
-        int end = at + 1;
-        while (end < length) {
-            char c = document.charAt(end);
-            if (c == '\\') {
-                end += 2;
-            } else if (c == '"') {
-                return end + 1;
-            } else if (c == '\n' || c == '\r') {
-                return end;
-            } else {
-                end++;
-            }
-        }
-        return length;
-    }
-
-    /** The index after the name that starts at {@code at}, whose later characters may be digits. */
-    private static int endOfName(String document, int at) {
-        int end = at + 1;
-        while (end < document.length() && (isNameStart(document.charAt(end)) || isDigit(document.charAt(end)))) {
-            end++;
-        }
-        return end;
+        return cut == null ? document : cut.append(document, copied, length).toString();
     }
 
     /**
-     * The index after the numeric token that starts at {@code at}: a sign, digits, a point followed
-     * by digits, and an exponent with its own sign and digits, each part only where it is present.
+     * Whether a numeric token is within the bound: no part of it has more than {@link #MAX_DIGITS}
+     * digits in a row, which also keeps building the number below cheap, and its plain decimal form
+     * has no more than that many digits. An exponent {@link BigDecimal} cannot hold is out of bounds.
      */
-    private static int endOfNumber(String document, int at) {
-        int length = document.length();
-        int end = at;
-        if (document.charAt(end) == '-') {
-            end++;
-        }
-        while (end < length && isDigit(document.charAt(end))) {
-            end++;
-        }
-        if (end + 1 < length && document.charAt(end) == '.' && isDigit(document.charAt(end + 1))) {
-            end++;
-            while (end < length && isDigit(document.charAt(end))) {
-                end++;
+    private static boolean literalWithinBounds(String literal) {
+        int run = 0;
+        for (int at = 0; at < literal.length(); at++) {
+            run = isDigit(literal.charAt(at)) ? run + 1 : 0;
+            if (run > MAX_DIGITS) {
+                return false;
             }
         }
-        if (end < length && (document.charAt(end) == 'e' || document.charAt(end) == 'E')) {
-            int digits = end + 1;
-            if (digits < length && (document.charAt(digits) == '+' || document.charAt(digits) == '-')) {
-                digits++;
-            }
-            if (digits < length && isDigit(document.charAt(digits))) {
-                end = digits;
-                while (end < length && isDigit(document.charAt(end))) {
-                    end++;
-                }
-            }
-        }
-        return end;
-    }
-
-    /**
-     * Whether the numeric token {@code document[from, to)} has at most {@link #MAX_DIGITS} digits
-     * written out in full, counted as {@link #withinBounds(BigDecimal)} counts them: the precision is
-     * the digits from the first that is not zero, and the scale is the fraction's digits less the
-     * exponent.
-     */
-    private static boolean tokenWithinBounds(String document, int from, int to) {
-        int at = from;
-        if (document.charAt(at) == '-') {
-            at++;
-        }
-        long significant = 0;
-        long fraction = 0;
-        boolean point = false;
-        for (; at < to; at++) {
-            char c = document.charAt(at);
-            if (c == '.') {
-                point = true;
-            } else if (c == 'e' || c == 'E') {
-                break;
-            } else {
-                if (significant > 0 || c != '0') {
-                    significant++;
-                }
-                if (point) {
-                    fraction++;
-                }
-            }
-        }
-        if (significant > MAX_DIGITS) {
+        try {
+            return withinBounds(new BigDecimal(literal));
+        } catch (NumberFormatException exponentOutOfRange) {
             return false;
         }
-        long exponent = 0;
-        boolean negative = false;
-        if (at < to) {
-            at++;
-            if (document.charAt(at) == '+' || document.charAt(at) == '-') {
-                negative = document.charAt(at) == '-';
-                at++;
-            }
-            for (; at < to; at++) {
-                exponent = exponent * 10 + (document.charAt(at) - '0');
-                if (exponent > Integer.MAX_VALUE) {
-                    // Past any scale a fraction this document can hold could bring back within bounds.
-                    return false;
-                }
-            }
-        }
-        long scale = fraction - (negative ? -exponent : exponent);
-        if (scale < -MAX_DIGITS || scale > MAX_DIGITS) {
-            return false;
-        }
-        long precision = Math.max(1, significant);
-        long digits = scale <= 0 ? precision - scale : Math.max(precision, scale);
-        return digits <= MAX_DIGITS;
     }
 
     private static boolean isDigit(char c) {
         return c >= '0' && c <= '9';
     }
 
-    private static boolean isNameStart(char c) {
-        return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+    /** Thrown by {@link #STOP_AT_FIRST_ERROR} to leave the lexer; carries nothing, so it is shared. */
+    private static final class Unlexable extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        static final Unlexable INSTANCE = new Unlexable();
+
+        private Unlexable() {
+            super(null, null, false, false);
+        }
     }
+
+    /**
+     * Ends lexing at the first error, as the parser's own listener does. Without it the lexer
+     * recovers one character at a time, raising an exception for each.
+     */
+    private static final BaseErrorListener STOP_AT_FIRST_ERROR = new BaseErrorListener() {
+        @Override
+        public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
+                                int charPositionInLine, String message, RecognitionException cause) {
+            throw Unlexable.INSTANCE;
+        }
+    };
 
     /**
      * Whether {@code value}'s plain decimal form has at most {@link #MAX_DIGITS} digits. That form

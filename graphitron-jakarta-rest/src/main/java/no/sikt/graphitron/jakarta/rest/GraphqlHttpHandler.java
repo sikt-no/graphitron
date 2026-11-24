@@ -109,9 +109,13 @@ import java.util.function.Supplier;
  *   <li><b>Numbers in {@code variables}, {@code extensions} and the document are bounded.</b> On
  *       either verb, a number whose plain decimal form has more than a thousand digits is answered
  *       {@code 422} ({@code 200} under legacy {@code application/json}) before the policy, the
- *       input supplier or the engine runs. That is a JSON number and an integer or float token of
- *       the document: numeric text in a string, a variable or a string literal alike, is bounded
- *       where it is parsed (see {@code RequestNumbers}).</li>
+ *       input supplier or the engine runs, and before anything parses the document. That is a
+ *       JSON number and an integer or float token of the document: numeric text in a string, a
+ *       variable or a string literal alike, is bounded where it is parsed (see
+ *       {@code RequestNumbers}). A document whose integer and float tokens are written with more
+ *       than ten thousand characters between them is answered the same way: the parser's own
+ *       limits do not bound them, and it spends time on them out of proportion to the
+ *       request.</li>
  *   <li><b>The two verbs carry their rules differently.</b> POST takes the policy the consumer
  *       selects per request; GET carries the specification's {@code 405} rule unconditionally. That
  *       is why there is one {@code get} and two {@code post}s per way of building the input, and no
@@ -305,7 +309,11 @@ public class GraphqlHttpHandler {
      * Which operation a document will run: the one named by {@code operationName} when one is
      * given, otherwise the first in the document. Public because it is a decision a consumer may
      * legitimately want to take for itself (metrics, logging, its own routing), and because the
-     * pipeline calls exactly this method, so what a consumer observes is what the guard judged.
+     * pipeline applies the same bound and then the same resolution, so what a consumer observes is
+     * what the guard judged.
+     *
+     * <p>The document's numbers are checked against their bounds before it is parsed, as the
+     * pipeline checks them, so this is safe to call on a document nothing has looked at yet.
      *
      * <p>The resolved operation is the right unit for a policy precisely because the engine honours
      * {@code operationName}: a document carrying a query and a mutation runs whichever the request
@@ -323,8 +331,23 @@ public class GraphqlHttpHandler {
      * @return the resolved operation type, or {@code null} when none resolves (no operation
      *         definitions, or an {@code operationName} matching none)
      * @throws graphql.parser.InvalidSyntaxException if the document cannot be parsed
+     * @throws IllegalArgumentException if the numbers in the document are out of bounds: one with
+     *         more than a thousand digits written out in full, or more than ten thousand characters
+     *         of integer and float tokens in all
      */
     public static OperationDefinition.Operation resolveOperation(String query, String operationName) {
+        String refusal = RequestNumbers.documentRefusal(query);
+        if (refusal != null) {
+            throw new IllegalArgumentException(refusal);
+        }
+        return operationOf(query, operationName);
+    }
+
+    /**
+     * {@link #resolveOperation(String, String)} for a document whose numbers are already known to
+     * be within bounds. Nothing else may parse a request's document.
+     */
+    private static OperationDefinition.Operation operationOf(String query, String operationName) {
         Document document = Parser.parse(query);
         List<OperationDefinition> operations = document.getDefinitionsOfType(OperationDefinition.class);
         if (operations.isEmpty()) {
@@ -363,14 +386,14 @@ public class GraphqlHttpHandler {
         }
         // The engine's parser builds a number for every integer and float token of the document, so
         // those are bounded by the same rule before anything parses it, the operation policy included.
-        if (!RequestNumbers.literalsWithinBounds(request.query())) {
-            return requestError(422, "A number in the GraphQL document has more than "
-                + RequestNumbers.MAX_DIGITS + " digits written out in full.", legacy);
+        String refusal = RequestNumbers.documentRefusal(request.query());
+        if (refusal != null) {
+            return requestError(422, refusal, legacy);
         }
         if (guard != null) {
             OperationDefinition.Operation operation;
             try {
-                operation = resolveOperation(request.query(), request.operationName());
+                operation = operationOf(request.query(), request.operationName());
             } catch (Exception parseFailure) {
                 // The GraphQL document cannot be parsed -> 400.
                 return requestError(400, "The GraphQL document could not be parsed.", legacy);

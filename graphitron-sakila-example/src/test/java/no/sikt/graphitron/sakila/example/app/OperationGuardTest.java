@@ -9,10 +9,12 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.EnumSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * The operation guard as a decision table: which operation a document resolves to
@@ -120,6 +122,61 @@ class OperationGuardTest {
     @DisplayName("An unparseable document propagates graphql-java's parse failure, which the pipeline turns into 400.")
     void unparseableDocumentPropagates() {
         assertThatThrownBy(() -> GraphqlHttpHandler.resolveOperation("{ customers ", null))
+            .isInstanceOf(InvalidSyntaxException.class);
+    }
+
+    // ===== the bounds on a document's numbers, applied before the parse =====
+
+    @Test
+    @DisplayName("A document with a very long literal is refused before it is parsed, in time the parse would not allow.")
+    void veryLongLiteralIsRefusedBeforeParsing() {
+        String query = "{ customers(first: " + "9".repeat(900_000) + ") { firstName } }";
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () ->
+            assertThatThrownBy(() -> GraphqlHttpHandler.resolveOperation(query, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("digits written out in full"));
+    }
+
+    @Test
+    @DisplayName("A number is where the lexer finds one: after a block string closed by the quotes of an escaped triple quote.")
+    void numberAfterABlockStringClosedByAnEscapeIsRefused() {
+        // No triple quote follows, so the string ends at the quotes of \""" and the digits are a number.
+        String hidden = "{ f(a: [\"\"\"abc\\\"\"\" " + "9".repeat(900_000) + "]) }";
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () ->
+            assertThatThrownBy(() -> GraphqlHttpHandler.resolveOperation(hidden, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("digits written out in full"));
+        // With one, the same digits are the string's.
+        String inside = "{ f(a: [\"\"\"abc\\\"\"\" " + "9".repeat(1_500) + " \"\"\"]) }";
+        assertThat(GraphqlHttpHandler.resolveOperation(inside, null)).isEqualTo(Operation.QUERY);
+    }
+
+    @Test
+    @DisplayName("An exponent standing for a long number, and literals too long in all, are refused the same way.")
+    void exponentAndTotalAreRefused() {
+        assertThatThrownBy(() -> GraphqlHttpHandler.resolveOperation("{ f(a: 1e999999999) }", null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("digits written out in full");
+        assertThatThrownBy(() -> GraphqlHttpHandler.resolveOperation("{ f(a: [" + "12345 ".repeat(2001) + "]) }", null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("characters in all");
+    }
+
+    @Test
+    @DisplayName("A document at each bound resolves as any other does, and digits in a string are no number.")
+    void documentAtTheBoundsResolves() {
+        assertThat(GraphqlHttpHandler.resolveOperation("{ f(a: " + "9".repeat(1000) + ") }", null))
+            .isEqualTo(Operation.QUERY);
+        assertThat(GraphqlHttpHandler.resolveOperation("mutation { f(a: [" + "12345 ".repeat(1999) + "], b: 1e999) }", null))
+            .isEqualTo(Operation.MUTATION);
+        assertThat(GraphqlHttpHandler.resolveOperation("{ f(a: \"" + "9".repeat(50_000) + "\") }", null))
+            .isEqualTo(Operation.QUERY);
+    }
+
+    @Test
+    @DisplayName("An unparseable document is graphql-java's parse failure even when a number follows the fault.")
+    void unparseableDocumentWithANumberPropagates() {
+        assertThatThrownBy(() -> GraphqlHttpHandler.resolveOperation("{ f ` " + "9".repeat(1000) + " 1e999999999", null))
             .isInstanceOf(InvalidSyntaxException.class);
     }
 
