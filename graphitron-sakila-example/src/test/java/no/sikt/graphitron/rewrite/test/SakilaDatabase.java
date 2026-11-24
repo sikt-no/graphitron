@@ -105,7 +105,11 @@ public final class SakilaDatabase {
                 System.getProperty("test.db.username", "postgres"),
                 System.getProperty("test.db.password", "postgres"));
         }
-        var container = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
+        // The suite's classes run concurrently on this one server, and their unpooled sources open
+        // connections of their own, so the default of 100 runs out at peak. fsync=off is the
+        // container's own default command, which withCommand replaces.
+        var container = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql")
+            .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=400");
         container.start();
         Runtime.getRuntime().addShutdownHook(new Thread(container::stop));
         return new Server(container.getJdbcUrl(), container.getUsername(), container.getPassword());
