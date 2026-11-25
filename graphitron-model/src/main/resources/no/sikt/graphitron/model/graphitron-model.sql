@@ -4370,12 +4370,16 @@ INSERT INTO graphitron_connection_position VALUES
 
 -- What the arms of the field mint state, one row per arm and carrier, on the type candidates'
 -- terms; the arm here is the type of the carrier's the field sits on, or CARRIER for the rewrite.
+-- The arms of its union are bracketed as a balanced tree, about log2 n deep rather than one level
+-- an arm: one SELECT DISTINCT reads every mint arm, and H2 keeps a parsed copy of a union at every level of its nesting.
 CREATE VIEW graphitron_field_minted_candidate_rule
   (graph_name, type_name, field_name, carrier_coordinate, arm, position, ordinal, type_sdl,
    named_type, non_null, list_depth, item_non_null, description) AS
 SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, position, ordinal,
        type_sdl, named_type, non_null, list_depth, item_non_null, description
   FROM (
+        (
+        (
         -- The connection's own machinery.
         SELECT graph_name, connection_name AS type_name, 'edges' AS field_name,
                coordinate AS carrier_coordinate, 'CONNECTION' AS arm, 'EDGES' AS position, 0 AS ordinal,
@@ -4383,56 +4387,71 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, posi
                TRUE AS non_null, 1 AS list_depth, TRUE AS item_non_null,
                'A list of edges.' AS description
           FROM graphitron_connection_carrier
-         UNION ALL
+        UNION ALL
+        (
         SELECT graph_name, connection_name, 'nodes', coordinate, 'CONNECTION', 'NODES', 1,
                '[' || item_sdl || ']!', element_type, TRUE, 1, item_non_null,
                'A list of nodes.'
           FROM graphitron_connection_carrier
-         UNION ALL
+        UNION ALL
         SELECT graph_name, connection_name, 'pageInfo', coordinate, 'CONNECTION', 'PAGE_INFO', 2,
                'PageInfo!', 'PageInfo', TRUE, 0, NULL,
                'Information to aid in pagination.'
           FROM graphitron_connection_carrier
-         UNION ALL
+        )
+        )
+        UNION ALL
+        (
+        (
         -- Nullable like the connection's other aggregate: a skipped count degrades to null rather
         -- than bubbling a failure through the connection.
         SELECT graph_name, connection_name, 'totalCount', coordinate, 'CONNECTION', 'TOTAL_COUNT', 3,
                'Int', 'Int', FALSE, 0, NULL,
                'Identifies the total count of items in the connection.'
           FROM graphitron_connection_carrier
-         UNION ALL
+        UNION ALL
         -- The edge's.
         SELECT graph_name, edge_name, 'cursor', coordinate, 'EDGE', 'CURSOR', 0,
                'String!', 'String', TRUE, 0, NULL,
                'A cursor for use in pagination.'
           FROM graphitron_connection_carrier
-         UNION ALL
+        )
+        UNION ALL
+        (
         SELECT graph_name, edge_name, 'node', coordinate, 'EDGE', 'NODE', 1,
                item_sdl, element_type, item_non_null, 0, NULL,
                'The item at the end of the edge.'
           FROM graphitron_connection_carrier
-         UNION ALL
+        UNION ALL
         -- The page info every carrier states whole, which is why the set collapses them.
         SELECT graph_name, 'PageInfo', 'hasNextPage', coordinate, 'PAGE_INFO', 'HAS_NEXT_PAGE', 0,
                'Boolean!', 'Boolean', TRUE, 0, NULL,
                'When paginating forwards, are there more items?'
           FROM graphitron_connection_carrier
-         UNION ALL
+        )
+        )
+        )
+        UNION ALL
+        (
+        (
+        (
         SELECT graph_name, 'PageInfo', 'hasPreviousPage', coordinate, 'PAGE_INFO', 'HAS_PREVIOUS_PAGE', 1,
                'Boolean!', 'Boolean', TRUE, 0, NULL,
                'When paginating backwards, are there more items?'
           FROM graphitron_connection_carrier
-         UNION ALL
+        UNION ALL
         SELECT graph_name, 'PageInfo', 'startCursor', coordinate, 'PAGE_INFO', 'START_CURSOR', 2,
                'String', 'String', FALSE, 0, NULL,
                'When paginating backwards, the cursor to continue.'
           FROM graphitron_connection_carrier
-         UNION ALL
+        )
+        UNION ALL
+        (
         SELECT graph_name, 'PageInfo', 'endCursor', coordinate, 'PAGE_INFO', 'END_CURSOR', 3,
                'String', 'String', FALSE, 0, NULL,
                'When paginating forwards, the cursor to continue.'
           FROM graphitron_connection_carrier
-         UNION ALL
+        UNION ALL
         -- The facets the carrier surfaces: the connection's own field reaching the container, one
         -- row per facet collapsed by the distinct, the container's field per facet, and each
         -- bucket's value and count.
@@ -4443,7 +4462,11 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, posi
           JOIN graphitron_connection_carrier c
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
-         UNION ALL
+        )
+        )
+        UNION ALL
+        (
+        (
         SELECT f.graph_name, c.facets_name, f.facet_field_name, c.coordinate, 'FACETS', 'FACET', f.position,
                '[' || f.bucket_type_name || '!]', f.bucket_type_name, FALSE, 1, TRUE,
                'Value counts for this facet, under the connection''s filter minus this facet''s own predicate.'
@@ -4451,7 +4474,7 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, posi
           JOIN graphitron_connection_carrier c
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
-         UNION ALL
+        UNION ALL
         SELECT f.graph_name, f.bucket_type_name, 'value', c.coordinate, 'BUCKET', 'VALUE', 0,
                f.value_type_name || CASE WHEN f.value_nullable THEN '' ELSE '!' END, f.value_type_name,
                NOT f.value_nullable, 0, NULL,
@@ -4460,7 +4483,9 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, posi
           JOIN graphitron_connection_carrier c
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
-         UNION ALL
+        )
+        UNION ALL
+        (
         SELECT f.graph_name, f.bucket_type_name, 'count', c.coordinate, 'BUCKET', 'COUNT', 1,
                'Int!', 'Int', TRUE, 0, NULL,
                'The number of items in this bucket.'
@@ -4468,14 +4493,17 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, posi
           JOIN graphitron_connection_carrier c
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
-         UNION ALL
+        UNION ALL
         -- The rewrite: the carrier keeps its own coordinate, ordinal and docstring, and returns
         -- the connection under the nullability its author wrote.
         SELECT graph_name, type_name, field_name, coordinate, 'CARRIER', CAST(NULL AS VARCHAR), ordinal,
                connection_name || CASE WHEN non_null THEN '!' ELSE '' END,
                connection_name, non_null, 0, NULL,
                description
-          FROM graphitron_connection_carrier) m;
+          FROM graphitron_connection_carrier
+        )
+        )
+        )) m;
 COMMENT ON VIEW graphitron_field_minted_candidate_rule IS 'One row the field minted candidate rule computes, in the shape graphitron_field_minted_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_field_minted_candidate, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_minted_candidate.graph_name';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_minted_candidate.type_name';
@@ -12706,6 +12734,8 @@ COMMENT ON VIEW graphitron_join_path_claimed_rule IS 'The claim a need follows: 
 -- COMMENT ON COLUMN graphitron_join_path_claimed_rule.claim_target_type IS 'the type the followed claim reaches; with the coordinate before it, the claim''s key';
 -- COMMENT ON COLUMN graphitron_join_path_claimed_rule.origin IS 'WRITTEN for the element''s own claim and INHERITED for an interface field''s, as graphitron_path.origin takes it';
 
+-- The arms of its union are bracketed as a balanced tree, about log2 n deep rather than one level
+-- an arm: its arms share the WITH they read, and H2 keeps a parsed copy of a union at every level of its nesting.
 CREATE VIEW graphitron_join_path_step_rule
   (graph_name, claim_coordinate, claim_target_type, position, element_place,
    element_source_name, element_line, element_column, as_name, resolved, last_element,
@@ -12767,6 +12797,8 @@ element (graph_name, claim_coordinate, claim_target_type, position, place, sourc
      AND e.anchor_line = cl.anchor_line AND e.anchor_column = cl.anchor_column
      AND e.place >= cl.first_place
 )
+(
+(
 -- The element itself, with no destination, whether or not it allows a move: what a stop reports,
 -- with whether the element names anything. A @routine moves from wherever the path stands, so one
 -- with no move names no routine with a generated call.
@@ -12804,7 +12836,9 @@ SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el
   JOIN sql_referential_constraint rc
     ON rc.source_name = m.constraint_source_name AND rc.table_schema = m.constraint_schema
    AND rc.table_name = m.constraint_table AND rc.constraint_name = m.constraint_name
+)
 UNION ALL
+(
 -- A table's own primary key, joining each row to itself: the claim's only element, on a field
 -- reading one row.
 SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
@@ -12837,7 +12871,11 @@ SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el
    AND (NOT (rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
              AND rc.table_name = rc.referenced_table)
         OR NOT el.single_valued)
+)
+)
 UNION ALL
+(
+(
 -- A table, reached over each foreign key the table the path stands at declares toward it.
 SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
        el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
@@ -12873,7 +12911,9 @@ SELECT DISTINCT el.graph_name, el.claim_coordinate, el.claim_target_type, el.pos
     ON n.to_source_name = t.table_source_name AND n.to_schema = t.table_schema
    AND n.to_table = t.table_name
  WHERE NOT el.has_key
+)
 UNION ALL
+(
 -- A @routine: a call made from whichever table the path stands at, landing on its function's
 -- derived table, one move per routine the element names.
 SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
@@ -12890,6 +12930,7 @@ SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el
     ON fn.source_name = er.routine_source_name AND fn.table_schema = er.table_schema
    AND fn.table_name = er.routine_name
 UNION ALL
+(
 -- A condition alone: its method's second parameter names where it lands, one move per table it
 -- names, and its first, where it names a table, is the only table it departs; a first parameter
 -- naming no table departs any.
@@ -12937,7 +12978,10 @@ SELECT DISTINCT cl.graph_name, cl.claim_coordinate, cl.claim_target_type,
    AND NOT EXISTS (SELECT 1 FROM graphitron_ast_path_entry nx
                     WHERE nx.graph_name = e.graph_name AND nx.source_name = e.source_name
                       AND nx.anchor_line = e.anchor_line AND nx.anchor_column = e.anchor_column
-                      AND nx.place = e.place + 1);
+                      AND nx.place = e.place + 1)
+)
+)
+);
 COMMENT ON VIEW graphitron_join_path_step_rule IS 'A move one written element of a claim allows from a table: one row per claim, position, departure and move, and one row per element with no destination. For example {key: "customer_address_id_fkey"} on Customer.address allows customer to address, and {table: "language"} on a Film field allows film to language over each of film''s two keys.';
 -- COMMENT ON COLUMN graphitron_join_path_step_rule.graph_name IS 'the owning graph''s partition, carried from the claim';
 -- COMMENT ON COLUMN graphitron_join_path_step_rule.claim_coordinate IS 'the declared element the claim is written on';
@@ -17779,9 +17823,13 @@ COMMENT ON VIEW graphitron_occurrence_routine_parameter_defect_rule IS 'One row 
 -- inference reads where its path lands, which a written path does not know until its steps say.
 -- A slot whose needs reach several nodes decides only for a bare @nodeId on an argument, one node
 -- per table; anywhere else which node the id names is the defect's.
+-- The arms of its union are bracketed as a balanced tree, about log2 n deep rather than one level
+-- an arm: its stage writes the node ids from it in one statement, and H2 keeps a parsed copy of a union at every level of its nesting.
 CREATE VIEW graphitron_occurrence_node_id_rule
   (graph_name, coordinate, bound, kind, position, basis, node_type_name, table_source_name,
    table_schema, table_name, column_name) AS
+(
+(
 -- One arm per rule, each joining the node's key columns itself and none wrapped in a WITH: H2 takes
 -- the writer's graph into every branch of a union, and into nothing a WITH computes first.
 -- @nodeId(typeName:) naming a node.
@@ -17825,7 +17873,9 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_
                       AND m2.member_type_name <> m.member_type_name
                       AND bt2.table_source_name = bt.table_source_name
                       AND bt2.table_schema = bt.table_schema AND bt2.table_name = bt.table_name)
+)
 UNION ALL
+(
 -- A bare @nodeId on an output field with no @reference: its declaring type, a node.
 SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'CONTAINING_NODE_TYPE', f.type_name, k.table_source_name, k.table_schema, k.table_name,
@@ -17843,6 +17893,7 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_
                     WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                       AND d.directive_name = 'reference')
 UNION ALL
+(
 -- A bare @nodeId on an output field with a @reference: the one node over the table it lands on.
 SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'TARGET_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
@@ -17883,7 +17934,12 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_
                     WHERE c.source_name = k.table_source_name AND c.table_schema = k.table_schema
                       AND c.table_name = k.table_name
                       AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID'))
+)
+)
+)
 UNION ALL
+(
+(
 -- An argument's or input field's bare @nodeId: the node its need reaches, the need's target where
 -- that is a node, else the one node over the table it lands on. A slot with several needs decides
 -- where they all reach that one node, as the generator reads a nested input whose participants
@@ -17965,7 +18021,9 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
                       AND m2.stated_by = 'SERVICE' AND m2.record_table IS NOT NULL
                       AND NOT (m2.record_source_name = nt.table_source_name
                                AND m2.record_schema = nt.table_schema AND m2.record_table = nt.table_name))
+)
 UNION ALL
+(
 -- The same as a bean member: the one node over the table whose record the member takes.
 SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'RECORD_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
@@ -17994,6 +18052,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
                       AND NOT (m2.record_source_name = nt.table_source_name
                                AND m2.record_schema = nt.table_schema AND m2.record_table = nt.table_name))
 UNION ALL
+(
 -- An argument's or input field's id: ID with neither @nodeId nor @field written, named for its
 -- target: the node its need reaches, on the terms above, all its needs reaching that one node, and
 -- only where that node's table has no column of the name, as the own id. Not the id a node fetcher
@@ -18060,7 +18119,10 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_
                          AND nt.table_schema = w.table_schema AND nt.table_name = w.table_name)
  WHERE o.kind = 'FIELD'
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate);
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate)
+)
+)
+);
 COMMENT ON VIEW graphitron_occurrence_node_id_rule IS 'One row the occurrence node id rule computes, in the shape graphitron_occurrence_node_id stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_node_id, which are the names every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.coordinate IS 'the occurrence carrying the id';
@@ -20701,7 +20763,11 @@ COMMENT ON COLUMN graphitron_occurrence_filter_term.table_schema IS 'the table''
 COMMENT ON COLUMN graphitron_occurrence_filter_term.table_name IS 'the table';
 COMMENT ON COLUMN graphitron_occurrence_filter_term.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The arms of its union are bracketed as a balanced tree, about log2 n deep rather than one level
+-- an arm: one UNION takes every way an occurrence is taken, each once, and H2 keeps a parsed copy of a union at every level of its nesting.
 CREATE VIEW graphitron_occurrence_taken_rule (graph_name, coordinate, taken_by) AS
+(
+(
 -- A member of the class the occurrence's parent is built into, by the name the class matches on.
 SELECT DISTINCT bm.graph_name, bm.coordinate, 'MEMBER'
   FROM graphitron_occurrence_binding_member bm
@@ -20709,6 +20775,7 @@ SELECT DISTINCT bm.graph_name, bm.coordinate, 'MEMBER'
   JOIN graphitron_occurrence_built_class pr
     ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate AND pr.class_name = bm.class_name
 UNION
+(
 -- A call's parameter, a condition's, a service's or a write's.
 SELECT bp.graph_name, bp.coordinate, 'PARAMETER' FROM graphitron_occurrence_binding_parameter bp
 UNION
@@ -20717,12 +20784,18 @@ UNION
 SELECT l.graph_name, l.landing_coordinate, 'PARAMETER'
   FROM graphitron_argmapping_landing l
  WHERE l.directive_name = 'routine'
+)
+)
 UNION
+(
+(
 -- A call's tenant, named by the author or read off a record or a node id.
 SELECT bt.graph_name, bt.coordinate, 'TENANT' FROM graphitron_occurrence_binding_tenant bt
 UNION
 SELECT ts.graph_name, ts.coordinate, 'TENANT' FROM graphitron_occurrence_tenant_slot ts
+)
 UNION
+(
 -- A value bound to the graph's tenant column, which routes the statement to the tenant's database
 -- whether or not a predicate compares it, an overriding condition standing in for that predicate.
 SELECT c.graph_name, c.coordinate, 'TENANT'
@@ -20736,7 +20809,12 @@ UNION
 SELECT l.graph_name, l.landing_coordinate, 'OUTBOX'
   FROM graphitron_argmapping_landing l
  WHERE l.directive_name = 'outbox'
+)
+)
+)
 UNION
+(
+(
 -- Its own @condition.
 SELECT o.graph_name, o.coordinate, 'CONDITION'
   FROM graphitron_occurrence o
@@ -20745,6 +20823,7 @@ SELECT o.graph_name, o.coordinate, 'CONDITION'
                 WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                   AND d.directive_name = 'condition')
 UNION
+(
 -- A filter term, where no overriding condition stands in for the predicate.
 SELECT ft.graph_name, ft.coordinate, 'COMPARED'
   FROM graphitron_occurrence_filter_term ft
@@ -20766,7 +20845,11 @@ SELECT o.graph_name, o.coordinate, 'COMPARED'
                     WHERE n.graph_name = o.graph_name AND n.coordinate = o.coordinate))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
                     WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+)
+)
 UNION
+(
+(
 -- The argument a node fetcher decodes, as graphitron_occurrence_producer_node states it; another
 -- argument of the field is judged as any other.
 SELECT pn.graph_name, pn.argument_coordinate, 'NODE'
@@ -20780,7 +20863,9 @@ SELECT o.graph_name, o.coordinate, 'LOOKUP_KEY'
    AND EXISTS (SELECT 1 FROM graphitron_directive_application d
                 WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                   AND d.directive_name = 'lookupKey')
+)
 UNION
+(
 -- An @orderBy argument, which graphitron reads itself.
 SELECT o.graph_name, o.coordinate, 'ORDER'
   FROM graphitron_occurrence o
@@ -20805,7 +20890,10 @@ SELECT o.graph_name, o.coordinate, 'PAGE'
         OR (o.name = 'first' AND f.is_list
             AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer sp
                              WHERE sp.graph_name = po.graph_name AND sp.coordinate = po.coordinate
-                               AND sp.kind = 'SERVICE')));
+                               AND sp.kind = 'SERVICE')))
+)
+)
+);
 COMMENT ON VIEW graphitron_occurrence_taken_rule IS 'One row the taken rule computes, in the shape graphitron_occurrence_taken stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this views rows for one graph into graphitron_occurrence_taken, which is the name every reader spells.';
 
 CREATE VIEW graphitron_occurrence_tenant_entry_defect_rule
@@ -28106,6 +28194,8 @@ COMMENT ON VIEW graphitron_occurrence_list_element_defect_rule IS 'One row the l
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.code';
 
+-- The arms of its union are bracketed as a balanced tree, about log2 n deep rather than one level
+-- an arm: its arms share the WITH RECURSIVE they read, and H2 keeps a parsed copy of a union at every level of its nesting.
 CREATE VIEW graphitron_occurrence_condition_parameter_rule
   (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name, fill,
    landing_coordinate, context_key, session_member) AS
@@ -28321,6 +28411,8 @@ by_field (graph_name, coordinate, call, call_kind, method_descriptor, position, 
                         AND f.call = p.call AND f.method_descriptor = p.method_descriptor
                         AND u.coordinate <> t.coordinate)
 )
+(
+(
 -- A table parameter takes the table the condition is applied to, the call's bound table.
 SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_descriptor, p.position,
        p.parameter_name, 'TABLE', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
@@ -28344,7 +28436,9 @@ SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.p
   JOIN paired w
     ON w.graph_name = p.graph_name AND w.coordinate = p.coordinate AND w.parameter_name = p.parameter_name
  WHERE w.bound_to = '$session' OR w.bound_to LIKE '$session.%'
+)
 UNION ALL
+(
 -- The argument path a pair names, where it lands under this occurrence of the condition.
 SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
        p.parameter_name, 'ARGUMENT', l.landing_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
@@ -28363,7 +28457,11 @@ SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.p
   JOIN slot e ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate AND e.name = p.parameter_name
  WHERE NOT EXISTS (SELECT 1 FROM paired w WHERE w.graph_name = p.graph_name
                       AND w.coordinate = p.coordinate AND w.parameter_name = p.parameter_name)
+)
+)
 UNION ALL
+(
+(
 -- A contextArguments key of its name, where nothing is written for it and no element has its name.
 SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
        p.parameter_name, 'CONTEXT_KEY', CAST(NULL AS VARCHAR), k.context_key, CAST(NULL AS VARCHAR)
@@ -28378,14 +28476,18 @@ UNION ALL
 SELECT graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
        'ARGUMENT', slot_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM by_one
+)
 UNION ALL
+(
 SELECT graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
        'ARGUMENT', slot_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM by_type
 UNION ALL
 SELECT graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
        'ARGUMENT', field_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM by_field;
+  FROM by_field
+)
+);
 COMMENT ON VIEW graphitron_occurrence_condition_parameter_rule IS 'One row the condition parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.coordinate';
@@ -31772,6 +31874,8 @@ INSERT INTO lint_rule VALUES
   ('shared-type-tags-narrowed', 'CODEGEN', 'WARNING'),
   ('reference-path-fans-out', 'DERIVED', 'WARNING');
 
+-- The arms of its union are bracketed as a balanced tree, about log2 n deep rather than one level
+-- an arm: the two filters every lint rule shares read its arms whole, and H2 keeps a parsed copy of a union at every level of its nesting.
 CREATE VIEW lint_violation
   (graph_name, lint_rule, source_name, source_line, source_column,
    subject, subject_parent, subject_kind, subject_at_position) AS
@@ -31822,13 +31926,16 @@ applied (graph_name, source_name, source_line, source_column, name, type_name) A
 -- One row per rule broken at one written position, before the two filters every rule shares.
 broken (graph_name, lint_rule, source_name, source_line, source_column, type_name,
         subject, subject_parent, subject_kind, subject_at_position) AS (
+  (
+  (
   -- An input object's name ends in Input. Every declaration site of one, extensions included,
   -- because the name is spelled at each and renaming means editing every line that spells it.
   SELECT graph_name, 'input-object-name-suffix', source_name, source_line, source_column, name,
          name, NULL, 'NAMED_TYPE', description IS NULL
     FROM graphql_ast_type_declaration_entry
    WHERE kind = 'INPUT_OBJECT' AND name NOT LIKE '%Input'
-   UNION ALL
+  UNION ALL
+  (
   -- The name shapes, anchored at both ends. Unanchored, the camel-case pattern would hold of any
   -- name containing a lowercase run, which is nearly every name there is, and the rule would go
   -- quiet rather than loud.
@@ -31836,27 +31943,33 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
          name, NULL, 'NAMED_TYPE', description IS NULL
     FROM graphql_ast_type_declaration_entry
    WHERE NOT REGEXP_LIKE(name, '^[A-Z][A-Za-z0-9]*$')
-   UNION ALL
+  UNION ALL
   SELECT graph_name, 'enum-values-screaming-snake-case', source_name, source_line, source_column,
          type_name, name, NULL, 'ENUM_VALUE', description IS NULL
     FROM graphql_ast_enum_value_definition_entry
    WHERE NOT REGEXP_LIKE(name, '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$')
-   UNION ALL
+  )
+  )
+  UNION ALL
+  (
+  (
   SELECT graph_name, 'input-and-argument-names-camel-case', source_name, source_line, source_column,
          type_name, name, NULL, 'INPUT_FIELD', description IS NULL
     FROM graphql_ast_input_field_entry
    WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
-   UNION ALL
+  UNION ALL
   SELECT graph_name, 'input-and-argument-names-camel-case', source_name, source_line, source_column,
          type_name, name, NULL, 'FIELD_ARGUMENT', description IS NULL
     FROM graphql_ast_field_argument_entry
    WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
-   UNION ALL
+  )
+  UNION ALL
+  (
   SELECT graph_name, 'field-names-camel-case', source_name, source_line, source_column, type_name,
          name, NULL, 'FIELD', description IS NULL
     FROM graphql_ast_field_definition_entry
    WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
-   UNION ALL
+  UNION ALL
   -- A field must not repeat its own type's name. The third clause is what keeps Userland from
   -- reading as User plus a prefix: the character after the repeat has to start a new word, tested
   -- as one that changes under lower-casing and not under upper-casing, which is what the walk's
@@ -31868,7 +31981,12 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
      AND UPPER(SUBSTRING(name, 1, LENGTH(type_name))) = UPPER(type_name)
      AND SUBSTRING(name, LENGTH(type_name) + 1, 1) <> LOWER(SUBSTRING(name, LENGTH(type_name) + 1, 1))
      AND SUBSTRING(name, LENGTH(type_name) + 1, 1) = UPPER(SUBSTRING(name, LENGTH(type_name) + 1, 1))
-   UNION ALL
+  )
+  )
+  )
+  UNION ALL
+  (
+  (
   -- Every type, and the fields of a root operation type. Two populations, because the question is
   -- whether the author documented something they could have documented: a type extension carries no
   -- description slot at all, so a row there would assert a defect nobody can fix, while a field
@@ -31877,14 +31995,15 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
          name, name, NULL, 'NAMED_TYPE', description IS NULL
     FROM graphql_ast_type_declaration_entry
    WHERE is_extension = FALSE AND (description IS NULL OR TRIM(description) = '')
-   UNION ALL
+  UNION ALL
+  (
   SELECT f.graph_name, 'types-and-fields-have-descriptions', f.source_name, f.source_line,
          f.source_column, f.type_name, f.name, f.type_name, 'FIELD', f.description IS NULL
     FROM graphql_ast_field_definition_entry f
    WHERE (f.description IS NULL OR TRIM(f.description) = '')
      AND EXISTS (SELECT 1 FROM graphql_root_operation r
                   WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name)
-   UNION ALL
+  UNION ALL
   -- A deprecation says why, and what counts as saying why is a written string with something in it.
   -- An argument passed as anything else says nothing a reader can act on, and neither does a string
   -- of spaces, so both draw a row exactly as an omitted argument does. Read off the decomposed
@@ -31901,7 +32020,11 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
         WHERE g.graph_name = a.graph_name AND g.source_name = a.source_name
           AND g.parent_line = a.source_line AND g.parent_column = a.source_column
           AND g.name = 'reason' AND v.kind = 'STRING' AND TRIM(v.written_text) <> '')
-   UNION ALL
+  )
+  )
+  UNION ALL
+  (
+  (
   -- @splitQuery beside @service on a field of a type no root operation names: a child service is
   -- called once per batch of parents, so the split the directive asks for is already its delivery.
   SELECT a.graph_name, 'splitquery-redundant-on-service-child', a.source_name, a.source_line,
@@ -31923,7 +32046,7 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
                     AND se.parent_column = f.source_column)
      AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
                       WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name)
-   UNION ALL
+  UNION ALL
   -- An author writing something the vocabulary has retired. Three arms, because three different
   -- things can be deprecated and each is written somewhere different, so each arm draws its row at
   -- the words that have to change. What the arms no longer differ in is where they look it up: one
@@ -31939,7 +32062,9 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
     JOIN graphitron_deprecated d
       ON d.graph_name = a.graph_name AND d.coordinate = '@' || a.name
    WHERE a.name <> 'record'
-   UNION ALL
+  )
+  UNION ALL
+  (
   SELECT g.graph_name, 'no-deprecated-directive-usage', g.source_name, g.source_line,
          g.source_column, a.type_name, g.name, a.name, 'DIRECTIVE_ARGUMENT', TRUE
     FROM graphql_ast_applied_argument_entry g
@@ -31949,7 +32074,7 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
     JOIN graphitron_deprecated d
       ON d.graph_name = g.graph_name AND d.coordinate = '@' || a.name || '(' || g.name || ':)'
    WHERE a.name <> 'record'
-   UNION ALL
+  UNION ALL
   SELECT v.graph_name, 'no-deprecated-directive-usage', v.source_name, v.source_line,
          v.source_column, a.type_name, v.object_field_name, f.named_type, 'INPUT_FIELD', TRUE
     FROM graphql_ast_value_entry v
@@ -31965,6 +32090,9 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
       ON d.graph_name = v.graph_name
      AND d.coordinate = f.named_type || '.' || v.object_field_name
    WHERE v.object_field_name IS NOT NULL AND a.name <> 'record'
+  )
+  )
+  )
 )
 SELECT b.graph_name, b.lint_rule, b.source_name, b.source_line, b.source_column,
        b.subject, b.subject_parent, b.subject_kind, b.subject_at_position
