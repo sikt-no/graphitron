@@ -1795,8 +1795,11 @@ output package they are written to are settled.
   launcher's routine row reading the facts R704 captured, with
   `ProjectionUnitRenderer` folded into the families that use them.
   * **A batched child's fetcher is emitted from the store, on its stated connection** `blocked`, G's,
-    on "The projection units are rendered from the store" and
-    "The root query fetchers are emitted from the store, claimed by C". A split-query child reads its DataLoader and its connection off the store.
+    on "The root query fetchers are emitted from the store, claimed by C". A split-query child reads its DataLoader and its connection off the store.
+    It does not wait for the projection units: its `$project` stays the walk's until that tier flips, as
+    the store-emitted roots' does (Alf, 2026-11-25). A child `@routine` arrives as the first step of the
+    split's join path, never as a `ROUTINE` producer, so the routine case follows
+    "A split child `@routine` is a path routine".
   * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
     `blocked`, F's, on the same two nodes. A connection field and its count and facet siblings read
     their query and connection off the store; it releases R1119's slice 8e.3 for connection-typed
