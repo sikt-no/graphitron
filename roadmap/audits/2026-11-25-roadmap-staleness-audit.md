@@ -1,8 +1,8 @@
-# Roadmap staleness audit: 2026-11-24
+# Roadmap staleness audit: 2026-11-25
 
 A point-in-time review of every active roadmap item under [`roadmap/`](../) against the **current**
-state of the codebase on `claude/graphitron-rewrite` (HEAD `f026915`, committed 2026-11-24 00:06 UTC,
-audited 2026-11-24). The goal is to find items whose premise no longer holds: work already shipped,
+state of the codebase on `claude/graphitron-rewrite` (HEAD `c514f01`, committed 2026-11-24 20:55 UTC,
+audited 2026-11-25). The goal is to find items whose premise no longer holds: work already shipped,
 constructs renamed or removed, dependencies that have since landed or been discarded, or specs grown
 stale enough to mislead an implementer. Every flagged item carries a recommended action and the reason
 for it.
@@ -11,134 +11,119 @@ This file is an analysis artifact, not a roadmap item: it lives in a subdirector
 (which scans `roadmap/*.md` non-recursively and requires `id:` front-matter on each) ignores it, and it
 is Markdown so the `check-adoc-tables` build step (which scans `.adoc` only) leaves it alone.
 
-This audit supersedes the `2026-11-23` staleness audit, which has been renamed into this file; only the
+This audit supersedes the `2026-11-24` staleness audit, which has been renamed into this file; only the
 latest **staleness** audit is retained. The other files in this directory are provenance (spikes,
 censuses, measurements, lineage notes) that shipped and active items cite by path; they are not staleness
 audits and are left in place.
 
-**Baseline and method.** The prior audit measured trunk at `3d7ee42` (`next-id: R1205`, 385 item files).
-This audit measures at `f026915` (`next-id: R1206`, **382** item files, max id on the board R1205): a
-window of **about 25 hours and 46 commits**, 14 of them R876's, 7 R454's, 5 R1146's, 4 R1199's, 3 each
-for R534, R1202 and R1119, one each for R1205 and a `feat(scalars)` with no item, and 5 docs or roadmap
-bookkeeping. The delta below is a real commit diff:
+**Baseline and method.** The prior audit measured trunk at `f026915` (`next-id: R1206`, 382 item files).
+This audit measures at `c514f01` (`next-id: R1209`, **384** item files, max id on the board R1208): a
+window of **about 22 hours and 50 commits**, one of them the prior audit itself. Of the other 49, 13 are
+R876's, 8 R1199's, 5 each R454's and R1202's, 3 each R1206's and R1188's, 2 R1119's, one each a
+`fix(jakarta-rest)`, a `fix(dev)` and a `test` with no item, one roadmap bookkeeping commit, and 6 docs
+rulings or findings. The delta below is a real commit diff:
 
 1. Parse every `roadmap/*.md` front-matter (id, status, slug) at both commits and diff the two tables.
-2. Diff `3d7ee42..f026915`: every roadmap file touched, every changelog entry added, and the set of
+2. Diff `f026915..c514f01`: every roadmap file touched, every changelog entry added, and the set of
    identifiers present in removed lines of the non-roadmap, non-docs diff and absent from the tree now
-   (**276** candidates, against 1,694 last window). The substantive ones come from R876's condition
-   flip (`f34cef0`): `ConditionGlueRenderer` (807 lines) with `nestedExtraction`, the three helper
-   registries (`InputBeanHelperRegistry`, `ElementRowsHelperRegistry`, `RecordDecodeHelperRegistry`),
-   the walk's predicate model (`Predicate`, `PresenceGuard`, `AuthoredMethodRef`, `ArgBinding`,
-   `MatchKind`, `OuterLift`), `ConditionGluePipelineTest` and `ConditionGlueRendererTest`; from the
-   root-read slice (`5fc05bd`): `RootPresence`, `NullChecks`, `NullCheck` and
-   `RootNullContractPipelineTest`; from the list-order rule (`bb949ea`): `validateListRequiresOrdering`,
-   `validatePaginationRequiresOrdering`, `listOrderingDiagnostic` and `routineResultTerminusOf`; and
-   from R1146 and R1119 `typenameForTypeId` and `VouchedValueLimitExceededException`. Each of the 382
-   item bodies was tested against that set. **Six active items cite one** outside R876's own body
-   (R1202, R1022, R862, R660, R1119 and R412, the last only on a prose word); the walk's
-   classification classes the prior audit expected the flip to take (`ConditionResolver`,
-   `ServiceCatalog`, `InputBeanResolver`, `ArgmappingProjectionDefects`) all survive.
-3. The new item (R1205) and the moved or rewritten ones (R454, R1199, R1202, R534) had their backticked
-   names checked against the tree; every unresolved name is a proposal (`sql_udt`, `VouchedFor`,
-   `graphitron_voucher_guard`), a PostgreSQL or consumer name, or a commit hash.
+   (**32** candidates, against 276 last window). The substantive ones are R1202's
+   `FieldBuilder.conditionReadThroughList` and `listLevelOnPath`, R1199's `VOUCHER_VOUCHED_FOR_IN_KEY`
+   and `vouched_owner`, R454's header-only census parameter (`headerOnly`, `headerOnlyPackage`), and
+   `RequestNumbers.literalsWithinBounds` (now the lexer-fed `literalWithinBounds`, `c58f386`). Each of the
+   384 item bodies was tested against that set. **No active item cites one** outside R1202's own
+   `## Retired vocabulary` section, which is where it should.
+3. The three new items (R1206, R1207, R1208) and the moved or rewritten ones (R1202, R454, R1119, R1188,
+   R876) had their backticked names checked against the tree; every unresolved name is a proposal
+   (`graphitron_voucher_guard`), a federation or consumer name, or a family prefix (`store_class`).
 4. Recheck the prior audit's flags. The retired names the clusters rest on were re-`grep`ped
    (`CompletionData`, `meta_materialize`, `SlotParse`, `looksLikeSourcesShape`, `TableInputType`,
    `RewriteSchemaLoaderTest`, `SourceRowDirectiveResolver`, `graphitron_runtime_class`,
    `graphitron_node_entry`, `ConnectionResult`, `DefaultPageSizeDefects`, `ServiceDirectiveResolver`,
-   `JooqRecordInstantiationEmitter`, `ErrorChannelWalker`, `isMountFailure`, `GraphCountGrowthGateTest`:
-   all still `grep`=0), so the flags carry unless stated otherwise.
-5. Read the window's `feat`/`fix` commits (13 of them) and five docs rulings for work that delivers or
-   undercuts a filed item, and grep the active bodies for each one's subject (condition glue, a
-   `contextArguments` condition, the root null contract, list order and `fields: []`, a document
-   number's digit bound, two participants on one table, `@tenantFanOut` on a service, a parameterised
-   owner's member, a stored join several readers build on). The two sweeps split the yield this window:
-   the removed-names step found R1202, R862 and R1022, the subject sweep found R85, R1188, R1191 and
-   R1205's premise.
+   `JooqRecordInstantiationEmitter`, `ErrorChannelWalker`, `ConditionGlueRenderer`, `isMountFailure`,
+   `GraphCountGrowthGateTest`: all still `grep`=0), and no flagged item's file was edited this window
+   except R1202 and R1188, so the flags carry unless stated otherwise.
+5. Read the window's `feat`/`fix` commits (8 of them), the R876 refactors that moved root families to the
+   store, and six docs commits for work that delivers or undercuts a filed item, and grep the active
+   bodies for each one's subject (the generated jOOQ classes read with their members, a record class on
+   two tables, a select-only console client, root lookups, `@orderBy` and connections from the store, the
+   vouched-for set and its cap, another corpus deciding what a capture reads, unioned rule views). With
+   the removed-names step finding nothing this window, **every new flag came from the subject sweep**:
+   R776, R1206, and sharpenings of R555, R762 and R1188.
 
 As before, the carried flags are **symbol-evidence-backed, not a full prose read of every body**; the
 recommended action for most is a re-derive that will confirm or dissolve the flag.
 
-## What changed since the 2026-11-23 audit
+## What changed since the 2026-11-24 audit
 
-- **Done (one): R1146** (`node-lookup-invalid-id-returns-null`): round 2 passed (`032de1a`), the work
-  landed as `a2e2497` (a malformed id to a `Node`-returning lookup is the client error, a well-formed id
-  of a type this subgraph does not serve stays `null`) and the Done transition (`1fbbf03`) wrote its
-  changelog line, deleted the file and struck R521's `typenameForTypeId` bullet in the same commit, as
-  the prior audit asked. Spec to Done inside a day with two review rounds.
-- **Discarded (three), each with a changelog line naming the commit that took its subject:**
-  **R677** (`list-ordering-invariant-enforcement`, Spec): its phase 3 is `bb949ea`'s stored
-  `LIST_ORDER_UNDETERMINED`, Alf ruling 2026-11-23. **R903** (`presence-guard-respells-the-wire-address`)
-  and **R561** (`condition-glue-pipeline-body-scans`), both Backlog: the classes and test they named were
-  deleted by the condition flip (`f34cef0`). This is the discard-with-a-line practice observation 8
-  asks for, done by R876's own sessions in the commit that took the subject.
-- **Filed (one): R1205** (`unrouted-nodeid-under-field-level-override-refused`, Backlog, priority 3):
-  an unrouted `@nodeId` argument read by a field-level `@condition(override: true)` is refused though the
-  override suppresses the predicate a route would serve. Probed at `032de1a`, before the condition flip
-  (§B.3).
-- **Moved:** **R534** In Progress -> In Review (`e140bfa`), after its javadoc fix (`a8086fe`) and a sis
-  run on the first release containing the fix (`47ab77d`, `10.0.0-RC58`), which settles the
-  snapshot-or-release question the prior audit raised. **R1202** Spec -> Ready (`44622d6`), after the
-  author re-grounded it on trunk after R1204 (`17cf288`) and re-probed (`418b4f9`); its plan was then
-  overtaken the same day by the condition flip (§B.3). **R454** (`routine-write-result-shapes`)
-  Backlog -> Spec (`c4b1fa8`), rebuilt on what jOOQ says about a routine (`94c60b8`), with Alf's
-  ruling on a mutation's one-row routine (`00db6a6`, `f52c47b`) and reviewer round 1 asking for
-  revisions (`18f6f7f`). **R1199** Backlog -> Spec (`52c2178`), planned on one connection mounted for
-  the set of vouched-for values with `@requires` guarding the field (`f7205c0`, Alf 2026-11-23), and
-  reviewer round 1 asking for revisions (`cab66e9`); its `depends-on` edge to R1119 was dropped.
-- **R876 flipped the filter conditions to the store** (`f34cef0`, `feat!`): every `<Parent>Conditions`
-  class is rendered by `ConditionUnitRenderer` from `ConditionQuery`'s rows, and `ConditionGlueRenderer`,
-  its helper registries and the walk's predicate model are deleted (about 1,800 main lines). It is a
-  flip of **emission**, not of classification: `ConditionResolver`, `ServiceCatalog` (still 1,755
-  lines), `InputBeanResolver` and `ArgmappingProjectionDefects` remain. The breaking half: a `@nodeId`
-  whose decoded key goes whole to a `@condition` parameter of a key column's own type is refused as
-  `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`, the migration being an `argMapping` projection; FS-plattform has 15
-  such sites, approved by Alf on 2026-11-23, **several of them lists** (`organisasjoner`, `roller`,
-  `miljoer`). Around it: what a field's filter compares is stated once
-  (`graphitron_occurrence_row_input`, `graphitron_occurrence_filter_term`, `83034e2`), which condition
-  methods a field's tables have and whether each takes the context or the session
-  (`graphitron_occurrence_condition_signature`, `aa923ad`), and new refusals
-  (`FILTER_SCALAR_AGAINST_ARRAY_COLUMN`, `NODE_ID_PARTICIPANT_WITHOUT_NODE`, `PARTICIPANTS_SHARE_A_TABLE`,
-  `PARAMETER_TYPE_UNSPELLED`, `LIST_ELEMENT_PATHS_DIFFER`, `PARAMETER_MISMATCH` at a `@condition`).
-- **R876's other slices:** every list states its order or is refused (`LIST_ORDER_UNDETERMINED`,
-  `ORDER_FIELDS_EMPTY`, `bb949ea`, `feat!`), deleting the walk's ordering validators; a root read over
-  one untenanted table is emitted from the store, and a root single read is `null` only where it finds no
-  row (`5fc05bd`, `feat!`, Alf 2026-11-23); a type whose projection reads the session is stored
-  (`graphitron_tabletype_session`, `e6c82cd`); `@tenantFanOut` on a `@service` is
-  `TENANT_FAN_OUT_ON_SERVICE` (`1ed861e`); a member of a parameterised class is captured with its
-  owner's type arguments (`4f0d5d1`). Two open nodes got rulings (`a0e6a1b`): two services' compatible
-  classes for one type are served, and a `@reference` beside a child `@service` is refused.
-- **R1119** shipped slice 8g (`0c5ed78`, `feat!`): a representation past the one-value limit fails
-  alone at its index and the rest of the lookup resolves; `VouchedValueLimitExceededException` is gone
-  and slice 8e.3 is all that remains (`f6e16dd`).
-- **Outside any item,** `b1f7d9c` bounds a document's numeric literals and a number handed to a
-  `@scalarType` scalar at a thousand digits (`BoundedCoercing`), the request-side twin of R1188's landed
-  half (§B.3).
-- The model is now **280 views and 411 tables** (274 and 405 at the prior audit); `LintRule` still holds
+- **Done (one): R1199** (`vouched-lookups-past-one-value`): Spec -> Ready (`6bcf7b9`) after Filip's two
+  rulings (the cap is a runtime hook shaped like `BatchSizeLimit`, default 1000, `5d12118`; a key field
+  the voucher vouches for is supplied from the vouched-for section, retiring
+  `VOUCHER_VOUCHED_FOR_IN_KEY`, `a953141`) and a docs ruling (`a8539df`); implemented as `78fae2c`
+  (`feat!`) and `080fff5`; In Review (`31e647c`) and Done (`963c023`) with a `Breaking:` changelog line
+  carrying a migration, and a reviewer session distinct from the implementer's. Its `@requires` guard
+  and narrowing were split out first as **R1207** (`9b3b24b`), and the architect's follow-up was filed by
+  the Done reviewer as **R1208**. R1119's body was updated in the same window to say the one-value rule is
+  superseded (`fb51d50`). Spec to Done inside a day, cleanly.
+- **Filed (three): R1206** (`declared-dependency-class-nameable`, filed `11254a1`, shape ruled `10aefbb`,
+  Spec -> Ready `8f030b3`, all within an hour): a class in a declared jar is read where a schema's code
+  reference names it. **R1207** (`vouched-fields-guarded-by-requires`, Backlog, priority 3). **R1208**
+  (`vouched-for-row-built-in-shape-order`, Backlog, priority 5).
+- **Moved:** **R1202** Ready -> In Progress (`48c8c8e`) -> In Review (`099d920`). The prior audit
+  recommended sending it back to Spec because its plan was written into the deleted condition glue; Filip
+  chose instead (2026-11-24) to carry the change as an **In Progress plan edit** that says what the flip
+  delivered (step 1) and what ships instead, with a fourth architect consult and a `## Retired vocabulary`
+  section (`f86fc04`). The work landed as `3643417` (`fix`) and `2ba2d28` (`feat`), deleting
+  `FieldBuilder.conditionReadThroughList` outright. **R454** Spec -> Ready (`da56041`) -> In Progress
+  (`5bc97d3`), shipping slice 0 (`0bc0c08`, `a81ed52`: the generated jOOQ classes are read with their
+  members wherever the catalog sits, and a method states the jOOQ call form its signature offers), with
+  Alf replacing his 2026-11-23 one-row-routine ruling by a re-read by the record's key (`5ac65da`,
+  `bd232ad`).
+- **R876** moved six root families to the store: a root lookup by scalar keys of its own table
+  (`bbbd070`), a root list ordered by one `@orderBy` choice (`0fece61`), a root connection over one table
+  (`dcbe557`), a node fetcher's root method (`cda7943`), a discriminated interface on one shared table and
+  one with a detail table (`3239b6b`, `2c9a7a7`, `6543cc2`), and a list or record over several tables,
+  ordered across its participants or not (`2e117fa`, `c514f01`, with `ORDER_POSITIONS_DISAGREE`). It filed
+  two nodes: a record class belongs to one table, high priority since a `SETOF t` function beside a
+  `@service` taking `t`'s record crashes a capture (`d402463`), and a Mutation root's `@routine` is
+  store-owned, blocking R454 slice 1 (`24332cc`). Its "`@externalField` is `@routine`" node is now `open`,
+  unblocked by R454's slice 0 (§B.3, R555).
+- **R1119** shipped slice 8h (`333992c`): the voucher field is nullable on both sides, a null voucher
+  answering null. Only 8e.3 remains.
+- **R1188** narrowed its landed half to a private precondition of every `ColumnValues` entry point
+  (`2aad5ed`) and stated the bound once in the manual (`699fb94`); its Goal still states both halves.
+- **Outside any item,** `c58f386` finds a document's numbers with graphql-java's own lexer and bounds
+  them together at ten thousand characters; `32985a3` makes the fact-store console's client a
+  select-only user with a per-session password (§B.3, R776); `12d4b52` raises the sakila test server to
+  400 connections.
+- The model is now **282 views and 413 tables** (280 and 411 at the prior audit); `LintRule` still holds
   21 ids.
-- **Docs rulings** entered `docs/` as five commits: a plain join several readers build on is stored
-  once (`9786bbf`, refining the 2026-11-15 plain-join rule the prior audit's observation 12 cites); a
-  mutation over a routine returning one row of a table answers with the routine's record (`00db6a6`); a
-  vouched field is guarded by `@requires` (`f7205c0`); two services' compatible classes and a
-  `@reference` beside a child `@service` (`a0e6a1b`); the column value binding convention names
-  `ColumnValues.fromWire` (`9922995`).
-- **Effect on flags.** **Resolved (four):** R677 (discarded; its §B.2 row goes), R561 (discarded; its
-  §C.4 cite goes), R1146 (Done; its §C.5 row goes) and R534's open question (answered by the RC58 run).
-  **New (five):** R1202 (§B.3: a Ready plan written into the deleted glue), R1205 and R862 (§B.3),
-  R1022 and R1191 (§C.1). **Sharpened:** R660 (§A, now unconditional), R85 (§B.1, likely delivered by the
-  flip), R1188 (§B.3), R334 (§C.1, its condition half gone with the glue), R72 (§B.1), R1139 (§B.3, a
-  sibling filed) and R1113 (five days at the gate). Board-level: R1189 and R1185 still have no changelog
-  lines, R901 is still a Done file, and the `RESULT_SHAPES_CONFLICT` line still says "pending" (§D); no
-  `wip` subject reached trunk.
+- **Docs rulings and findings** entered `docs/` as six commits: a mutation over a one-row routine
+  re-reads by the record's key (`bd232ad`, replacing the prior audit's `00db6a6`); a request's
+  vouched-for values share one connection as a type-blind, capped set (`a8539df`); a vouched-for value
+  past the limit fails its own representation (`080fff5`); another corpus may decide which things a
+  capture reads, never what a row says (`f68eef2`); the voucher field is `String` on both sides
+  (`0b1c5ba`); and a rule view may union arms, the cost of a large union being the plan a session keeps
+  (`a0dc9fa`, a measured finding Alf agreed with, not a shape ruling).
+- **Effect on flags.** **Resolved (one):** R1202 (§B.3 and §C.5), by a plan edit at implementation
+  rather than the recommended reopen; it is now In Review. **New (two):** R776 (§B.3: the select-only
+  user it proposes exists and the console now uses it) and R1206 (§C.5: a Ready plan whose cost figures
+  and "today" sentence R454's slice 0 changed three hours after promotion). **Sharpened:** R555 (§B.3,
+  R876's node takes `@externalField` to `@routine`, the opposite direction), R762 (§B.1, R1206 and the
+  `f68eef2` ruling are its on-demand read, for declared jars), R1188 (§B.3, R1199's `VouchedValueLimit`
+  answers its configuration question by precedent) and R1113 (six days at the gate). Board-level: R1189
+  and R1185 still have no changelog lines, R901 is still a Done file, R876's `5fc05bd` still has no
+  `Breaking:` line, and the `RESULT_SHAPES_CONFLICT` line still says "pending" (§D); no `wip` subject
+  reached trunk.
 
-**Flag totals.** Prior ~149; five added, three resolved by discard or Done: **~151 flagged items: 13 §A
-(+R901 structural) / ~64 §B / ~74 §C**, plus two board-level structural flags. Item counts are given per
-cluster because many flagged items cite the same retired names. **Of the prior audit's recommendations,
-two were actioned** (R521's `typenameForTypeId` bullet struck at R1146's Done; R534's In Review
-transition), and R1146 and R1202 were moved through their gates. R209, R193, R213, R899, R761, R861, R758,
-R846, R1033, R1034, R562, R898, R931, R1109, R660, R695, R1139, R1188, R655, R536, R665, R274, R402, R707
-and R901 are all as they were, the Ready items R427, R555, R684 and R730 still name `CompletionData`,
-R730, R555 and R1168 are still Ready, the R427 open question is still undecided, R1113 has sat In Review
-for five days with its three stale cites, and neither missing changelog line (R1189, R1185) was written.
+**Flag totals.** Prior ~151; two added, one resolved: **~152 flagged items: 13 §A (+R901 structural) /
+~64 §B / ~75 §C**, plus two board-level structural flags. Item counts are given per cluster because many
+flagged items cite the same retired names. **Of the prior audit's recommendations, none was actioned as
+written**; R1202's was answered by a different route (a plan edit, Filip's call), which is the gate
+working. R209, R193, R213, R899, R761, R861, R758, R846, R1033, R1034, R562, R898, R931, R1109, R660, R695,
+R1139, R655, R536, R665, R274, R402, R707 and R901 are all as they were, the Ready items R427, R555, R684
+and R730 still name `CompletionData`, R730, R555 and R1168 are still Ready, the R427 open question is
+still undecided, R1113 has sat In Review for six days with its three stale cites, and neither missing
+changelog line (R1189, R1185) was written.
 
 ## Standing headline (unchanged): R876's dissolution of the `intent_` family and the materialization register stales about 40 Backlog and Spec items at once
 
@@ -167,32 +152,38 @@ for five days with its three stale cites, and neither missing changelog line (R1
   **This window it flipped the filter conditions to the store** (`f34cef0`), deleting
   `ConditionGlueRenderer` and the walk's predicate model, and moved list order and the root read's
   null contract into the store (`bb949ea`, `5fc05bd`). It discarded the three items it emptied in the
-  same commits (R677, R561, R903), and one Ready item's plan is again written into a deleted class
-  (R1202, §B.3).
+  same commits (R677, R561, R903), and one Ready item's plan was again written into a deleted class
+  (R1202, since re-planned at implementation and In Review). **The 2026-11-24 window deleted almost
+  nothing and moved six root families to the store** (lookups, `@orderBy` lists, single-table
+  connections, node fetchers, discriminated and multi-table roots), which is condemnation again: the
+  walk's root paths for those shapes are now code a named node deletes, and the child-side flips are
+  named as their second readers. No filed item cites a root-only seat that went, so no flag follows yet.
 - **R1163 is Done** and its changelog entry states the direction: the strata account is the
   gatherers' capture and anchor phases. Items that cite "stratum" or the `intent_` names as live
   mechanisms are the stale set.
 
-## Status snapshot (382 item files)
+## Status snapshot (384 item files)
 
-[`roadmap/README.md`](../README.md) is the roll-up. By `status:` front-matter: Backlog 331, Spec 33,
-Ready 11, In Progress 4, In Review 2, Done 1 (the Done one is a tombstone, §D).
+[`roadmap/README.md`](../README.md) is the roll-up. By `status:` front-matter: Backlog 333, Spec 31,
+Ready 11, In Progress 5, In Review 3, Done 1 (the Done one is a tombstone, §D).
 
-- **In Progress:** R876 (`derived-read-cost-is-a-shape-problem`), R1119
+- **In Progress:** R876 (`derived-read-cost-is-a-shape-problem`), R454 (`routine-write-result-shapes`,
+  slice 0 shipped, slice 1 blocked on R876's Mutation-root `@routine` node), R1119
   (`signed-reference-entities-across-subgraphs`, slice 8e.3 left), R1131
   (`clean-build-under-five-minutes`) and R1160 (`tests-read-shared-fact-stores`). R1131 and R1160 had
-  no commit this window.
-- **In Review (two), both waiting on a reviewer from a different session than the implementer:**
-  **R1113** (`transactional-outbox-directive`), since `fcbceef2` on 2026-11-19, **five days with no
-  review commit** and three stale cites to fix at the gate (§C.5); and **R534**
-  (`record-key-decode-null-write-erasure`), since `e140bfa` on 2026-11-23, clean (§C.5).
-- **Spec, mid-review:** R454 (`routine-write-result-shapes`, round 1 revisions requested, `18f6f7f`)
-  and R1199 (`vouched-lookups-past-one-value`, round 1 revisions requested, `cab66e9`), both owed by
-  their authors. Spec lost R677 (discarded) and R1202 (to Ready), and R1146 left for Done.
+  no commit this window, nor the one before.
+- **In Review (three), each waiting on a reviewer from a different session than the implementer:**
+  **R1113** (`transactional-outbox-directive`), since `fcbceef2` on 2026-11-19, **six days with no
+  review commit** and three stale cites to fix at the gate (§C.5); **R534**
+  (`record-key-decode-null-write-erasure`), since `e140bfa` on 2026-11-23, clean (§C.5); and **R1202**
+  (`bare-argmapping-list-nodeid-refused-at-field-condition`), since `099d920` on 2026-11-24, whose
+  reviewer judges an In Progress plan edit as well as the code (§C.5).
+- **Spec:** no item is mid-review. Spec lost R454 (to Ready, then In Progress) and R1199 (to Done).
 - **Ready:** R427, R467, R555, R684, R730, R838, R1137, R1167, R1168, R1184
-  (`database-policy-gatherer`) and **R1202**. **Nine of the eleven carry flags** (§B.3, §C.5): R427,
-  R555, R684, R730, R838, R1167, R1168, R1184 and R1202. Four should go back to Spec before anyone picks
-  them up: R555, R730, R1168 and now R1202.
+  (`database-policy-gatherer`) and **R1206** (`declared-dependency-class-nameable`). **Nine of the eleven
+  carry flags** (§B.3, §C.5): R427, R555, R684, R730, R838, R1167, R1168, R1184 and R1206. Three should
+  go back to Spec before anyone picks them up: R555, R730 and R1168; R1206 needs one paragraph and its
+  cost figures refreshed, not a reopen.
 
 ## A. Obsolete: should leave the active roadmap
 
@@ -226,7 +217,7 @@ now** (its fifth site shipped as R850) or rewrite its trigger to R876.
 
 | Item | Status | What changed | Recommended action |
 |---|---|---|---|
-| **R762** census-stores-members-it-reads-by-name | Backlog | Still cites `intent_class_assignable`, `intent_type_backing(_seed)`, `jvm_declared_type_ref`: gone or reshaped by R876. **Sharpened this window:** its finding that `jvm_class_supertype` "is written every capture and read by nothing", and its open question "whether `jvm_class_supertype` is captured at all", are both overtaken: that relation is `grep`=0, and `6f772af` captures a class's declared supertypes afresh as `code_class_declared_supertype`, at a new grain, with a reader (the graph-classes stage deciding `code_graph_class.is_jooq_record`). | **Re-spec against the current `code_` and `graphitron_` families**, striking the supertype section; the on-demand thesis for by-name relations survives. |
+| **R762** census-stores-members-it-reads-by-name | Backlog | Still cites `intent_class_assignable`, `intent_type_backing(_seed)`, `jvm_declared_type_ref`: gone or reshaped by R876. **Sharpened this window:** its finding that `jvm_class_supertype` "is written every capture and read by nothing", and its open question "whether `jvm_class_supertype` is captured at all", are both overtaken: that relation is `grep`=0, and `6f772af` captures a class's declared supertypes afresh as `code_class_declared_supertype`, at a new grain, with a reader (the graph-classes stage deciding `code_graph_class.is_jooq_record`). **Sharpened 2026-11-25:** the item's thesis, members read for a class whose name is already written rather than for every class, now has a ruling and a Ready instance. Alf ruled that another corpus may decide which things a capture reads, never what a row says (`f68eef2`, `fact-model.adoc`), and that members stay source-keyed in the `code_` family with only their population following the schema; R1206 (Ready) applies that to declared jars, measuring the blanket alternative at 62% more store on opptak. In the other direction, R454's `0bc0c08` widened member reading to the generated jOOQ catalog wherever it sits (`code_method` on opptak from 4,081 to 16,821 rows), because a holder method is a fact a rule reads. The item's last measurements are from 2026-09-08. | **Re-spec against the current `code_` and `graphitron_` families as a widening of R1206's demand step** (from declared jars to reactor classes, under the `f68eef2` ruling), striking the supertype section and re-measuring the store's size after `0bc0c08`; or **discard** if R876's owners rule that reactor members stay read whole, since every directive arm and completion enumerates them. |
 | **R193** service-param-classification-sealed-hierarchy | Backlog | **R649 shipped it**; `looksLikeSourcesShape`, `UnresolvedParam` `grep`=0. **Sharpened this window:** the residue check the earlier audits asked for is moot, since `a5b3134` deleted the walk's whole service parameter classification (`decodeServiceMethod`, `DecodedParam`, `ParamRole`, `ClaimedParams`, `dtoSourcesRejectionReason`, `unambiguousReachablePath`); a service's parameters are rows of `graphitron_occurrence_call_parameter`. Eleventh audit overdue. | **Discard, recording R649 and `a5b3134`.** No residue check is needed any more. |
 | **R213** input-field-rejection-attribution | Backlog | R585 + R589 shipped the attribution split; `TableInputType` `grep`=0. Overdue. | **Close as subsumed** after a residue check. |
 | **R72** slim-servicecatalog-to-lookup | Backlog | Premise dissolved by R649; `BatchKeyLifterDirectiveResolver` also gone. **Sharpened this window:** the largest of the three resolver-sized routines it wants moved out, `reflectServiceMethod` (~170 lines), is gone, as is `ServiceDirectiveResolver`, the other half of the duplicated message it quotes (`a5b3134`, `93f8329`). `ServiceCatalog` is still 1,755 lines, holding `reflectTableMethod`, `reflectExternalField` and the condition reflection, and the condition flip will take more of it. **2026-11-24:** the condition flip landed (`f34cef0`) as a flip of emission only; `ServiceCatalog` is unchanged at 1,755 lines and its condition reflection is still read by the walk's `ConditionResolver`. | **Hold until the walk's condition classification goes (the flip did not take it), then re-derive**: if what is left is a lookup plus `@tableMethod`, discard; otherwise re-spec against that remainder with no `ServiceCatalog.java:NNN` cites. |
@@ -250,7 +241,7 @@ body and `graphitron-model.sql` as the source of current names; several may then
 | Item | Status | Stale premise | Recommended action |
 |---|---|---|---|
 | **R857** refresh-what-the-edit-touched | Spec | 33 hits on the register; `MaterializationOrderTest`, `RegistrationStarted`, `MaterializeDependencies` gone. R922 (Done) delivered change observation, the first half of the goal. | **Re-spec** to the work R922 left (partition-grain rewrite and re-derive); drop the registration half. |
-| **R938** view-count-is-paid-at-every-store-open | Backlog | Counts 120 views and `deriveDependencies`; registration derivation is gone, and the view count has moved the other way: **161 six audits ago, then 250, 256, 264, 268, 274 and 280 now** (the 2026-11-14/15 split of `graphitron_entry_defect_rule` into per-stage rule views, the 2026-11-16 refusal views, the 2026-11-20 window's service, filter and routine-write rule views, and this window's tenant, context-key and generated-scalar rules; tables 317 to 376 to 382 to 384 to 392 to 396 to 405 to 411). The cost question is sharper, not dissolved, and R1131's C1 now owns a view-on-view node ordered by execution cost. **Sharpened 2026-11-20:** R1131 now reports, from the DDL alone, how hard each view is for H2 to plan (`fcb92dd`, `c6b1f57`), bisected the three widest entry-defect rules cold (`241bc01`) and wrote the research up in `2026-11-19-what-h2-spends-a-capture-on.md`, which is the measurement this item asks for, taken per view. | **Fold into R1131** (Discard, recording the view-complexity report and the 2026-11-19 audit) unless a per-open cost survives that R1131's per-capture numbers do not cover; if one does, re-spec against that audit's figures. |
+| **R938** view-count-is-paid-at-every-store-open | Backlog | Counts 120 views and `deriveDependencies`; registration derivation is gone, and the view count has moved the other way: **161 six audits ago, then 250, 256, 264, 268, 274, 280 and 282 now** (the 2026-11-14/15 split of `graphitron_entry_defect_rule` into per-stage rule views, the 2026-11-16 refusal views, the 2026-11-20 window's service, filter and routine-write rule views, and this window's tenant, context-key and generated-scalar rules; tables 317 to 376 to 382 to 384 to 392 to 396 to 405 to 411 to 413). **2026-11-25:** `a0dc9fa` records a measured finding (Alf agreed) that a large union rule view's cost is the plan a session keeps, about 4 to 8 MB for the two rules above 20 arms, and that splitting per arm saves no planning; that is a per-session memory figure this item's per-open framing does not have. The cost question is sharper, not dissolved, and R1131's C1 now owns a view-on-view node ordered by execution cost. **Sharpened 2026-11-20:** R1131 now reports, from the DDL alone, how hard each view is for H2 to plan (`fcb92dd`, `c6b1f57`), bisected the three widest entry-defect rules cold (`241bc01`) and wrote the research up in `2026-11-19-what-h2-spends-a-capture-on.md`, which is the measurement this item asks for, taken per view. | **Fold into R1131** (Discard, recording the view-complexity report and the 2026-11-19 audit) unless a per-open cost survives that R1131's per-capture numbers do not cover; if one does, re-spec against that audit's figures. |
 | **R801** view-read-census-and-bridge-closure | Backlog | `meta_materialize_dependency`, `intent_bound_table`, `intent_spelled_table` gone. | **Re-spec or discard**: a census of registered view reads has no registry to read. |
 | **R820** graphql-field-named-type-index | Backlog | Targets `intent_mutation_routine_seat`, `intent_carrier_routine_hop`, gone. | **Re-spec** onto the `graphitron_` field coordinate relation, or discard if indexed. |
 | **R957** key-prefix-index-folding-at-consumer-scale | Backlog | Names `intent_spelled_table` and the registry gate. | **Re-spec** (re-measure on `sis` against current relations). |
@@ -287,7 +278,7 @@ body and `graphitron-model.sql` as the source of current names; several may then
 | Item | Status | What changed | Recommended action |
 |---|---|---|---|
 | **R931** synthesised-type-exact-name-collision | Backlog | Goal: an exact name collision between a type `@asConnection` mints and another registered type is a typed rejection, not last-registration-wins in `ConnectionPromoter.registerSynthesised` (schema-transform side) and "a silently misrouted mint" (capture side). R876's `29a3082fc` delivered the capture side: a name minted more than one way is `MINTED_NAME_CONTESTED` at each carrier, stored as `graphitron_minted_conflict` and never withheld silently, and a declared type that falls short of what would be minted is `MINTED_TYPE_DECLARED_SHORT` (a conforming declared type is accepted by design). `ConnectionPromoter.registerSynthesised` still exists on the walk's side, which R876 is dissolving; last edited 2026-09-07. | **Re-derive against `29a3082fc`**: if the walk-side last-wins cannot be reached once the store refuses the schema first, **discard, recording `29a3082fc`**; otherwise narrow the Goal to the walk side. |
-| **R1188** column-coercion-cost-is-bounded | Backlog | **Carried.** Filed 2026-11-16 with two halves. The first, a digit and magnitude bound before any arithmetic in `ColumnValues`, **landed** as `9e78856a2` (`ColumnValues.inRange`, gates waived by the user) and the body's progress note says so. The second, a configurable limit on how many representations or ids `_entities` and `Query.nodes` take, is open with Spec-level questions recorded (where the limit is configured, one limit or two, a finite default refusing requests that succeed today). The Goal still states both halves, and the status says no work has started. The 2026-11-19 window's `d319968ea` extended the landed half to every client value bound at a column (`ColumnValues.fromWire`), which the body does not record either. **Sharpened 2026-11-24:** `b1f7d9c` (`feat(scalars)`, no item) bounds a document's numeric literals and any number handed to a `@scalarType` scalar at a thousand digits (`RequestNumbers.literalsWithinBounds`, `BoundedCoercing`), the request-side twin of the landed half, also unrecorded here. | **Narrow the Goal to the representation limit** (move the landed bound to a "Delivered" note, or record it as its own changelog line) and **move to Spec**, since the open questions are already Spec questions. Every tree name it cites resolves. |
+| **R1188** column-coercion-cost-is-bounded | Backlog | **Carried.** Filed 2026-11-16 with two halves. The first, a digit and magnitude bound before any arithmetic in `ColumnValues`, **landed** as `9e78856a2` (`ColumnValues.inRange`, gates waived by the user) and the body's progress note says so. The second, a configurable limit on how many representations or ids `_entities` and `Query.nodes` take, is open with Spec-level questions recorded (where the limit is configured, one limit or two, a finite default refusing requests that succeed today). The Goal still states both halves, and the status says no work has started. The 2026-11-19 window's `d319968ea` extended the landed half to every client value bound at a column (`ColumnValues.fromWire`), which the body does not record either. **Sharpened 2026-11-24:** `b1f7d9c` (`feat(scalars)`, no item) bounds a document's numeric literals and any number handed to a `@scalarType` scalar at a thousand digits (`BoundedCoercing`; the document side moved onto graphql-java's own lexer in `c58f386`), the request-side twin of the landed half, also unrecorded here. **Sharpened 2026-11-25:** the progress note was refreshed (`7fb62a7`: the bound is a private precondition of every `ColumnValues` entry point, `2aad5ed`, stated once in the federation reference, `699fb94`) but the Goal and status were not. Meanwhile R1199 settled the configuration question the remaining half leaves open, by precedent: a cap on a lookup's vouched-for values is a runtime hook shaped like `BatchSizeLimit`, `VouchedValueLimit`, default 1000, failing closed below 1 (Filip, 2026-11-24, `5d12118`), and `BatchSizeLimit` already chunks `_entities`, `node` and `nodes` (`batching-model.adoc`). The architect's lean recorded in the body, a build-time parameter in a `store_graph_*` relation, now runs against that precedent. | **Narrow the Goal to the representation limit** (move the landed bound to a "Delivered" note, or record it as its own changelog line) and **move to Spec**, since the open questions are already Spec questions; in Spec, weigh a runtime limit beside `BatchSizeLimit` and `VouchedValueLimit` against the build-time parameter, and say why the two lookups would differ if they do. Every tree name it cites resolves. |
 | **R730** capture-api-residue-after-nodehood-move | **Ready** | **Carried from 2026-11-18.** The item is two things: fix the dangling `{@link}`s in test sources, then extend "the gate" to test sources. Its whole account of the gate ("the `check-link-references` execution of `maven-javadoc-plugin`", the `pom.xml:349` `sourcepath` trap, the `show` level trap, the eleven-reference measurement) describes a mechanism that **no longer exists**: R1131's `1a4c16923` (2026-10-31) moved the gate into javac as `-Xdoclint:reference/protected` on `default-compile`, and the pom comment now says "Main compile only ... The gate never covered test sources". Its motivating seventh site, `WarmStartRefreshTest.aWarmRefreshOverAMultiPackageCatalogCompletes`, was **deleted** on 2026-11-17 (`c7c5ecbe1`), and the six dead `NodeDeclaration` imports it lists are at old paths (`graphitron/.../capture/SdlFactCapture.java` now lives in `graphitron-model`). The goal survives and is now cheaper: one `default-testCompile` execution taking `${graphitron.doclint}`, plus whatever that surfaces. | **Move back to Spec and re-spec against the javac gate**: re-measure the test-source backlog with `-Xdoclint:reference` on `testCompile`, drop the javadoc-plugin traps section, drop the deleted seventh site, and decide the `/protected` scope question for package-private JUnit classes (the pom comment calls widening "a separate decision"). |
 | **R234** jooq-embedded-and-udt-input-backings | Backlog | **Carried from 2026-11-18.** Wants jOOQ embedded and UDT records admitted as non-table input backings. R876 took the embeddable half into its plan in the 2026-11-18 window: an embeddable is now an `EMBEDDABLE` field of `sql_table_field` with `sql_embeddable_column` (`cc15da5bc`), `COLUMN_UNRESOLVED` under an input named like an embeddable names it (`d7515b749`), and the node "A nested input under a jOOQ record binds to the embeddable it names" is open on Alf rulings of 2026-11-17 and 2026-11-18. Its cited code, `TypeBuilder.buildNonTableInputType` (`TypeBuilder.java:1688`), is `grep`=0; last edited 2026-07-13. | **Narrow to UDT records** (or discard if UDTs have no consumer), recording that embeddable binding is R876's node; restate the "today" paragraph against the store's `sql_table_field`. |
 | **R1108** manual-catches-up-with-owned-connection-engine | Backlog | **Carried from 2026-11-18.** A docs audit taken on 2026-10-27 against the mount-era runtime: `Graphitron.runtime(dataSource, dialect)`, "identity mounting", `SessionMountException`, "A throwing `mount` evicts the connection". R1119 slices 8c.2 and 8c.3 (`e3a3ecf68`, `abe204f25`) replaced that runtime with a `ConnectionSource` the request is given, retired `<mount>`/`<unmount>` (`SessionStateBinding` keeps them only to refuse them), deleted `SessionMountException` and `GraphitronSessionHook`, and rewrote `runtime-api.adoc` and `mojo-configuration.adoc` in passing (both now document `ConnectionSource` and `ConnectionSources.mounting`). Several findings are therefore fixed and several describe code that is gone. | **Re-audit the manual against trunk after R1119's slice 8c** and rewrite the findings list; likely much smaller. Consider folding the remainder into R1119's before-Done documentation bullets. |
@@ -298,7 +289,7 @@ body and `graphitron-model.sql` as the source of current names; several may then
 | **R1110** single-field-over-to-many-path-returns-arbitrary-row | Backlog | **Carried from 2026-11-19, light.** The defect is live for reads (`OrderByResolver`, `ProjectionUnitRenderer` and `SplitRowsMethodEmitter` all still exist). Two things moved under it: the "target-side columns cover a candidate key" primitive it says both it and a sibling item need is now a stored fact, `graphitron_join_path_step_to_one` (`b346c4f03`), and for the routine-write case Alf ruled the second of its two "Which fix" options, a single-record field over a path that fans out is a defect, refused as `ROUTINE_WRITE_PATH_FANS_OUT` (`578eab1e7`). | **Keep; restate "Open for Spec"** to name `graphitron_join_path_step_to_one` as the to-many test and record the routine-write ruling as precedent for the read side (or say why reads differ). A good candidate to move to Spec now that the primitive exists. |
 | **R592** lint-rule-reference-page | Backlog | **Carried from 2026-11-20, sharpened.** Wants a manual page for "a closed set of fifteen rules" in `LintRule`, on the grounds that `diagnostics-glossary.adoc` is error-only, "a warning has no glossary-shaped home", and a consumer configuring `<lint>` must name ids documented nowhere. `LintRule` held 22 ids at the prior audit and holds **21** now, because a second lint drained into the store this window (`validation-column-unchecked` is the stored warning `VALIDATION_COLUMN_UNCHECKED`, `8fffe9c`). More to the point, the store answered the question for its own warnings in the 2026-11-20 window: every defect code, warnings included, has a guidance fragment and an anchored entry on a reference page rendered from the store (`b489997`, with severity per entry), the editor links to it (`5684aa4`), `<disabledRules>` takes a stored warning's code beside a lint id (`5e2ab52`), and the first walk lint, `splitquery-redundant-on-record-parent`, was retired into the stored warning `SPLIT_QUERY_REDUNDANT` (`e38c49c`), with the commit saying the service-child and discriminated-interface-child lints "join it when they move". So the page it plans would document a set that is draining into one that documents itself, and the coverage meta-test it proposes (`DiagnosticsDocCoverageTest`-shaped) has a store-side equivalent already (the store refuses to create itself while a deferral has no guidance). Last edited 2026-08-04. | **Re-spec, smaller**: decide with R876's owners which `LintRule` ids are staying in Java (the nine `ENGINE` naming rules and the version-lag advisories look like they are) and document only those, on or beside the rendered defects page, so `<disabledRules>` has one place to look ids up. Discard if the ruling is that every lint becomes a stored warning. |
 | **R654** resolver-coordinate-verdict-precedence-sweep | Backlog | **Carried from 2026-11-20, sharpened.** It lists four seats where a reflection or binding rejection masks a coordinate-level verdict. Two are gone, and this window removed the code under them, not only the reporting: the `@sourceRow` seat went with the directive, and the "root `@service` residue" seat went with `ServiceDirectiveResolver` and `FieldBuilder`'s four service classify branches (`93f8329`), after `f67e17b` had taken the `$source` sigil rules. A stored verdict has no reflection step ahead of it to be masked by. `@externalField` (`validateComputedField`, `ServiceCatalog.reflectExternalField`) and `@condition` with `@lookupKey` (`FieldBuilder.projectForFilter`) still resolve, though R555 folds `@externalField` into `@service` and the condition flip is R876's next. Last edited 2026-08-13. | **Re-derive the two surviving seats against the store**: for each, write the masking case as a fact document and see which message the build gives now. Narrow the item to whatever still masks, drop the `@sourceRow` and root-`@service` bullets, and discard if neither does. With the condition flip pending, the cheaper course is to **discard and hand the `@condition` with `@lookupKey` case to that flip as a document**. |
-| **R555** deprecate-externalfield-fold-into-service | **Ready** | **Moved from §C.5: its plan is written into a class that no longer exists.** The item folds `@externalField` into `@service` by a "classifier fold": a `ServiceCatalog` dispatch entry returning a sealed contract classification, a `Computed` arm on `ServiceDirectiveResolver.Resolved` "placed at all four `FieldBuilder` call sites", a narrow `switch ((ServiceDirectiveResolver.Resolved.Success) resolved)`, and a fix for a non-batched child that "classifies to `ServiceRecordField` today" under `validateServiceRecordField`. `93f8329` deleted `ServiceDirectiveResolver`, `FieldBuilder`'s four service classify branches, `ServiceRecordField` and the service arms of `GraphitronSchemaValidator`; `4df4e92` made the store the only judge of a `@service` field. Nine names in its body went this window, on top of `CompletionData`, `ClasspathScanner`, `PkLessParent` and `AuthoredClaimConflicts` from earlier ones. The goal stands (one directive, a deprecation warning, the `ComputedField` path kept), and `@externalField`'s own seat (`validateComputedField`, `reflectExternalField`) is still in the walk. | **Move back to Spec and re-spec against the store**: say what a `@service` whose method returns a jOOQ `Field` is in `graphitron_occurrence_producer_service` terms (a new producer kind, or a refusal that points at `@externalField` until it is one), where the deprecation is raised (`no-deprecated-directive-usage` is an `ENGINE` rule and can stay), and consult the principles-architect. A session that picks this up as written will go looking for four call sites that are gone. |
+| **R555** deprecate-externalfield-fold-into-service | **Ready** | **Moved from §C.5: its plan is written into a class that no longer exists.** The item folds `@externalField` into `@service` by a "classifier fold": a `ServiceCatalog` dispatch entry returning a sealed contract classification, a `Computed` arm on `ServiceDirectiveResolver.Resolved` "placed at all four `FieldBuilder` call sites", a narrow `switch ((ServiceDirectiveResolver.Resolved.Success) resolved)`, and a fix for a non-batched child that "classifies to `ServiceRecordField` today" under `validateServiceRecordField`. `93f8329` deleted `ServiceDirectiveResolver`, `FieldBuilder`'s four service classify branches, `ServiceRecordField` and the service arms of `GraphitronSchemaValidator`; `4df4e92` made the store the only judge of a `@service` field. Nine names in its body went this window, on top of `CompletionData`, `ClasspathScanner`, `PkLessParent` and `AuthoredClaimConflicts` from earlier ones. The goal stands (one directive, a deprecation warning, the `ComputedField` path kept), and `@externalField`'s own seat (`validateComputedField`, `reflectExternalField`) is still in the walk. **Sharpened 2026-11-25: its direction now conflicts with R876's plan.** R876's Mikado node "`@externalField` is `@routine`" makes an `@externalField` method a value form bound to the parent's table, its readers moved to the form, "and the directive is deprecated later as an alias" of `@routine`, not of `@service`. The node went from `blocked` to `open` this window when R454's `a81ed52` made every method state the jOOQ call form its signature offers (execute, value, table, aggregate), which is how a `Field`-returning method is recognised. The two items now plan opposite folds of the same directive. | **Move back to Spec and re-spec against the store**: say what a `@service` whose method returns a jOOQ `Field` is in `graphitron_occurrence_producer_service` terms (a new producer kind, or a refusal that points at `@externalField` until it is one), where the deprecation is raised (`no-deprecated-directive-usage` is an `ENGINE` rule and can stay), and consult the principles-architect. A session that picks this up as written will go looking for four call sites that are gone. **Before any of that, get a ruling from Alf or Filip on the target**: if R876's node stands, **discard R555 into it** with a changelog line naming the node; if `@service` is the target, R876's node line changes instead. The board should not carry a Ready plan and an open node for opposite folds of one directive. |
 | **R837** table-less-jooq-record-input | Spec | **New.** Goal: a `@service` parameter that is a jOOQ record with no table behind it generates instead of classifying fine and then failing with the wrong message. Every stage of that sentence was the walk's. Its emitter plan is "a sibling to `JooqRecordInstantiationEmitter`" (deleted, `93f8329`) fed by `ServiceMethodCallEmitter` and `MappingEntry` (deleted, `a5b3134`), with `collectJooqBindings` and `needsDslLocal` also `grep`=0. A service's record is now built by the store's `BuildEmitter.recordHelper`, and what a class is, jOOQ record or not, is decided per graph over captured supertypes (`code_graph_class.is_jooq_record`, `6f772af`). Last edited 2026-08-26. | **Re-derive, then re-spec**: write the table-less record as a fact document and see what the store says today (a build, a stored defect, or a generator bug). The Goal survives only as whatever that shows; the emitter section is rewritten against `BuildEmitter` either way. |
 | **R92** catalog-check-constraint-validation | Spec | **Moved from §C.4.** Beyond the long-dead `ConstraintMapping` and `ConstraintSet`, its one integration point is gone: it adds "one additional" step at "the seam call at `TypeFetcherGenerator.java:2069`, calling `validatorPreStep` at `:2201`", and `93f8329` deleted `TypeFetcherGenerator`'s "validation pre-step" with the service fetchers. Whether a service validates is now stated once in the store and read by the emitter (`graphitron_occurrence_producer_service.validates`, `63a0a83`), and a column the validation cannot check is the stored warning `VALIDATION_COLUMN_UNCHECKED` (`8fffe9c`). R1204 also drew a line that bears on its scope: string value validation "is graphql-java-extended-validation's, under R98" (`32a1414`). Last edited 2026-08-06. | **Re-spec against the store-fed validation**: CHECK constraints as captured catalog facts joined to the columns a validating producer writes, not a second pre-step in a generator. Read it beside R98 and R170 so the three validation items share one seat. |
 | **R249** nested-argmapping-syntax | Backlog | **New.** Proposes a nested `{ fieldName: <path>, ... }` right-hand side for `argMapping`, resting on "R238's carrier model already accommodates this: paths live on `ValueShape` leaves, not on `MappingEntry` entries". `a5b3134` deleted `MappingEntry`, `ValueShape`, `ArgPath` and the method-call walker; an `argMapping` is now parsed and judged in the store (`graphitron_argmapping_landing`, `ARGMAPPING_UNPARSEABLE`, `a10b7f9`). Two newer items own the neighbouring grammar: R1204 (Done) lets an entry name a generated scalar's component, and R1201 proposes Apollo's `JSONSelection` for `@outbox`'s `construct`, which already has a nested-object form. Last edited 2026-05-27. | **Re-spec or fold into R1201's grammar decision**: if `JSONSelection` is adopted for `construct`, nested `argMapping` should be the same grammar at another site, not a second mini-DSL. Discard if no consumer has asked since May. |
@@ -306,9 +297,9 @@ body and `graphitron-model.sql` as the source of current names; several may then
 | **R319** warn-on-pruned-unreachable-types | Backlog | **Carried from 2026-11-20, light: unblocked, not stale.** Wants a build warning naming each output type no field reaches. Its 2026-08-06 fact-base note says the deliverable "survives as a detection query over" a derived reachability relation. Both halves now exist: `graphitron_type_schema_reach` states which object, interface and union types the schema leads to (`e459c34`, Alf 2026-11-19, with reach defined as what the schema leads to, not what a result reaches), and a warning-severity defect is logged by the build and suppressible by `<disabledRules>` or `<excludedTypes>` (`8d41905`, `5e2ab52`). Its body still speaks of R279's reachability-pruned classification and R317's single-pass walk. | **Keep; restate as one stored warning** (an anti-join of captured types against `graphitron_type_schema_reach`, with a guidance fragment) and drop the R279/R317 framing. Cheap enough to move to Spec, or to hand to R876 as a node beside `SPLIT_QUERY_REDUNDANT`. |
 | **R588** node-without-metadata-diagnostics | Backlog | **Carried from 2026-11-20, light.** The trap is live, but both messages it quotes are the walk's. The first, `column 'id' could not be resolved in the jOOQ table; did you mean: ...`, is now the store's `COLUMN_UNRESOLVED`, whose hint is ranked in `graphitron_entry_defect_hint` (`33d0bcf`) and so still offers the "actively harmful" candidate list; the second is now `NODE_ID_CONTAINING_TYPE_NOT_NODE`. Its plan, "a targeted rejection at the classifier", names the side that no longer reports. | **Restate against the store**: a rule that pre-empts `COLUMN_UNRESOLVED` and its hint where the type implements `Node` over a table with no node metadata, with its own guidance fragment naming `@node`. Check first whether `NODE_WITHOUT_KEY` or `NODE_METADATA_UNREADABLE` already fires there. |
 | **R881** write-carriers-never-read-column-nullability | Spec | **Light, not a flag on the plan.** Promoted and rewritten on 2026-11-19 (`e0d6284`, `cdeffbb`); names resolve. Its open question 3 asks for a ruling on whether the unrouted advisory is "a sibling id, a widened `dml-write-length-unrouted`, or none", arguing that retiring a lint id breaks every consumer configuration that disables it. The same day R876 retired a lint id as a breaking change with Alf's agreement (`e38c49c`: "No consumer configures `<lint>` in FS main or this repository") and made stored warning codes suppressible through `<disabledRules>` (`5e2ab52`), which adds a fourth option the question does not list: a warning-severity defect in the store. A second lint id went the same way this window (`validation-column-unchecked`, `8fffe9c`, `feat!` with a `BREAKING-CHANGE` footer), so the precedent is now a practice. | **Add the stored-warning option and the `e38c49c` and `8fffe9c` precedents to question 3** before the Spec review; no other change. |
-| **R1202** bare-argmapping-list-nodeid-refused-at-field-condition | **Ready** | **New: a Ready plan written into a class deleted the same afternoon.** Moved to Ready at `44622d6` (2026-11-23 10:03); R876's condition flip landed at 12:46 (`f34cef0`). Step 1 of the plan, "A list projection is emitted on the live condition glue", rests on "Condition glue is still the walk's (`ConditionGlueRenderer` with `ProjectedKeyReads`); the store's `ConditionEmitter` has no caller in main sources until R876's condition flip", and adds a walk-tier read there; `ConditionGlueRenderer` is `grep`=0 and every conditions class is now `ConditionUnitRenderer`'s, with "a condition's projection no longer handed to the walk's plan" and the projected key column "read off the call's slot at every `@condition` site". Its per-row table says rows 1, 2 and 9 "build until the condition flip refuses them" and rows 7 and 8 close "at the flip": the flip has happened, and `NODE_ID_KEY_ARITY_EXCEEDS_SLOT` now refuses a whole id onto a parameter of the key column's type. Its Tests bullet is "Emission, both emitters"; there is one. The stake also rose: the `feat!`'s migration for FS-plattform's 15 refused sites is an `argMapping` projection, several over lists (`organisasjoner`, `roller`, `miljoer`), which is exactly the shape this item makes build. `ProjectedKeyReads`, `ResolvedKeyProjections`, `conditionReadThroughList` and `listDeferred` still resolve. | **Move back to Spec and re-probe the row table at `f34cef0` or later**: some rows may now build through the store's emitter and some be refused by the new arity rule, so the deliverable may have shrunk to the refusals in step 2 or grown to a store-side list projection. Re-seat step 1 on `ConditionUnitRenderer`, drop "both emitters", and say in the body whether the FS migration's list sites build today; if they do not, this item is the blocker for that migration and its priority should say so. |
 | **R1205** unrouted-nodeid-under-field-level-override-refused | Backlog | **New item, its probe one flip old.** Filed 2026-11-23 from a reporter's schema, probed at `032de1a`, before `f34cef0`. Its table splits the refusal between the store (`NODE_ID_LANDS_ON_TABLE`, by-name spelling) and the walk ("no foreign key found ...", every `argMapping` spelling), and it defines "the walk" as "the classifier that still emits condition glue"; the walk no longer emits condition glue. The classification it refuses from (`FieldBuilder`, `ConditionResolver`) survives, so the walk row may still hold. It does not name R1139, whose goal is the same override exemption for an argument matching no column. | **Keep; re-probe the four rows on trunk after `f34cef0`** and restate the vocabulary paragraph. Cross-reference R1139, and if R1139 is discarded as delivered (above) let its changelog line point here. |
 | **R862** preserve-enum-extraction-through-condition-rewrap | Backlog | **New.** The body already says its defect was fixed under R874 and that the item is now only coverage: "a fixture that proves a jOOQ enum column reaches an input-field `@condition` method as the enum", with the renderer arm that carried the fix named as `ConditionGlueRenderer.nestedExtraction`. That renderer was deleted by the condition flip (`f34cef0`), so the fix it would cover is no longer the code that runs; the store's `ConditionUnitRenderer` renders the call now. The coverage question is more pressing, not less: the enum case may or may not have been carried across. | **Re-target to the store's emitter**: write the enum-to-input-field-condition case as an execution-tier test against the flipped conditions class (or a fact document plus compile), and discard if R876's condition tests already include it. Strike the `ConditionGlueRenderer` paragraph either way. |
+| **R776** store-query-mcp-tool | Spec | **New.** Goal: an agent can run its own SQL against the fact store through a `store.query` MCP tool, read-only by the engine rather than by parsing. Its design rests on two claims the tree no longer bears out. It adds "the rights-limited user" to `StoreReader`'s shape; the store already has one, `GraphitronModelStore.READER_USER` (`GRAPHITRON_READER`, "`SELECT` on the schema and nothing else", spelled in the DDL), which the store's reader connects as. And it says the enforcement "is available here but not on the psql door", because H2's wire server needs admin at connect; `32985a3` (`fix(dev)`, landed this window) made the console's client "a rights-limited user holding SELECT on the linked relations and nothing else", with links that "reach the store as its own select-only reader" and a per-session password file, so the psql door now holds the read-only contract structurally too. The MCP `store.console` tool's answer also changed under it (`passwordFile` in place of `password`). Last edited 2026-08-21. | **Re-spec against `READER_USER` and `32985a3`**: the tool's remaining deliverable is the statement surface (SQL from outside, the row ceiling, the answer shape), not the user. Drop the "not on the psql door" contrast and say why an agent needs the tool now that the console is select-only; if the answer is only that MCP is the agent's door, keep it small. |
 
 ## C. Outdated: update references only (work valid, refs stale)
 
@@ -323,7 +314,7 @@ Done-or-superseded once the sweep below is run), R961 (`converted-relations-pros
 node types into the one record slot of whichever member it names, at a `@service` parameter or bean member,
 so R984's premise that such a schema "is refused" is partly gone; the per-member overload dispatch it asks
 for is still not built, and `BuildContext.admitPolymorphicSlotType` survives only on the walk's side, so
-restate the "today" paragraph against `744376c8`), R736, R807, R632 (`intent_authored_claim_conflict`). **R534** (`record-key-decode-null-write-erasure`) is In Progress and has a row in §C.5. **R1000** (`upsert-names-its-conflict-target`): cites `EmittedAnchor.arguments` as a twin site R998 converts; `EmittedAnchor` was removed (`dbf5acf`, `graphitron_type` is written by macro expansion) and `graphitron_field_path` was already gone. Action: **re-count the upsert sites** (34 files still call `onDuplicateKeyUpdate`) and drop the two dead names; the guard it proposes is unaffected. **R476** (`connection-helper-totalcount-redaction`): the gap is still real, since `ConnectionsEmitter` routes only the `FACETS` member through `ErrorRouter` and the `TOTAL_COUNT` member is still a bare `totalCount(env)` call, but the template it points at, `ConnectionFetcherClassGenerator.facetsDelegate`, was deleted with the per-type connection fetchers (`238f6ac`). Action: **repoint the template to `ConnectionsEmitter`'s facets arm**; the fix is now one arm in one emitter. **R521** (`generated-output-hygiene-sweep`): three bullets describe `ConnectionResult` (its 11-argument constructor, the unread `beforeCursor`, its multitenant variant); the class is gone and connections are store-rendered classes. Action: **strike those bullets or restate them against the generated connection classes**; the rest of the sweep is unaffected. **Note, not a flag: R606** (`facets-container-derives-from-the-store`) is named by `a52cbf8` as the item that retires the new `Facets` command row, so it is live; its opening claim that the facets shapes "exist only in the assembled-schema synthesis" is one paragraph out of date and should mention that row when next edited.
+restate the "today" paragraph against `744376c8`), R736, R807, R632 (`intent_authored_claim_conflict`). **R534** (`record-key-decode-null-write-erasure`) is In Review and has a row in §C.5. **R1000** (`upsert-names-its-conflict-target`): cites `EmittedAnchor.arguments` as a twin site R998 converts; `EmittedAnchor` was removed (`dbf5acf`, `graphitron_type` is written by macro expansion) and `graphitron_field_path` was already gone. Action: **re-count the upsert sites** (34 files still call `onDuplicateKeyUpdate`) and drop the two dead names; the guard it proposes is unaffected. **R476** (`connection-helper-totalcount-redaction`): the gap is still real, since `ConnectionsEmitter` routes only the `FACETS` member through `ErrorRouter` and the `TOTAL_COUNT` member is still a bare `totalCount(env)` call, but the template it points at, `ConnectionFetcherClassGenerator.facetsDelegate`, was deleted with the per-type connection fetchers (`238f6ac`). Action: **repoint the template to `ConnectionsEmitter`'s facets arm**; the fix is now one arm in one emitter. **R521** (`generated-output-hygiene-sweep`): three bullets describe `ConnectionResult` (its 11-argument constructor, the unread `beforeCursor`, its multitenant variant); the class is gone and connections are store-rendered classes. Action: **strike those bullets or restate them against the generated connection classes**; the rest of the sweep is unaffected. **Note, not a flag: R606** (`facets-container-derives-from-the-store`) is named by `a52cbf8` as the item that retires the new `Facets` command row, so it is live; its opening claim that the facets shapes "exist only in the assembled-schema synthesis" is one paragraph out of date and should mention that row when next edited.
 
 **From the 2026-11-23 window, all from the deletion of the walk's `@service` path (`93f8329`, `a5b3134`); each keeps its plan and needs one cite fixed or one count redone.** **R778** (`screaming-snake-transform-single-spelling`, Backlog): counts "four verbatim copies" of the CamelCase to `SCREAMING_SNAKE` transform and names `ErrorChannelWalker.toScreamingSnake` as one; that class is gone and `toScreamingSnake` is `grep`=0 across the tree, with the transform now named in `GeneratedUnits` and `ErrorMappingsClassGenerator`. Action: **re-count; discard if one spelling is left**, which looks likely. **R518** (`argmapping-grouping-fanout`, Backlog): its resolver change is placed "in the `argMapping` consumers (`ServiceDirectiveResolver` / ...)"; for a service the consumer is now the store's landing (`graphitron_argmapping_landing`). Action: **repoint that bullet**; check the grouping it wants against R1204's component bindings, which added a second kind of dotted entry. **R725** (`carrier-recognizer-conflates-three-scan-verdicts`, Backlog): the three scans (`scanStructuralDmlPayload`, `scanStructuralRoutineCarrierPayload`, `scanStructuralServiceCarrierPayload`) and `TypeBuilder.carrierBinding` still resolve, but the consumer it says needs one family's verdict, "`FieldBuilder`'s `@service` mutation arm (the guard behind `orphanServiceCarrierReason`)", was deleted. Action: **re-derive who still asks**; with the service consumer gone the conflation may have no reader left, in which case discard. **R334** (`readable-condition-arg-extraction`, Backlog): locates the unreadable nested ternaries in `ArgCallEmitter.buildArgExtraction`, deleted when `ArgCallEmitter` was cut "down to `nestedMapValueExpr`". **Sharpened 2026-11-24:** the condition flip (`f34cef0`) renders every conditions class from the store, so the item's condition half, which its own 2026-07-28 note already handed to R552, is gone with `ConditionGlueRenderer`. What remains is its expanded scope (mutation insert-value ternaries, the polymorphic discriminator rebuilt inline, deep input-path extraction in fetchers and `$fields` mappers), much of which sits in emitters R876 is flipping a root family at a time (`5fc05bd`). Action: **re-audit the generated sakila tree at trunk** and restate the remaining sites against whichever emitter produces each; drop the `buildArgExtraction` and condition paragraphs. R85 (§B.1) cites the same method. **R971** (`accessof-leaf-switch-exhaustive`, Backlog): lists `JooqRecord` among the `CallSiteExtraction` arms "minted only by `InputBeanResolver`"; `CallSiteExtraction.JooqRecord` went with `ColumnBinding` and `RecordKeyDecode`, and `TenantDslEmitter`'s service helpers with them. Action: **re-list the arms** before judging whether the switch is still non-exhaustive. **R626** (`lsp-argmapping-routine-coordinate`, carried in this cluster) gains one: `ArgMappingSupport.resolveMethod` is `grep`=0.
 
@@ -374,16 +365,18 @@ R720, R829), `IdReferenceShimClassificationTest` (R615),
 | **R838** declarative-comment-style | Ready | Cites `RewriteSchemaLoaderTest` as one of three tree hits; the class no longer exists. | Update the count to two hits. |
 | **R1168** shadowed-error-handler-is-reported | Ready | **Carried, sharpened a fourth time.** Four of its plan sections are now out of step with the tree. (1) "Platform throwables" plans a capture R876's `8cd9d91a6` (2026-11-16) **delivered** (the classpath gatherer reads `jrt:/` as a source of kind `PLATFORM`). (2) The generated `GraphitronClientException` section rests on `graphitron_runtime_class` (`grep`=0) and is an open R876 node since `edac463f9` (Alf, 2026-11-17), with `scenarios/error-handler-client-exception` pinning current behaviour. (3) **From 2026-11-20:** "Warnings in the build log" **landed under R876** (`8d41905`), which the body now says in one sentence while keeping the full plan below it; and its "Demotion" section plans "a list parameter naming codes to report as warnings" beside decision 1's claim that the lint channel's `<disabledRules>` seat "has no path" to defects, where `5e2ab52` made `<disabledRules>` and `<excludedTypes>` suppress a stored warning by code and deleted the `LintConfig.validated` a review round compares against. Demotion (error to warning) and suppression (warning to nothing) are different acts, but they now share a configuration seat the plan does not mention. (4) **New this window:** "Rule 8 goes" lists what to delete: `ChannelRuleChecks.checkDuplicateMatchCriteria`, "its call in `ErrorChannelWalker`", the `FieldBuilder` copy, and `ErrorChannelWalkerTest`'s rule 8 arm. `ErrorChannelWalker` and its test were deleted with the walk's service path (`93f8329`), so half that list is done and the rest needs re-counting (`checkDuplicateMatchCriteria` is in three files now). `8187c8f` also fixed the generated client exception's contract, the subject of section (2). | **Move back to Spec**: strike the platform-capture and build-log sections as delivered (`8cd9d91a6`, `8d41905`), replace the client-exception section with a dependency on R876's node, restate Demotion against `<disabledRules>` and `graphitron_entry_defect_site.suppressed`, and consult the principles-architect. The shadowing rule itself stands, and with three sections delivered or moved the item is now mostly that rule. |
 | **R427** relevance-ranked-search | Ready | `CompletionData`, `SearchBacking`, ... (19 of 59 names gone two audits ago). **One more since 2026-11-23:** it points at `QueryServiceTableField` as a leaf carrying a precedent for its own, deleted by `93f8329`. | **Re-spec the Current state section** before pickup. |
-| **R555** deprecate-externalfield-fold-into-service | Ready | Its classifier fold is written into `ServiceDirectiveResolver`, deleted on 2026-11-22 (`93f8329`). | See §B.3: **back to Spec**. |
+| **R555** deprecate-externalfield-fold-into-service | Ready | Its classifier fold is written into `ServiceDirectiveResolver`, deleted on 2026-11-22 (`93f8329`); since 2026-11-24 R876's open node folds `@externalField` into `@routine` instead. | See §B.3: **a ruling on the target, then back to Spec or discard**. |
 | **R684** consumers-share-relations-not-queries | Ready | `CatalogFacts`, `LspSchemaSnapshot`, `CompletionData`. | Refresh cites; part of its premise (CatalogFacts retirement) shipped. |
 | **R730** capture-api-residue-after-nodehood-move | Ready | `CompletionData` retired by R876; more importantly the gate it extends moved into javac and its seventh site was deleted. | See §B.3: **back to Spec**. |
 | **R427** (addendum) | Ready | **Carried, still undecided:** `28c66dd` (2026-11-12) added an open question raised from R876's connection thread, "Does a hit being an edge reopen decision 1?", marked not decided. | A Ready item carrying an undecided question that may reopen a spec decision should **go back to Spec until it is answered**, or the question be ruled out of scope in the body. |
-| **R1113** transactional-outbox-directive | **In Review** | **Carried, five days at the gate with no review commit.** Moved In Progress -> In Review on 2026-11-19 (`fcbceef2`) with phase 4's shipped commits and a handover. The three stale cites the prior audit listed were not touched and now sit in a body a reviewer reads as the record of what shipped: the Rejections bullet cites the `DefaultPageSizeDefects` precedent (`grep`=0 since the defect rules moved to the store); Phase 4, marked shipped, places the classification "in the emitted runtime, beside `isMountFailure`", renamed `isAcquisitionFailure` by R1119's `e3a3ecf68`; and the same section says "`acquire` calls the `DataSource`", where a request's connections come from the `ConnectionSource` it is given. Phase 1b's "mounted handle" describes the retired plugin `<mount>`. The 2026-11-20 window's `edb8b21` also made the outbox's JSON helper take any `Iterable`, and R1201 was filed against this item's `event` default and flat payload. This window R876 added two refusals on its surface: a pom `<outbox>` payload mapping that does not parse fails the build as the configuration is read (`3740eb4`), and a `$context` pair at `@outbox` is `CONTEXT_SITE_UNSUPPORTED` (`ebee5e9`), which agrees with its decision 7 ("`$context`. Not offered"). | **Fix the three cites as part of the In Review -> Done review** (the reviewer should check Phase 4's description against `ConnectionRuntimeClassGenerator` as it is, not as the plan names it), and have the Done entry say that R1201 replaces the coordinate-default event name, so the changelog does not present it as settled. |
+| **R1113** transactional-outbox-directive | **In Review** | **Carried, six days at the gate with no review commit.** Moved In Progress -> In Review on 2026-11-19 (`fcbceef2`) with phase 4's shipped commits and a handover. The three stale cites the prior audit listed were not touched and now sit in a body a reviewer reads as the record of what shipped: the Rejections bullet cites the `DefaultPageSizeDefects` precedent (`grep`=0 since the defect rules moved to the store); Phase 4, marked shipped, places the classification "in the emitted runtime, beside `isMountFailure`", renamed `isAcquisitionFailure` by R1119's `e3a3ecf68`; and the same section says "`acquire` calls the `DataSource`", where a request's connections come from the `ConnectionSource` it is given. Phase 1b's "mounted handle" describes the retired plugin `<mount>`. The 2026-11-20 window's `edb8b21` also made the outbox's JSON helper take any `Iterable`, and R1201 was filed against this item's `event` default and flat payload. This window R876 added two refusals on its surface: a pom `<outbox>` payload mapping that does not parse fails the build as the configuration is read (`3740eb4`), and a `$context` pair at `@outbox` is `CONTEXT_SITE_UNSUPPORTED` (`ebee5e9`), which agrees with its decision 7 ("`$context`. Not offered"). | **Fix the three cites as part of the In Review -> Done review** (the reviewer should check Phase 4's description against `ConnectionRuntimeClassGenerator` as it is, not as the plan names it), and have the Done entry say that R1201 replaces the coordinate-default event name, so the changelog does not present it as settled. |
 | **R1160** tests-read-shared-fact-stores | In Progress | **Carried, sharpened.** `ServiceEmissionCensusTest` absent; its `@capability` / `@exemplifies` header vocabulary is not in the tree while the body still uses it. Its plan still lists `GraphCountGrowthGateTest` as a store holding chosen graphs; R1131's `64090f7d8` replaced that test with a plan-reading gate on 2026-11-17. | Minor; author is mid-flight, refresh when next edited. |
 | **R1184** database-policy-gatherer | Ready | **Carried, minor.** Promoted on 2026-11-18; every other unresolved name is a proposal, a PostgreSQL catalog name or an environment variable. One line (setting names checked "against the `SessionState` mount") names the runtime class R1119's slice 8c.2 deleted; session settings are now written by the consumer's `ConnectionSources.mounting`. | Repoint the sentence at `<sessionState>`'s handle type and `ConnectionSources.mounting` at pickup. |
 | **R534** record-key-decode-null-write-erasure | **In Review** | **Resolved as a flag; now waiting on a reviewer.** The prior audit found it finished in substance and stalled in state. This window it took the release run (`47ab77d`, sis green on `10.0.0-RC58`, the first release containing `ad8d21c`), which answers the snapshot-or-release question; narrowed `CustomerRecordService`'s javadoc so it names no deleted helper (`a8086fe`); and moved to In Review (`e140bfa`). Its body now names `JooqRecordInstantiationEmitter` and `ServiceVerdictCoverageGateTest` only as history ("was deleted"). | **In Review -> Done review by a different session**; confirm the mutation check its Tests section asks for (swapping `BuildEmitter.recordHelper`'s two loops turns both cases red) is recorded in a commit. |
 | **R1167** error-dispatch-matches-graphitron-9 | Ready | **New, minor; it was clean.** Names `TypeFetcherGenerator.outcomeAsyncWrapTail` twice, as one of two places a batched producer's `.exceptionally` arm receives the wrapper and as one of three callers of `ErrorDispatchFragments.outcomeArm`. The method went with `TypeFetcherGenerator`'s service fetchers (`93f8329`). `FrameEmitter`, `ChannelCatchArmEmitter`, `RoutineWriteEmitter` and `ErrorDispatchFragments` all resolve, so the plan's seats are intact and one fewer. | Drop the two mentions at pickup and re-list `outcomeArm`'s callers; no re-spec. |
-| **R1202** bare-argmapping-list-nodeid-refused-at-field-condition | **Ready** | **Promoted, then overtaken within three hours.** Spec -> Ready at `44622d6` after the author re-grounded the body on trunk (`17cf288`, `418b4f9`); the condition flip (`f34cef0`) then deleted the glue its step 1 extends. | See §B.3: **back to Spec and re-probe**. |
+| **R1202** bare-argmapping-list-nodeid-refused-at-field-condition | **In Review** | **Resolved as a flag; now waiting on a reviewer.** The prior audit's "back to Spec" was answered by a different route: a dated "Plan edit at implementation" section (Filip's call, 2026-11-24) that says the flip delivered step 1, re-probes the rows at `48c8c8e`, adds the input-field `@condition` site the flip left circular, and reverses two signed-off decisions with the architect's fourth consult recorded. The signed plan below it is kept verbatim and its "Workaround today" is marked stale. Its `## Retired vocabulary` names exactly the two methods the removed-names sweep found gone. | **In Review -> Done review by a different session**, which per the plan edit judges whether keeping the input-field site in this item was a reopen by `workflow.adoc`'s bar. At Done, consider trimming the superseded plan sections so the changelog line is written from what shipped. |
+| **R1206** declared-dependency-class-nameable | Ready | **New, light: promoted at 08:13, its premise moved at 11:11.** The plan says the code gatherer reads members only of `PROJECT`, `REACTOR` and `SIBLING` entries (`CodeCapture.REACTOR_ORIGINS`), and its new step reads a declared class that no such entry declares. R454's `0bc0c08` then made a second population read with members: the generated jOOQ catalog's classes, found through `sql_schema`, "in whatever entry carries them, a declared jar as much as a reactor module", in `CodeCapture.memberClasses`, and kept out of every directive arm. So a declared jar is already partly read, by another corpus's decision, under the same `f68eef2` ruling this item's own ruling is. Its Cost section's "`code_method` holds 4081 rows, all `REACTOR`" is the pre-`0bc0c08` figure (16,821 after, per R454's body). | **Refresh at pickup, no reopen**: name `memberClasses`' catalog arm as the precedent and the seat the referenced-classes step joins (the three populations should be one union, not two steps), say whether a schema may name a catalog class at all given the arms exclude them, and re-take the opptak figures after `0bc0c08`. |
+| **R454** routine-write-result-shapes | In Progress | **Note, not a flag.** Its slice 1 is blocked on R876's new node (`24332cc`), and R876's other new node, a record class belongs to one table (`d402463`), moves the base-table preference R454's plan spells as `sql_table.record_class_fqn` "of a `TABLE`" (and its `SETOF t` guard) onto one stored fact. | The author should repoint those two passages at the node when slice 1 resumes. |
 
 **R1167** (`error-dispatch-matches-graphitron-9`, Ready) is no longer wholly clean: see the row above. The
 `graphitron_ast_error_database_handler_entry` relation its sentence names is still present, and its scope
@@ -392,15 +385,14 @@ field's `@nodeId` accessor that does not return the node's key), which judges ho
 handler claims a throw.
 
 R467 (`upgrade-graphql-java-26`), R1137 (`rejected-type-cascades-into-secondary-diagnostics`), R1119 and
-R1131 are clean (R1119's slice 8g shipped this window as `0c5ed78`, and its body names
-`VouchedValueLimitExceededException` only as retired), as are this window's two Spec promotions:
-**R454** (`routine-write-result-shapes`: rebuilt on jOOQ's routine model and Alf's 2026-11-23 ruling that a
-mutation's one-row routine answers with the routine's record, `00db6a6`; `sql_udt` and
-`sql_udt_attribute` are proposals and the rest of its unresolved names are FS-plattform's own; round 1
-revisions are owed by the author) and **R1199** (`vouched-lookups-past-one-value`: planned on `@requires`
-per `f7205c0`; `VouchedFor`, `graphitron_voucher_guard` and `vouched_owners` are proposals; round 1
-revisions owed; its `depends-on` edge to R1119 was dropped, which is right now that the floor shipped as
-slice 8g). The prior window's **R1203** (`regenerate-after-edit-participant-merge-duplicate`) is still
+R1131 are clean (R1119 shipped slice 8h this window, `333992c`, and rewrote its connection-key, glossary and
+limit sections for R1199's set the same day, naming `VOUCHER_VOUCHED_FOR_IN_KEY` and the one-value rule
+only as superseded), as are this window's two new Backlog items: **R1207**
+(`vouched-fields-guarded-by-requires`: split out of R1199 at its Spec review, built on Alf's 2026-11-23
+`@requires` ruling in `fact-model.adoc`; `graphitron_voucher_guard` is a proposal and the other unresolved
+names are federation's or FS-plattform's) and **R1208** (`vouched-for-row-built-in-shape-order`: every
+class and method it names resolves, `EntityFetcherDispatchClassGenerator.emitVoucherArm`,
+`ConnectionKeyShape.vouchedFor()`, `AcceptVouchedForQuery`). The prior window's **R1203** (`regenerate-after-edit-participant-merge-duplicate`) is still
 clean, as are the Spec item R1169, the carried Backlog items R1183, R1186,
 R1192 (its "one lease per distinct connection key, released when the operation ends" is exactly what
 R1119's `e3a3ecf68` shipped, so the premise is now confirmed by code) and R1193 (`OutboxFailureSettleTest`
@@ -408,7 +400,7 @@ and `timedOutTenants` resolve), R1196 (`GlobalRead`, `DefaultSource`, `dslDefaul
 `GraphitronConnectionInstrumentationGenerator` all still resolve; the 2026-11-19 window's `@globalData` removal,
 `a45a9f590`, deleted the marker ladder that fed the split but kept the split itself, so the fold it asks
 for is still owed and now has one fewer reader), R1198 (no tree names), the 2026-11-18 window's two
-items, **R1199** (every runtime name resolves, and its `depends-on` edge to R1119 is live) and **R1200**
+items, R1199 (since Done, with its changelog line) and **R1200**
 (clean; see R1125 in §C.1 for the item its open question belongs to), and the 2026-11-20 window's **R1201**
 (`outbox-events-are-schema-types`: its `depends-on` edge to R1113 is live, and its unresolved names are
 Apollo grammar terms and proposals). R1099, R1201 and the routine items that write
@@ -431,14 +423,13 @@ not drift.
   was a count of nothing, and it is a name now". Recommended action: finish the transition (changelog
   entry, delete the file) or, if it is intentionally parked behind R876, say so in its body and move it
   back to a non-Done status.
-- **`next-id` is ahead of every id.** The counter is `R1206` and the highest id on the board is R1205,
-  filed this window. R1194, R1195 and R1197 remain allocated-and-discarded gaps, each with a
+- **`next-id` is ahead of every id.** The counter is `R1209` and the highest id on the board is R1208,
+  filed this window (R1206 to R1208 all have files). R1194, R1195 and R1197 remain allocated-and-discarded gaps, each with a
   changelog line. R1182 still has no file (absorbed into R876 on allocation), a harmless gap.
 - **Carried: two items left the board with no changelog line, still unwritten.** The workflow records
   every Done and every discard in `changelog.md`, and the changelog is the only place a removed item's
-  outcome survives. This window wrote six changelog lines, all correctly (R1146's Done entry, the three
-  discards R677, R903 and R561, and two breaking changes under R876, `ORDER_FIELDS_EMPTY` and
-  `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`, each with a migration), but did not backfill these two:
+  outcome survives. This window wrote one changelog line, correctly (R1199's Done entry, a `Breaking:`
+  line with its migration and both sessions named), but did not backfill these two:
   - **R1189** (`condition-directive-reading-consolidation`): `1b7287117` (`chore(R1189): Backlog -> Done`)
     deleted the file and regenerated the README, and nothing else. The delivery is `30600d073` (`feat!`: a
     `@condition` naming no class or no method fails the build at the directive). Compare R1190 and
@@ -449,23 +440,25 @@ not drift.
 
   Recommended action: **add the two missing changelog lines** in the next roadmap commit (a Done line for
   R1189 naming `30600d073` and noting the waived gates; a Discarded line for R1185 naming R1119).
-- **New, a note: one of R876's breaking changes has no changelog line.** R876 records each breaking change
+- **Carried, a note: one of R876's breaking changes has no changelog line.** R876 records each breaking change
   as a `Breaking:` line when it ships (this window `bb949ea` and `f34cef0` did), but `5fc05bd` (`feat!`: a
   root single read is `null` only where it finds no row, so a matched row of nulls now answers an
   object with null fields) carries a `BREAKING-CHANGE:` footer and no line. Recommended action: add the
   line with its migration in the next R876 roadmap commit. (R1119's `0c5ed78`, which deletes the
   generated `VouchedValueLimitExceededException`, follows R1119's own practice of recording breaking
-  changes at its Done entry; that is consistent, not a gap.)
+  changes at its Done entry; that is consistent, not a gap.) Still missing at `c514f01`; the window's one
+  other `feat!`, R1199's `78fae2c`, has its line.
 - **Carried, closed as a note: seven `wip(R876)` subjects reached trunk on 2026-11-18** (`37749f040` and
   six siblings). Trunk is fast-forward only, so they stay; each is a `feat` by content, which whoever
   writes R876's changelog entry should know. **No `wip`, `draft` or `spike` subject reached trunk this
-  window**: all 46 subjects are Conventional Commits with a type and, bar three `docs`, a scope.
+  window**: all 50 subjects are Conventional Commits with a type and, bar six `docs` and one `test`, a
+  scope.
 - **Carried, a note: one breaking change shipped with its consumer check open.** The changelog line for
   `RESULT_SHAPES_CONFLICT` (`753df28`) says "FS-plattform impact is pending the six FS captures in the
   build slot". Its sibling `CLASS_SUPERTYPE_NOT_READ` names its impact (15 sites in one module).
-  Still "pending" at `f026915`. Recommended action: whoever runs the captures amends the line with the
+  Still "pending" at `c514f01`. Recommended action: whoever runs the captures amends the line with the
   count, so the changelog does not carry "pending" into a release note.
-- Fifteen items carry a non-empty `depends-on:` (R1199 dropped its edge to R1119 this window), all resolving to existing files (R1201 has an edge to
+- Fifteen items carry a non-empty `depends-on:` (unchanged; none of the three new items declares one), all resolving to existing files (R1201 has an edge to
   R1113, an item In Review; the edge stays valid until R1113's file is deleted on Done,
   when it should be dropped in the same commit).
   Six of them depend on R876 (`derived-read-cost-is-a-shape-problem`), which means **R876 is a
@@ -504,7 +497,9 @@ not drift.
    `bb949ea`. That is the practice observation 8 has asked for since the 2026-11-18 window. The next
    boundary is the walk's condition *classification* (`ConditionResolver`, `FieldBuilder`'s condition
    arms, `ServiceCatalog`'s reflection), and the items standing on it are still R72, R654, R971, R1022,
-   R1205 and R218 to R220.
+   R1205 and R218 to R220. **The 2026-11-24 window staled by a fifth way, direction:** R454's slice 0
+   unblocked R876's node folding `@externalField` into `@routine`, which a Ready item (R555) plans to fold
+   into `@service`. No name went dark; two plans now disagree, and only a ruling settles it.
 
 2. **R1119 is now the second source of staleness, and it is the runtime's.** Its slice 8c retired the
    plugin `<mount>`/`<unmount>`, `SessionMountException`, `GraphitronSessionHook`, the default tenant and
@@ -535,18 +530,20 @@ not drift.
    now survived eleven audits, and R193's residue check is no longer needed (§B.1); R209 (§A) is the third. Together with R1189 and R1185's missing changelog
    lines this is perhaps ten minutes of bookkeeping that would remove five recurring lines from this report.
 
-6. **The Ready set is where stale prose bites soonest, and a new Ready item went stale on arrival.**
-   Of the eleven Ready items, **R427, R555, R684, R730, R838, R1167, R1168, R1184 and R1202 carry stale
-   cites**, and R427 also carries an undecided question; only R467 and R1137 are clean. Four should go
+6. **The Ready set is where stale prose bites soonest, and a new Ready item went stale on arrival again.**
+   Of the eleven Ready items, **R427, R555, R684, R730, R838, R1167, R1168, R1184 and R1206 carry stale
+   cites**, and R427 also carries an undecided question; only R467 and R1137 are clean. Three should go
    back to Spec rather than be refreshed in place: **R555** (its classifier fold is written into
-   `ServiceDirectiveResolver`), **R1168** (two plan sections delivered, a third an R876 node, a fourth
-   half done by deletion), **R730** (the gate it extends moved into javac) and now **R1202**, promoted
-   at 10:03 on a plan that said "until R876's condition flip" and overtaken by that flip at 12:46. The
-   lesson is narrow and cheap: a Spec -> Ready review of an item whose plan names an R876 boundary
-   should ask R876's sessions when that boundary moves. No older Ready item was touched this window.
-   **The gates themselves moved well:** R1146 went Spec -> Done inside a day, R534 reached In Review,
-   and R454 and R1199 each got a round 1 review the day they were promoted. The queue is R1113, five
-   days In Review with three dead cites, and R534 behind it.
+   `ServiceDirectiveResolver`, and R876 now plans the opposite fold), **R1168** (two plan sections
+   delivered, a third an R876 node, a fourth half done by deletion) and **R730** (the gate it extends
+   moved into javac). **R1206** repeats last window's R1202 pattern at a smaller scale: promoted at 08:13
+   on a "today" that R454's slice 0 changed at 11:11, by a sibling session working the same gatherer. The
+   lesson stands and widens: a Spec -> Ready review should ask the In Progress items that touch the same
+   seat (here `CodeCapture`) what they are about to land. **The gates moved well again:** R1199 went
+   Spec -> Done inside a day with its splits filed (R1207, R1208), R454 reached In Progress, and R1202
+   reached In Review on a plan edit that made Filip's call explicit in the body rather than silently
+   working around a stale plan. The queue is now three In Review items: R1113 (six days, three dead
+   cites), R534 and R1202.
 
 7. **A reachable baseline makes the audit cheap, and the two sweeps take turns.** This run deepened
    the clone to reach the prior audit's commit and diffed against it; this run's baseline was reachable
@@ -563,7 +560,11 @@ not drift.
    the removed-names test found R1202, R862 and R1022 (all through `ConditionGlueRenderer` and its
    registries), the subject sweep found R85 (a `contextArguments` condition now stored), R1188 and R1191
    (number bounds and the `fromWire` convention) and R1205's stale premise, none of which cite a
-   removed name.
+   removed name. **The 2026-11-24 window was all subject sweep**: 32 removed names, none cited outside a
+   retired-vocabulary section, while the `feat`/`fix` and docs subjects found R776 (a `fix(dev)` with no
+   item), R1206 and R762 (a `feat` reading more classes), R555 (a refactor unblocking a node) and R1188 (a
+   ruling on a sibling's cap). Two of those five came from commits with no item or another item's scope,
+   which a name gate would never see.
 
 8. **R876 delivers or overturns Backlog items without closing them.** R898 was the clear case four audits
    ago (`431e604`); R852, R902, R1033, R562, R1034 and R931 followed. The 2026-11-18 window added **R234**
@@ -598,7 +599,10 @@ not drift.
     "What changed"; R1146 and R1202 were each rewritten against theirs the day it was given, which is
     the practice working, and observation 12 names the one that filed items have yet to meet. A ruling's author is
     best placed to grep active bodies for its subject when writing the docs commit; this audit is the
-    backstop.
+    backstop. The 2026-11-24 window's docs commits and rulings reached three filed items they do not
+    name: `f68eef2` (another corpus decides what a capture reads) is R762's thesis, Filip's
+    `VouchedValueLimit` ruling is R1188's open configuration question, and `bd232ad` replaced the
+    one-row-routine ruling the prior audit recorded, which only R454 (its author's own item) cites.
 
 11. **The lint channel is draining into the store, and four items still plan around `LintRule`.**
     `e38c49c` moved the first walk lint to a stored warning and named two more to follow; `5e2ab52`
@@ -624,4 +628,4 @@ not drift.
 
 ---
 
-_Review date: 2026-11-24._
+_Review date: 2026-11-25._
