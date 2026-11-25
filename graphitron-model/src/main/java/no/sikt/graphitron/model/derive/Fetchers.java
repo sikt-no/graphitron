@@ -213,6 +213,8 @@ public final class Fetchers {
             .execute();
 
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.FETCHERS);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.WRITES);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.OUTCOMES);
     }
 
     /**

@@ -13568,6 +13568,128 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
  WHERE da.directive_name = 'mutation' AND da.ordinal = 0 AND da.source_name IS NOT NULL
 UNION ALL
+-- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
+-- rule, and every field of the type would be fetched both ways. A row beside an object of classes
+-- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
+-- handed; an object of no class is not, and neither is an object whose class is a jOOQ record of any
+-- catalog (code_graph_class.is_jooq_record), the graph's own tables' records among them, since the
+-- fetcher takes any Record it is handed for the row. A class whose chain leaves what the graph reads
+-- is CLASS_SUPERTYPE_NOT_READ's below. Two objects break it too: a write's payload, which graphitron
+-- builds and holds no class, returned by a @service as well, whose object is a class of its own, so
+-- the payload's fields would read two different objects. Where the type is also a row, the mix above
+-- is what is judged.
+-- Each declaration is tested by its own graph and name, every read keyed on both, rather than joined to
+-- a derived list of the conflicting types, which H2 re-evaluated per declaration once the stage's graph
+-- filter was pushed in, or tested against the list, whose own reads then narrowed to no graph.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphql_ast_type_declaration_entry d
+ WHERE ((SELECT COUNT(*) FROM graphitron_result r
+          WHERE r.graph_name = d.graph_name AND r.type_name = d.name) > 1
+        AND NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
+                          WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name)
+                 AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                                   JOIN code_graph_class k
+                                     ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
+                                  WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name
+                                    AND k.is_jooq_record = TRUE)))
+    OR (EXISTS (SELECT 1 FROM graphitron_field wf
+                  JOIN graphitron_producer w
+                    ON w.graph_name = wf.graph_name AND w.type_name = wf.type_name AND w.field_name = wf.field_name
+                 WHERE wf.graph_name = d.graph_name AND wf.named_type = d.name
+                   AND w.kind IN ('INSERT', 'UPDATE', 'DELETE'))
+        AND EXISTS (SELECT 1 FROM graphitron_field sf
+                      JOIN graphitron_producer sp
+                        ON sp.graph_name = sf.graph_name AND sp.type_name = sf.type_name
+                       AND sp.field_name = sf.field_name
+                     WHERE sf.graph_name = d.graph_name AND sf.named_type = d.name AND sp.kind = 'SERVICE')
+        AND EXISTS (SELECT 1 FROM graphitron_result_class rc
+                     WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name)
+        AND NOT EXISTS (SELECT 1 FROM graphitron_result x
+                         WHERE x.graph_name = d.graph_name AND x.type_name = d.name AND x.shape = 'ROW'))
+UNION ALL
+-- A producer handing over an object of a class whose supertype chain reaches a class the graph reads
+-- no copy of, at the field: whether the object's fields are read through the Record API or by its
+-- getters turns on whether the class is a jOOQ record, which code_graph_class cannot say for it. The
+-- detail is the least such supertype name, the one the classpath lacks. A class the graph reads no
+-- copy of at all has no row there and is not judged here. One row per field, however many classes
+-- its type holds.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'CLASS_SUPERTYPE_NOT_READ', MIN(k.unread_supertype_name), 'fetchers'
+  FROM graphitron_producer p
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_result_class rc
+    ON rc.graph_name = ft.graph_name AND rc.type_name = ft.target_type_name
+  JOIN code_graph_class k
+    ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE k.is_jooq_record IS NULL
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
+-- holding one result, with neither a producer nor a reader. A field claiming two kinds or an upsert,
+-- the fields of a type holding two shapes, and a field returning a type nobody declared carry their
+-- own defect instead.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_field f
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type tt
+    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
+                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                   AND ro.operation IN ('QUERY', 'MUTATION'))
+        OR (SELECT COUNT(*) FROM graphitron_result r
+             WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name) = 1)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_fetcher fe
+                    WHERE fe.graph_name = f.graph_name AND fe.type_name = f.type_name
+                      AND fe.field_name = f.field_name)
+   AND (SELECT COUNT(DISTINCT c.kind) FROM graphitron_claim c
+         JOIN graphitron_claim_kind k ON k.kind = c.kind AND k.family = 'PRODUCER'
+         WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate) < 2
+   AND NOT EXISTS (SELECT 1 FROM graphitron_claim c
+                      JOIN graphitron_claim_kind k ON k.kind = c.kind AND k.family = 'PRODUCER'
+                    WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate
+                      AND c.kind IN ('UPSERT', 'WRITE'))
+UNION ALL
+-- A @splitQuery on a field returning a table-bound type where its rows arrive from a query of their
+-- own anyway, at the written @splitQuery: under a type a Java object backs, whose record is handed to
+-- the field, which opens a DataLoader-backed scope of its own; and on a payload's data field, which
+-- re-reads its producer's records by their keys. The directive changes nothing there and is admitted
+-- with this warning (Alf, 2026-11-19). The object's parent holds an instance of a class
+-- (graphitron_result_class), and only that: a type graphitron also reads as a row elsewhere is no such
+-- parent. A field with its own @service or @routine is a producer of its own, and its @splitQuery is
+-- that producer's.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'SPLIT_QUERY_REDUNDANT', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE da.directive_name = 'splitQuery' AND da.origin = 'AUTHORED' AND da.source_name IS NOT NULL
+   AND (EXISTS (SELECT 1 FROM graphitron_result_class rc
+                 WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name)
+        AND NOT EXISTS (SELECT 1 FROM graphitron_result r
+                         WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name
+                           AND r.shape = 'ROW')
+        OR EXISTS (SELECT 1 FROM graphitron_payload_data_field pd
+                    WHERE pd.graph_name = f.graph_name AND pd.type_name = f.type_name
+                      AND pd.field_name = f.field_name AND pd.kind = 'RECORDS'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
+                    WHERE p.graph_name = da.graph_name AND p.coordinate = da.coordinate
+                      AND p.directive_name IN ('service', 'routine'));
+COMMENT ON VIEW graphitron_fetcher_entry_defect_rule IS 'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.';
+
+CREATE VIEW graphitron_write_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A @service whose service owns its transaction, at the @service, on a field that is no root
 -- mutation field: only a top-level mutation field has a transaction of its own for the service to
 -- step out of. A field under a mutation's payload is not one.
@@ -13663,70 +13785,11 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                               JOIN graphitron_tabletype b
                                 ON b.graph_name = rt.graph_name AND b.type_name = rt.target_type_name
                              WHERE rr.graph_name = ft.graph_name AND rr.type_name = ft.target_type_name
-                               AND rr.kind = 'LOOKUP'))))
-UNION ALL
--- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
--- rule, and every field of the type would be fetched both ways. A row beside an object of classes
--- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
--- handed; an object of no class is not, and neither is an object whose class is a jOOQ record of any
--- catalog (code_graph_class.is_jooq_record), the graph's own tables' records among them, since the
--- fetcher takes any Record it is handed for the row. A class whose chain leaves what the graph reads
--- is CLASS_SUPERTYPE_NOT_READ's below. Two objects break it too: a write's payload, which graphitron
--- builds and holds no class, returned by a @service as well, whose object is a class of its own, so
--- the payload's fields would read two different objects. Where the type is also a row, the mix above
--- is what is judged.
--- Each declaration is tested by its own graph and name, every read keyed on both, rather than joined to
--- a derived list of the conflicting types, which H2 re-evaluated per declaration once the stage's graph
--- filter was pushed in, or tested against the list, whose own reads then narrowed to no graph.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'fetchers'
-  FROM graphql_ast_type_declaration_entry d
- WHERE ((SELECT COUNT(*) FROM graphitron_result r
-          WHERE r.graph_name = d.graph_name AND r.type_name = d.name) > 1
-        AND NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
-                          WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name)
-                 AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
-                                   JOIN code_graph_class k
-                                     ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
-                                  WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name
-                                    AND k.is_jooq_record = TRUE)))
-    OR (EXISTS (SELECT 1 FROM graphitron_field wf
-                  JOIN graphitron_producer w
-                    ON w.graph_name = wf.graph_name AND w.type_name = wf.type_name AND w.field_name = wf.field_name
-                 WHERE wf.graph_name = d.graph_name AND wf.named_type = d.name
-                   AND w.kind IN ('INSERT', 'UPDATE', 'DELETE'))
-        AND EXISTS (SELECT 1 FROM graphitron_field sf
-                      JOIN graphitron_producer sp
-                        ON sp.graph_name = sf.graph_name AND sp.type_name = sf.type_name
-                       AND sp.field_name = sf.field_name
-                     WHERE sf.graph_name = d.graph_name AND sf.named_type = d.name AND sp.kind = 'SERVICE')
-        AND EXISTS (SELECT 1 FROM graphitron_result_class rc
-                     WHERE rc.graph_name = d.graph_name AND rc.type_name = d.name)
-        AND NOT EXISTS (SELECT 1 FROM graphitron_result x
-                         WHERE x.graph_name = d.graph_name AND x.type_name = d.name AND x.shape = 'ROW'))
-UNION ALL
--- A producer handing over an object of a class whose supertype chain reaches a class the graph reads
--- no copy of, at the field: whether the object's fields are read through the Record API or by its
--- getters turns on whether the class is a jOOQ record, which code_graph_class cannot say for it. The
--- detail is the least such supertype name, the one the classpath lacks. A class the graph reads no
--- copy of at all has no row there and is not judged here. One row per field, however many classes
--- its type holds.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'CLASS_SUPERTYPE_NOT_READ', MIN(k.unread_supertype_name), 'fetchers'
-  FROM graphitron_producer p
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
-  JOIN graphitron_result_class rc
-    ON rc.graph_name = ft.graph_name AND rc.type_name = ft.target_type_name
-  JOIN code_graph_class k
-    ON k.graph_name = rc.graph_name AND k.class_name = rc.class_name
-  JOIN graphitron_field f
-    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE k.is_jooq_record IS NULL
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
-UNION ALL
+                               AND rr.kind = 'LOOKUP'))));
+COMMENT ON VIEW graphitron_write_entry_defect_rule IS 'One row the write defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example fetchers inserts this view''s rows for one graph into graphitron_entry_defect, a write whose return and re-reading fields are on different tables giving one WRITE_TABLES_DISAGREE row at its @mutation.';
+
+CREATE VIEW graphitron_outcome_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A field whose union or interface lists an @error type, or whose type is one, but which is no errors
 -- field, at its declaration, by the first rule it breaks: every member @error, a list, and a list
 -- that may be null.
@@ -13785,35 +13848,6 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
  WHERE f.non_null AND NOT f.is_list
-UNION ALL
--- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
--- holding one result, with neither a producer nor a reader. A field claiming two kinds or an upsert,
--- the fields of a type holding two shapes, and a field returning a type nobody declared carry their
--- own defect instead.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR), 'fetchers'
-  FROM graphitron_field f
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_type tt
-    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
- WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
-                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-                   AND ro.operation IN ('QUERY', 'MUTATION'))
-        OR (SELECT COUNT(*) FROM graphitron_result r
-             WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name) = 1)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_fetcher fe
-                    WHERE fe.graph_name = f.graph_name AND fe.type_name = f.type_name
-                      AND fe.field_name = f.field_name)
-   AND (SELECT COUNT(DISTINCT c.kind) FROM graphitron_claim c
-         JOIN graphitron_claim_kind k ON k.kind = c.kind AND k.family = 'PRODUCER'
-         WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate) < 2
-   AND NOT EXISTS (SELECT 1 FROM graphitron_claim c
-                      JOIN graphitron_claim_kind k ON k.kind = c.kind AND k.family = 'PRODUCER'
-                    WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate
-                      AND c.kind IN ('UPSERT', 'WRITE'))
 UNION ALL
 -- A checked exception a @service method declares, the method its code reference resolves to, that no
 -- handler of its field's outcome covers, at the field: one extending neither RuntimeException nor Error, and neither an IOException nor an
@@ -13876,36 +13910,8 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                   OR EXISTS (SELECT 1 FROM code_throwable_supertype st
                               WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
                                 AND st.supertype_name = 'java.sql.SQLException'))))
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
-UNION ALL
--- A @splitQuery on a field returning a table-bound type where its rows arrive from a query of their
--- own anyway, at the written @splitQuery: under a type a Java object backs, whose record is handed to
--- the field, which opens a DataLoader-backed scope of its own; and on a payload's data field, which
--- re-reads its producer's records by their keys. The directive changes nothing there and is admitted
--- with this warning (Alf, 2026-11-19). The object's parent holds an instance of a class
--- (graphitron_result_class), and only that: a type graphitron also reads as a row elsewhere is no such
--- parent. A field with its own @service or @routine is a producer of its own, and its @splitQuery is
--- that producer's.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'SPLIT_QUERY_REDUNDANT', CAST(NULL AS VARCHAR), 'fetchers'
-  FROM graphitron_directive_application da
-  JOIN graphitron_field f ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
- WHERE da.directive_name = 'splitQuery' AND da.origin = 'AUTHORED' AND da.source_name IS NOT NULL
-   AND (EXISTS (SELECT 1 FROM graphitron_result_class rc
-                 WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name)
-        AND NOT EXISTS (SELECT 1 FROM graphitron_result r
-                         WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name
-                           AND r.shape = 'ROW')
-        OR EXISTS (SELECT 1 FROM graphitron_payload_data_field pd
-                    WHERE pd.graph_name = f.graph_name AND pd.type_name = f.type_name
-                      AND pd.field_name = f.field_name AND pd.kind = 'RECORDS'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
-                    WHERE p.graph_name = da.graph_name AND p.coordinate = da.coordinate
-                      AND p.directive_name IN ('service', 'routine'));
-COMMENT ON VIEW graphitron_fetcher_entry_defect_rule IS 'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.';
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
+COMMENT ON VIEW graphitron_outcome_entry_defect_rule IS 'One row the outcome defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example fetchers inserts this view''s rows for one graph into graphitron_entry_defect, a type with two errors fields giving one MULTIPLE_ERRORS_FIELDS row at the first.';
 
 CREATE TABLE graphitron_outbox_message (
   graph_name                VARCHAR   NOT NULL,
@@ -20085,8 +20091,35 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_N
                   AND f.field_name = g.segment_name)
  GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
 UNION ALL
--- An @accept's vouchers decode to an authored key this subgraph resolves the type by, and a type with
--- none has nothing for the lookup part to fill. Reported at the @accept.
+-- A type whose projection reads the session, resolved as an entity: by a resolvable @key, authored or
+-- minted, as the entity dispatch reads one, or as a node this subgraph serves by its id. The dispatch,
+-- which Query.node and _entities both read through, selects the type's projection without the
+-- statement's connection, so the type is refused at its declaration, the type in the detail.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SESSION_PROJECTION_PATH_UNSUPPORTED', ts.type_name, 'entity-key-alternatives'
+  FROM graphitron_tabletype_session ts
+  JOIN graphql_ast_element_entry el ON el.graph_name = ts.graph_name AND el.coordinate = ts.type_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_node_served_by_id n
+                WHERE n.graph_name = ts.graph_name AND n.type_name = ts.type_name)
+    OR EXISTS (SELECT 1 FROM graphitron_directive_application a
+                 LEFT JOIN graphitron_ast_federation_key_entry ke
+                   ON ke.graph_name = a.graph_name AND ke.source_name = a.source_name
+                  AND ke.source_line = a.source_line AND ke.source_column = a.source_column
+                 LEFT JOIN graphitron_minted_key mk
+                   ON mk.graph_name = a.graph_name AND mk.type_name = a.coordinate AND mk.ordinal = a.ordinal
+                  AND a.origin = 'MINTED'
+                WHERE a.graph_name = ts.graph_name AND a.coordinate = ts.type_name AND a.directive_name = 'key'
+                  AND COALESCE(ke.resolvable, mk.resolvable, TRUE) = TRUE);
+COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file, or the @accept''s';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.code IS 'the rule the key breaks';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.detail IS 'the type, or for a key field the first field the author wrote that is not a column'
+
+CREATE VIEW graphitron_entity_key_accept_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_WITHOUT_KEY',
        i.type_name, 'entity-key-alternatives'
   FROM graphitron_ast_accept_entry e
@@ -20152,8 +20185,57 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACC
                       AND s.source_line = e.source_line AND s.source_column = e.source_column AND s.nested)
    AND NOT EXISTS (SELECT 1 FROM graphitron_accept_key ak
                     WHERE ak.graph_name = e.graph_name AND ak.source_name = e.source_name
-                      AND ak.source_line = e.source_line AND ak.source_column = e.source_column)
-UNION ALL
+                      AND ak.source_line = e.source_line AND ak.source_column = e.source_column);
+COMMENT ON VIEW graphitron_entity_key_accept_entry_defect_rule IS 'One row the entity key accept defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example entity-key-alternatives inserts this view''s rows for one graph into graphitron_entry_defect, an @accept leaving key: out where the type has two authored resolvable keys giving one VOUCHER_ACCEPT_KEY_AMBIGUOUS row at the @accept.';
+
+CREATE VIEW graphitron_entity_key_vouched_for_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+WITH RECURSIVE accept_reach (graph_name, accept_type, type_name, path) AS (
+  SELECT DISTINCT d.graph_name, i.type_name, i.type_name, '/' || i.type_name || '/'
+    FROM graphql_directive_application d
+    JOIN graphql_type_element i ON i.graph_name = d.graph_name AND i.type_name = d.coordinate
+   WHERE d.directive_name = 'accept'
+  UNION ALL
+  SELECT r.graph_name, r.accept_type, e.target_type_name, r.path || e.target_type_name || '/'
+    FROM accept_reach r
+    JOIN (SELECT DISTINCT ft.graph_name, ft.type_name, ft.target_type_name
+            FROM graphitron_field_target ft
+            JOIN graphitron_type t
+              ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
+             AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION')
+           WHERE NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                              WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
+                                AND cc.field_name = ft.field_name)
+             AND NOT EXISTS (SELECT 1 FROM graphitron_connection c
+                              WHERE c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name)
+          UNION
+          SELECT m.graph_name, m.container_name, m.member_type_name
+            FROM graphitron_type_member m) e
+      ON e.graph_name = r.graph_name AND e.type_name = r.type_name
+   WHERE POSITION('/' || e.target_type_name || '/' IN r.path) = 0
+),
+-- What each @accept vouches for, one row per vouched-for field: its name and the Java type of the
+-- column it reads at its type's table, null where it reads none (refused on its own above).
+accept_shape (graph_name, source_name, source_line, source_column, type_name, field_name, binding_type) AS (
+  SELECT c.graph_name, c.source_name, c.source_line, c.source_column, c.type_name, c.field_name,
+         col.binding_type
+    FROM graphitron_accept_vouched_for c
+    JOIN graphitron_field f
+      ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
+    JOIN graphitron_tabletype tt ON tt.graph_name = c.graph_name AND tt.type_name = c.type_name
+    LEFT JOIN graphitron_occurrence_column oc
+      ON oc.graph_name = f.graph_name AND oc.coordinate = f.coordinate
+     AND oc.bound = tt.table_schema || '.' || tt.table_name
+    LEFT JOIN sql_column col
+      ON col.source_name = oc.table_source_name AND col.table_schema = oc.table_schema
+     AND col.table_name = oc.table_name AND col.column_name = oc.column_name
+),
+-- The accepting type whose shape the graph's other accepting types are held to: the first by name.
+first_accept (graph_name, type_name) AS (
+  SELECT graph_name, MIN(type_name) FROM graphitron_accept_vouched_for GROUP BY graph_name
+)
+-- An @accept's vouchers decode to an authored key this subgraph resolves the type by, and a type with
+-- none has nothing for the lookup part to fill. Reported at the @accept.
 -- A vouched-for field that does not read one column of the accepting type's own table, the test a key
 -- field passes: the voucher's vouched-for values parse into it as one scalar value, as a key field's value does.
 -- One row per @accept, the detail the first such field by name.
@@ -20214,34 +20296,8 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACC
                                 WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
                                   AND cc.field_name = ft.field_name)
                        OR EXISTS (SELECT 1 FROM graphitron_connection c
-                                   WHERE c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name)))
-UNION ALL
--- A type whose projection reads the session, resolved as an entity: by a resolvable @key, authored or
--- minted, as the entity dispatch reads one, or as a node this subgraph serves by its id. The dispatch,
--- which Query.node and _entities both read through, selects the type's projection without the
--- statement's connection, so the type is refused at its declaration, the type in the detail.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'SESSION_PROJECTION_PATH_UNSUPPORTED', ts.type_name, 'entity-key-alternatives'
-  FROM graphitron_tabletype_session ts
-  JOIN graphql_ast_element_entry el ON el.graph_name = ts.graph_name AND el.coordinate = ts.type_name
- WHERE EXISTS (SELECT 1 FROM graphitron_node_served_by_id n
-                WHERE n.graph_name = ts.graph_name AND n.type_name = ts.type_name)
-    OR EXISTS (SELECT 1 FROM graphitron_directive_application a
-                 LEFT JOIN graphitron_ast_federation_key_entry ke
-                   ON ke.graph_name = a.graph_name AND ke.source_name = a.source_name
-                  AND ke.source_line = a.source_line AND ke.source_column = a.source_column
-                 LEFT JOIN graphitron_minted_key mk
-                   ON mk.graph_name = a.graph_name AND mk.type_name = a.coordinate AND mk.ordinal = a.ordinal
-                  AND a.origin = 'MINTED'
-                WHERE a.graph_name = ts.graph_name AND a.coordinate = ts.type_name AND a.directive_name = 'key'
-                  AND COALESCE(ke.resolvable, mk.resolvable, TRUE) = TRUE);
-COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file, or the @accept''s';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_line IS 'its line';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.code IS 'the rule the key breaks';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.detail IS 'the type, or for a key field the first field the author wrote that is not a column'
+                                   WHERE c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name)));
+COMMENT ON VIEW graphitron_entity_key_vouched_for_entry_defect_rule IS 'One row the entity key vouched-for defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example entity-key-alternatives inserts this view''s rows for one graph into graphitron_entry_defect, a vouched-for field reading no column of the accepting type''s own table giving one VOUCHER_VOUCHED_FOR_NOT_A_COLUMN row at the @accept.';
 
 -- The minted-keys stage's refusals: a voucher marker in a graph with no federation link, since a
 -- voucher only makes sense where a router plans across subgraphs and the key it is reached by needs
@@ -32771,6 +32827,8 @@ INSERT INTO meta_stage_rule VALUES
   ('entity-key-alternatives', 'graphitron_accept_key', 'graphitron_accept_key_rule'),
   ('nodes-served-by-id', 'graphitron_node_served_by_id', 'graphitron_node_served_by_id_rule'),
   ('entity-key-alternatives', 'graphitron_entry_defect', 'graphitron_entity_key_entry_defect_rule'),
+  ('entity-key-alternatives', 'graphitron_entry_defect', 'graphitron_entity_key_accept_entry_defect_rule'),
+  ('entity-key-alternatives', 'graphitron_entry_defect', 'graphitron_entity_key_vouched_for_entry_defect_rule'),
   ('entity-key-alternatives', 'graphitron_key_field_binding', 'graphitron_key_field_binding_rule'),
   ('federation-imports', 'graphitron_federation_link_import', 'graphitron_federation_link_import_rule'),
   ('federation-link', 'graphitron_federation_link', 'graphitron_federation_link_rule'),
@@ -32779,6 +32837,8 @@ INSERT INTO meta_stage_rule VALUES
   ('federation-vocabulary', 'graphitron_entry_defect', 'graphitron_federation_vocabulary_entry_defect_rule'),
   ('federation-vocabulary', 'graphitron_federation_definition', 'graphitron_federation_definition_rule'),
   ('fetchers', 'graphitron_entry_defect', 'graphitron_fetcher_entry_defect_rule'),
+  ('fetchers', 'graphitron_entry_defect', 'graphitron_write_entry_defect_rule'),
+  ('fetchers', 'graphitron_entry_defect', 'graphitron_outcome_entry_defect_rule'),
   ('fetchers', 'graphitron_errors_field', 'graphitron_errors_field_rule'),
   ('fetchers', 'graphitron_fetcher', 'graphitron_producer_rule'),
   ('fetchers', 'graphitron_fetcher', 'graphitron_reader_rule'),
@@ -35846,7 +35906,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_table_type_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the table-types stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a @discriminate on an interface whose @table did not resolve gives one DISCRIMINATE_WITHOUT_TABLE row at the @discriminate.',
-   'The table-types stage''s own defects, decided from the transcription, the capture entries, the catalog and the bindings the stage has just written, so each reads only what is upstream of it and none waits for a later stage''s facts.'),
+   'The table-types stage''s own defects, decided from the transcription, the capture entries, the catalog and the bindings the stage has just written, so each reads only what is upstream of it and none waits for a later stage''s facts. Its write and outcome families have rules of their own beside it, so no rule nests a union deeper than seven.'),
   ('graphitron_node_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the nodes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example Actor and Film both answering to the type id Shared give one NODE_TYPE_ID_SHARED row at each one''s @table.',
@@ -35875,6 +35935,14 @@ INSERT INTO meta_relation VALUES
    'One row the path-claims stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a field carrying both @service and @externalField gives one CLAIMS_CONFLICT row at the field''s declaration.',
    'The stage''s own defects, decided from the path claims it has just written beside every claim the claim stages wrote before it, so each reads only what is upstream of it.'),
+  ('graphitron_write_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the write defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example fetchers inserts this view''s rows for one graph into graphitron_entry_defect, a write whose return and re-reading fields are on different tables giving one WRITE_TABLES_DISAGREE row at its @mutation.',
+   'What a write and the fields reading what it hands back cannot do: a service owning its transaction off a root mutation field, a member read off a write''s keys, a re-read of deleted rows, tables that disagree. A family of the fetchers stage beside its other rules, so no rule nests a union deeper than seven.'),
+  ('graphitron_outcome_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the outcome defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example fetchers inserts this view''s rows for one graph into graphitron_entry_defect, a type with two errors fields giving one MULTIPLE_ERRORS_FIELDS row at the first.',
+   'An outcome''s errors fields and its other fields, and a checked exception no handler of the field catches. A family of the fetchers stage beside its other rules, so no rule nests a union deeper than seven.'),
   ('graphitron_fetcher_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.',
@@ -35883,10 +35951,18 @@ INSERT INTO meta_relation VALUES
    'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an @issue whose vouchesFor names a field the type does not declare gives one VOUCHER_VOUCHED_FOR_NOT_ABSORBED row at the @issue.',
    'The voucher stage''s own defects, decided from the transcription, the capture entries, the membership and what the stage has just written, so each reads only what is upstream of it and none waits for a later stage''s facts.'),
+  ('graphitron_entity_key_vouched_for_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the entity key vouched-for defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example entity-key-alternatives inserts this view''s rows for one graph into graphitron_entry_defect, a vouched-for field reading no column of the accepting type''s own table giving one VOUCHER_VOUCHED_FOR_NOT_A_COLUMN row at the @accept.',
+   'What an @accept vouches for: a field reading no column of the accepting type''s table, vouched-for values of another shape than the graph''s other @accept, a connection below it not generated. A family of the entity-key-alternatives stage beside its other rules, so no rule nests a union deeper than seven.'),
+  ('graphitron_entity_key_accept_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the entity key accept defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example entity-key-alternatives inserts this view''s rows for one graph into graphitron_entry_defect, an @accept leaving key: out where the type has two authored resolvable keys giving one VOUCHER_ACCEPT_KEY_AMBIGUOUS row at the @accept.',
+   'An @accept''s vouchers and the key they resolve the type by: none, several, nested or unknown. A family of the entity-key-alternatives stage beside its other rules, so no rule nests a union deeper than seven.'),
   ('graphitron_entity_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.',
-   'The entity key stage''s own defects, judged from how each key field binds at its entity''s table, which the occurrence bindings state, so the rule reads stored bindings rather than the classified fields the refusals were once made from.'),
+   'The entity key stage''s own defects, judged from how each key field binds at its entity''s table, which the occurrence bindings state, so the rule reads stored bindings rather than the classified fields the refusals were once made from. Its @accept family has a rule of its own beside it, so no rule nests a union deeper than seven.'),
   ('graphitron_occurrence_binding_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.',

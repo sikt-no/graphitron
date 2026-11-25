@@ -53,5 +53,7 @@ public final class EntityKeyAlternatives {
                 .where(ar.GRAPH_NAME.eq(graphName)))
             .execute();
         EntryDefects.derive(dsl, graphName, readAt, EntryDefects.ENTITY_KEYS);
+        EntryDefects.derive(dsl, graphName, readAt, EntryDefects.ENTITY_KEY_ACCEPTS);
+        EntryDefects.derive(dsl, graphName, readAt, EntryDefects.ENTITY_KEY_VOUCHED_FOR);
     }
 }

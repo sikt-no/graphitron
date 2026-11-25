@@ -16,6 +16,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ACCEPT_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_VOUCHED_FOR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_LANDING_ENTRY_DEFECT_RULE;
@@ -32,6 +34,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM_ENTRY_DEF
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_CLAIM_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_WRITE_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTCOME_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_READ_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FILTER_COLUMN_ENTRY_DEFECT_RULE;
@@ -229,9 +233,20 @@ public final class EntryDefects {
     public static final Rule ROUTINE_WRITES =
         new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_ROUTINE_WRITE_ENTRY_DEFECT_RULE);
 
-    /** The entity key stage's rule, {@link EntityKeyAlternatives}. */
+    /**
+     * The entity key stage's rule, {@link EntityKeyAlternatives}. The stage raises its @accept family
+     * from a rule of its own beside it, so no rule nests a union deeper than seven.
+     */
     public static final Rule ENTITY_KEYS =
         new Rule("entity-key-alternatives", GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE);
+
+    /** An @accept's vouchers and the key they resolve the type by. */
+    public static final Rule ENTITY_KEY_ACCEPTS =
+        new Rule("entity-key-alternatives", GRAPHITRON_ENTITY_KEY_ACCEPT_ENTRY_DEFECT_RULE);
+
+    /** What an @accept vouches for: a field reading no column, values of another shape, a connection not generated. */
+    public static final Rule ENTITY_KEY_VOUCHED_FOR =
+        new Rule("entity-key-alternatives", GRAPHITRON_ENTITY_KEY_VOUCHED_FOR_ENTRY_DEFECT_RULE);
 
     /** The minted-keys stage's rule, {@link MintedKeys}. */
     public static final Rule MINTED_KEYS = new Rule("minted-keys", GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE);
@@ -315,8 +330,20 @@ public final class EntryDefects {
     public static final Rule PATH_CLAIMS =
         new Rule("path-claims", GRAPHITRON_PATH_CLAIM_ENTRY_DEFECT_RULE);
 
-    /** The fetchers stage's rule, {@link Fetchers}: the writes', errors fields', outcomes' and results' defects. */
+    /**
+     * The fetchers stage's rule, {@link Fetchers}: the fetchers' and results' defects. The stage raises
+     * its write and outcome families from rules of their own beside it, so no rule nests a union
+     * deeper than seven.
+     */
     public static final Rule FETCHERS = new Rule("fetchers", GRAPHITRON_FETCHER_ENTRY_DEFECT_RULE);
+
+    /** What a write and the fields reading what it hands back cannot do. */
+    public static final Rule WRITES =
+        new Rule("fetchers", GRAPHITRON_WRITE_ENTRY_DEFECT_RULE);
+
+    /** An outcome's errors fields and the checked exceptions no handler catches. */
+    public static final Rule OUTCOMES =
+        new Rule("fetchers", GRAPHITRON_OUTCOME_ENTRY_DEFECT_RULE);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

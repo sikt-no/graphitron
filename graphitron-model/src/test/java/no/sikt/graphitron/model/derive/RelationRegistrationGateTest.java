@@ -552,6 +552,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_outbox_key_rule", Arm.DERIVED);
         registrations.put("graphitron_outbox_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_entity_key_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_entity_key_accept_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_entity_key_vouched_for_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_voucher_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_minted_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_anchor_entry_defect_rule", Arm.DERIVED);
@@ -568,6 +570,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_spelled_table_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_path_claim_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_fetcher_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_write_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_outcome_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_call_context_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_landing_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_routine", Arm.DERIVED);
