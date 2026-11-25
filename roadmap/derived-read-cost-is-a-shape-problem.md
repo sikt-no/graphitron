@@ -989,9 +989,13 @@ static method needs no holder.
     `EmissionCensusTest` pins (a lookup, an `@orderBy` choice, a connection, a polymorphic or
     tenanted read, a pivot); the walk's root collapse went for every root at once. A root lookup whose
     keys are scalar `@lookupKey` arguments binding columns of its own table is the store's too, all
-    five of FS main's among them; a key read off an input object's field, a node-id key, and a key an
-    `ID` or an enum converts stay the walk's. The conversion is the decision `ConditionEmitter` makes
-    for a term at emit time, so it lands as one stored fact both read, not a second emit-time copy.
+    five of FS main's among them. So is a key read off an input object's field, a key an `ID` or an
+    enum converts, and a node-id argument decoded to its node's key columns on the lookup's own table,
+    failing the field on an id of another type. How a caller's value becomes its column's is
+    `graphitron_occurrence_column_conversion`, one stored fact `ConditionEmitter` and the lookup read
+    alike, where the condition used to decide it at emit time. A node id read off an input object's
+    field, on the lookup's table or carried back from another, waits as `LOOKUP_NODE_ID`: the example
+    has none, so nothing tests it.
     A root list whose `@orderBy` argument takes one order is the store's, its helper rendered from the
     store's choices, all three of FS main's among them; one taking a list of orders is the store's too,
     each order carried as declared and the composed list completed by the table's row key at run time,

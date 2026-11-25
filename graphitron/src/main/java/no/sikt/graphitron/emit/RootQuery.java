@@ -33,6 +33,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CROSS_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_SIGNATURE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
@@ -49,7 +50,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COM
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -82,12 +82,8 @@ public final class RootQuery {
 
     /** Why a root's fetcher is not emitted from the store yet. */
     public enum Reason {
-        /** A {@code @lookupKey} key is a field of an input object the argument takes. */
-        LOOKUP_INPUT_FIELD,
-        /** A {@code @lookupKey} key is a node id, decoded to its node's key columns. */
+        /** A {@code @lookupKey} key is a node id read off a field of an input object the argument takes. */
         LOOKUP_NODE_ID,
-        /** A {@code @lookupKey} key's value is converted on its way to the column: an {@code ID} or an enum. */
-        LOOKUP_KEY_CONVERTED,
         /** Its rows may be several types', told apart by the table each is a row of, and it is a lookup over them. */
         POLYMORPHIC,
         /**
@@ -150,7 +146,7 @@ public final class RootQuery {
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
-                          List<LookupKey> keys, Choice choice, Integer pageSize, Discriminated discriminated)
+                          List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated)
             implements Result {
         public Emitted {
             Objects.requireNonNull(coordinate, "coordinate");
@@ -305,8 +301,33 @@ public final class RootQuery {
     /** One column pair of a step: the column on the table the step leaves and the one on the table it reaches. */
     public record Pair(ColumnRef from, ColumnRef to) {}
 
-    /** One key of a lookup: the argument the caller hands it in, the column it matches, and whether it is a list. */
-    public record LookupKey(String argument, ColumnRef column, boolean list) {}
+    /**
+     * One argument a lookup's keys are handed in: its name and whether it takes a list, and what it
+     * carries. Its conversion is how a caller's value becomes the column's, as
+     * {@code graphitron_occurrence_column_conversion} states it: {@code DIRECT}, {@code CONVERTED} or
+     * {@code ENUM_CONSTANT}.
+     */
+    public sealed interface LookupArg {
+        String argument();
+
+        boolean list();
+
+        /** An argument whose value is one key, matching one column. */
+        record Scalar(String argument, boolean list, ColumnRef column, String conversion) implements LookupArg {}
+
+        /** An argument taking an input object, each of whose key fields matches one column. */
+        record Fields(String argument, boolean list, List<FieldKey> fields) implements LookupArg {
+            public Fields {
+                fields = List.copyOf(fields);
+            }
+        }
+
+        /** An argument whose value is a node id, decoded to its node's key columns. */
+        record NodeId(String argument, boolean list, NodeDecode decode) implements LookupArg {}
+    }
+
+    /** One key field of an input object a lookup's argument takes: its name, its column and its conversion. */
+    public record FieldKey(String field, ColumnRef column, String conversion) {}
 
     /**
      * An {@code @orderBy} argument: its name, its input type, whether it is required and whether it
@@ -1133,54 +1154,131 @@ public final class RootQuery {
     }
 
     /** A root lookup's keys in key order, or the reason the store does not state them whole yet. */
-    private record Keys(List<LookupKey> keys, Reason reason) {}
+    private record Keys(List<LookupArg> keys, Reason reason) {}
 
     /**
-     * Each root lookup's keys: a scalar {@code @lookupKey} argument binding a column of the field's own
-     * table, taken as the caller hands it, is stated whole; a key read off an input object's field, a
-     * node id, or a value an {@code ID} or an enum converts holds the lookup back.
+     * Each root lookup's keys, an argument at a time in declaration order: a scalar {@code @lookupKey}
+     * argument binding a column of the field's own table, an input object whose key fields each bind
+     * one, or a node id decoded to its node's key columns there. A node id read off an input object's
+     * field holds the lookup back.
      */
     private static Map<String, Keys> lookups(StoreHandle store) {
         var lk = GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var ko = GRAPHITRON_OCCURRENCE.as("ko");
+        var ao = GRAPHITRON_OCCURRENCE.as("ao");
         var a = GRAPHITRON_ARGUMENT;
-        var ty = GRAPHITRON_TYPE;
         var oc = GRAPHITRON_OCCURRENCE_COLUMN;
+        var cv = GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
         var c = SQL_COLUMN;
-        var keys = new LinkedHashMap<String, List<LookupKey>>();
+        var decodes = lookupDecodes(store);
+        var keys = new LinkedHashMap<String, List<LookupArg>>();
         var held = new LinkedHashMap<String, Reason>();
         store.dsl()
-            .select(lk.COORDINATE, lk.KEY_KIND, lk.FIELD_ORDINAL, field(lk.KEY_BOUND.eq(lk.BOUND)), ko.NAME, a.IS_LIST,
-                a.NAMED_TYPE, ty.KIND, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+            .select(lk.COORDINATE, lk.KEY_KIND, lk.FIELD_ORDINAL, field(lk.KEY_BOUND.eq(lk.BOUND)), a.ARGUMENT_NAME,
+                a.IS_LIST, ko.NAME, lk.KEY_COORDINATE, cv.CONVERSION, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE,
+                c.DATABASE_TYPE)
             .from(lk)
             .join(p).on(p.GRAPH_NAME.eq(lk.GRAPH_NAME), p.COORDINATE.eq(lk.COORDINATE), p.START.eq("ROOT"))
             .join(ko).on(ko.GRAPH_NAME.eq(lk.GRAPH_NAME), ko.COORDINATE.eq(lk.KEY_COORDINATE))
-            .leftJoin(a).on(a.GRAPH_NAME.eq(ko.GRAPH_NAME), a.COORDINATE.eq(ko.ELEMENT_COORDINATE))
-            .leftJoin(ty).on(ty.GRAPH_NAME.eq(a.GRAPH_NAME), ty.TYPE_NAME.eq(a.NAMED_TYPE))
+            .join(ao).on(ao.GRAPH_NAME.eq(ko.GRAPH_NAME), ao.COORDINATE.eq(ko.ARGUMENT_COORDINATE))
+            .join(a).on(a.GRAPH_NAME.eq(ao.GRAPH_NAME), a.COORDINATE.eq(ao.ELEMENT_COORDINATE))
             .leftJoin(oc).on(oc.GRAPH_NAME.eq(lk.GRAPH_NAME), oc.COORDINATE.eq(lk.KEY_COORDINATE),
                 oc.BOUND.eq(lk.KEY_BOUND), lk.KEY_KIND.eq("COLUMN"))
+            .leftJoin(cv).on(cv.GRAPH_NAME.eq(oc.GRAPH_NAME), cv.COORDINATE.eq(oc.COORDINATE), cv.BOUND.eq(oc.BOUND))
             .leftJoin(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
             .where(lk.GRAPH_NAME.eq(store.graphName()))
             .orderBy(lk.COORDINATE, lk.ARGUMENT_ORDINAL, lk.FIELD_ORDINAL)
             .forEach(row -> {
                 String coordinate = row.value1();
-                Reason reason = null;
-                if ("NODE_ID".equals(row.value2())) reason = Reason.LOOKUP_NODE_ID;
-                else if (row.value3() != -1 || row.value6() == null) reason = Reason.LOOKUP_INPUT_FIELD;
-                else if (!Boolean.TRUE.equals(row.value4()) || row.value9() == null) reason = Reason.NOT_ONE_TABLE;
-                else if ("ID".equals(row.value7()) || "ENUM".equals(row.value8())) reason = Reason.LOOKUP_KEY_CONVERTED;
-                if (reason != null) {
-                    held.putIfAbsent(coordinate, reason);
+                boolean field = row.value3() != -1;
+                boolean nodeId = "NODE_ID".equals(row.value2());
+                if (nodeId && field) {
+                    held.putIfAbsent(coordinate, Reason.LOOKUP_NODE_ID);
+                    return;
+                }
+                if (!Boolean.TRUE.equals(row.value4())) {
+                    held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
+                    return;
+                }
+                var args = keys.computeIfAbsent(coordinate, k -> new ArrayList<>());
+                String argument = row.value5();
+                boolean list = Boolean.TRUE.equals(row.value6());
+                if (nodeId) {
+                    var decode = decodes.get(List.of(coordinate, row.value8()));
+                    if (decode == null) {
+                        held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
+                    } else {
+                        args.add(new LookupArg.NodeId(argument, list, decode));
+                    }
+                    return;
+                }
+                if (row.value10() == null || row.value9() == null) {
+                    held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
+                    return;
+                }
+                var column = new ColumnRef(row.value10(), row.value11(), row.value12(), row.value13());
+                if (!field) {
+                    args.add(new LookupArg.Scalar(argument, list, column, row.value9()));
+                    return;
+                }
+                var key = new FieldKey(row.value7(), column, row.value9());
+                if (!args.isEmpty() && args.getLast() instanceof LookupArg.Fields fields
+                        && fields.argument().equals(argument)) {
+                    var more = new ArrayList<>(fields.fields());
+                    more.add(key);
+                    args.set(args.size() - 1, new LookupArg.Fields(argument, list, more));
                 } else {
-                    keys.computeIfAbsent(coordinate, k -> new ArrayList<>()).add(new LookupKey(row.value5(),
-                        new ColumnRef(row.value9(), row.value10(), row.value11(), row.value12()), row.value6()));
+                    args.add(new LookupArg.Fields(argument, list, List.of(key)));
                 }
             });
         var out = new LinkedHashMap<String, Keys>();
-        keys.forEach((coordinate, list) -> out.put(coordinate, new Keys(list, null)));
+        keys.forEach((coordinate, list) -> {
+            if (!held.containsKey(coordinate)) out.put(coordinate, new Keys(list, null));
+        });
         held.forEach((coordinate, reason) -> out.put(coordinate, new Keys(List.of(), reason)));
+        return out;
+    }
+
+    /**
+     * How each root lookup's node-id argument decodes on the lookup's own table, by the lookup and the
+     * argument's occurrence: the node type, its type id, the table and its key columns in order. A
+     * node with no type id or a table with no generated class decodes to nothing here.
+     */
+    private static Map<List<String>, NodeDecode> lookupDecodes(StoreHandle store) {
+        var lk = GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var ni = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var gn = GRAPHITRON_NODE;
+        var c = SQL_COLUMN;
+        record Read(String coordinate, String key, String nodeType, String typeId, String source, String schema,
+                    String table, ColumnRef column) {}
+        var byKey = new LinkedHashMap<List<String>, List<Read>>();
+        store.dsl()
+            .select(lk.COORDINATE, lk.KEY_COORDINATE, ni.NODE_TYPE_NAME, gn.TYPE_ID, ni.TABLE_SOURCE_NAME,
+                ni.TABLE_SCHEMA, ni.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+            .from(lk)
+            .join(p).on(p.GRAPH_NAME.eq(lk.GRAPH_NAME), p.COORDINATE.eq(lk.COORDINATE), p.START.eq("ROOT"))
+            .join(ni).on(ni.GRAPH_NAME.eq(lk.GRAPH_NAME), ni.COORDINATE.eq(lk.KEY_COORDINATE),
+                ni.BOUND.eq(lk.KEY_BOUND))
+            .join(c).on(c.SOURCE_NAME.eq(ni.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(ni.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(ni.TABLE_NAME), c.COLUMN_NAME.eq(ni.COLUMN_NAME))
+            .leftJoin(gn).on(gn.GRAPH_NAME.eq(ni.GRAPH_NAME), gn.TYPE_NAME.eq(ni.NODE_TYPE_NAME))
+            .where(lk.GRAPH_NAME.eq(store.graphName()), lk.KEY_KIND.eq("NODE_ID"), lk.FIELD_ORDINAL.eq(-1))
+            .orderBy(lk.COORDINATE, lk.KEY_COORDINATE, ni.POSITION)
+            .forEach(r -> byKey.computeIfAbsent(List.of(r.value1(), r.value2()), k -> new ArrayList<>())
+                .add(new Read(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7(),
+                    new ColumnRef(r.value8(), r.value9(), r.value10(), r.value11()))));
+        var out = new LinkedHashMap<List<String>, NodeDecode>();
+        byKey.forEach((key, reads) -> {
+            var first = reads.getFirst();
+            var table = tableRef(store, first.source(), first.schema(), first.table());
+            if (first.typeId() != null && table != null) {
+                out.put(key, new NodeDecode(first.nodeType(), first.typeId(), table,
+                    reads.stream().map(Read::column).toList()));
+            }
+        });
         return out;
     }
 

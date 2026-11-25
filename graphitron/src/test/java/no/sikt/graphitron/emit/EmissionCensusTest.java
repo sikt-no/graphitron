@@ -371,20 +371,22 @@ class EmissionCensusTest {
                 "Query.converterCampusTerms", "Query.converterCampusTermsByNodeIds", "Query.converterCampuses",
                 "Query.converterCampusesByOrgCode", "Query.converterCampusesByOrgCodes",
                 "Query.converterIdChangeByNodeId", "Query.converterIdChanges",
-                "Query.converterIdChangesConnection", "Query.converterOrgs", "Query.customerByPk",
+                "Query.converterIdChangesConnection", "Query.converterOrgs", "Query.customerById", "Query.customerByPk",
                 "Query.customers", "Query.customersByAddressDistrict", "Query.customersByAddressDistrictActive",
                 "Query.customersByAddresses", "Query.customersByCityFilter", "Query.customersByCityId",
                 "Query.customersByConditionDistrict", "Query.customersByDistrictBean",
                 "Query.customersByMultiFieldFilter", "Query.customersByNullableAddressIds",
                 "Query.customersByTwoNames", "Query.customersOfPrincipal", "Query.customersSeenByUser",
                 "Query.divergedRefChildren", "Query.divergedRefOrgs", "Query.endorsementsByNodeId",
-                "Query.fanItem", "Query.filmActorBySingularCompositeNodeId", "Query.filmActorsByCompositeNodeIds",
+                "Query.fanItem", "Query.filmActorByNodeId", "Query.filmActorBySingularCompositeNodeId",
+                "Query.filmActorsByCompositeNodeIds", "Query.filmActorsByKey",
                 "Query.filmActorsByNullableNodeIds", "Query.filmActorsByPairList", "Query.filmActorsByPairs",
-                "Query.filmSameRows", "Query.films", "Query.filmsByBridgedActorFirstName",
+                "Query.filmById", "Query.filmSameRows", "Query.films", "Query.filmsByBridgedActorFirstName",
                 "Query.filmsByCastNames", "Query.filmsByEffectiveNullability", "Query.filmsByJunctionActorId",
                 "Query.filmsByLanguagePairs", "Query.filmsByLanguages", "Query.filmsByLanguagesComposed",
                 "Query.filmsByLanguagesComposedList", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
-                "Query.filmsByNodeIdArg", "Query.filmsByNodeIdArgWithTitleFilter", "Query.filmsByNullableNodeIds",
+                "Query.filmsByNodeIdArg", "Query.filmsByNodeIdArgWithLookupKey", "Query.filmsByNodeIdArgWithTitleFilter",
+                "Query.filmsByNullableNodeIds",
                 "Query.filmsByOneOf", "Query.filmsByOptionalLanguage", "Query.filmsByOptionalLanguages",
                 "Query.filmsByOriginalLanguage", "Query.filmsByOriginalLanguageDescList",
                 "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList",
@@ -420,13 +422,7 @@ class EmissionCensusTest {
             soft.assertThat(held).as("the roots the walk keeps")
                 .containsEntry("FACETED", List.of(
                     "Query.citiesFaceted", "Query.filmActorsFaceted", "Query.filmsFaceted"))
-                .containsEntry("LOOKUP_INPUT_FIELD", List.of(
-                    "Query.filmActorsByKey"))
-                .containsEntry("LOOKUP_KEY_CONVERTED", List.of(
-                    "Query.customerById", "Query.filmById"))
-                .containsEntry("LOOKUP_NODE_ID", List.of(
-                    "Query.filmActorByNodeId", "Query.filmsByNodeIdArgWithLookupKey"))
-                .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID");
+                .containsOnlyKeys("FACETED");
         });
     }
 }

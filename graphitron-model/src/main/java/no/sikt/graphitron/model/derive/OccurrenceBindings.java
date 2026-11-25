@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
  * The {@code occurrence-bindings} stage: what each occurrence binds once {@link OccurrenceDepths} has
  * resolved where every occurrence's rows come from. The producers' lifts, the node ids, the columns
  * a node id's key is carried back to through its path's one foreign key, and the key
- * columns argMapping paths project out of them, the columns, the nesting fields read off their
+ * columns argMapping paths project out of them, the columns and how a caller's value becomes each, the nesting fields read off their
  * parent's row, the vouchers, the {@code @externalField} expressions and their calls, the tables and
  * the {@code @condition}
  * calls applied to them and what each condition method takes, each over the whole graph from its rule
@@ -35,6 +35,7 @@ public final class OccurrenceBindings {
         OccurrenceNodeIdCarriedColumns.write(dsl, graph, touchedAt);
         LandingKeyColumns.write(dsl, graph, touchedAt);
         OccurrenceColumns.write(dsl, graph, touchedAt);
+        OccurrenceColumnConversions.write(dsl, graph, touchedAt);
         OccurrenceVouchers.write(dsl, graph, touchedAt);
         OccurrenceExpressions.write(dsl, graph, touchedAt);
         OccurrenceTables.write(dsl, graph, touchedAt);
@@ -46,6 +47,7 @@ public final class OccurrenceBindings {
         OccurrenceNodeIds.sweep(dsl, graph, touchedAt);
         LandingKeyColumns.sweep(dsl, graph, touchedAt);
         OccurrenceColumns.sweep(dsl, graph, touchedAt);
+        OccurrenceColumnConversions.sweep(dsl, graph, touchedAt);
         OccurrenceNestings.sweep(dsl, graph, touchedAt);
         OccurrenceVouchers.sweep(dsl, graph, touchedAt);
         OccurrenceExpressions.sweep(dsl, graph, touchedAt);

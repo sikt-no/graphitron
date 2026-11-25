@@ -874,14 +874,14 @@ public final class ConditionEmitter {
     }
 
     /**
-     * The wire value {@code value} as the column's Java type: an enum on a column of a Java enum by the
-     * constant of its name, graphql-java handing an enum value over as its name, and anything else
+     * The wire value {@code value} as the column's Java type, as the store states the conversion: an
+     * enum constant by its name, graphql-java handing an enum value over as its name, and anything else
      * through the column's own data type, by {@code ColumnValues.fromWire}, which bounds the value's
      * size before jOOQ parses it.
      */
     private static CodeBlock typed(ConditionQuery.Term term, TypeName type, CodeBlock value, CodeBlock column,
                                    int[] counter, ClassName columnValues) {
-        if ("ENUM".equals(term.typeKind()) && !"java.lang.String".equals(term.column().bindingType())) {
+        if ("ENUM_CONSTANT".equals(term.conversion())) {
             var name = "s" + ++counter[0];
             return CodeBlock.of("$L instanceof $T $L ? $T.valueOf($L) : null", value, String.class, name, type, name);
         }

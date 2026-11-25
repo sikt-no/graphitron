@@ -15078,6 +15078,54 @@ COMMENT ON COLUMN graphitron_occurrence_column.column_name IS 'the column, as th
 COMMENT ON COLUMN graphitron_occurrence_column.matched_by IS 'which name the spelling met, folded by case: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no SQL name on the table does';
 COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- How a value the caller passes becomes the value of the column it binds, at each argument or input
+-- field binding one: the constant of its name where the argument is an enum and the column's Java type
+-- is no String, that being an enum the column's converter or jOOQ generated; through the column's own
+-- data type where it is an ID, sent as text whatever the key's type; and as sent otherwise. Every
+-- reader that hands a caller's value to a column reads it here, so the rule is stated once.
+CREATE VIEW graphitron_occurrence_column_conversion_rule (graph_name, coordinate, bound, conversion) AS
+SELECT oc.graph_name, oc.coordinate, oc.bound,
+       CASE WHEN t.kind = 'ENUM' AND c.binding_type <> 'java.lang.String' THEN 'ENUM_CONSTANT'
+            WHEN COALESCE(a.named_type, f.named_type) = 'ID' THEN 'CONVERTED'
+            ELSE 'DIRECT' END
+  FROM graphitron_occurrence_column oc
+  JOIN graphitron_occurrence o
+    ON o.graph_name = oc.graph_name AND o.coordinate = oc.coordinate
+   AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+  LEFT JOIN graphitron_argument a
+    ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = o.graph_name AND t.type_name = COALESCE(a.named_type, f.named_type)
+  JOIN sql_column c
+    ON c.source_name = oc.table_source_name AND c.table_schema = oc.table_schema
+   AND c.table_name = oc.table_name AND c.column_name = oc.column_name;
+COMMENT ON VIEW graphitron_occurrence_column_conversion_rule IS 'One row the occurrence column conversion rule computes, in the shape graphitron_occurrence_column_conversion stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_column_conversion, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_column_conversion_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_column_conversion.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_column_conversion_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_column_conversion.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_column_conversion_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_column_conversion.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_column_conversion_rule.conversion IS 'the conversion of a row of this rule, which the stage writes into graphitron_occurrence_column_conversion.conversion';
+
+CREATE TABLE graphitron_occurrence_column_conversion (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  bound      VARCHAR   NOT NULL,
+  conversion VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- The binding it converts for, so the conversion goes with the column the argument binds.
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_column (graph_name, coordinate, bound) ON DELETE CASCADE,
+  CHECK (conversion IN ('DIRECT', 'CONVERTED', 'ENUM_CONSTANT'))
+);
+COMMENT ON TABLE graphitron_occurrence_column_conversion IS 'How the value a caller passes becomes the value of the column it binds: one row per argument or input-field occurrence and table it binds a column at. For example Query.filmById(film_id:) is CONVERTED at public.film, an ID read through film_id''s data type, Query.films(textRating:) is DIRECT, an enum read onto the text column text_rating, and Query.films(rating:) is ENUM_CONSTANT, rating''s Java type being a generated enum.';
+COMMENT ON COLUMN graphitron_occurrence_column_conversion.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_column_conversion.coordinate IS 'the argument or input-field occurrence whose value the caller passes';
+COMMENT ON COLUMN graphitron_occurrence_column_conversion.bound IS 'the table it binds a column at, as graphitron_occurrence_column spells it';
+COMMENT ON COLUMN graphitron_occurrence_column_conversion.conversion IS 'how the value becomes the column''s: ENUM_CONSTANT, the constant of the enum value''s name, where the argument is an enum and the column''s Java type no String; CONVERTED, through the column''s own data type, where it is an ID; DIRECT, as sent, otherwise';
+COMMENT ON COLUMN graphitron_occurrence_column_conversion.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- A voucher occurrence binds the voucher at the table its path lands on, the issuing type's own: its
 -- value is the voucher Graphitron computes from the members' columns, never a column it failed to
 -- find, so the column rule stands down for it and this rule binds it.
@@ -33205,6 +33253,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_entry_defect'),
   ('occurrence-bindings', 'graphitron_occurrence_binding'),
   ('occurrence-bindings', 'graphitron_occurrence_column'),
+  ('occurrence-bindings', 'graphitron_occurrence_column_conversion'),
   ('occurrence-bindings', 'graphitron_occurrence_nesting'),
   ('occurrence-bindings', 'graphitron_occurrence_expression'),
   ('occurrence-bindings', 'graphitron_occurrence_node_id'),
@@ -33448,6 +33497,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-bindings', 'graphitron_tabletype_session', 'graphitron_tabletype_session_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_row_input', 'graphitron_occurrence_row_input_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_column_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_column_conversion', 'graphitron_occurrence_column_conversion_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_expression_binding_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_node_id_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_voucher_rule'),
@@ -35208,6 +35258,14 @@ INSERT INTO meta_relation VALUES
    'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table.',
    'For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.',
    'The COLUMN subtype of graphitron_occurrence_binding, on its key and pinned to its kind by the unique key beside it. Read at the occurrence rather than at the field, since one field read through a nesting type reached from two tables lands on each, and at the landing rather than the start, since the path decides where the column is. Stored because a foreign key can reference a column only where it is written down, and every reader of a scalar''s column, the generator''s projection, the editor''s scope and the defects alike, asks this one question. The column is referenced directly and the binding cascades with it, a derivation going with what it was derived from.'),
+  ('graphitron_occurrence_column_conversion', 'graph-occurrence-binding', 'graphitron',
+   'How the value a caller passes becomes the value of the column it binds: one row per argument or input-field occurrence and table it binds a column at.',
+   'For example Query.filmById(film_id:) is CONVERTED at public.film, an ID read through film_id''s data type, Query.films(textRating:) is DIRECT, an enum read onto the text column text_rating, and Query.films(rating:) is ENUM_CONSTANT, rating''s Java type being a generated enum.',
+   'Derived from the binding''s column and the argument''s type, and stored because two readers hand a caller''s value to a column, a condition''s terms and a lookup''s keys, and each would otherwise decide the conversion again. Written by the occurrence-bindings stage after the columns, keyed as the column binding it converts for and cascading with it.'),
+  ('graphitron_occurrence_column_conversion_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the occurrence column conversion rule computes, in the shape graphitron_occurrence_column_conversion stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_column_conversion, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_parameter_written', 'graph-occurrence-call-parameter-fill', 'graphitron',
    'A fill an author wrote for one parameter of one candidate method of one service call: a $session pair, an argument path a pair lands, or a context key.',
    'For example argMapping: "ids: input.ids" on @service at Query.filmsByPath draws an ARGUMENT row landing on Query.filmsByPath(input.ids:).',

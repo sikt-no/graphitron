@@ -250,6 +250,58 @@ public final class LauncherCommands {
     }
 
     /**
+     * A stored lookup argument as the lookup rows read it: a scalar or an input object's fields each
+     * converted as the store states, and a node id decoded once per row by its node's decoder, failing
+     * the field on an id of another type.
+     */
+    private static no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg lookupArgOf(
+            no.sikt.graphitron.emit.RootQuery.LookupArg key, GeneratedUnits units) {
+        return switch (key) {
+            case no.sikt.graphitron.emit.RootQuery.LookupArg.Scalar scalar ->
+                new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+                    scalar.argument(), scalar.column(), extractionOf(scalar.conversion(), scalar.column()),
+                    scalar.list());
+            case no.sikt.graphitron.emit.RootQuery.LookupArg.Fields fields ->
+                new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput(
+                    fields.argument(), fields.list(), fields.fields().stream()
+                        .map(field -> new no.sikt.graphitron.rewrite.model.InputColumnBinding.MapBinding(field.field(),
+                            field.column(), extractionOf(field.conversion(), field.column())))
+                        .toList());
+            case no.sikt.graphitron.emit.RootQuery.LookupArg.NodeId nodeId -> {
+                var decode = nodeId.decode();
+                var encoder = units.singleton(GeneratedUnits.SUB_UTIL, "NodeIdEncoder");
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(
+                    new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
+                        com.palantir.javapoet.ClassName.get(encoder.packageName(), encoder.simpleName()),
+                        no.sikt.graphitron.emit.NodeIdHelperNames.decode(decode.nodeType()), decode.keyColumns(),
+                        decode.typeId(), decode.table()));
+                if (decode.keyColumns().size() == 1) {
+                    yield new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+                        nodeId.argument(), decode.keyColumns().getFirst(), extraction, nodeId.list());
+                }
+                var bindings = new ArrayList<no.sikt.graphitron.rewrite.model.InputColumnBinding.RecordBinding>();
+                for (int i = 0; i < decode.keyColumns().size(); i++) {
+                    bindings.add(new no.sikt.graphitron.rewrite.model.InputColumnBinding.RecordBinding(i,
+                        decode.keyColumns().get(i)));
+                }
+                yield new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord(
+                    nodeId.argument(), nodeId.list(), extraction, bindings);
+            }
+        };
+    }
+
+    /** How a caller's value reaches its column, as {@code graphitron_occurrence_column_conversion} states it. */
+    private static no.sikt.graphitron.rewrite.model.CallSiteExtraction extractionOf(String conversion,
+                                                                                    ColumnRef column) {
+        return switch (conversion) {
+            case "ENUM_CONSTANT" -> new no.sikt.graphitron.rewrite.model.CallSiteExtraction.EnumValueOf(
+                column.columnClass());
+            case "CONVERTED" -> new no.sikt.graphitron.rewrite.model.CallSiteExtraction.JooqConvert(column.javaName());
+            default -> new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct();
+        };
+    }
+
+    /**
      * A root the store states whole, read off its occurrence: the table its rows are of, projected by
      * its type's unit, its condition method where its table has one, called as the store says it is
      * defined, and a list in its default order or one record, or a connection's page. A lookup joins
@@ -263,11 +315,7 @@ public final class LauncherCommands {
                 root.condition().takesContext(), root.condition().takesSession());
         if (!root.keys().isEmpty()) {
             var mapping = new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping(root.keys().stream()
-                .<no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg>map(key ->
-                    new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
-                        key.argument(), key.column(), new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
-                        key.list()))
-                .toList(), root.table());
+                .map(key -> lookupArgOf(key, units)).toList(), root.table());
             return new LauncherCommand(
                 units.lookupMethod(root.parentType(), root.fieldName()),
                 FieldCoordinates.coordinates(root.parentType(), root.fieldName()),

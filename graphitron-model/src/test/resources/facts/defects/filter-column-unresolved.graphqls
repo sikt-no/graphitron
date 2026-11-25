@@ -102,3 +102,10 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_hint", where: "co
   40,          "; did you mean: email, active, store_id, staff_id, username"
   41,          "; did you mean: title, film_id"
   """)
+
+# An argument binding no column has no conversion to state, where one beside it binding a column does:
+# rating, a String onto the column, is taken as sent, and bogus has no row.
+extend schema @expectEquals(relation: "graphitron_occurrence_column_conversion", where: "coordinate LIKE 'Query.filmsBy(%'", rows: """
+  coordinate,             bound,       conversion
+  Query.filmsBy(rating:), public.film, DIRECT
+  """)

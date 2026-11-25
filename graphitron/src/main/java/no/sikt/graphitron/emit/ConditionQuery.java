@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
@@ -87,7 +88,8 @@ public final class ConditionQuery {
 
     /**
      * One argument or input field's filter: its occurrence, its path of names from the argument, the
-     * column it binds where it binds one rather than a node id, its type's kind, how many node tables
+     * column it binds where it binds one rather than a node id, how a caller's value becomes that
+     * column's as {@code graphitron_occurrence_column_conversion} states it, how many node tables
      * a node id there binds, none where it is no node id, whether it is a {@code @lookupKey}, its
      * path's origin, the steps the path takes from the field's table
      * to the column's, none on an empty path, the record class of the table the path lands on,
@@ -96,7 +98,7 @@ public final class ConditionQuery {
      * id must carry to be decoded on that table; and the facet whose filter value it is, {@code null}
      * where it is no facet's.
      */
-    public record Term(String coordinate, ArgumentPath path, Column column, String typeKind,
+    public record Term(String coordinate, ArgumentPath path, Column column, String conversion,
                        int nodeIdBindings, boolean lookupKey, String origin, List<Step> steps,
                        String landingRecordClass, List<ListAbove> lists, String ownTypeId, String facet) {
         public Term {
@@ -264,7 +266,7 @@ public final class ConditionQuery {
         }
     }
 
-    private record Raw(String coordinate, Column column, String typeKind, int nodeIdBindings, boolean lookupKey,
+    private record Raw(String coordinate, Column column, String conversion, int nodeIdBindings, boolean lookupKey,
                        String origin, String targetType, String landingRecordClass, List<ListAbove> lists,
                        String ownTypeId) {}
 
@@ -335,9 +337,7 @@ public final class ConditionQuery {
         var o = GRAPHITRON_OCCURRENCE;
         var oc = GRAPHITRON_OCCURRENCE_COLUMN;
         var c = SQL_COLUMN;
-        var a = GRAPHITRON_ARGUMENT;
-        var f = GRAPHITRON_FIELD;
-        var ty = GRAPHITRON_TYPE;
+        var cv = GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
         var p = GRAPHITRON_PATH;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
@@ -377,7 +377,7 @@ public final class ConditionQuery {
                 .orderBy(le.LIST_COORDINATE))
             .convertFrom(r -> r.map(Records.mapping(ListAbove::new)));
         var terms = multiset(
-            select(o.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, ty.KIND, nodeIdBindings,
+            select(o.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, cv.CONVERSION, nodeIdBindings,
                 field(exists(selectOne().from(ao).join(d).on(d.GRAPH_NAME.eq(ao.GRAPH_NAME),
                         d.COORDINATE.eq(ao.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey"))
                     .where(ao.GRAPH_NAME.eq(o.GRAPH_NAME), ao.COORDINATE.eq(o.ARGUMENT_COORDINATE)))),
@@ -398,9 +398,8 @@ public final class ConditionQuery {
                     oc.TABLE_NAME.eq(landingTable))
                 .leftJoin(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
                     c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
-                .leftJoin(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME), a.COORDINATE.eq(o.ELEMENT_COORDINATE))
-                .leftJoin(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
-                .leftJoin(ty).on(ty.GRAPH_NAME.eq(o.GRAPH_NAME), ty.TYPE_NAME.eq(coalesce(a.NAMED_TYPE, f.NAMED_TYPE)))
+                .leftJoin(cv).on(cv.GRAPH_NAME.eq(oc.GRAPH_NAME), cv.COORDINATE.eq(oc.COORDINATE),
+                    cv.BOUND.eq(oc.BOUND))
                 .where(o.GRAPH_NAME.eq(rbGraph), o.FIELD_COORDINATE.eq(rbCoordinate),
                     st.TABLE_SOURCE_NAME.eq(rbSource), st.TABLE_SCHEMA.eq(rbSchema),
                     st.TABLE_NAME.eq(rbTable), oc.COORDINATE.isNotNull().or(nodeId))
@@ -531,7 +530,7 @@ public final class ConditionQuery {
                         Boolean.TRUE.equals(t.value7()), t.value8(), t.value10(), t.value11(), t.value12(),
                         t.value13()))
                     .filter(raw -> overriding.stream().noneMatch(at -> under(raw.coordinate(), at, parents)))
-                    .map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()), raw.column(), raw.typeKind(),
+                    .map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()), raw.column(), raw.conversion(),
                         raw.nodeIdBindings(), raw.lookupKey(), raw.origin(),
                         steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
                         raw.landingRecordClass(), raw.lists(), raw.ownTypeId(), facets.get(raw.coordinate())))

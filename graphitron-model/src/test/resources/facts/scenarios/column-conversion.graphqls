@@ -1,0 +1,59 @@
+# How the value a caller passes becomes the value of the column its argument or input field binds,
+# stated once for every reader that hands a caller's value to a column: a condition's terms and a
+# lookup's keys. An enum binding a column of a generated enum is the constant of its name; an ID is
+# read through the column's own data type, sent as text whatever the key's type; anything else is
+# taken as sent, an enum onto a text column among them, its values already the column's strings. An
+# argument that binds no column has no conversion: defects/filter-column-unresolved shows one beside its
+# defect.
+
+enum MpaaRating {
+    G
+    PG
+    PG_13
+    R
+    NC_17
+}
+
+enum TextRating {
+    G
+    PG
+    PG_13 @field(name: "PG-13")
+    R
+    NC_17 @field(name: "NC-17")
+}
+
+input FilmKey {
+    filmId: ID! @field(name: "film_id")
+    title:  String
+}
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+    films(
+        # ENUM_CONSTANT: rating is a column of the generated MpaaRating enum.
+        rating: MpaaRating @field(name: "RATING"),
+        # DIRECT: text_rating is varchar, so the enum's values are its strings.
+        textRating: TextRating @field(name: "TEXT_RATING"),
+        # DIRECT: a String onto a text column.
+        title: String,
+        # CONVERTED: an ID onto an integer key.
+        filmIds: [ID!] @field(name: "film_id"),
+        # Each field of an input object, converted as an argument would be.
+        key: FilmKey
+    ): [Film!]!
+
+    # A lookup's keys read the same conversion.
+    filmById(film_id: [ID!]! @lookupKey): [Film]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_column_conversion", rows: """
+  coordinate,                  bound,       conversion
+  Query.filmById(film_id:),    public.film, CONVERTED
+  Query.films(filmIds:),       public.film, CONVERTED
+  Query.films(key.filmId:),    public.film, CONVERTED
+  Query.films(key.title:),     public.film, DIRECT
+  Query.films(rating:),        public.film, ENUM_CONSTANT
+  Query.films(textRating:),    public.film, DIRECT
+  Query.films(title:),         public.film, DIRECT
+  """)
