@@ -1266,16 +1266,29 @@ static method needs no holder.
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
   producer but a join step of the path; under `@splitQuery` the producer is the split's derived source
   lookup. Then the routine decode, which writes only the spelling, goes.
-  * **A child `@routine` is a lateral step of the path** `open`, F's. The step and its parameters
-    are stated, `graphitron_join_path_step_parameter`, each naming the argument occurrence it reads;
-    what is left is the editor, whose `argMapping` completion at a path routine offers the field's
-    arguments and not yet the standing table's columns. Emitting the call needs the step parameter's
-    pair link to its argMapping landing, for key-column projection through a node id.
-  * **A split child `@routine` is a path routine** `blocked`, F's, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
+  * **A child `@routine` is a lateral step of the path, claimed by E** `open`, E's. The step and its parameters
+    are stated, `graphitron_join_path_step_parameter`, each naming the argument occurrence it reads,
+    but not the argMapping pair that binds it: `Steps.parameters` drops the pair's identity, so no
+    step parameter reaches its `graphitron_argmapping_landing` or the node-id key column the landing
+    projects. What is left is that link, `graphitron_join_path_step_parameter_pair`, the routine
+    step's fill → pair → landing → key column as a call fill's, and its two readers, the
+    child-routine arms of `ArgmappingProjectionDefects` (the key-column type mismatch at a child
+    routine, and the list deferral at a child `@routine`), which move into the store over it. The
+    editor's `argMapping` completion at `@routine` is its own node, off the critical path.
+  * **A split child `@routine` is a path routine, claimed by E** `open`, E's. `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
     `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
     the walk's first step from the parent's keys. When it lands, a child routine connection's two
     spellings converge: written with `@splitQuery` or without, it claims no `ROUTINE` producer, its
     producer is the split re-query, and the routine is the path's first step.
+* **The editor completes `argMapping` at a `@routine`** `open`, off the critical path. The language
+  server completes an `argMapping` on `@service`, `@condition` and `@externalField` and has nothing
+  at `@routine`, root or child: only `ExternalCodeReference.argMapping` is wired, its left side reads
+  `code_method_parameter`, and its right side offers the field's arguments and nothing after a `.`.
+  At a `@routine` the left side offers the routine's parameters, `sql_routine_parameter` for the
+  routine its `name:` resolves to, and the right side the field's arguments and, after `$source.`,
+  the columns of the table the routine step departs: the parent's stated binding for a routine that
+  starts the path, so it completes before the step resolves, and the table the last hop lands on
+  after hops. A root `@routine` has no source.
 * **An `@outbox` binds its target's columns, its payload a selection set** `open`, off the critical
   path. `argMapping` binds a call's parameters on `@service` and `@routine`, its left side a name the
   store checks; on `@outbox` it names JSON keys nothing declared, and the target's columns are two
@@ -1811,7 +1824,7 @@ output package they are written to are settled.
     It does not wait for the projection units: its `$project` stays the walk's until that tier flips, as
     the store-emitted roots' does (Alf, 2026-11-25). A child `@routine` arrives as the first step of the
     split's join path, never as a `ROUTINE` producer, so the routine case follows
-    "A split child `@routine` is a path routine".
+    "A split child `@routine` is a path routine, claimed by E".
   * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
     `blocked`, F's, on the same two nodes. A connection field and its count and facet siblings read
     their query and connection off the store; it releases R1119's slice 8e.3 for connection-typed

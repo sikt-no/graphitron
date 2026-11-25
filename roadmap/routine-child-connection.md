@@ -70,7 +70,7 @@ argument generates, where it crashes today.
   "Producer"): `@splitQuery` is inferred on a child connection, and written there it is admitted with
   the `SPLIT_QUERY_REDUNDANT` warning. This answers R1178's question, and R1178 is discarded: the
   refusal for a paged child with nothing to key a batch on is this item's, and the store's claim for
-  a child routine is the R876 node "A split child `@routine` is a path routine".
+  a child routine is the R876 node "A split child `@routine` is a path routine, claimed by E".
 * **Land the warning** (Alf, 2026-11-25): the warning ships with a changelog line, and FS-plattform's
   sites are counted below.
 * **`@defaultOrder` is required only where the target type's table has no primary key to stand in for
@@ -125,8 +125,8 @@ So no filter-family, depth or result-shape code fires on the paged routine child
 unordered one is refused by the stored order rule, which names a primary key the function cannot
 have; and the inline form's order argument is already refused in the store. The two spellings of one
 field get different producer claims, `SELECT` unsplit and `ROUTINE` split, because
-`graphitron_producer_claim_rule` claims a child routine only under `@splitQuery`. The R876 node "A
-split child `@routine` is a path routine" makes the two converge: a child routine claims no `ROUTINE`
+`graphitron_producer_claim_rule` claims a child routine only under `@splitQuery`. The R876 node
+"A split child `@routine` is a path routine, claimed by E" makes the two converge: a child routine claims no `ROUTINE`
 producer in either spelling, its producer being the split re-query and the routine the path's first
 step. The unsplit spelling has no spike evidence: it needs the delivery
 trigger below before the walk takes it.
@@ -313,8 +313,8 @@ If those read simply, the design holds: the consumer writes the field as they di
   keeps: the producer's start `CHILD` and result `CONNECTION`, the path's steps and
   `graphitron_join_path_step_parameter` rows, the filter's `graphitron_occurrence_filter_term` rows and
   its `@condition`, the order source, and no defect. It also states both producer claims for one
-  field, `SELECT` unsplit and `ROUTINE` split, and its header says those `ROUTINE` rows are what "A
-  split child `@routine` is a path routine" replaces, so the parity the flip passes is behaviour, in
+  field, `SELECT` unsplit and `ROUTINE` split, and its header says those `ROUTINE` rows are what
+  "A split child `@routine` is a path routine, claimed by E" replaces, so the parity the flip passes is behaviour, in
   the execution tests, not those rows.
 * **Defects documents:** `SPLIT_QUERY_REDUNDANT` on a routine child connection and a table-backed one
   written with `@splitQuery`, and absent on the same fields written without it; one keyless case per
@@ -368,7 +368,7 @@ If those read simply, the design holds: the consumer writes the field as they di
 
 * R1178: discarded, answered by the ruling. Its walk half, its documentation and the stored refusal for a
   paged child with nothing to key a batch on are this item's; the store's claim for a child routine is
-  "A split child `@routine` is a path routine", under which the two spellings converge.
+  "A split child `@routine` is a path routine, claimed by E", under which the two spellings converge.
 * R1179: a filter on an inline routine child crashes the generator. Its order argument is now refused
   in the store; the filter is what is left, and it owes a stored defect, not a walk fix.
 * R447's parked note on connection pagination over a catalog-terminus chain points here.
