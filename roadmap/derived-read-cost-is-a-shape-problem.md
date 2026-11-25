@@ -997,7 +997,11 @@ static method needs no holder.
     each order carried as declared and the composed list completed by the table's row key at run time,
     the row key and the keys identifying a row read off `graphitron_occurrence_identifying_key_column`
     by rank; `RootOrderArgumentParityTest` holds the store's spec equal to the walk's on what the helper
-    and a cursor read. A root connection over one table in either order, not faceted,
+    and a cursor read. A root's order with a key down a path or computed by a method is the store's
+    too, its hops and landing column read off `graphitron_occurrence_sort_key_hop` and
+    `graphitron_occurrence_sort_key_column`, its method off `graphitron_occurrence_sort_key_method`,
+    each key numbered as the walk numbers it, since the number names the emitted path method and the
+    cursor's alias; a key the store does not state whole still waits as `SORT_KEY_NOT_A_COLUMN`. A root connection over one table in either order, not faceted,
     is the store's too, its records its edge's items and its page size the carrier's
     `defaultFirstValue` or the unauthored default over `<maxAllowedPageSize>`: 65 of FS main's 66 root
     connections. That page-size rule is restated from `PaginationResolver` in `RootQuery`; it becomes

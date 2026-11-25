@@ -57,9 +57,56 @@ class RootOrderArgumentParityTest {
         assertThat(helperShape(store)).isEqualTo(helperShape(walk));
     }
 
+    private static final String SORT_KEYS = """
+        type Film @table(name: "film") { title: String }
+        enum FilmKeySort {
+            ORIGINAL_LANGUAGE @order(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+            LATEST_STOCK @order(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
+            TITLE @order(fields: [{name: "title"}])
+            LANGUAGE_THEN_STOCK @order(fields: [{name: "name", path: [{key: "film_language_id_fkey"}]},
+                {method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC}])
+        }
+        input FilmKeyOrderBy { field: FilmKeySort!  direction: SortDirection }
+        type Query {
+            filmsByKeys(order: FilmKeyOrderBy @orderBy): [Film!]!
+                @defaultOrder(fields: [{name: "name", path: [{key: "film_language_id_fkey"}]}])
+            filmsByKeysPage(order: FilmKeyOrderBy @orderBy): [Film!]! @asConnection
+                @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}, {name: "title"}])
+            filmsByPath: [Film!]! @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+            filmsByPathPage: [Film!]! @asConnection
+                @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}, {name: "title"}])
+        }
+        """;
+
+    /**
+     * A key down a path or computed by a method is numbered across the field's orders, each choice's in
+     * the sort enum's order and then the default's, and the number names the emitted method a path key
+     * calls and the alias its cursor reads: the store's keys, numbers and paths equal the walk's.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"filmsByKeys", "filmsByKeysPage", "filmsByPath", "filmsByPathPage"})
+    void theStoreNumbersAndStatesTheSortKeysTheWalkDoes(String fieldName) {
+        var walk = ((QueryField.QueryTableField) TestSchemaHelper.buildSchema(SORT_KEYS).field("Query", fieldName))
+            .orderBy();
+        var store = FactGraphs.inline().read("root-sort-key-parity", SORT_KEYS, CatalogInput.of(testContext()),
+                TestSchemaHelper.sakilaExampleClasspath(), graph -> {
+            var result = RootQuery.read(graph.handle()).get("Query." + fieldName);
+            assertThat(result).as("the store's verdict on Query." + fieldName).isInstanceOf(RootQuery.Emitted.class);
+            var emitted = (RootQuery.Emitted) result;
+            return emitted.choice() != null
+                ? (OrderBySpec) LauncherCommands.argumentOrderOf(emitted)
+                : LauncherCommands.fixedOf(emitted.order(), new int[1]);
+        });
+        assertThat(helperShape(store)).isEqualTo(helperShape(walk));
+    }
+
     /** What the helper and the cursor read of a spec. */
     private static List<String> helperShape(OrderBySpec spec) {
         var out = new ArrayList<String>();
+        if (spec instanceof OrderBySpec.Fixed fixed) {
+            out.add("fixed " + fixedShape(fixed));
+            return out;
+        }
         if (!(spec instanceof OrderBySpec.Argument argument)) {
             out.add("not an argument: " + spec);
             return out;
@@ -80,9 +127,26 @@ class RootOrderArgumentParityTest {
 
     private static String fixedShape(OrderBySpec.Fixed fixed) {
         return fixed.entries().stream()
-            .map(entry -> (entry instanceof OrderBySpec.ColumnOrderEntry column ? column.column().sqlName() : "key")
-                + " " + entry.direction() + " " + entry.collation() + " " + entry.nullable())
+            .map(entry -> entryShape(entry) + " " + entry.direction() + " " + entry.collation() + " " + entry.nullable())
             .collect(Collectors.joining(", ", "[", "]")) + " uniformAsc " + fixed.uniformAsc();
+    }
+
+    private static String entryShape(OrderBySpec.OrderEntry entry) {
+        return switch (entry) {
+            case OrderBySpec.ColumnOrderEntry column -> column.column().sqlName();
+            case OrderBySpec.SortKeyEntry key -> "#" + key.ordinal() + " " + switch (key.key()) {
+                case OrderBySpec.SortKey.Path path -> "path " + path.hops().stream()
+                    .map(hop -> hop.targetTable().tableName() + " via "
+                        + ((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop.on()).keying().describe() + " "
+                        + ((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop.on()).sourceSideColumns().stream()
+                            .map(ColumnRef::sqlName).toList()
+                        + "->" + ((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop.on()).targetSideColumns().stream()
+                            .map(ColumnRef::sqlName).toList())
+                    .toList() + " lands " + path.column().sqlName();
+                case OrderBySpec.SortKey.Method method -> "method " + method.method().className() + "."
+                    + method.method().methodName();
+            };
+        };
     }
 
     private static List<String> names(List<ColumnRef> columns) {

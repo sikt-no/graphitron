@@ -13,6 +13,10 @@ import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
@@ -56,6 +60,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -302,7 +307,39 @@ public final class RootQuery {
     }
 
     /** One key of an order: the column, whether it holds nulls, its direction and its collation. */
-    public record Key(ColumnRef column, boolean nullable, String direction, String collation) {}
+    public record Key(ColumnRef column, boolean nullable, String direction, String collation, Derived derived) {
+        /** A key reading a column of the list's own table. */
+        public Key(ColumnRef column, boolean nullable, String direction, String collation) {
+            this(column, nullable, direction, collation, null);
+        }
+    }
+
+    /**
+     * What a key reads where it reads no column of the list's own table: a column down to-one hops,
+     * {@code column} being the one the last hop lands on, or a value a consumer's method computes from
+     * the table, {@code column} null.
+     */
+    public sealed interface Derived {
+        /** The hops a path key reads its column through, from the list's row, in hop order. */
+        record Path(List<Hop> hops) implements Derived {
+            public Path {
+                hops = List.copyOf(hops);
+            }
+        }
+
+        /** The method a key's value is computed by, called with the list's table. */
+        record Method(String className, String methodName) implements Derived {}
+    }
+
+    /**
+     * One hop of a path key: the table it leaves and the one it reaches, the foreign key it rides, and
+     * its column pairs, each from the side it leaves to the side it reaches.
+     */
+    public record Hop(TableRef origin, TableRef target, ForeignKeyRef key, List<Pair> pairs) {
+        public Hop {
+            pairs = List.copyOf(pairs);
+        }
+    }
 
     /** What the table's condition method takes beside the table and the arguments. */
     public record Signature(boolean takesContext, boolean takesSession) {}
@@ -347,7 +384,21 @@ public final class RootQuery {
                 field(exists(selectOne().from(od).where(od.GRAPH_NAME.eq(p.GRAPH_NAME), od.COORDINATE.eq(p.COORDINATE),
                     od.KIND.ne("DEFAULT")))),
                 field(exists(selectOne().from(sk).where(sk.GRAPH_NAME.eq(p.GRAPH_NAME), sk.COORDINATE.eq(p.COORDINATE),
-                    sk.KIND.ne("COLUMN")))),
+                    sk.KIND.ne("COLUMN"),
+                    // A key the store does not state whole: a path landing on no column, a method no
+                    // reference names.
+                    notExists(selectOne().from(GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN).where(
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.GRAPH_NAME.eq(sk.GRAPH_NAME),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.COORDINATE.eq(sk.COORDINATE),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.BOUND.eq(sk.BOUND),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.CHOICE.eq(sk.CHOICE),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.POSITION.eq(sk.POSITION))),
+                    notExists(selectOne().from(GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD).where(
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD.GRAPH_NAME.eq(sk.GRAPH_NAME),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD.COORDINATE.eq(sk.COORDINATE),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD.BOUND.eq(sk.BOUND),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD.CHOICE.eq(sk.CHOICE),
+                        GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD.POSITION.eq(sk.POSITION)))))),
                 field(exists(selectOne().from(tt).where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME),
                     tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME), tt.TABLE_SOURCE_NAME.eq(r.TABLE_SOURCE_NAME),
                     tt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA), tt.TABLE_NAME.eq(r.TABLE_NAME)))),
@@ -660,24 +711,27 @@ public final class RootQuery {
             .orderBy(od.COORDINATE)
             .forEach(row -> heads.putIfAbsent(row.value1(), new Head(row.value2(), row.value3(),
                 Boolean.TRUE.equals(row.value4()), row.value5() > 0, row.value6(), row.value7())));
+        var hops = sortKeyHops(store);
+        var methods = sortKeyMethods(store);
         store.dsl()
             .select(od.COORDINATE, ev.VALUE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE,
-                c.NULLABLE, sk.DIRECTION, sk.COLLATION)
+                c.NULLABLE, sk.DIRECTION, sk.COLLATION, sk.KIND, sk.CHOICE, sk.POSITION)
             .from(od)
             .join(p).on(p.GRAPH_NAME.eq(od.GRAPH_NAME), p.COORDINATE.eq(od.COORDINATE), p.START.eq("ROOT"))
             .join(ev).on(ev.GRAPH_NAME.eq(od.GRAPH_NAME), ev.COORDINATE.eq(od.CHOICE))
             .join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.COORDINATE.eq(od.COORDINATE), sk.BOUND.eq(od.BOUND),
                 sk.CHOICE.eq(od.CHOICE))
-            .join(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
                 kc.CHOICE.eq(sk.CHOICE), kc.POSITION.eq(sk.POSITION))
-            .join(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
+            .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
             .where(od.GRAPH_NAME.eq(store.graphName()), od.KIND.eq("CHOICE"))
             .orderBy(od.COORDINATE, ev.ORDINAL, sk.POSITION)
             .forEach(row -> keys.computeIfAbsent(row.value1(), k -> new LinkedHashMap<>())
                 .computeIfAbsent(row.value2(), k -> new ArrayList<>())
-                .add(new Key(new ColumnRef(row.value3(), row.value4(), row.value5(), row.value6()),
-                    Boolean.TRUE.equals(row.value7()), row.value8(), row.value9())));
+                .add(keyOf(row.value3() == null ? null : new ColumnRef(row.value3(), row.value4(), row.value5(),
+                        row.value6()), Boolean.TRUE.equals(row.value7()), row.value8(), row.value9(), row.value10(),
+                    List.of(row.value1(), row.value11(), row.value12()), hops, methods)));
         store.dsl()
             .select(sc.COORDINATE, ev.VALUE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE,
                 sc.DIRECTION)
@@ -1060,6 +1114,101 @@ public final class RootQuery {
     }
 
     /**
+     * One key of a root's order: a column of the list's own table, a column down a path, or a value a
+     * method computes, read off the store's rows for the key at its occurrence, choice and position.
+     * A path or method key is nullable whatever it reads, a parent with no related row sorting on null.
+     */
+    private static Key keyOf(ColumnRef column, boolean nullable, String direction, String collation, String kind,
+                             List<Object> at, Map<List<Object>, List<Hop>> hops,
+                             Map<List<Object>, Derived.Method> methods) {
+        return switch (kind) {
+            case "PATH" -> new Key(column, true, direction, collation,
+                new Derived.Path(hops.getOrDefault(at, List.of())));
+            case "METHOD" -> new Key(null, true, direction, collation, methods.get(at));
+            default -> new Key(column, nullable, direction, collation);
+        };
+    }
+
+    /**
+     * Each root's path keys' hops, by occurrence, choice and position, in hop order: the table each
+     * leaves and the one it reaches, the foreign key it rides as the catalog names it, and its column
+     * pairs from the side it leaves to the side it reaches.
+     */
+    private static Map<List<Object>, List<Hop>> sortKeyHops(StoreHandle store) {
+        var h = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var k = SQL_CONSTRAINT;
+        var s = SQL_SCHEMA;
+        var rcc = SQL_REFERENTIAL_CONSTRAINT_COLUMN;
+        var hc = SQL_CONSTRAINT_COLUMN.as("hc");
+        var rfc = SQL_CONSTRAINT_COLUMN.as("rfc");
+        var hcol = SQL_COLUMN.as("hcol");
+        var rcol = SQL_COLUMN.as("rcol");
+        var out = new LinkedHashMap<List<Object>, List<Hop>>();
+        var rows = store.dsl()
+            .select(h.COORDINATE, h.CHOICE, h.POSITION, h.DIRECTION, h.FROM_SOURCE_NAME, h.FROM_SCHEMA, h.FROM_TABLE,
+                h.TO_SOURCE_NAME, h.TO_SCHEMA, h.TO_TABLE, h.CONSTRAINT_SOURCE_NAME, h.CONSTRAINT_SCHEMA,
+                h.CONSTRAINT_TABLE, h.CONSTRAINT_NAME, k.JOOQ_NAME, s.KEYS_CLASS_FQN)
+            .from(h)
+            .join(p).on(p.GRAPH_NAME.eq(h.GRAPH_NAME), p.COORDINATE.eq(h.COORDINATE), p.START.eq("ROOT"))
+            .join(k).on(k.SOURCE_NAME.eq(h.CONSTRAINT_SOURCE_NAME), k.TABLE_SCHEMA.eq(h.CONSTRAINT_SCHEMA),
+                k.TABLE_NAME.eq(h.CONSTRAINT_TABLE), k.CONSTRAINT_NAME.eq(h.CONSTRAINT_NAME))
+            .join(s).on(s.SOURCE_NAME.eq(k.SOURCE_NAME), s.TABLE_SCHEMA.eq(k.TABLE_SCHEMA))
+            .where(h.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(h.COORDINATE, h.CHOICE, h.POSITION, h.HOP)
+            .fetch();
+        for (var row : rows) {
+            boolean forward = "FORWARD".equals(row.value4());
+            // The key's columns in its order, the holding table's beside the referenced one's.
+            var pairs = store.dsl()
+                .select(hcol.COLUMN_NAME, hcol.JOOQ_NAME, hcol.BINDING_TYPE, hcol.DATABASE_TYPE,
+                    rcol.COLUMN_NAME, rcol.JOOQ_NAME, rcol.BINDING_TYPE, rcol.DATABASE_TYPE)
+                .from(rcc)
+                .join(hc).on(hc.SOURCE_NAME.eq(rcc.SOURCE_NAME), hc.TABLE_SCHEMA.eq(rcc.TABLE_SCHEMA),
+                    hc.TABLE_NAME.eq(rcc.TABLE_NAME), hc.CONSTRAINT_NAME.eq(rcc.CONSTRAINT_NAME),
+                    hc.POSITION.eq(rcc.POSITION))
+                .join(rfc).on(rfc.SOURCE_NAME.eq(rcc.REFERENCED_SOURCE_NAME), rfc.TABLE_SCHEMA.eq(rcc.REFERENCED_SCHEMA),
+                    rfc.TABLE_NAME.eq(rcc.REFERENCED_TABLE), rfc.CONSTRAINT_NAME.eq(rcc.REFERENCED_CONSTRAINT_NAME),
+                    rfc.POSITION.eq(rcc.REFERENCED_POSITION))
+                .join(hcol).on(hcol.SOURCE_NAME.eq(hc.SOURCE_NAME), hcol.TABLE_SCHEMA.eq(hc.TABLE_SCHEMA),
+                    hcol.TABLE_NAME.eq(hc.TABLE_NAME), hcol.COLUMN_NAME.eq(hc.COLUMN_NAME))
+                .join(rcol).on(rcol.SOURCE_NAME.eq(rfc.SOURCE_NAME), rcol.TABLE_SCHEMA.eq(rfc.TABLE_SCHEMA),
+                    rcol.TABLE_NAME.eq(rfc.TABLE_NAME), rcol.COLUMN_NAME.eq(rfc.COLUMN_NAME))
+                .where(rcc.SOURCE_NAME.eq(row.value11()), rcc.TABLE_SCHEMA.eq(row.value12()),
+                    rcc.TABLE_NAME.eq(row.value13()), rcc.CONSTRAINT_NAME.eq(row.value14()))
+                .orderBy(rcc.POSITION)
+                .fetch(r -> {
+                    var holding = new ColumnRef(r.value1(), r.value2(), r.value3(), r.value4());
+                    var referenced = new ColumnRef(r.value5(), r.value6(), r.value7(), r.value8());
+                    return forward ? new Pair(holding, referenced) : new Pair(referenced, holding);
+                });
+            var hop = new Hop(tableRef(store, row.value5(), row.value6(), row.value7()),
+                tableRef(store, row.value8(), row.value9(), row.value10()),
+                new ForeignKeyRef(row.value14(), row.value16(), row.value15()), pairs);
+            out.computeIfAbsent(List.of(row.value1(), row.value2(), row.value3()), x -> new ArrayList<>()).add(hop);
+        }
+        return out;
+    }
+
+    /** Each root's method keys, by occurrence, choice and position: the class and method its reference names. */
+    private static Map<List<Object>, Derived.Method> sortKeyMethods(StoreHandle store) {
+        var m = GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD;
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var cr = GRAPHITRON_CODE_REFERENCE;
+        var out = new LinkedHashMap<List<Object>, Derived.Method>();
+        store.dsl()
+            .select(m.COORDINATE, m.CHOICE, m.POSITION, cr.CLASS_NAME, coalesce(cr.METHOD_NAME, cr.NAMED_METHOD))
+            .from(m)
+            .join(p).on(p.GRAPH_NAME.eq(m.GRAPH_NAME), p.COORDINATE.eq(m.COORDINATE), p.START.eq("ROOT"))
+            .join(cr).on(cr.GRAPH_NAME.eq(m.GRAPH_NAME), cr.COORDINATE.eq(m.APPLICATION_COORDINATE),
+                cr.DIRECTIVE_NAME.eq(m.DIRECTIVE_NAME), cr.ORDINAL.eq(m.ORDINAL), cr.OWNER.eq(m.OWNER))
+            .where(m.GRAPH_NAME.eq(store.graphName()))
+            .forEach(row -> out.put(List.of(row.value1(), row.value2(), row.value3()),
+                new Derived.Method(row.value4(), row.value5())));
+        return out;
+    }
+
+    /**
      * Each root list's default order: its written keys in sequence, then the row-key columns the store
      * completes it with. A completing column identifies the row, so it sorts no nulls apart.
      */
@@ -1071,22 +1220,25 @@ public final class RootQuery {
         var c = SQL_COLUMN;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var out = new LinkedHashMap<String, List<Key>>();
+        var hops = sortKeyHops(store);
+        var methods = sortKeyMethods(store);
         store.dsl()
             .select(od.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE, c.NULLABLE,
-                sk.DIRECTION, sk.COLLATION)
+                sk.DIRECTION, sk.COLLATION, sk.KIND, sk.CHOICE, sk.POSITION)
             .from(od)
             .join(p).on(p.GRAPH_NAME.eq(od.GRAPH_NAME), p.COORDINATE.eq(od.COORDINATE), p.START.eq("ROOT"))
             .join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.COORDINATE.eq(od.COORDINATE), sk.BOUND.eq(od.BOUND),
                 sk.CHOICE.eq(od.CHOICE))
-            .join(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
                 kc.CHOICE.eq(sk.CHOICE), kc.POSITION.eq(sk.POSITION))
-            .join(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
+            .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
             .where(od.GRAPH_NAME.eq(store.graphName()), od.KIND.eq("DEFAULT"))
             .orderBy(od.COORDINATE, sk.POSITION)
-            .forEach(row -> out.computeIfAbsent(row.value1(), k -> new ArrayList<>()).add(new Key(
-                new ColumnRef(row.value2(), row.value3(), row.value4(), row.value5()),
-                Boolean.TRUE.equals(row.value6()), row.value7(), row.value8())));
+            .forEach(row -> out.computeIfAbsent(row.value1(), k -> new ArrayList<>()).add(keyOf(
+                row.value2() == null ? null : new ColumnRef(row.value2(), row.value3(), row.value4(), row.value5()),
+                Boolean.TRUE.equals(row.value6()), row.value7(), row.value8(), row.value9(),
+                List.of(row.value1(), row.value10(), row.value11()), hops, methods)));
         store.dsl()
             .select(sc.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE, sc.DIRECTION)
             .from(sc)

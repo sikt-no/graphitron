@@ -286,14 +286,14 @@ public final class LauncherCommands {
             Ordering ordering = root.choice() != null
                 ? new Ordering.Helper(units.orderByHelperMethod(root.parentType(), root.fieldName()),
                     units.orderByResult())
-                : new Ordering.Columns(fixedOf(root.order()));
+                : columnsOf(fixedOf(root.order(), new int[1]), root, units);
             result = new ResultShape.Connection(ordering, root.pageSize(), units.connectionHelper(), null);
         } else if (root.list() && root.choice() != null) {
             result = new ResultShape.RecordList(new Ordering.Helper(
                 units.orderByHelperMethod(root.parentType(), root.fieldName()), units.orderByResult()));
         } else if (root.list()) {
-            var fixed = fixedOf(root.order());
-            result = new ResultShape.RecordList(fixed.entries().isEmpty() ? null : new Ordering.Columns(fixed));
+            var fixed = fixedOf(root.order(), new int[1]);
+            result = new ResultShape.RecordList(fixed.entries().isEmpty() ? null : columnsOf(fixed, root, units));
         } else {
             result = new ResultShape.SingleRecord();
         }
@@ -374,14 +374,50 @@ public final class LauncherCommands {
             new LaunchSource.DiscriminatedTable.SelectionRestriction(units.selectionOccurrences(), told.sharedFields()));
     }
 
-    /** An order's keys as a fixed order, ascending throughout where every key is. */
-    private static OrderBySpec.Fixed fixedOf(List<no.sikt.graphitron.emit.RootQuery.Key> keys) {
+    /**
+     * An order's keys as a fixed order, ascending throughout where every key is: a column of the list's
+     * own table, or a key down a path or computed by a method, numbered by {@code ordinal} as the
+     * walk's resolver numbers a field's keys, since the emitted method a path key calls and the alias
+     * its cursor reads are named by it.
+     */
+    static OrderBySpec.Fixed fixedOf(List<no.sikt.graphitron.emit.RootQuery.Key> keys, int[] ordinal) {
         var entries = keys.stream()
-            .<OrderBySpec.OrderEntry>map(key -> new OrderBySpec.ColumnOrderEntry(key.column(), key.collation(),
-                OrderBySpec.SortDirection.valueOf(key.direction()), key.nullable()))
+            .<OrderBySpec.OrderEntry>map(key -> {
+                var direction = OrderBySpec.SortDirection.valueOf(key.direction());
+                return switch (key.derived()) {
+                    case null -> new OrderBySpec.ColumnOrderEntry(key.column(), key.collation(), direction,
+                        key.nullable());
+                    case no.sikt.graphitron.emit.RootQuery.Derived.Path path -> new OrderBySpec.SortKeyEntry(
+                        new OrderBySpec.SortKey.Path(path.hops().stream().map(LauncherCommands::hopOf).toList(),
+                            key.column()), key.collation(), direction, ordinal[0]++);
+                    case no.sikt.graphitron.emit.RootQuery.Derived.Method method -> new OrderBySpec.SortKeyEntry(
+                        new OrderBySpec.SortKey.Method(new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
+                            method.className(), method.methodName(), null, List.of(), List.of())),
+                        key.collation(), direction, ordinal[0]++);
+                };
+            })
             .toList();
         return new OrderBySpec.Fixed(entries,
             entries.stream().allMatch(e -> e.direction() == OrderBySpec.SortDirection.ASC));
+    }
+
+    /** A path key's hop, an unfiltered join on the foreign key it rides, from the table it leaves. */
+    private static no.sikt.graphitron.rewrite.model.JoinStep.Hop hopOf(no.sikt.graphitron.emit.RootQuery.Hop hop) {
+        return new no.sikt.graphitron.rewrite.model.JoinStep.Hop(
+            new no.sikt.graphitron.rewrite.model.TableExpr.Catalog(hop.target()),
+            new no.sikt.graphitron.rewrite.model.On.ColumnPairs(
+                new no.sikt.graphitron.rewrite.model.On.Keying.ForeignKey(hop.key()),
+                hop.pairs().stream()
+                    .map(pair -> new no.sikt.graphitron.rewrite.model.JoinSlot.FkSlot(pair.from(), pair.to()))
+                    .toList()),
+            hop.origin(), null, hop.target().javaFieldName());
+    }
+
+    /** A root's fixed order rendered inline, with the methods its path keys call minted on the root's fetchers. */
+    private static Ordering.Columns columnsOf(OrderBySpec.Fixed fixed, no.sikt.graphitron.emit.RootQuery.Emitted root,
+            GeneratedUnits units) {
+        return new Ordering.Columns(fixed,
+            sortKeyMethods(fixed, units.fetchers(root.parentType()), root.fieldName(), units));
     }
 
     /**
@@ -391,10 +427,13 @@ public final class LauncherCommands {
      */
     static OrderBySpec.Argument argumentOrderOf(no.sikt.graphitron.emit.RootQuery.Emitted root) {
         var choice = root.choice();
+        // Numbered as the walk's resolver numbers them: each choice's keys in the sort enum's order, then
+        // the default's.
+        var ordinal = new int[1];
         var named = choice.orders().entrySet().stream()
-            .map(e -> new OrderBySpec.NamedOrder(e.getKey(), fixedOf(e.getValue())))
+            .map(e -> new OrderBySpec.NamedOrder(e.getKey(), fixedOf(e.getValue(), ordinal)))
             .toList();
-        var base = fixedOf(root.order());
+        var base = fixedOf(root.order(), ordinal);
         // A list the client composes is completed once composed, so its orders go as declared.
         OrderBySpec.Composition composition = !choice.list() ? new OrderBySpec.Composition.Single(named)
             : new OrderBySpec.Composition.Sequence(named, choice.rowKey().isEmpty()
