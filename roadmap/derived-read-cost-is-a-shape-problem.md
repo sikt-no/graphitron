@@ -1040,8 +1040,12 @@ static method needs no holder.
     A connection over several tables is the store's too, its page size read as a single-table
     connection's and its order always stated, so the cursor encodes the columns the walk's did and a
     client's cursor survives the upgrade; `MultiTableConnectionOrderParityTest` holds the two orders
-    equal on what the cursor reads. A faceted one waits as `FACETED`, and a lookup over several tables as `POLYMORPHIC`. Faceted connections remain
-    beside them. Whether a type's
+    equal on what the cursor reads. A lookup over several tables waits as `POLYMORPHIC`; a faceted
+    one is `FACETED_CONNECTION_UNSUPPORTED`. A faceted connection over one table is the store's: its
+    facets in order off `graphitron_occurrence_producer_facet` and `graphitron_facet_binding`, each
+    grouping by the column its filter occurrence binds, off `graphitron_occurrence_column`, across the
+    steps its path takes, off `graphitron_join_path_step`, so the facet join and the filter's `EXISTS`
+    narrow one path; `FACETED` goes and the root census holds no reason. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
     it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a

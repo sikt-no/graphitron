@@ -335,7 +335,8 @@ public final class LauncherCommands {
                 ? new Ordering.Helper(units.orderByHelperMethod(root.parentType(), root.fieldName()),
                     units.orderByResult())
                 : columnsOf(fixedOf(root.order(), new int[1]), root, units);
-            result = new ResultShape.Connection(ordering, root.pageSize(), units.connectionHelper(), null);
+            result = new ResultShape.Connection(ordering, root.pageSize(), units.connectionHelper(),
+                storeFacetPlanOf(root, units));
         } else if (root.list() && root.choice() != null) {
             result = new ResultShape.RecordList(new Ordering.Helper(
                 units.orderByHelperMethod(root.parentType(), root.fieldName()), units.orderByResult()));
@@ -355,6 +356,59 @@ public final class LauncherCommands {
             new TenantStrategy.Single(),
             result,
             units.selectionOccurrences());
+    }
+
+    /**
+     * A faceted root connection's facet plan, read off the store, {@code null} where it surfaces no
+     * facets: the base fragment and each facet's own, called as the root's condition method is, each
+     * facet grouping by the column its filter binds, on the connection's table or across the steps its
+     * path takes, and the table's primary key as the key a facet across steps counts distinct.
+     */
+    private static FacetPlan storeFacetPlanOf(no.sikt.graphitron.emit.RootQuery.Emitted root, GeneratedUnits units) {
+        if (root.facets().isEmpty()) {
+            return null;
+        }
+        boolean takesEnv = root.condition() != null && root.condition().takesContext();
+        boolean takesDsl = root.condition() != null && root.condition().takesSession();
+        var entries = root.facets().stream().map(facet -> {
+            var spec = new FacetSpec(facet.filterArgument(), facet.name(), facet.column().sqlName(),
+                facet.valueType(), facet.valueNullable(), facet.bucketType(), facet.referenceBound());
+            var fragment = new GlueCall(units.facetConditionMethod(root.parentType(), root.fieldName(), facet.name()),
+                takesEnv, takesDsl);
+            FacetPlan.Grouping grouping = facet.steps().isEmpty()
+                ? new FacetPlan.Grouping.CarrierColumn(facet.column())
+                : new FacetPlan.Grouping.Reached(
+                    new no.sikt.graphitron.command.ReachPath(facet.steps().stream().map(LauncherCommands::hopOf).toList()),
+                    facet.column());
+            return new FacetPlan.Entry(spec, fragment, grouping);
+        }).toList();
+        return new FacetPlan(new GlueCall(units.facetBaseConditionMethod(root.parentType(), root.fieldName()),
+            takesEnv, takesDsl), entries, root.table().primaryKeyColumns());
+    }
+
+    /**
+     * A facet path's step as a join: on the foreign key it rides or the primary key it joins a row to
+     * itself on, its condition method narrowing that join, or on its condition method alone.
+     */
+    private static no.sikt.graphitron.rewrite.model.JoinStep.Hop hopOf(no.sikt.graphitron.emit.RootQuery.FacetStep step) {
+        var method = step.method() == null ? null : new no.sikt.graphitron.rewrite.model.JoinConditionRef(
+            new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(step.method().className(),
+                step.method().methodName(), null, List.of(), List.of()));
+        no.sikt.graphitron.rewrite.model.On on;
+        if (step.foreignKey() == null && step.primaryKey() == null) {
+            on = new no.sikt.graphitron.rewrite.model.On.Predicate(method);
+            method = null;
+        } else {
+            on = new no.sikt.graphitron.rewrite.model.On.ColumnPairs(step.foreignKey() != null
+                    ? new no.sikt.graphitron.rewrite.model.On.Keying.ForeignKey(step.foreignKey())
+                    : new no.sikt.graphitron.rewrite.model.On.Keying.PrimaryKey(step.primaryKey()),
+                step.pairs().stream()
+                    .map(pair -> new no.sikt.graphitron.rewrite.model.JoinSlot.FkSlot(pair.from(), pair.to()))
+                    .toList());
+        }
+        return new no.sikt.graphitron.rewrite.model.JoinStep.Hop(
+            new no.sikt.graphitron.rewrite.model.TableExpr.Catalog(step.target()), on, step.origin(), method,
+            step.target().javaFieldName());
     }
 
     /**

@@ -13,24 +13,25 @@ import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CROSS_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INTERFACE_SHARED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_INTERFACE_SHARED_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CROSS_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
@@ -42,18 +43,23 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
@@ -92,8 +98,6 @@ public final class RootQuery {
          * apart from another interface's read of the same type.
          */
         JOINED_DETAIL,
-        /** It builds a connection that surfaces facets. */
-        FACETED,
         /** It builds a connection the store states no order for, which paging needs. */
         NO_ORDER,
         /** Its table carries the tenant column. */
@@ -146,9 +150,11 @@ public final class RootQuery {
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
-                          List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated)
+                          List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated,
+                          List<Facet> facets)
             implements Result {
         public Emitted {
+            facets = List.copyOf(facets);
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(parentType, "parentType");
             Objects.requireNonNull(fieldName, "fieldName");
@@ -330,6 +336,36 @@ public final class RootQuery {
     public record FieldKey(String field, ColumnRef column, String conversion) {}
 
     /**
+     * One facet a connection surfaces, in the order it surfaces them: its name, the filter argument
+     * whose input field it is, the type its values are and whether one may be null, the type its
+     * buckets are, whether it reaches its column through {@code @reference}, the column its counts
+     * group by, and the steps from the connection's table to the one that column is on, none where it
+     * is the connection's own.
+     */
+    public record Facet(String name, String filterArgument, String valueType, boolean valueNullable, String bucketType,
+                        boolean referenceBound, ColumnRef column, List<FacetStep> steps) {
+        public Facet {
+            steps = List.copyOf(steps);
+        }
+    }
+
+    /**
+     * One step a facet's path takes: the table it leaves and the one it reaches, the foreign key it
+     * rides or the primary key it joins a row to itself on, {@code null} for a step a condition method
+     * joins alone, its column pairs, and the condition method it joins by or narrows its join with,
+     * {@code null} where it has none.
+     */
+    public record FacetStep(TableRef origin, TableRef target, ForeignKeyRef foreignKey, String primaryKey,
+                            List<Pair> pairs, JoinMethod method) {
+        public FacetStep {
+            pairs = List.copyOf(pairs);
+        }
+    }
+
+    /** A condition method a step joins by, taking the table it leaves and the one it reaches. */
+    public record JoinMethod(String className, String methodName) {}
+
+    /**
      * An {@code @orderBy} argument: its name, its input type, whether it is required and whether it
      * takes a list of orders, the input's sort and direction fields, and each value the sort field
      * takes with the keys it sorts by, in the enum's order. A choice taken one at a time carries the
@@ -462,6 +498,7 @@ public final class RootQuery {
         var orders = orders(store);
         var signatures = signatures(store);
         var lookups = lookups(store);
+        var facets = facets(store);
         var choices = choices(store);
         var maxPageSize = maxPageSize(store);
         var discriminated = discriminated(store);
@@ -482,14 +519,12 @@ public final class RootQuery {
             if (Boolean.TRUE.equals(row.value10()) && told == null) {
                 Integer pageSize = !connection ? null
                     : row.value18() != null ? row.value18() : ConnectionDefaults.defaultPageSize(maxPageSize);
-                out.put(at.coordinate(), multiTable(store, at, Boolean.TRUE.equals(row.value11()), pageSize,
-                    signatures));
+                out.put(at.coordinate(), multiTable(store, at, pageSize, signatures));
                 continue;
             }
             if (told != null && told.reason() != null) reason = told.reason();
             // A discriminated lookup joins its keys' rows on the shared table, a source of its own.
             else if (told != null && "LOOKUP".equals(at.kind())) reason = Reason.POLYMORPHIC;
-            else if (Boolean.TRUE.equals(row.value11())) reason = Reason.FACETED;
             else if (at.table() == null || at.returnType() == null
                 || !(connection || Boolean.TRUE.equals(row.value16()))
                 || !(connection || "RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
@@ -508,7 +543,8 @@ public final class RootQuery {
                 continue;
             }
             var table = tableRef(store, at.source(), at.schema(), at.table());
-            if (table == null) {
+            var faceted = Boolean.TRUE.equals(row.value11()) ? facets.get(at.coordinate()) : List.<Facet>of();
+            if (table == null || faceted == null) {
                 out.put(at.coordinate(), new NotYet(at.coordinate(), Reason.NOT_ONE_TABLE));
                 continue;
             }
@@ -520,18 +556,18 @@ public final class RootQuery {
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
                 signatures.get(List.of(at.coordinate(), at.schema() + "." + at.table())),
                 lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()), pageSize,
-                told == null ? null : told.discriminated()));
+                told == null ? null : told.discriminated(), faceted));
         }
         return out;
     }
 
     /**
      * A root over several tables, each participant's rows those of its own table: stated whole where it
-     * is a list, a record or a connection without facets, no node-id argument names a participant by the
+     * is a list, a record or a connection, no node-id argument names a participant by the
      * id's type, and no participant's table carries the tenant column. {@code pageSize} is a
      * connection's page where the client asks for none, {@code null} for a list or a record.
      */
-    private static Result multiTable(StoreHandle store, Producer at, boolean faceted, Integer pageSize,
+    private static Result multiTable(StoreHandle store, Producer at, Integer pageSize,
                                      Map<List<String>, Signature> signatures) {
         var graph = store.graphName();
         String coordinate = at.coordinate();
@@ -539,9 +575,6 @@ public final class RootQuery {
         if ("LOOKUP".equals(at.kind())
                 || !(connection || "RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
             return new NotYet(coordinate, Reason.POLYMORPHIC);
-        }
-        if (faceted) {
-            return new NotYet(coordinate, Reason.FACETED);
         }
         var x = GRAPHITRON_OCCURRENCE_PARTICIPANT;
         var participants = store.dsl()
@@ -1279,6 +1312,131 @@ public final class RootQuery {
                     reads.stream().map(Read::column).toList()));
             }
         });
+        return out;
+    }
+
+    /**
+     * Each faceted root connection's facets in the order it surfaces them, by occurrence: each facet's
+     * binding, the column its filter occurrence binds where its path lands, and the steps that path
+     * takes from the connection's table. A root with a facet the store states no column for is absent,
+     * which holds it back.
+     */
+    private static Map<String, List<Facet>> facets(StoreHandle store) {
+        var pf = GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var fo = GRAPHITRON_OCCURRENCE.as("fo");
+        var fb = GRAPHITRON_FACET_BINDING;
+        var gf = GRAPHITRON_FIELD;
+        var cf = GRAPHITRON_CONNECTION_FACET;
+        var oc = GRAPHITRON_OCCURRENCE_COLUMN;
+        var c = SQL_COLUMN;
+        var steps = facetSteps(store);
+        var out = new LinkedHashMap<String, List<Facet>>();
+        var held = new java.util.HashSet<String>();
+        store.dsl()
+            .select(pf.COORDINATE, pf.FACET_NAME, pf.FILTER_ARGUMENT_NAME, pf.FILTER_COORDINATE, fb.VALUE_TYPE_NAME,
+                fb.VALUE_NULLABLE, cf.BUCKET_TYPE_NAME, fb.REFERENCE_BOUND, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE,
+                c.DATABASE_TYPE)
+            .from(pf)
+            .join(p).on(p.GRAPH_NAME.eq(pf.GRAPH_NAME), p.COORDINATE.eq(pf.COORDINATE), p.START.eq("ROOT"))
+            .join(fo).on(fo.GRAPH_NAME.eq(pf.GRAPH_NAME), fo.COORDINATE.eq(pf.COORDINATE))
+            .join(fb).on(fb.GRAPH_NAME.eq(pf.GRAPH_NAME), fb.TYPE_NAME.eq(pf.FACET_TYPE_NAME),
+                fb.FIELD_NAME.eq(pf.FACET_NAME))
+            .join(gf).on(gf.GRAPH_NAME.eq(fo.GRAPH_NAME), gf.COORDINATE.eq(fo.ELEMENT_COORDINATE))
+            .leftJoin(cf).on(cf.GRAPH_NAME.eq(gf.GRAPH_NAME), cf.TYPE_NAME.eq(gf.TYPE_NAME),
+                cf.FIELD_NAME.eq(gf.FIELD_NAME), cf.FACET_TYPE_NAME.eq(pf.FACET_TYPE_NAME),
+                cf.FACET_FIELD_NAME.eq(pf.FACET_NAME))
+            .leftJoin(oc).on(oc.GRAPH_NAME.eq(pf.GRAPH_NAME), oc.COORDINATE.eq(pf.FILTER_COORDINATE))
+            .leftJoin(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
+            .where(pf.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(pf.COORDINATE, pf.POSITION)
+            .forEach(row -> {
+                String coordinate = row.value1();
+                if (row.value9() == null || row.value7() == null) {
+                    held.add(coordinate);
+                    return;
+                }
+                out.computeIfAbsent(coordinate, k -> new ArrayList<>()).add(new Facet(row.value2(), row.value3(),
+                    row.value5(), Boolean.TRUE.equals(row.value6()), row.value7(), Boolean.TRUE.equals(row.value8()),
+                    new ColumnRef(row.value9(), row.value10(), row.value11(), row.value12()),
+                    steps.getOrDefault(row.value4(), List.of())));
+            });
+        held.forEach(out::remove);
+        return out;
+    }
+
+    /**
+     * The steps each facet's filter occurrence's path takes from the table its field reads, by that
+     * occurrence, in step order: the tables each leaves and reaches, the foreign key it rides, written
+     * or inferred, or the primary key it joins a row to itself on, its column pairs, and its condition
+     * method.
+     */
+    private static Map<String, List<FacetStep>> facetSteps(StoreHandle store) {
+        var pf = GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
+        var pn = GRAPHITRON_PATH_NEED_TABLE;
+        var js = GRAPHITRON_JOIN_PATH_STEP;
+        var wk = GRAPHITRON_JOIN_PATH_STEP_KEY;
+        var ik = GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
+        var pk = GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
+        var jm = GRAPHITRON_JOIN_PATH_STEP_METHOD;
+        var k = SQL_CONSTRAINT;
+        var s = SQL_SCHEMA;
+        var spk = SQL_PRIMARY_KEY;
+        var jc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        var fc = SQL_COLUMN.as("fc");
+        var tc = SQL_COLUMN.as("tc");
+        var keySource = coalesce(wk.CONSTRAINT_SOURCE_NAME, ik.CONSTRAINT_SOURCE_NAME);
+        var keySchema = coalesce(wk.CONSTRAINT_SCHEMA, ik.CONSTRAINT_SCHEMA);
+        var keyTable = coalesce(wk.CONSTRAINT_TABLE, ik.CONSTRAINT_TABLE);
+        var keyName = coalesce(wk.CONSTRAINT_NAME, ik.CONSTRAINT_NAME);
+        var out = new LinkedHashMap<String, List<FacetStep>>();
+        var rows = store.dsl()
+            .select(js.COORDINATE, js.TARGET_TYPE, js.POSITION, js.FROM_SOURCE_NAME, js.FROM_SCHEMA, js.FROM_TABLE,
+                js.TO_SOURCE_NAME, js.TO_SCHEMA, js.TO_TABLE, keyName, k.JOOQ_NAME, s.KEYS_CLASS_FQN,
+                spk.CONSTRAINT_NAME, jm.METHOD_CLASS_NAME, jm.METHOD_NAME)
+            .from(pf)
+            .join(pn).on(pn.GRAPH_NAME.eq(pf.GRAPH_NAME), pn.COORDINATE.eq(pf.FILTER_COORDINATE))
+            .join(js).on(js.GRAPH_NAME.eq(pn.GRAPH_NAME), js.COORDINATE.eq(pn.COORDINATE),
+                js.TARGET_TYPE.eq(pn.TARGET_TYPE))
+            .leftJoin(wk).on(wk.GRAPH_NAME.eq(js.GRAPH_NAME), wk.COORDINATE.eq(js.COORDINATE),
+                wk.TARGET_TYPE.eq(js.TARGET_TYPE), wk.POSITION.eq(js.POSITION))
+            .leftJoin(ik).on(ik.GRAPH_NAME.eq(js.GRAPH_NAME), ik.COORDINATE.eq(js.COORDINATE),
+                ik.TARGET_TYPE.eq(js.TARGET_TYPE), ik.POSITION.eq(js.POSITION))
+            .leftJoin(k).on(k.SOURCE_NAME.eq(keySource), k.TABLE_SCHEMA.eq(keySchema), k.TABLE_NAME.eq(keyTable),
+                k.CONSTRAINT_NAME.eq(keyName))
+            .leftJoin(s).on(s.SOURCE_NAME.eq(k.SOURCE_NAME), s.TABLE_SCHEMA.eq(k.TABLE_SCHEMA))
+            .leftJoin(pk).on(pk.GRAPH_NAME.eq(js.GRAPH_NAME), pk.COORDINATE.eq(js.COORDINATE),
+                pk.TARGET_TYPE.eq(js.TARGET_TYPE), pk.POSITION.eq(js.POSITION))
+            .leftJoin(spk).on(spk.SOURCE_NAME.eq(pk.TABLE_SOURCE_NAME), spk.TABLE_SCHEMA.eq(pk.TABLE_SCHEMA),
+                spk.TABLE_NAME.eq(pk.TABLE_NAME))
+            .leftJoin(jm).on(jm.GRAPH_NAME.eq(js.GRAPH_NAME), jm.COORDINATE.eq(js.COORDINATE),
+                jm.TARGET_TYPE.eq(js.TARGET_TYPE), jm.POSITION.eq(js.POSITION))
+            .where(pf.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(js.COORDINATE, js.TARGET_TYPE, js.POSITION)
+            .fetch();
+        for (var row : rows) {
+            var pairs = store.dsl()
+                .select(fc.COLUMN_NAME, fc.JOOQ_NAME, fc.BINDING_TYPE, fc.DATABASE_TYPE,
+                    tc.COLUMN_NAME, tc.JOOQ_NAME, tc.BINDING_TYPE, tc.DATABASE_TYPE)
+                .from(jc)
+                .join(fc).on(fc.SOURCE_NAME.eq(jc.FROM_SOURCE_NAME), fc.TABLE_SCHEMA.eq(jc.FROM_SCHEMA),
+                    fc.TABLE_NAME.eq(jc.FROM_TABLE), fc.COLUMN_NAME.eq(jc.FROM_COLUMN))
+                .join(tc).on(tc.SOURCE_NAME.eq(jc.TO_SOURCE_NAME), tc.TABLE_SCHEMA.eq(jc.TO_SCHEMA),
+                    tc.TABLE_NAME.eq(jc.TO_TABLE), tc.COLUMN_NAME.eq(jc.TO_COLUMN))
+                .where(jc.GRAPH_NAME.eq(store.graphName()), jc.COORDINATE.eq(row.value1()),
+                    jc.TARGET_TYPE.eq(row.value2()), jc.POSITION.eq(row.value3()))
+                .orderBy(jc.ORDINAL)
+                .fetch(r -> new Pair(new ColumnRef(r.value1(), r.value2(), r.value3(), r.value4()),
+                    new ColumnRef(r.value5(), r.value6(), r.value7(), r.value8())));
+            var foreignKey = row.value10() == null || row.value12() == null ? null
+                : new ForeignKeyRef(row.value10(), row.value12(), row.value11());
+            out.computeIfAbsent(row.value1(), x -> new ArrayList<>()).add(new FacetStep(
+                tableRef(store, row.value4(), row.value5(), row.value6()),
+                tableRef(store, row.value7(), row.value8(), row.value9()),
+                foreignKey, row.value13(), pairs,
+                row.value14() == null ? null : new JoinMethod(row.value14(), row.value15())));
+        }
         return out;
     }
 
