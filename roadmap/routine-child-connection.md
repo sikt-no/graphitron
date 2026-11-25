@@ -374,3 +374,53 @@ parent's page shares. It also raised that the catalog-wide relation stating such
 (`sql_name_matched_key_column`) is dissolving, and that a dissolving relation is not re-keyed or
 extended to carry a new reader. Alf ruled that the key is the primary key of the target type's table,
 not one inferred from other tables; recorded under Rulings and Decisions.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, revisions requested (session_01WkW2JJP3u4Mqb5fJrjVnw4, 2026-11-25)
+
+Question 1 passes. When this lands, a consumer writes `@asConnection` on a child field whose rows
+come from a table-valued function, adds the `@defaultOrder` the build names when it is missing, and
+gets the same paged, filtered, ordered connection with `totalCount` a table-backed child gets. No
+`@splitQuery` is needed there, nor on any other child connection, where writing it now warns. The
+outcome is reachable: every symbol, relation, defect code, test, fixture and doc path the spec names
+exists as named, the two guards sit where the spec says, and the batched leaf already passes
+filters, order and pagination through. Question 2 fails on one point: the plan removes the
+refusal that is all that stands between a keyless child connection and the batched leaf today, and
+it does not say what replaces it.
+
+1. **A child connection with nothing to key a batch on has no stated outcome once the conflict goes
+   (question 2).** Today an unsplit child connection never reaches the batched leaf. The table arm
+   refuses it ("add @splitQuery"), and the routine arm defers it. The batched leaf's keyless guards
+   run only when the authored marker is present. In `FieldBuilder.classifyObjectReturnChildField`
+   the same-table, no-`@reference` refusal is gated on `forcesSplitDelivery`, and its message is
+   built from the markers the field carries (`uncorrelatedSameTableSplitMessage`). In
+   `classifyChildRoutineChain`, `splitSource` is only derived under `hasSplitQuery`, and the
+   uncorrelated-routine refusal names `DIR_SPLIT_QUERY` and advises "drop @splitQuery". Once a
+   connection takes the batched arm without the marker, the implementer has two choices. They can
+   treat the connection as the marker, so both refusals fire with text about a directive the author
+   never wrote; the same-table message then opens with an empty marker list. Or they can leave the
+   gates as they are. Then the leaf is built with a null correlation, or with the empty key that
+   `BatchedTableField`'s `OnLateralArgs` check throws on as an uncaught `IllegalArgumentException`,
+   the crash class this item fixes for filters. R1178 keeps the stored refusal for this case. It is
+   Backlog, and this item has an empty `depends-on`. "No new walk verdict" rules out the obvious fix
+   in the walk. This is satisfied when the spec says what an author of a keyless unsplit child
+   connection meets between this item and R1178, table-backed and routine alike. That means either
+   ordering this item after R1178's stored defect, or naming the walk wording the exception covers.
+   The Tests list should then carry one keyless case per arm.
+
+2. **The `SPLIT_QUERY_REDUNDANT` arm cannot reach a routine child connection by the change the spec
+   describes (question 2, minor).** The arm inner-joins `graphitron_tabletype`, which holds only types
+   whose `@table` resolved to a catalog table. A function's result type (`ActorFilm`,
+   `Brukerdelegering`) has no row there. So adding a connection branch and dropping `@routine` from
+   the exclusion still leaves the routine child connection out, and the planned defects document
+   "`SPLIT_QUERY_REDUNDANT` on a routine child connection" would fail. This is satisfied when the
+   Implementation bullet says how the connection branch reaches a target bound to no table: the join
+   loosened for that branch, or the target read some other way.
+
+Non-blocking, for the author's revision: `DeliveryFactPinTest` compares `DeliveryFact.Batched`
+records, trigger included. The new trigger is placed before the marker reads, so a child connection
+written with `@splitQuery` changes provenance from `Authored` to the paged-child trigger. That
+includes a `@pivot` connection if one reaches the relation. `DeliveryFact.leafDerivedOf` must then
+tell the two apart from the leaf's target shape. The Implementation section names the relation and
+the pin but not the crosswalk.
