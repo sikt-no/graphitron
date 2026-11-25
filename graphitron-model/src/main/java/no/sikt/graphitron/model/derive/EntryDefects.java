@@ -56,6 +56,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_LAND
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READ_ORDER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FILTER_ENTRY_DEFECT_RULE;
@@ -169,9 +170,16 @@ public final class EntryDefects {
     public static final Rule LOOKUP_KEYS =
         new Rule("occurrence-lookup-keys", GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE);
 
-    /** The ordering defects' rule, {@link OccurrenceOrderings}. */
+    /**
+     * The ordering defects' rule, {@link OccurrenceOrderings}. The stage raises its read order family
+     * from a rule of its own beside it, so no rule nests a union deeper than seven.
+     */
     public static final Rule ORDERINGS =
         new Rule("occurrence-orderings", GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE);
+
+    /** Which rows a read hands back, and in what order, where nothing written decides it. */
+    public static final Rule READ_ORDERS =
+        new Rule("occurrence-orderings", GRAPHITRON_OCCURRENCE_READ_ORDER_ENTRY_DEFECT_RULE);
 
     /**
      * The node id slot defects' rule, {@link OccurrenceBuilds}: where a decoded id meets the parameter

@@ -64,6 +64,7 @@ public final class OccurrenceOrderings {
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION, GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION_RULE, graph,
             touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.ORDERINGS);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.READ_ORDERS);
     }
 
     /**

@@ -27827,8 +27827,18 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON da.graph_name = k.graph_name AND da.coordinate = k.element_coordinate AND da.directive_name = 'orderBy'
  WHERE r.kind = 'CHOICE'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
-                    WHERE p.graph_name = r.graph_name AND p.coordinate = r.coordinate)
-UNION ALL
+                    WHERE p.graph_name = r.graph_name AND p.coordinate = r.coordinate);
+
+COMMENT ON VIEW graphitron_occurrence_order_entry_defect_rule IS 'One row the ordering defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_entry_defect, @defaultOrder(primaryKey: true) on a list over a table with no primary key giving one ORDER_PRIMARY_KEY_MISSING row at the application.';
+-- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect.source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect.source_line';
+-- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect.source_column';
+-- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect.code';
+-- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.detail IS 'the detail of a row of this rule, which the stage writes into graphitron_entry_defect.detail';
+
+CREATE VIEW graphitron_occurrence_read_order_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A list or connection whose rows graphitron reads with no order stated for a table they are on, at
 -- each such table: read inside its parent's query, by a select of its own at the root or split from
 -- its parent, or as a routine's result, one row per keyless participant table where the rows are
@@ -27947,14 +27957,7 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
                                                 AND kr.table_schema = ic.table_schema
                                                 AND kr.table_name = ic.table_name
                                                 AND kr.column_name = ic.column_name)))));
-
-COMMENT ON VIEW graphitron_occurrence_order_entry_defect_rule IS 'One row the ordering defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_entry_defect, @defaultOrder(primaryKey: true) on a list over a table with no primary key giving one ORDER_PRIMARY_KEY_MISSING row at the application.';
--- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect.source_name';
--- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect.source_line';
--- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect.source_column';
--- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect.code';
--- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.detail IS 'the detail of a row of this rule, which the stage writes into graphitron_entry_defect.detail';
+COMMENT ON VIEW graphitron_occurrence_read_order_entry_defect_rule IS 'One row the read order defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-orderings inserts this view''s rows for one graph into graphitron_entry_defect, a list whose rows are read with no order stated for a table they are on giving one LIST_ORDER_UNDETERMINED row at that table.';
 
 CREATE VIEW graphitron_occurrence_list_element_defect_rule (graph_name, coordinate, code) AS
 -- An input-field occurrence read per element of a list a filter compares: it is a row input, and its
@@ -33045,6 +33048,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-lookup-keys', 'graphitron_occurrence_lookup_key', 'graphitron_occurrence_lookup_key_rule'),
   ('occurrence-lookup-keys', 'graphitron_occurrence_input_order', 'graphitron_occurrence_input_order_rule'),
   ('occurrence-orderings', 'graphitron_entry_defect', 'graphitron_occurrence_order_entry_defect_rule'),
+  ('occurrence-orderings', 'graphitron_entry_defect', 'graphitron_occurrence_read_order_entry_defect_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_order', 'graphitron_occurrence_order_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_order_index', 'graphitron_occurrence_order_index_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key', 'graphitron_occurrence_sort_key_rule'),
@@ -36185,10 +36189,14 @@ INSERT INTO meta_relation VALUES
    'One row the order input rule computes, in the shape graphitron_order_input stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_order_input, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_read_order_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the read order defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-orderings inserts this view''s rows for one graph into graphitron_entry_defect, a list whose rows are read with no order stated for a table they are on giving one LIST_ORDER_UNDETERMINED row at that table.',
+   'Which rows a read hands back, and in what order, where nothing written decides it: a list with no order stated, participants whose sort keys disagree, a lookup by keys identifying no row. A family of the occurrence-orderings stage beside its other rules, so no rule nests a union deeper than seven.'),
   ('graphitron_occurrence_order_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the ordering defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_entry_defect, @defaultOrder(primaryKey: true) on a list over a table with no primary key giving one ORDER_PRIMARY_KEY_MISSING row at the application.',
-   'What an ordering cannot state, stated beside the orders: a list whose order is not stated is read in whatever order the database returns. Six are rules the walk enforces (OrderByResolver and GraphitronSchemaValidator): a primary key, an index or a column the table lacks, a malformed element, a sort value without @order, an inline list over a keyless table with no order. ORDER_SURFACES is the manual''s rule, stricter than the walk, which takes the first surface written. ORDER_CHOICE_ON_INLINE_LIST is a deferral for a shape the walk throws on. ORDER_POSITIONS_DISAGREE is the walk''s fold of several tables'' orders by position (FieldBuilder.foldParticipantOrderings). Each sits at the written application or element, so an @order value used by two fields is one defect.'),
+   'What an ordering cannot state, stated beside the orders: a list whose order is not stated is read in whatever order the database returns. Six are rules the walk enforces (OrderByResolver and GraphitronSchemaValidator): a primary key, an index or a column the table lacks, a malformed element, a sort value without @order, an inline list over a keyless table with no order. ORDER_SURFACES is the manual''s rule, stricter than the walk, which takes the first surface written. ORDER_CHOICE_ON_INLINE_LIST is a deferral for a shape the walk throws on. ORDER_POSITIONS_DISAGREE is the walk''s fold of several tables'' orders by position (FieldBuilder.foldParticipantOrderings). Each sits at the written application or element, so an @order value used by two fields is one defect. Its read order family has a rule of its own beside it, so no rule nests a union deeper than seven.'),
   ('graphitron_outbox_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.',
