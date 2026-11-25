@@ -983,8 +983,11 @@ static method needs no holder.
     `ID` or an enum converts stay the walk's. The conversion is the decision `ConditionEmitter` makes
     for a term at emit time, so it lands as one stored fact both read, not a second emit-time copy.
     A root list whose `@orderBy` argument takes one order is the store's, its helper rendered from the
-    store's choices, all three of FS main's among them; one taking a list of orders, completed as the
-    client lists it, stays the walk's. A root connection over one table in either order, not faceted,
+    store's choices, all three of FS main's among them; one taking a list of orders is the store's too,
+    each order carried as declared and the composed list completed by the table's row key at run time,
+    the row key and the keys identifying a row read off `graphitron_occurrence_identifying_key_column`
+    by rank; `RootOrderArgumentParityTest` holds the store's spec equal to the walk's on what the helper
+    and a cursor read. A root connection over one table in either order, not faceted,
     is the store's too, its records its edge's items and its page size the carrier's
     `defaultFirstValue` or the unauthored default over `<maxAllowedPageSize>`: 65 of FS main's 66 root
     connections. That page-size rule is restated from `PaginationResolver` in `RootQuery`; it becomes
@@ -1017,8 +1020,8 @@ static method needs no holder.
     connection's and its order always stated, so the cursor encodes the columns the walk's did and a
     client's cursor survives the upgrade; `MultiTableConnectionOrderParityTest` holds the two orders
     equal on what the cursor reads. One a node id dispatches waits as `NODE_ID_DISPATCH`, a faceted
-    one as `FACETED`, and a lookup over several tables as `POLYMORPHIC`. Faceted connections and
-    an order argument taking a list remain beside them. Whether a type's
+    one as `FACETED`, and a lookup over several tables as `POLYMORPHIC`. Faceted connections remain
+    beside them. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
     it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a

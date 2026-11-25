@@ -389,15 +389,19 @@ public final class LauncherCommands {
      * its sort field takes a named order, and the default order the one read when the client picks
      * none.
      */
-    private static OrderBySpec.Argument argumentOrderOf(no.sikt.graphitron.emit.RootQuery.Emitted root) {
+    static OrderBySpec.Argument argumentOrderOf(no.sikt.graphitron.emit.RootQuery.Emitted root) {
         var choice = root.choice();
         var named = choice.orders().entrySet().stream()
             .map(e -> new OrderBySpec.NamedOrder(e.getKey(), fixedOf(e.getValue())))
             .toList();
         var base = fixedOf(root.order());
-        return new OrderBySpec.Argument(choice.argument(), choice.inputType(), choice.nonNull(),
-            new OrderBySpec.Composition.Single(named), choice.sortField(), choice.directionField(),
-            base.entries().isEmpty() ? new OrderBySpec.None() : base);
+        // A list the client composes is completed once composed, so its orders go as declared.
+        OrderBySpec.Composition composition = !choice.list() ? new OrderBySpec.Composition.Single(named)
+            : new OrderBySpec.Composition.Sequence(named, choice.rowKey().isEmpty()
+                ? new OrderBySpec.SequenceCompletion.None()
+                : new OrderBySpec.SequenceCompletion.AppendRowKey(choice.rowKey(), choice.identifyingKeys()));
+        return new OrderBySpec.Argument(choice.argument(), choice.inputType(), choice.nonNull(), composition,
+            choice.sortField(), choice.directionField(), base.entries().isEmpty() ? new OrderBySpec.None() : base);
     }
 
     /**

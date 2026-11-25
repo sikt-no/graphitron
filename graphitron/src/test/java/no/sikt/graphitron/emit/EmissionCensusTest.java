@@ -393,8 +393,8 @@ class EmissionCensusTest {
                 "Query.filmsConnectionByOptionalIds", "Query.filmsConnectionByRequiredIds",
                 "Query.filmsConnectionDesc", "Query.filmsNestedInput", "Query.filmsOfLanguageIds",
                 "Query.filmsOfLanguageIdsFilter", "Query.filmsOfLanguageIdsWithOriginal",
-                "Query.filmsOfPickedLanguageIds", "Query.filmsOrderedByOne",
-                "Query.filmsOrderedByOneKeyConnection", "Query.filmsOuterOverrideFilterInput",
+                "Query.filmsOfPickedLanguageIds", "Query.filmsOrdered", "Query.filmsOrderedByOne",
+                "Query.filmsOrderedByOneKeyConnection", "Query.filmsOrderedConnection", "Query.filmsOuterOverrideFilterInput",
                 "Query.filmsOuterOverridePlainInput", "Query.filmsWithImplicitInput",
                 "Query.filmsWithImplicitInputOuterOverride", "Query.filmsWithInputFieldCondition",
                 "Query.filmsWithInputFieldOverride", "Query.filmsWithMultiImplicit",
@@ -423,20 +423,17 @@ class EmissionCensusTest {
                     "Query.customerById", "Query.filmById"))
                 .containsEntry("LOOKUP_NODE_ID", List.of(
                     "Query.filmActorByNodeId", "Query.filmsByNodeIdArgWithLookupKey"))
-                .containsEntry("ORDER_ARGUMENT_LIST", List.of(
-                    "Query.filmsByLanguagesComposed", "Query.filmsByLanguagesComposedList",
-                    "Query.filmsOrdered", "Query.filmsOrderedConnection", "Query.squadMembers"))
                 .containsEntry("NODE_ID_DISPATCH", List.of(
                     "Query.occupantById", "Query.occupantByOptionalId", "Query.occupantsByIds",
                     "Query.occupantsByIdsConnection", "Query.occupantsByNullableIds"))
                 .containsEntry("SORT_KEY_NOT_A_COLUMN", List.of(
                     "Query.allContentByFilmTitle", "Query.allContentConnectionByFilmTitle",
-                    "Query.filmsByLanguages", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
+                    "Query.filmsByLanguages", "Query.filmsByLanguagesComposed",
+                    "Query.filmsByLanguagesComposedList", "Query.filmsByLanguagesList", "Query.filmsByLatestStock",
                     "Query.filmsByOriginalLanguage", "Query.filmsByOriginalLanguageDescList",
-                    "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList"))
+                    "Query.filmsByOriginalLanguageId", "Query.filmsByOriginalLanguageList", "Query.squadMembers"))
                 .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID",
-                    "NODE_ID_DISPATCH", "ORDER_ARGUMENT_LIST",
-                    "SORT_KEY_NOT_A_COLUMN");
+                    "NODE_ID_DISPATCH", "SORT_KEY_NOT_A_COLUMN");
         });
     }
 }
