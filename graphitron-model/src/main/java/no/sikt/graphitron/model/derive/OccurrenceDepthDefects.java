@@ -12,7 +12,7 @@ import static org.jooq.impl.DSL.val;
 /**
  * The {@code occurrence-depth-defects} stage: the defects judging what {@link OccurrenceDepths} and
  * {@link OccurrenceBuilds} write, a child producer's lift and the key it takes, and the column a
- * field reads or writes, from their rule view. A stage of their own, so neither the depth loop nor
+ * field reads or writes, from their rule views, one per family. A stage of their own, so neither the depth loop nor
  * the gatherer's last rule carries them. First, the rules each list element occurrence breaks, into
  * {@code graphitron_occurrence_list_element_defect}, which the defect rule groups to the declaration.
  */
@@ -33,6 +33,10 @@ public final class OccurrenceDepthDefects {
             .execute();
         dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph), t.TOUCHED_AT.ne(readAt)).execute();
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.DEPTHS);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.RESULT_SHAPES);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.COLUMNS);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.NEEDS);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.FILTERS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.ROUTINE_WRITES);
     }
 }

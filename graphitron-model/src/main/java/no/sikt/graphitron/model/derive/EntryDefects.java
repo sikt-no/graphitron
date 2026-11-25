@@ -42,6 +42,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_ENTRY_DEFE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FILTER_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NEED_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_RESULT_SHAPE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_WRITE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
@@ -139,15 +143,28 @@ public final class EntryDefects {
     public static final Rule TENANTS =
         new Rule("occurrence-tenants", GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE);
 
-    /** The lift and column defects' rule, {@link OccurrenceDepthDefects}. */
+    /**
+     * The keys and lift defects' rule, {@link OccurrenceDepthDefects}. The stage raises its other
+     * families from rules of their own beside it, {@link #RESULT_SHAPES}, {@link #COLUMNS},
+     * {@link #NEEDS}, {@link #FILTERS} and {@link #ROUTINE_WRITES}: H2 keeps a parsed copy of a union
+     * at every level of its nesting, so no rule nests one deeper than seven.
+     */
     public static final Rule DEPTHS = new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE);
 
-    /**
-     * The routine writes the emitter does not generate yet, raised by {@link OccurrenceDepthDefects}
-     * beside {@link #DEPTHS} rather than as arms of it: H2 keeps a parsed copy of a union at every
-     * level of its nesting, so an arm added to a long union costs every session holding it more than
-     * a short rule of its own does.
-     */
+    /** The shapes a producer's result cannot take where its field puts it. */
+    public static final Rule RESULT_SHAPES =
+        new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_RESULT_SHAPE_ENTRY_DEFECT_RULE);
+
+    /** The column or member a field reads or writes, naming none or several. */
+    public static final Rule COLUMNS = new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_COLUMN_ENTRY_DEFECT_RULE);
+
+    /** The routes a need for a table takes. */
+    public static final Rule NEEDS = new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_NEED_ENTRY_DEFECT_RULE);
+
+    /** What a filter term or a list's condition cannot compare. */
+    public static final Rule FILTERS = new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_FILTER_ENTRY_DEFECT_RULE);
+
+    /** The routine writes refused or not generated yet. */
     public static final Rule ROUTINE_WRITES =
         new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_ROUTINE_WRITE_ENTRY_DEFECT_RULE);
 
