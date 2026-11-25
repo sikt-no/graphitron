@@ -312,10 +312,32 @@ If those read simply, the design holds: the consumer writes the field as they di
   hops-then-routine chain, and the inline list as a near miss. It claims the facts the child flip
   keeps: the producer's start `CHILD` and result `CONNECTION`, the path's steps and
   `graphitron_join_path_step_parameter` rows, the filter's `graphitron_occurrence_filter_term` rows and
-  its `@condition`, the order source, and no defect. It also states both producer claims for one
-  field, `SELECT` unsplit and `ROUTINE` split, and its header says those `ROUTINE` rows are what
-  the node that made a split child `@routine` a path routine replaces, so the parity the flip passes is behaviour, in
-  the execution tests, not those rows.
+  its `@condition`, the order source, and no defect.
+
+  As delivered, two gates of the fact corpus shape where each of these lands. A `scenarios`
+  document holds no defect, so a field written with `@splitQuery` on a child connection, which
+  stores `SPLIT_QUERY_REDUNDANT`, cannot sit there; and the duplicate-pin gate
+  (`FactExpectationTest.duplicatePinsDoNotGrow`) refuses a second document pinning a behaviour
+  another already pins, an occurrence pin being keyed by occurrence kind, producer kind and depth.
+  So:
+  * the unsplit consumer's shape (`Actor.films`), the sakila shape (`Actor.filmsSakila`, `title` and
+    `sort`), the routine-then-hop (`Actor.recentFilms`) and hops-then-routine (`FilmCast.castFilms`)
+    chains, the path steps, the step parameters, the filter terms, the filter's `@condition` and the
+    order source are in `scenarios/routine-child-connection`, with no defect;
+  * the inline near miss is `Actor.filmCards`, a plain inline routine list with no read surface, in
+    the same document (an inline list with a filter or `@orderBy` is a defect, and R1179's);
+  * the split spelling of the connection is `Actor.filmsSplit` in `defects/split-query-redundant`,
+    beside its unsplit twin `Actor.films`, which pins the warning; the split spelling of a plain
+    routine list, `Actor.filmCardsSplit`, stores no warning and sits in the scenario;
+  * the producer rows, start `CHILD` and result `CONNECTION`, are not stated in either document: a
+    `SELECT` child producer is the behaviour `scenarios/producer-kinds` already pins
+    (`Film.language`), and the pin shape does not tell a connection result from a single one, so a
+    second pin grows the gate;
+  * there is no `ROUTINE` split claim left to state: the R876 node that made a split child
+    `@routine` a path routine landed after this item (`d423f290e7`), and both spellings are a
+    `SELECT` producer whose path starts at the routine, which the scenario asserts by the absence
+    of a `ROUTINE` producer on `Actor.filmCardsSplit`. The parity that flip keeps is behaviour, in
+    the execution tests, as planned.
 * **Defects documents:** `SPLIT_QUERY_REDUNDANT` on a routine child connection and a table-backed one
   written with `@splitQuery`, and absent on the same fields written without it; one keyless case per
   arm, each spelled with and without `@splitQuery`: a table-backed child connection on its parent's
@@ -568,3 +590,15 @@ Non-blocking:
 * `RejectionRenderingTest` still uses the retired conflict text as an arbitrary string.
 * The changelog's two R1169 lines say "the commit carrying this line". The approving pass replaces
   that with `51769f3c` and `46c62be7`.
+
+#### Author's reply (2026-11-26)
+
+Finding 1 is answered in the Tests section's fact-document bullet, which now records where each
+named claim landed and why the rest is not stated: the sakila shape and the filter's `@condition`
+are added to `scenarios/routine-child-connection`, the inline near miss is `Actor.filmCards` there,
+the split spelling is `Actor.filmsSplit` in `defects/split-query-redundant`, and the producer rows
+are left out because the duplicate-pin gate counts them as `scenarios/producer-kinds`' behaviour.
+The `ROUTINE` split claim no longer exists since `d423f290e7`. The non-blocking points are left to
+the approving pass as it proposes: `FixtureWarningsGateTest` does not see stored warnings, which
+`defects/split-query-redundant` covers; `RejectionRenderingTest`'s string is arbitrary; the
+changelog lines take their hashes then.

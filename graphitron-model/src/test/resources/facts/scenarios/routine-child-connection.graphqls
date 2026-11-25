@@ -1,6 +1,7 @@
 # A routine-backed child connection, in the consumer's shape: a filter input whose field carries a
 # @condition, an @orderBy argument a client may leave out, and the @defaultOrder used when it is left
-# out. A child connection is fetched in a query of its own with no @splitQuery written (Alf,
+# out; Actor.filmsSakila is the sakila spelling, a title argument and a sort argument over the same
+# result. A child connection is fetched in a query of its own with no @splitQuery written (Alf,
 # 2026-11-25), and the store states its path, parameters, filter and order with no defect. The same
 # field written with @splitQuery draws the directive's redundancy warning, which the defects document
 # split-query-redundant states. FilmCast.castFilms steps through film_actor before the routine, and
@@ -39,6 +40,10 @@ type Actor @table(name: "actor") {
   filmCardsSplit(minLength: Int!): [ActorFilmCard!] @splitQuery
     @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
+  filmsSakila(minLength: Int!, title: String, sort: ActorFilmOrderBy @orderBy): [ActorFilm!]
+    @asConnection(defaultFirstValue: 10)
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
   recentFilms(minLength: Int!): [Film!] @asConnection
     @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
     @reference(path: [{table: "film"}])
@@ -61,6 +66,7 @@ extend schema @expectEquals(relation: "graphitron_join_path_step",
   Actor.filmCardsSplit,     ActorFilmCard, 0,  actor,           films_for_actor
   Actor.filmCardsSplit.film, Film,         0,  films_for_actor, film
   Actor.films,        ActorFilm,   0,        actor,           films_for_actor
+  Actor.filmsSakila,  ActorFilm,   0,        actor,           films_for_actor
   Actor.recentFilms,  Film,        0,        actor,           films_for_actor
   Actor.recentFilms,  Film,        1,        films_for_actor, film
   FilmCast.castFilms, ActorFilm,   0,        film,            film_actor
@@ -75,17 +81,21 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_parameter",
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_filter_term",
-    where: "coordinate LIKE 'Actor.films(%'", rows: """
+    where: "coordinate LIKE 'Actor.films(%' OR coordinate LIKE 'Actor.filmsSakila(%'", rows: """
   coordinate,                          table_name
   Actor.films(filter.title:),          films_for_actor
+  Actor.filmsSakila(title:),           films_for_actor
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order",
-    where: "coordinate IN ('Actor.films', 'Actor.recentFilms')", rows: """
+    where: "coordinate IN ('Actor.films', 'Actor.filmsSakila', 'Actor.recentFilms')", rows: """
   coordinate,        bound,                  choice,                kind,    surface
   Actor.films,       public.films_for_actor, Actor.films,           DEFAULT, FIELDS
   Actor.films,       public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE,  FIELDS
   Actor.films,       public.films_for_actor, ActorFilmSort.TITLE,   CHOICE,  FIELDS
+  Actor.filmsSakila, public.films_for_actor, Actor.filmsSakila,     DEFAULT, FIELDS
+  Actor.filmsSakila, public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE,  FIELDS
+  Actor.filmsSakila, public.films_for_actor, ActorFilmSort.TITLE,   CHOICE,  FIELDS
   Actor.recentFilms, public.film,            Actor.recentFilms,     DEFAULT, IMPLICIT_PRIMARY_KEY
   """)
 
@@ -103,4 +113,12 @@ extend schema @assertAbsent(relation: "graphitron_occurrence_producer_lift", row
 extend schema @assertAbsent(relation: "graphitron_payload_data_field", rows: """
   type_name,     field_name
   ActorFilmCard, film
+  """)
+
+# The filter's @condition, on its input field, over the function's rows, overriding the column the
+# field would otherwise compare.
+extend schema @expectEquals(relation: "graphitron_occurrence_condition",
+    where: "coordinate LIKE 'Actor.%'", rows: """
+  coordinate,                            bound,                  call,                               override_written
+  Actor.films(filter.titleStartsWith:),  public.films_for_actor, condition:public.films_for_actor,   TRUE
   """)
