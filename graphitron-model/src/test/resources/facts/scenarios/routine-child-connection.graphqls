@@ -1,0 +1,73 @@
+# A routine-backed child connection, in the consumer's shape: a filter input whose field carries a
+# @condition, an @orderBy argument a client may leave out, and the @defaultOrder used when it is left
+# out. A child connection is fetched in a query of its own with no @splitQuery written (Alf,
+# 2026-11-25), and the store states its path, parameters, filter and order with no defect. The same
+# field written with @splitQuery draws the directive's redundancy warning, which the defects document
+# split-query-redundant states. FilmCast.castFilms steps through film_actor before the routine, and
+# Actor.recentFilms hops on from the routine to film; both page as Actor.films does.
+
+type ActorFilm { filmId: Int @field(name: "film_id"), title: String }
+type Film @table(name: "film") { title: String }
+
+input ActorFilmPageFilter {
+  title: String
+  titleStartsWith: String
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "actorFilmTitleStartsWith"
+    }, override: true)
+}
+
+enum ActorFilmSort { FILM_ID @order(fields: [{name: "film_id"}]), TITLE @order(fields: [{name: "title"}]) }
+input ActorFilmOrderBy { field: ActorFilmSort!, direction: SortDirection }
+
+type Actor @table(name: "actor") {
+  films(minLength: Int!, filter: ActorFilmPageFilter, orderBy: ActorFilmOrderBy @orderBy): [ActorFilm!]
+    @asConnection(defaultFirstValue: 10)
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  recentFilms(minLength: Int!): [Film!] @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @reference(path: [{table: "film"}])
+}
+
+type FilmCast @table(name: "film") {
+  castFilms(minLength: Int!): [ActorFilm!] @asConnection
+    @reference(path: [{table: "film_actor"}])
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+type Query { actors: [Actor!]!, casts: [FilmCast!]! }
+
+extend schema @expectEquals(relation: "graphitron_join_path_step",
+    where: "coordinate LIKE 'Actor.%' OR coordinate LIKE 'FilmCast.%'", rows: """
+  coordinate,         target_type, position, from_table,      to_table
+  Actor.films,        ActorFilm,   0,        actor,           films_for_actor
+  Actor.recentFilms,  Film,        0,        actor,           films_for_actor
+  Actor.recentFilms,  Film,        1,        films_for_actor, film
+  FilmCast.castFilms, ActorFilm,   0,        film,            film_actor
+  FilmCast.castFilms, ActorFilm,   1,        film_actor,      films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_step_parameter",
+    where: "coordinate = 'Actor.films'", rows: """
+  coordinate,       position, parameter_name, from_table, from_column, argument_coordinate
+  Actor.films,      0,        pActorId,       actor,      actor_id,
+  Actor.films,      0,        pMinLength,     ,           ,            Actor.films(minLength:)
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_filter_term",
+    where: "coordinate LIKE 'Actor.films(%'", rows: """
+  coordinate,                          table_name
+  Actor.films(filter.title:),          films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_order",
+    where: "coordinate IN ('Actor.films', 'Actor.recentFilms')", rows: """
+  coordinate,        bound,                  choice,                kind,    surface
+  Actor.films,       public.films_for_actor, Actor.films,           DEFAULT, FIELDS
+  Actor.films,       public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE,  FIELDS
+  Actor.films,       public.films_for_actor, ActorFilmSort.TITLE,   CHOICE,  FIELDS
+  Actor.recentFilms, public.film,            Actor.recentFilms,     DEFAULT, IMPLICIT_PRIMARY_KEY
+  """)

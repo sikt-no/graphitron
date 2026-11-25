@@ -18,7 +18,6 @@ union AddressOccupant = Customer | Staff
 # tag::SplitQueryConnection[]
 type Film @table(name: "film") {
   actorsConnection(first: Int, last: Int, after: String, before: String): ActorsConnection!
-      @splitQuery
       @reference(path: [{key : "film_actor_film_id_fkey"}, {key : "film_actor_actor_id_fkey"}])
       @defaultOrder(primaryKey: true)
 }
@@ -33,7 +32,6 @@ type Film @table(name: "film") {
       after: String,
       before: String
   ): ActorsConnection!
-      @splitQuery
       @reference(path: [{key : "film_actor_film_id_fkey"}, {key : "film_actor_actor_id_fkey"}])
       @defaultOrder(primaryKey: true)
 }

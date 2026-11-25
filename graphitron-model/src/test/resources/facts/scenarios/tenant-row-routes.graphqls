@@ -22,7 +22,7 @@ type FilmEndorsement @table(name: "film_endorsement") {
   film: Film @splitQuery
   inventories: [Inventory!]! @splitQuery @reference(path: [
     {key: "film_endorsement_endorsed_film_fkey"}, {key: "inventory_film_id_fkey"}])
-  inventoriesConnection: [Inventory!]! @asConnection @splitQuery @reference(path: [
+  inventoriesConnection: [Inventory!]! @asConnection @reference(path: [
     {key: "film_endorsement_endorsed_film_fkey"}, {key: "inventory_film_id_fkey"}])
     @defaultOrder(primaryKey: true)
 }

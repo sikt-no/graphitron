@@ -526,31 +526,22 @@ public sealed interface ChildField extends OutputField
                         "BatchedTableField with sourceShape=Table must dispatch LOAD_ONE; the "
                         + "loadMany contract is an accessor-arity (record-parent) shape");
                 }
-                // (5) leaf-specific surface pins, mirroring TableField's: a routine-bearing
-                // path carries exactly one routine node and none of the surfaces the batched
-                // emit does not render for routine chains. A routine-bearing path never
-                // carries a keyed lookup (the classifier defers the @routine and @lookupKey
-                // pair), so the lookup fold leaves this pin's domain unchanged. Additionally, a lateral-headed split
-                // keys the batch on the routine's column-bound inputs, so its sourceKey can
-                // never be empty (the classifier rejects the uncorrelated combination as
-                // DirectiveConflict). Table-gated: widening to Record would add unaudited
-                // checks.
+                // (5) leaf-specific surface pin: a routine-bearing path carries exactly one
+                // routine node. Filters, an order argument, pagination and a connection all
+                // render through the batched emit over a routine chain as over a table one. A
+                // routine-bearing path never carries a keyed lookup (the classifier defers the
+                // @routine and @lookupKey pair), so the lookup fold leaves this pin's domain
+                // unchanged. Additionally, a lateral-headed split keys the batch on the
+                // routine's column-bound inputs, so its sourceKey can never be empty (the store
+                // refuses the uncorrelated routine child as NO_KEY_FROM_PARENT before the walk
+                // classifies it). Table-gated: widening to Record would add unaudited checks.
                 long routineNodes = joinPath.stream()
                     .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
                     .count();
-                if (routineNodes > 0) {
-                    boolean dayOneSurface = routineNodes == 1
-                        && filters.isEmpty()
-                        && !(orderBy instanceof OrderBySpec.Argument)
-                        && pagination == null
-                        && !(returnType.wrapper() instanceof FieldWrapper.Connection);
-                    if (!dayOneSurface) {
-                        throw new IllegalArgumentException(
-                            "BatchedTableField with a routine-node path must be the batched correlated "
-                            + "chain shape (exactly one lateral routine node, no filters/"
-                            + "argument-ordering/pagination, non-Connection); other routine chain "
-                            + "shapes classify as typed Deferred");
-                    }
+                if (routineNodes > 1) {
+                    throw new IllegalArgumentException(
+                        "BatchedTableField with a routine-node path must carry exactly one lateral "
+                        + "routine node; chains with several routine nodes classify as typed Deferred");
                 }
                 if (parentCorrelation instanceof ParentCorrelation.OnLateralArgs
                         && sourceKey.columns().isEmpty()) {

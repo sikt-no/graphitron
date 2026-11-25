@@ -1,6 +1,8 @@
 # A child routed by its parent row's tenant, written inline: FilmEndorsement.film's key lands on the
 # tenant column film_id from the global film_endorsement, so the field is a producer of its own, which
-# the generator emits only split until its producer is emitted from the store.
+# the generator emits only split until its producer is emitted from the store. FilmEndorsement.filmPage,
+# a child connection over the same key, is split whether @splitQuery is written or not, so it draws
+# nothing.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
@@ -11,6 +13,7 @@ type Film @table(name: "film") {
 type FilmEndorsement @table(name: "film_endorsement") {
   note: String
   film: Film
+  filmPage: [Film!]! @asConnection @defaultOrder(primaryKey: true)
 }
 
 type Query {
@@ -20,6 +23,7 @@ type Query {
 extend schema @expectEquals(relation: "graphitron_producer", where: "type_name = 'FilmEndorsement'", rows: """
   type_name,       field_name, kind
   FilmEndorsement, film,       SELECT
+  FilmEndorsement, filmPage,   SELECT
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code = 'TENANT_FAN_OUT_INLINE_UNSUPPORTED'", rows: """

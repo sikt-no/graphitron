@@ -6,7 +6,7 @@ Splits the annotated field's resolution out of the surrounding parent SELECT int
 
 include::../../_generator-internals-note.adoc[]
 
-`@splitQuery` is the directive that decouples query depth from query *breadth*. Without it, child references inline into the parent SELECT (one round-trip, joined SQL). With it, each `@splitQuery` boundary becomes a deferred `DataLoader` call (more round-trips, narrower SQL, batched across parents). It composes with xref:reference.adoc[`@reference`], xref:lookupKey.adoc[`@lookupKey`], and xref:asConnection.adoc[`@asConnection`].
+`@splitQuery` is the directive that decouples query depth from query *breadth*. Without it, child references inline into the parent SELECT (one round-trip, joined SQL). With it, each `@splitQuery` boundary becomes a deferred `DataLoader` call (more round-trips, narrower SQL, batched across parents). It composes with xref:reference.adoc[`@reference`] and xref:lookupKey.adoc[`@lookupKey`]. A child connection (xref:asConnection.adoc[`@asConnection`], or a hand-written connection return type) is always split, so the directive is inferred there and not written.
 
 == SDL signature
 
@@ -64,13 +64,12 @@ type Film @table(name: "film") {
 }
 ----
 
-Combined with xref:asConnection.adoc[`@asConnection`] (per-parent paginated child connection: `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own slice):
+A child connection takes the split without the directive (per-parent paginated child connection: a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own slice). Writing `@splitQuery` on it is redundant:
 
 [source,graphql]
 ----
 type Film @table(name: "film") {
     actorsConnection(first: Int, after: String): ActorsConnection!
-        @splitQuery
         @reference(path: [
             {key: "film_actor_film_id_fkey"},
             {key: "film_actor_actor_id_fkey"}
@@ -83,6 +82,7 @@ type Film @table(name: "film") {
 
 * Single-cardinality `@splitQuery` is restricted to a *single-hop* xref:reference.adoc[`@reference`] path. Multi-hop single-cardinality is rejected at build time with the offending path's hop count in the message.
 * List-cardinality `@splitQuery` supports any hop count, including junction-table chains (`@reference(path: [..., ...])`).
+* Implicit on a child connection, a list field under a non-root type made a connection by xref:asConnection.adoc[`@asConnection`] or by returning a hand-written connection type: it is always fetched in a query of its own, batched across parents, each parent paging its own rows. Explicit `@splitQuery` there is redundant: the build warns `SPLIT_QUERY_REDUNDANT` at the directive and ignores it.
 * Implicit on `@table`-typed fields of a class-backed parent reachable from xref:service.adoc[`@service`], and on a payload's data field, which re-reads its producer's records by their keys after a write, a routine or a service: these fields start their own query whatever is written on them. Explicit `@splitQuery` there is redundant but not rejected (Alf, 2026-11-19): the build warns `SPLIT_QUERY_REDUNDANT` at the directive and ignores it. Remove the directive, or list `SPLIT_QUERY_REDUNDANT` under xref:../mojo-configuration.adoc#silencing-lint-warnings[`<lint><disabledRules>`] to keep it.
 * Rejected at build time (`[deferred]`) on a field whose return type is a plain-object *nesting* type (a directiveless object projected off the parent's own table row). The batched launcher the split implies is not generated, and accepting the directive would silently ignore it. This is the line between the positionally inert cases on this page: where the fetch is already separate (root fields, argument-bearing fields, class-backed parents) the directive is *redundant* and at most warned about; where honoring it would require a delivery that does not exist (a nesting field) it is *unimplemented* and rejected. Remove the directive to keep the inline projection; `@splitQuery` on table-backed fields *inside* the nesting type, and on `@pivot` fields, is supported as usual.
 * Rejected at build time on a field whose return type is bound to the same table as its parent and which has no xref:reference.adoc[`@reference`]. A split fetch is a batch keyed on each parent's correlation to the child, and a same-table field with no path has no such correlation, so there is no parent key to batch on. (xref:tenantFanOut.adoc[`@tenantFanOut`], which forces the same batched fetch, is rejected on this shape for the same reason.) Pick the remedy by what the field means:
@@ -93,7 +93,6 @@ type Film @table(name: "film") {
 * Without `@splitQuery`, one statement nests at most 32 levels of correlated reads (`TableAliases.MAX_DEPTH` in the generated `util` package). A query that nests an inline field deeper, typically by following an inline cycle such as `Category.parent` or a pair of types referencing each other, is refused with a client error before any SQL runs, whether or not the application installs a query-depth limit of its own. Each `@splitQuery` boundary starts a new statement, and so a new count.
 * Redundant but not rejected beside xref:service.adoc[`@service`] on a non-root field. A child service is always called once per batch of parents, so the split the directive asks for is already the delivery. Writing `@splitQuery` there yields a lint warning (`splitquery-redundant-on-service-child`) offering to delete it, and the directive is ignored.
 * Rejected at build time (`FIELD_WITHOUT_FETCHER`) on a field returning a union or interface none of whose implementers is xref:table.adoc[`@table`]-bound (an interface's own `@table` not counting): the split fetches each table-bound participant's rows, so there is nothing to fetch.
-* Composes with xref:asConnection.adoc[`@asConnection`]: the per-parent partition envelope is added to the connection's pagination shape.
 * Composes with xref:lookupKey.adoc[`@lookupKey`]: the lookup key narrows the per-parent batch (each parent's child list filtered by the caller-provided keys).
 * On root (`Query`/`Mutation`) fields and on fields with arguments, `@splitQuery` is irrelevant; those always have explicit data fetchers. The directive is silently ignored there.
 * Nullable FKs on parent-holds-FK single-cardinality fields short-circuit to `null` *before* dispatching to the DataLoader (saves a round-trip when no parents have a non-null FK value).
@@ -102,7 +101,7 @@ type Film @table(name: "film") {
 == See also
 
 * xref:reference.adoc[`@reference`] supplies the FK chain; `@splitQuery` decides whether to inline or batch it.
-* xref:asConnection.adoc[`@asConnection`] adds per-parent Relay pagination on top of a split fetch.
+* xref:asConnection.adoc[`@asConnection`] on a child list adds per-parent Relay pagination; the split under it is inferred.
 * xref:lookupKey.adoc[`@lookupKey`] narrows the per-parent batch to caller-provided keys.
 * Class-backed parents reachable from xref:service.adoc[`@service`] get implicit `@splitQuery` on `@table`-typed children.
 * xref:../../how-to/split-vs-inline.adoc[How-to: When to split queries] covers the round-trip-vs-fan-out trade-off, self-FK rules, and DataLoader caching behaviour.

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,6 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code Film.castFilms}: hops-then-routine (actor_id is a column of the junction the path stands on)</li>
  *   <li>{@code Film.castRecentFilms}: the sandwich (hops in, CROSS JOIN LATERAL, name-matched hop back out)</li>
  *   <li>{@code Actor.filmsSplit} / {@code Actor.recentFilmsSplit}: batched keyed re-query ({@code @splitQuery})</li>
+ *   <li>{@code Actor.filmsConnection} / {@code Actor.filmsConnectionSplit} / {@code Actor.recentFilmsConnection}:
+ *       child connections, each actor paging its own films in one batch statement, written with
+ *       or without {@code @splitQuery}</li>
  * </ul>
  */
 @ExecutionTier
@@ -39,10 +43,19 @@ class RoutineFieldExecutionTest {
 
     static DSLContext dsl;
     static GraphQL graphql;
+    static final AtomicInteger STATEMENTS = new AtomicInteger();
 
     @BeforeAll
     static void startDatabase() {
         dsl = SakilaDatabase.dsl();
+        // Counts the statements a request runs, for the child connections' one batch statement.
+        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
+            new org.jooq.ExecuteListener() {
+                @Override
+                public void executeStart(org.jooq.ExecuteContext ctx) {
+                    STATEMENTS.incrementAndGet();
+                }
+            }));
 
         graphql = Graphitron.newGraphQL().build();
     }
@@ -434,6 +447,162 @@ class RoutineFieldExecutionTest {
             .containsExactly("A Epic Drama", "A Quirky Comedy");
         assertThat(fieldOf(actors, "NICK", "recentFilmsSplit", "filmId")).containsExactly(1, 4);
         assertThat(fieldOf(actors, "ED", "recentFilmsSplit", "filmId")).containsExactly(5);
+    }
+
+    @Test
+    void childRoutineConnectionPagesEachActorInOneBatchStatement() {
+        // Each actor pages its own films, JOAN's page empty and counting 0: the root read and one
+        // batch statement for every actor's page, and one more for totalCount.
+        STATEMENTS.set(0);
+        var actors = actorsOf(execute("""
+            { allActors { firstName
+                filmsConnection(minLength: 50, first: 1) { pageInfo { hasNextPage } nodes { filmId } }
+            } }
+            """));
+        assertThat(STATEMENTS.get()).as("the root read and one batch page statement").isEqualTo(2);
+        assertThat(pageOf(actors, "PENELOPE", "filmsConnection", "filmId")).containsExactly(1);
+        assertThat(pageOf(actors, "NICK", "filmsConnection", "filmId")).containsExactly(1);
+        assertThat(pageOf(actors, "ED", "filmsConnection", "filmId")).containsExactly(5);
+        assertThat(pageOf(actors, "JOAN", "filmsConnection", "filmId")).isEmpty();
+        assertThat(hasNextPage(actors, "PENELOPE", "filmsConnection")).isTrue();
+        assertThat(hasNextPage(actors, "ED", "filmsConnection")).isFalse();
+        assertThat(hasNextPage(actors, "JOAN", "filmsConnection")).isFalse();
+
+        STATEMENTS.set(0);
+        var counted = actorsOf(execute("""
+            { allActors { firstName filmsConnection(minLength: 50, first: 1) { totalCount } } }
+            """));
+        assertThat(STATEMENTS.get()).as("and one count statement with totalCount").isEqualTo(3);
+        assertThat(totalCount(counted, "PENELOPE", "filmsConnection")).isEqualTo(2);
+        assertThat(totalCount(counted, "NICK", "filmsConnection")).isEqualTo(2);
+        assertThat(totalCount(counted, "ED", "filmsConnection")).isEqualTo(1);
+        assertThat(totalCount(counted, "JOAN", "filmsConnection")).isEqualTo(0);
+    }
+
+    @Test
+    void childRoutineConnectionCursorPagesEveryActorForward() {
+        var first = actorsOf(execute("""
+            { allActors { firstName
+                filmsConnection(minLength: 50, first: 1) { pageInfo { endCursor } }
+            } }
+            """));
+        @SuppressWarnings("unchecked")
+        String cursor = (String) ((Map<String, Object>) connectionOf(first, "PENELOPE", "filmsConnection")
+            .get("pageInfo")).get("endCursor");
+        var next = actorsOf(execute("""
+            { allActors { firstName
+                filmsConnection(minLength: 50, first: 5, after: "%s") { pageInfo { hasNextPage } nodes { filmId } }
+            } }
+            """.formatted(cursor)));
+        assertThat(pageOf(next, "PENELOPE", "filmsConnection", "filmId")).containsExactly(3);
+        assertThat(pageOf(next, "NICK", "filmsConnection", "filmId")).containsExactly(4);
+        assertThat(pageOf(next, "ED", "filmsConnection", "filmId")).containsExactly(5);
+        assertThat(pageOf(next, "JOAN", "filmsConnection", "filmId")).isEmpty();
+        assertThat(hasNextPage(next, "PENELOPE", "filmsConnection")).isFalse();
+    }
+
+    @Test
+    void childRoutineConnectionOrderArgumentAndFilterNarrowThePage() {
+        var descending = actorsOf(execute("""
+            { allActors { firstName
+                filmsConnection(minLength: 0, first: 1, orderBy: {field: FILM_ID, direction: DESC}) {
+                  totalCount nodes { filmId } }
+            } }
+            """));
+        assertThat(pageOf(descending, "PENELOPE", "filmsConnection", "filmId")).containsExactly(3);
+        assertThat(pageOf(descending, "NICK", "filmsConnection", "filmId")).containsExactly(4);
+        assertThat(pageOf(descending, "ED", "filmsConnection", "filmId")).containsExactly(5);
+        assertThat(totalCount(descending, "PENELOPE", "filmsConnection")).isEqualTo(3);
+        assertThat(totalCount(descending, "JOAN", "filmsConnection")).isEqualTo(0);
+
+        // The filter's column narrows the page and the count alike.
+        var byTitle = actorsOf(execute("""
+            { allActors { firstName
+                filmsConnection(minLength: 50, filter: {title: "ADAPTATION HOLES"}) { totalCount nodes { filmId } }
+            } }
+            """));
+        assertThat(pageOf(byTitle, "PENELOPE", "filmsConnection", "filmId")).containsExactly(3);
+        assertThat(totalCount(byTitle, "PENELOPE", "filmsConnection")).isEqualTo(1);
+        assertThat(totalCount(byTitle, "NICK", "filmsConnection")).isEqualTo(0);
+
+        // So does its @condition: AFFAIR PREJUDICE, film 4, is NICK's alone.
+        var byCondition = actorsOf(execute("""
+            { allActors { firstName
+                filmsConnection(minLength: 50, filter: {titleStartsWith: "AF"}) { totalCount nodes { filmId } }
+            } }
+            """));
+        assertThat(pageOf(byCondition, "NICK", "filmsConnection", "filmId")).containsExactly(4);
+        assertThat(totalCount(byCondition, "NICK", "filmsConnection")).isEqualTo(1);
+        assertThat(totalCount(byCondition, "PENELOPE", "filmsConnection")).isEqualTo(0);
+    }
+
+    @Test
+    void theSplitAndUnsplitSpellingsAnswerTheSamePages() {
+        var data = actorsOf(execute("""
+            { allActors { firstName
+                unsplit: filmsConnection(minLength: 0, first: 2, orderBy: {field: TITLE, direction: DESC}) {
+                  totalCount nodes { filmId } }
+                split: filmsConnectionSplit(minLength: 0, first: 2, sort: {field: TITLE, direction: DESC}) {
+                  totalCount nodes { filmId } }
+            } }
+            """));
+        for (String actor : List.of("PENELOPE", "NICK", "ED", "JOAN")) {
+            assertThat(pageOf(data, actor, "split", "filmId")).as(actor)
+                .isEqualTo(pageOf(data, actor, "unsplit", "filmId"));
+            assertThat(totalCount(data, actor, "split")).as(actor)
+                .isEqualTo(totalCount(data, actor, "unsplit"));
+        }
+        assertThat(pageOf(data, "PENELOPE", "split", "filmId")).containsExactly(3, 2);
+    }
+
+    @Test
+    void childRoutineThenHopConnectionCountsTheJoinedChain() {
+        // The hop lands on film, so the page is ordered by film's key and description, a column
+        // only film has, is returned; totalCount counts the joined chain, not the film table.
+        var actors = actorsOf(execute("""
+            { allActors { firstName
+                recentFilmsConnection(minLength: 50, first: 1) { totalCount nodes { filmId description } }
+            } }
+            """));
+        assertThat(pageOf(actors, "PENELOPE", "recentFilmsConnection", "filmId")).containsExactly(1);
+        assertThat(pageOf(actors, "PENELOPE", "recentFilmsConnection", "description"))
+            .containsExactly("A Epic Drama");
+        assertThat(pageOf(actors, "ED", "recentFilmsConnection", "filmId")).containsExactly(5);
+        assertThat(totalCount(actors, "PENELOPE", "recentFilmsConnection")).isEqualTo(2);
+        assertThat(totalCount(actors, "ED", "recentFilmsConnection")).isEqualTo(1);
+        assertThat(totalCount(actors, "JOAN", "recentFilmsConnection")).isEqualTo(0);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> actorsOf(Map<String, Object> data) {
+        return (List<Map<String, Object>>) data.get("allActors");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> connectionOf(List<Map<String, Object>> actors, String firstName,
+            String field) {
+        return actors.stream()
+            .filter(a -> firstName.equals(a.get("firstName")))
+            .map(a -> (Map<String, Object>) a.get(field))
+            .findFirst().orElseThrow();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> pageOf(List<Map<String, Object>> actors, String firstName, String field,
+            String column) {
+        return ((List<Map<String, Object>>) connectionOf(actors, firstName, field).get("nodes")).stream()
+            .map(n -> n.get(column))
+            .toList();
+    }
+
+    private static Object totalCount(List<Map<String, Object>> actors, String firstName, String field) {
+        return connectionOf(actors, firstName, field).get("totalCount");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean hasNextPage(List<Map<String, Object>> actors, String firstName, String field) {
+        return (Boolean) ((Map<String, Object>) connectionOf(actors, firstName, field).get("pageInfo"))
+            .get("hasNextPage");
     }
 
     @SuppressWarnings("unchecked")

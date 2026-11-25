@@ -51,7 +51,7 @@ type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
 # totalCount runs on the same routed source.
 type FilmStock {
     inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
-    inventoriesConnection(first: Int, after: String): [Inventory!]! @asConnection @splitQuery
+    inventoriesConnection(first: Int, after: String): [Inventory!]! @asConnection
         @reference(path: [{key: "inventory_film_id_fkey"}]) @defaultOrder(primaryKey: true)
     # Both tenants hold scenes (one for film 1, three for film 2), so a batch shared between the
     # tenants would empty one film's list: the per-tenant partition shows in the answer.
@@ -109,7 +109,7 @@ type FilmBookmark @table(name: "film_bookmark") {
     film: Film @splitQuery
     inventories: [Inventory!]! @splitQuery @reference(path: [
         {key: "film_bookmark_bookmarked_film_fkey"}, {key: "inventory_film_id_fkey"}])
-    inventoriesConnection(first: Int, after: String): [Inventory!]! @asConnection @splitQuery
+    inventoriesConnection(first: Int, after: String): [Inventory!]! @asConnection
         @reference(path: [{key: "film_bookmark_bookmarked_film_fkey"}, {key: "inventory_film_id_fkey"}])
         @defaultOrder(primaryKey: true)
 }

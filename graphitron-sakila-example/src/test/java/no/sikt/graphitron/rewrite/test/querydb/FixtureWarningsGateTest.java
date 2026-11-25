@@ -129,10 +129,10 @@ class FixtureWarningsGateTest {
             .toList();
 
         assertThat(warnings)
-            .as("the sakila-example fixture must emit exactly three generator warnings; "
+            .as("the sakila-example fixture must emit exactly five generator warnings; "
                 + "a new entry means a fixture started tripping an advisory that is not "
                 + "declared/asserted (see R294)")
-            .hasSize(3);
+            .hasSize(5);
 
         assertThat(listWarnings)
             .as("the list-order-not-unique advisory on the keyless routine list, and on no keyed list")
@@ -152,7 +152,7 @@ class FixtureWarningsGateTest {
                     .contains("'ids'")
                     .contains("every page of @asConnection would equal the input set");
 
-                // The field sits at schema.graphqls line 865; fields added above it shift this
+                // The field sits at schema.graphqls line 888; fields added above it shift this
                 // line, and so does prose, a comment above it counting as much as a field.
                 // Update the expected line if the field moves.
                 assertThat(warning.location()).isNotNull();
@@ -161,7 +161,7 @@ class FixtureWarningsGateTest {
                     .endsWith("schema.graphqls");
                 assertThat(warning.location().getLine())
                     .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
-                    .isEqualTo(865);
+                    .isEqualTo(888);
             });
 
         assertThat(warnings)
@@ -176,6 +176,20 @@ class FixtureWarningsGateTest {
                 assertThat(warning.location()).isNotNull();
                 assertThat(warning.location().getSourceName()).endsWith("schema.graphqls");
             });
+
+        for (String connection : List.of("Actor.filmsConnection", "Actor.filmsConnectionSplit")) {
+            assertThat(warnings)
+                .as("the connection-order-not-unique advisory on the routine-backed child connection "
+                    + connection + ", paged over the keyless function result")
+                .anySatisfy(warning -> {
+                    assertThat(warning)
+                        .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf ->
+                            assertThat(lf.rule()).isEqualTo(LintRule.CONNECTION_ORDER_NOT_UNIQUE));
+                    assertThat(warning.message())
+                        .contains("connection '" + connection + "'")
+                        .contains("'films_for_actor'");
+                });
+        }
 
         assertThat(warnings)
             .as("the @table-on-input deprecation advisory for the CityCountryFilter fixture")

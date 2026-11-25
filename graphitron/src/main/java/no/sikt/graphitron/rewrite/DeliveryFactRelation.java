@@ -31,7 +31,7 @@ import java.util.Objects;
  * <p>The production mirrors the trigger disjunction the model binds
  * ({@link DeliveryFact.Trigger}), in classifier-agreement order: a list-valued polymorphic target with a
  * table-bound participant splits by fan-in; a record-handing parent splits a table-bound
- * child; the authored markers split what they are read on (the marker union on a plain
+ * child; a table-bound child connection splits as paged; the authored markers split what they are read on (the marker union on a plain
  * table-backed child, the {@code @splitQuery} half on the {@code @pivot} and {@code @routine}
  * chains, mirroring the classifier's per-arm reads of the gathered marker relation); the
  * complement is {@link DeliveryFact.Inline}.
@@ -112,6 +112,11 @@ public record DeliveryFactRelation(Map<FieldCoordinates, DeliveryFact> byCoordin
             && singleTableBackedVerdict(types, fieldDef);
         if (child.sourceShape() == SourceShape.Record && tableAnchoredChild) {
             return new DeliveryFact.Batched(DeliveryFact.Trigger.RecordHandedParent.INSTANCE);
+        }
+        // A table-bound child connection pages per parent, so it splits whatever is written;
+        // it precedes the marker reads so a redundant @splitQuery cannot claim the trigger.
+        if (shape instanceof TargetShape.Connection && tableAnchoredChild) {
+            return new DeliveryFact.Batched(DeliveryFact.Trigger.PagedChild.INSTANCE);
         }
         if (fieldDef != null) {
             var markers = facts.delivery().rowFor(fieldDef).orElse(null);

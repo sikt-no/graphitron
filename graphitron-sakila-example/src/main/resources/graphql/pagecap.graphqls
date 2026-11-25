@@ -4,7 +4,7 @@
 #
 # One connection of each kind the maximum has to reach through ConnectionHelper.pageRequest: a root
 # @asConnection with no defaultFirstValue, a root connection type declared by hand whose first has
-# no default, a @splitQuery child connection, and a multi-table polymorphic connection. The fixture
+# no default, a child connection, and a multi-table polymorphic connection. The fixture
 # rows are few (five films, three customers in store 1 and two in store 2, two staff), so the
 # maximum is 2: every connection has more rows than that, and store 2 has exactly that many.
 #
@@ -27,7 +27,7 @@ type Film @table(name: "film") {
 
 type Store @table(name: "store") {
     storeId: Int! @field(name: "store_id")
-    customers: [Customer!]! @asConnection @splitQuery
+    customers: [Customer!]! @asConnection
         @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
 }
 

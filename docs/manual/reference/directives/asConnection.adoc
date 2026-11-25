@@ -6,7 +6,7 @@ Marks a list field as a https://relay.dev/graphql/connections.htm[Relay cursor c
 
 include::../../_generator-internals-note.adoc[]
 
-`@asConnection` works on three field shapes that the rewrite recognises distinctly: bare list fields on `@table` parents (inline pagination), `@reference`-driven child lists (per-parent paginated children), and union/interface lists (multi-table polymorphic pagination). It also composes with xref:splitQuery.adoc[`@splitQuery`] to dispatch each parent's connection through a `DataLoader`.
+`@asConnection` works on three field shapes that the rewrite recognises distinctly: root list fields (one paginated query), child lists under a non-root type (per-parent paginated children), and union/interface lists (multi-table polymorphic pagination). A child connection is always fetched in a query of its own, batched across parents through a `DataLoader`, each parent paging its own rows; xref:splitQuery.adoc[`@splitQuery`] is inferred there, and writing it is redundant.
 
 == SDL signature
 
@@ -43,7 +43,7 @@ A union-typed list (`Address.occupantsConnection`): the multi-table polymorphic 
 include::examples/asConnection.graphqls[tag=UnionConnection]
 ----
 
-Per-parent paginated children with xref:splitQuery.adoc[`@splitQuery`] (`Film.actorsConnection`): a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own paginated slice, and a `DataLoader` batches the dispatch:
+Per-parent paginated children (`Film.actorsConnection`): a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own paginated slice, and a `DataLoader` batches the dispatch:
 
 [source,graphql]
 ----
@@ -69,17 +69,17 @@ The cursor encodes the active order columns (the `@orderBy` selection if the cli
 == Constraints
 
 * Applies to list-typed fields. The runtime cardinality must be a list; single-cardinality `@asConnection` is rejected at classify time.
-* The field must have a stable order. Either xref:defaultOrder.adoc[`@defaultOrder`] is set on the field, or xref:orderBy.adoc[`@orderBy`] is required at runtime; without one of these, keyset pagination has no anchor and the build fails.
+* The field must have a stable order: the primary key of the table its target type is bound to, an xref:defaultOrder.adoc[`@defaultOrder`] on the field, or a non-null xref:orderBy.adoc[`@orderBy`] argument. A nullable `@orderBy` argument a client may leave out does not count; without one of these, keyset pagination has no anchor and the build fails with `LIST_ORDER_UNDETERMINED`.
 * A type the field would generate and the schema declares must have the fields its shape requires; see above and xref:../defects.adoc#minted-type-declared-short[`MINTED_TYPE_DECLARED_SHORT`].
 * Every field generating a name must generate it the same way. Two fields sharing a `connectionName:` over different element types, or a `connectionName:` naming a type the field also generates in another role (`PageInfo`, or its own Edge), coin one name two ways; graphitron generates none of the contested names and fails the build with xref:../defects.adoc#minted-name-contested[`MINTED_NAME_CONTESTED`] at each such field. The default `<ParentType><FieldName>Connection` shape never does this, parent and field names jointly disambiguating.
 * `defaultFirstValue:` is the page size used when the client omits `first:`; it is not a cap. The cap is the xref:../mojo-configuration.adoc[`<maxAllowedPageSize>`] plugin parameter: a `first:` or `last:` above it is served at it, with `hasNextPage` (or `hasPreviousPage`) `true`. See xref:../../how-to/connections.adoc[How-to: Cursor-paginated connections].
-* Composes with xref:splitQuery.adoc[`@splitQuery`]: when both are present, the connection is materialized per-parent through a `DataLoader` keyed on the parent's PK or FK. Without `@splitQuery` on a parent-keyed list, all parents' rows are paginated in a single SQL pass (the `PARTITION BY` envelope is omitted).
+* A child connection is always materialized per parent through a `DataLoader` keyed on the parent's PK or FK, each parent paging its own rows. xref:splitQuery.adoc[`@splitQuery`] is inferred there; written beside `@asConnection` on a child list, it is redundant and draws the `SPLIT_QUERY_REDUNDANT` warning.
 * On a field returning a union or interface, at least one implementer must be xref:table.adoc[`@table`]-bound: the connection pages each table-bound participant's rows, so one with none (an interface's own `@table` not counting) has nothing to page and is rejected at build time (`FIELD_WITHOUT_FETCHER`).
 * Inline `TableField` placement is not allowed under interface-or-union return types unless the surrounding type axis supports the multi-table emitter; the generator rejects mismatched placements at classify time. (See xref:../../../architecture/principles/development-principles.adoc[Graphitron Development Principles] for the "no generator-side invariant goes unchecked at validate time" rule that backs this.)
 
 == See also
 
-* xref:splitQuery.adoc[`@splitQuery`] dispatches per-parent connections through a `DataLoader` for nested-depth pagination.
+* xref:splitQuery.adoc[`@splitQuery`] is the batched fetch a child connection always takes, inferred rather than written.
 * xref:defaultOrder.adoc[`@defaultOrder`] anchors the cursor when the client omits `@orderBy`.
 * xref:orderBy.adoc[`@orderBy`] supplies dynamic order; the cursor encodes the active selection.
 * xref:../../how-to/connections.adoc[How-to: Cursor-paginated connections] covers the one-field-one-connection rule, `totalCount` performance, and what the rewrite does about page-size caps.

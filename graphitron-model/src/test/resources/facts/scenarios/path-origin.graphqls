@@ -29,7 +29,7 @@ type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
   # A connection under a table-bound parent, its path inferred from film_actor's one key to film, split
   # into its own query as the generator requires of a connection on a table field.
-  actorRows: [FilmActor!]! @asConnection @splitQuery
+  actorRows: [FilmActor!]! @asConnection
   # A path ending on a @routine that returns a plain object: the field's need lands on no table, and
   # its argument and its fields start where its join path lands, the function's derived table, their
   # paths empty.

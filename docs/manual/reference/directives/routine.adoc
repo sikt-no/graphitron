@@ -50,7 +50,7 @@ type Query {
 
 The rewrite emits `select(Tilgang.$project(...)).from(Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(env, serviceId, feideId)).where(noCondition()).orderBy(...).fetch()`. A query selecting only `organisasjonskode` projects only that routine-result column.
 
-The `@defaultOrder` is required here rather than decorative: the routine result is the chain's last node and a function result carries no primary key, so nothing can supply a deterministic order unless the schema names it. See <<read-surface,The read surface>>.
+The `@defaultOrder` is required here rather than decorative: the routine result is the chain's last node and `Tilgang` is bound to no table, so there is no primary key to fall back on and nothing can supply a deterministic order unless the schema names it. See <<read-surface,The read surface>>.
 
 [[result]]
 === The type's rows are the routine's result
@@ -100,16 +100,16 @@ Two consequences follow, and both are build errors rather than silence:
 One rule governs the ordering, and it is the rule every list field already lives under:
 
 [quote]
-A list result is ordered, by the terminus primary key when there is one and by an authored `@defaultOrder` when there is not.
+A list result is ordered, by an authored `@defaultOrder` when there is one and otherwise by the primary key of the table the field's target type is bound to.
 
-A table-valued function's result table has no primary key, so the two terminus kinds land differently, and that is the whole of the routine-specific story:
+A function's result type is bound to no table unless its own `@table` binds it (see <<result,The type's rows are the routine's result>>), so the two terminus kinds land differently, and that is the whole of the routine-specific story:
 
-* *Catalog terminus* (a `@reference` hop follows the routine): the terminus is an ordinary table, the primary-key fallback applies, and a list field needs no ordering directive at all.
-* *Routine terminus* (the routine is the last node): there is no key to fall back on, so a list field must name its order over the function's own result columns with `@defaultOrder(fields: [...])`, or take one from an `@orderBy` argument. Omitting it is a build error naming the function; `@defaultOrder(primaryKey: true)` there is a build error too, and lists the result columns as candidates.
+* *Catalog terminus* (a `@reference` hop follows the routine, or the return type's own `@table` makes the hop implicit): the target type is bound to an ordinary table, the primary-key fallback applies, and a list field needs no ordering directive at all.
+* *Routine terminus* (the routine is the last node and the return type carries no `@table`): there is no key to fall back on, so a list field must name its order over the function's own result columns with `@defaultOrder(fields: [...])`, or take one from a non-null `@orderBy` argument. An `@orderBy` argument a client may leave out (a nullable one) is no order stated: the query that omits it would have nothing to sort by. Omitting both is a build error, `LIST_ORDER_UNDETERMINED`, offering the two fixes: add `@defaultOrder` naming the result's columns with `fields:`, or make the `@orderBy` argument non-null. `@defaultOrder(primaryKey: true)` there is a build error too, and lists the result columns as candidates.
 
 `@asConnection` follows from the same rule, with no routine-specific caveat. Keyset pagination needs an ordering, which is what the two bullets above are about; given one, the seek predicate is an ordinary WHERE row-value comparison and a function in the FROM is a table expression like any other. A chain with `@reference` hops paginates too, and its `totalCount` counts the joined chain rather than the terminus alone.
 
-At a child position, pagination is the one axis that does not compose yet: a child connection rides the batched keyed re-query anchor, which a correlated routine call does not join yet, so `@asConnection` on a routine-backed child is reported as deferred. On a `Mutation` field it is a build error, the write's post-commit re-read being keyed rather than paged.
+At a child position the read surface composes on a field fetched in a query of its own, and a child connection always is one: it is batched across parents through a DataLoader and each parent pages its own rows (see <<fetch-forms,Fetch forms and @splitQuery>>). Filters, an `@orderBy` argument and `@asConnection` all compose there. On the inline list form, fetched in the parent's statement, a `@defaultOrder` is the whole read surface. Because the batch is keyed by what the routine reads off the parent row, a routine child connection needs at least one parameter bound to a parent column, or a table step before the routine to key it. On a `Mutation` field a Connection return is a build error, the write's post-commit re-read being keyed rather than paged.
 
 [[parameter-binding]]
 == Where a parameter takes its value
@@ -361,11 +361,26 @@ Two spellings are deliberately not admitted. `@routine` + `@reference` on the mu
 
 Deferred write shapes, each reported with a pointer to the follow-up item: true procedures and scalar or void routines (jOOQ exposes them through a different call surface than table-valued functions), and the hop-less Mutation `@routine` whose return provides no re-read anchor — void, scalar, OUT-parameter binding, or a non-carrier Object. A chain whose first hop joins by `condition:` or carries a per-hop condition is likewise deferred: its predicate references the routine's result, which must not appear in the follow-up query, so no re-read anchor can be derived.
 
+[[fetch-forms]]
 == Fetch forms and @splitQuery
 
-A routine-backed child rides the inline correlated multiset by default: one SQL statement, the lateral call re-evaluated per parent row. `@splitQuery` moves the field to the batched keyed re-query instead: the parent rows' bound columns are collected as DataLoader keys, sent as a `VALUES` table in one batch query, and the lateral call reads them off that table, so the routine still runs once per distinct input inside a single statement.
+A routine-backed child list rides the inline correlated multiset by default: one SQL statement, the lateral call re-evaluated per parent row. `@splitQuery` moves the field to the batched keyed re-query instead: the parent rows' bound columns are collected as DataLoader keys, sent as a `VALUES` table in one batch query, and the lateral call reads them off that table, so the routine still runs once per distinct input inside a single statement.
 
-Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` on an *uncorrelated* routine child (no parameter bound to a column) is rejected: there is nothing to key the batch on, and every parent would receive identical rows. Drop `@splitQuery` or bind a parent column.
+A child connection is always fetched in a query of its own, so `@splitQuery` is inferred there and not written; writing it draws the `SPLIT_QUERY_REDUNDANT` warning. Each parent pages its own rows within the one batch query:
+
+[source,graphql]
+----
+type Actor @table(name: "actor") {
+    filmsConnection(minLength: Int!, filter: ActorFilmPageFilter, orderBy: ActorFilmOrderBy @orderBy): [ActorFilm!]
+        @asConnection(defaultFirstValue: 10)
+        @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+        @defaultOrder(fields: [{name: "film_id"}])
+}
+----
+
+The `@defaultOrder` is needed because `ActorFilm` is bound to no table, so the function's result has no primary key to fall back on, and the `orderBy` argument is nullable, so a client may leave it out.
+
+Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` on an *uncorrelated* routine child (no parameter bound to a column) is rejected: there is nothing to key the batch on, and every parent would receive identical rows. Drop `@splitQuery` or bind a parent column. A child connection cannot drop the batch, so a routine child connection binding no parent column is refused as `NO_KEY_FROM_PARENT`, unless its path steps through a table before the routine; bind a parameter to a parent column with `$source.<column>`.
 
 == Constraints
 
@@ -378,7 +393,8 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 * An `argMapping` path must land on a scalar or enum leaf, or on a key column projected out of a node id (see <<node-id-key-projection>>). Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's, and so must a key column projected out of a node id: a mismatch there is a build error naming both types, resolvable only where the routine's call surface was captured. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
 * A `@nodeId`-carrying leaf's `@nodeId` must name `typeName:` explicitly, a routine parameter having no containing table to infer the node type from. Whether the leaf must be opened with a key column follows from the node type's key: one column is inferred and the leaf may stay closed, and more than one is a build error stating the count and listing the columns, one binding carrying one value. The parameter receives a key column's own value either way, never the encoded id. Naming a column the node type does not resolve is a build error suggesting the near miss, naming one whose Java type the parameter cannot take is a build error stating both types, and opening an `ID` that carries no `@nodeId` at all is a build error too: what a dot opens is a node id, and an `ID` that is not one has nothing to open, so the editor reports the path at the `argMapping` as `GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED`. A node id naming an interface or a union has a key per member, so opening one is a build error for now, naming each member's key columns. Exactly one segment may follow a node id, a node id opening into one key column, and opening a *list* of node ids is reported as deferred: it names the list of that key column across the decoded ids, which routine parameter binding does not emit yet. A `@service` or xref:condition.adoc[`@condition`] parameter does take it, as a `List` of the column; see xref:nodeId.adoc#key-column-projection[Projecting one key column].
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.
-* `@orderBy`, `@condition` and `@asConnection` compose normally on a routine-backed *read* (see <<read-surface,The read surface>>). `@lookupKey` composition is reported as deferred. On a `Mutation` field, `@orderBy` and `@condition` are reported as deferred (the write's result shape has no filter or order surface to compose onto) and a Connection return is rejected; at a child position `@asConnection` is reported as deferred.
+* `@orderBy`, `@condition` and `@asConnection` compose normally on a routine-backed *read* (see <<read-surface,The read surface>>). `@lookupKey` composition is reported as deferred. On a `Mutation` field, `@orderBy` and `@condition` are reported as deferred (the write's result shape has no filter or order surface to compose onto) and a Connection return is rejected.
+* A routine child connection none of whose parameters is bound to a column of the parent row (`$source.<column>` in `argMapping`) is refused as `NO_KEY_FROM_PARENT`, unless the path steps through a table before the routine: the connection is batched across parents, and the batch is keyed by what the routine reads off each parent.
 
 == See also
 

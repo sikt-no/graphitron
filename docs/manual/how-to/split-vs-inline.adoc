@@ -13,7 +13,7 @@ The classifier picks between two emission shapes for an `@reference`-pathed `@ta
 * *Inline (default).* The field's child SELECT is embedded into the parent's SELECT as a `DSL.multiset(...)` correlated subquery. One round trip per request; the join travels to the database, no Java-side fan-out. The parent's generated `$project()` method drops the `multiset(SELECT child_cols FROM child JOIN ... WHERE child.fk = parent.pk).as("fieldName")` term into the projection list, and graphql-java reads the multiset cell back at field-resolution time. (Source-of-truth: the projection renderer's multiset arm, `ProjectionUnitRenderer`.)
 * *Split (`@splitQuery`).* The field's child SELECT is hoisted into a separate, batched `SELECT` dispatched through a `DataLoader`. Per request, sibling parents' BatchKey columns are gathered, one batched query runs against the child table joined to a `VALUES (idx, parent_pk...)` derived table, and rows scatter back to their parents by `__idx__`. (Source-of-truth: `SplitRowsMethodEmitter.buildListMethod` and `TypeFetcherGenerator.buildBatchedDataFetcher`, the one source-shape-gated fetcher builder.)
 
-The switch between shapes is purely directive-driven for `@table`-parent children: `@splitQuery` present → split; absent → inline. The classifier rejects the inline path's `@asConnection` composition (`@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics`, `FieldBuilder.classifyObjectReturnChildField:478`).
+For a `@table`-parent child list the switch between shapes is directive-driven: `@splitQuery` present → split; absent → inline. A child connection is the exception: it is always split, whether made a connection by `@asConnection` or by returning a hand-written connection type, so `@splitQuery` is inferred there and writing it draws the `SPLIT_QUERY_REDUNDANT` warning.
 
 For class-backed-parent children that return a `@table` type, the classifier batches via `DataLoader` *unconditionally* (the parent doesn't sit inside a SQL `JOIN`, so an inline correlated subquery has nothing to bind against). `@splitQuery` on those fields is redundant but not rejected; `classifyChildFieldOnResultType` never inspects the directive.
 
@@ -27,11 +27,9 @@ Inline and split exchange round trips for SQL width, and the right pick depends 
 
 The Sakila example schema shows both shapes at the same logical position. `Film.actors(actor_id: [Int!] @lookupKey)` (no `@splitQuery`) emits an inline `multiset` correlated subquery: each parent Film carries its own filtered actor list as a nested cell in the outer SELECT. `Film.actorsBySplitLookup(actor_id: [Int!] @lookupKey) @splitQuery` emits a separate batched query, one round trip for all parents' actor lists combined. At low parent fan-out (a single Film, a small Film list) inline is cheaper. At high fan-out (a 1000-row Film list, or Film inside another deep nesting) split amortises across the whole batch.
 
-== When the classifier *requires* split
+== When a field is split without the directive
 
-`@splitQuery` is required (not optional) in one operational case:
-
-* *`@asConnection` on a child of a `@table` parent.* Inline correlated subqueries can't carry per-parent pagination (the `multiset` cell would have to encode the entire connection state, including a cursor that isn't known until parents are resolved). The classifier rejects `@asConnection` on a non-split TableField with a directive-conflict diagnostic; combining `@asConnection + @splitQuery` is the supported shape (covered in xref:connections.adoc[connections]).
+A child connection is always split. Inline correlated subqueries can't carry per-parent pagination (the `multiset` cell would have to encode the entire connection state, including a cursor that isn't known until parents are resolved), so a connection under a non-root type is fetched in a query of its own, batched across parents through a DataLoader, with each parent paging its own rows. Nothing needs writing for that: `@asConnection` alone is the whole spelling, and `@splitQuery` beside it is redundant and draws the `SPLIT_QUERY_REDUNDANT` warning (covered in xref:connections.adoc[connections]).
 
 A child xref:../reference/directives/service.adoc[`@service`] is split without the directive: the method is always called once per batch of parents through a DataLoader, so `@splitQuery` beside it is redundant and draws a lint warning. xref:handle-services.adoc[How-to: Handle services] covers the batched contract the method signs up to.
 
@@ -64,7 +62,7 @@ The combination "path- and type-scoped, request-scoped" means inline-style mista
 == Composition with other directives
 
 * *`@lookupKey`.* A `@splitQuery + @lookupKey` field narrows the per-parent batch to caller-provided keys: each parent gets the intersection of "rows that match this parent" AND "rows whose key matches the caller's list". Two `VALUES` tables join into one batched query. Without `@splitQuery`, the same `[T!]! @lookupKey` field paginates across all parents in one wide SELECT; rarely the right semantic at the child level. xref:batch-lookups.adoc[Batch lookups] covers this composition in detail.
-* *`@asConnection`.* `@splitQuery + @asConnection` produces a per-parent paginated child connection. The fetcher emits a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY ...)` envelope so each parent's connection page is its own slice; xref:connections.adoc[connections] covers cursor stability and the `totalCount` consequence (selecting `totalCount` adds one `count(*)` grouped by parent for the whole batch).
+* *`@asConnection`.* A child connection is split already, so `@asConnection` alone produces a per-parent paginated child connection; `@splitQuery` beside it is redundant and warns. The fetcher emits a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY ...)` envelope so each parent's connection page is its own slice; xref:connections.adoc[connections] covers cursor stability and the `totalCount` consequence (selecting `totalCount` adds one `count(*)` grouped by parent for the whole batch).
 * *`@orderBy`.* A `@splitQuery` fetcher accepts a runtime `@orderBy` argument and threads it into the per-parent batched query. The emitted helper takes the FK-chain terminal alias as a parameter so column refs resolve against the split query's aliased table instance rather than a hard-coded canonical alias. Inline correlated subqueries can also carry `@orderBy`, but the order applies *across* all parents' rows, not per-parent.
 * *`@reference`.* Both shapes need a path. The classifier reads the catalog FK metadata, falls back to the directive-stated `path: [...]`, and rejects ambiguous auto-discovery with a diagnostic. `@reference` is orthogonal to the inline/split decision; it supplies the join, the directive picks the emission shape.
 
@@ -82,10 +80,10 @@ The combination "path- and type-scoped, request-scoped" means inline-style mista
 
 * xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is the directive surface and the canonical-shapes catalog.
 * xref:../reference/directives/reference.adoc[`@reference`] supplies the FK chain for both inline and split paths.
-* xref:../reference/directives/asConnection.adoc[`@asConnection`] composes with `@splitQuery` for per-parent paginated child connections.
+* xref:../reference/directives/asConnection.adoc[`@asConnection`] on a child list gives a per-parent paginated child connection, split without the directive.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`] composes with `@splitQuery` for per-parent narrowed child batches.
 * xref:batch-lookups.adoc[How-to: Batch lookups] covers the `@lookupKey` composition shapes in operational detail.
-* xref:connections.adoc[How-to: Cursor-paginated connections] covers the `@splitQuery + @asConnection` shape and what `totalCount` costs on a split connection.
+* xref:connections.adoc[How-to: Cursor-paginated connections] covers the child connection shape and what `totalCount` costs on a split connection.
 * xref:sort-results.adoc[How-to: Sort results] covers the cursor-stability, tie-breaker, and `@orderBy` issues that affect both split and inline paginated children.
 
 xref:index.adoc[← How-to index]

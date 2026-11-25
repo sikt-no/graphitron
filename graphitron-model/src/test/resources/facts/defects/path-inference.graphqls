@@ -21,6 +21,9 @@ type Film @table(name: "film") {
   cities: [City!]!
   # On film's own table and narrowed by its argument: a written path is needed.
   sameTableById(filmId: Int @field(name: "film_id")): [Film!]!
+  # A child connection on film's own table, fetched in a query of its own with no @splitQuery
+  # written: the same refusal, and no NO_KEY_FROM_PARENT beside it.
+  sameTablePage: [Film!]! @asConnection @defaultOrder(primaryKey: true)
   # film_language_id_fkey and film_original_language_id_fkey both join film and language.
   language: Language
 }
@@ -123,6 +126,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   NO_ROUTE_TO_TARGET,       Film.cities,         public.film to public.city
   NO_ROUTE_TO_TARGET,       RentFilmPayload.customer, "public.rent_film to public.customer, whose result has no column customer_id of the primary key"
   NO_ROUTE_TO_TARGET,       Film.sameTableById,  "public.film to public.film, which takes a written path: the primary-key self-join {key: ""film_pkey""} or a self-referencing key"
+  NO_ROUTE_TO_TARGET,       Film.sameTablePage,  "public.film to public.film, which takes a written path: the primary-key self-join {key: ""film_pkey""} or a self-referencing key"
   ROUTE_AMBIGUOUS,          Film.language,       public.film to public.language by film_language_id_fkey or film_original_language_id_fkey
   ROUTE_AMBIGUOUS,          Employee.boss,       public.employee to public.employee by employee_manager_id_fkey or employee_mentor_id_fkey
   INHERITED_PATH_AMBIGUOUS, Staff.address,       Addressed and Located
@@ -200,6 +204,7 @@ extend schema @assertAbsent(relation: "graphitron_path", rows: """
   Employee.boss
   Film.cities
   Film.sameTableById
+  Film.sameTablePage
   Film.language
   Mutation.rentFilm.customer
   Staff.address
@@ -210,4 +215,9 @@ extend schema @assertAbsent(relation: "graphitron_path", rows: """
 extend schema @assertContains(relation: "graphql_implements_interface", rows: """
   type_name, interface_name
   Derived,   Base
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  NO_KEY_FROM_PARENT, Film.sameTablePage
   """)

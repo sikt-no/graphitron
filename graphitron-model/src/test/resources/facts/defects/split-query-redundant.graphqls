@@ -5,12 +5,33 @@
 # whatever wrote them: AddFilmPayload.film under an INSERT, RentFilmsPayload.rentals under a
 # routine, and FilmLookupOutcome.film under a @service whose payload carries errors beside it. The same directive on Film, whose rows graphitron reads, splits a query and draws nothing,
 # and neither does FilmDetails's languageInline, written without it.
+#
+# A child connection is fetched in a query of its own whether @splitQuery is written or not, each
+# parent paging its own rows (Alf, 2026-11-25), so the directive is redundant there too: on a
+# table-backed child connection, Film.actorsSplit, and on a routine-backed one, Actor.filmsSplit,
+# whose target is the function's result, bound to no table. Their twins written without it,
+# Film.actors and Actor.films, draw nothing.
 
 type Language @table(name: "language") { name: String }
 
 type Film @table(name: "film") {
   title: String
   language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+  actorsSplit: [Actor!]! @asConnection @splitQuery
+    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+  actors: [Actor!]! @asConnection
+    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+type ActorFilm { filmId: Int @field(name: "film_id"), title: String }
+
+type Actor @table(name: "actor") {
+  filmsSplit(minLength: Int!): [ActorFilm!] @splitQuery @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  films(minLength: Int!): [ActorFilm!] @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
 }
 
 type FilmDetails {
@@ -32,6 +53,7 @@ input FilmInput @table(name: "film") { title: String }
 
 type Query {
   film: Film
+  actors: [Actor!]!
   details(id: Int!): FilmDetails
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
   filmLookupOutcome(id: Int!): FilmLookupOutcome
@@ -48,7 +70,9 @@ type Mutation {
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
                             where: "code = 'SPLIT_QUERY_REDUNDANT'", rows: """
   coordinate,               suppressed
+  Actor.filmsSplit,         FALSE
   AddFilmPayload.film,      FALSE
+  Film.actorsSplit,         FALSE
   FilmDetails.language,     FALSE
   FilmLookupOutcome.film,   FALSE
   RentFilmsPayload.rentals, FALSE

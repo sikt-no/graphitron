@@ -1,6 +1,7 @@
 # A list made a connection: @asConnection wraps a list in a generated connection type with a page
 # size, and a field returning a connection type an author declared pages the same way. A child
-# connection under a table is fetched in its own query when it carries @splitQuery.
+# connection under a table is fetched in a query of its own, with no @splitQuery written: each film
+# pages its own actors.
 
 type Address @table(name: "address") {
     occupants:           [AddressOccupant!]!
@@ -20,7 +21,7 @@ type Staff @table(name: "staff") {
 type Film @table(name: "film") {
     actorsConnection(
         first: Int, last: Int, after: String, before: String
-    ): ActorsConnection! @splitQuery @reference(path: [
+    ): ActorsConnection! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
@@ -28,7 +29,7 @@ type Film @table(name: "film") {
     actorsOrderedConnection(
         order: [ActorOrderBy] @orderBy,
         first: Int, last: Int, after: String, before: String
-    ): ActorsConnection! @splitQuery @reference(path: [
+    ): ActorsConnection! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
@@ -71,12 +72,6 @@ type Query {
     addresses: [Address!]! @defaultOrder(primaryKey: true)
     films: [Film!]! @defaultOrder(primaryKey: true)
 }
-
-extend schema @assertContains(relation: "graphql_directive_application", rows: """
-  coordinate,                   directive_name
-  Film.actorsConnection,        splitQuery
-  Film.actorsOrderedConnection, splitQuery
-  """)
 
 extend schema @expectEquals(relation: "graphitron_ast_connection_entry", rows: """
   default_first_value, connection_name

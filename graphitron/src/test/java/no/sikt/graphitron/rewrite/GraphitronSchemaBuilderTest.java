@@ -759,8 +759,9 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(((TableField) schema.field("Store", "customers")).returnType().wrapper())
                 .isInstanceOf(FieldWrapper.List.class)),
 
-        CONNECTION_STRUCTURE_REJECTED(
-            "edges.node connection structure on inline TableField → UnclassifiedField (requires @splitQuery)",
+        CONNECTION_STRUCTURE_BATCHED(
+            "edges.node connection structure on a child without @splitQuery → BatchedTableField: a child "
+            + "connection is always fetched in a query of its own",
             """
             type Customer @table(name: "customer") { firstName: String }
             type CustomerEdge { node: Customer cursor: String }
@@ -769,25 +770,24 @@ class GraphitronSchemaBuilderTest {
             type Query { store: Store }
             """,
             schema -> {
-                var f = schema.field("Store", "customers");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("@asConnection on inline (non-@splitQuery) TableField is not supported")
-                    .contains("@splitQuery");
+                var field = schema.field("Store", "customers");
+                assertThat(field).isInstanceOf(ChildField.BatchedTableField.class);
+                assertThat(((ChildField.BatchedTableField) field).returnType().wrapper())
+                    .isInstanceOf(FieldWrapper.Connection.class);
             }),
 
-        AS_CONNECTION_REJECTED_NO_SPLIT(
-            "@asConnection without @splitQuery on inline TableField → UnclassifiedField",
+        AS_CONNECTION_BATCHED_NO_SPLIT(
+            "@asConnection without @splitQuery on a child → BatchedTableField with Connection wrapper",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") { customers: [Customer!]! @asConnection @defaultOrder(primaryKey: true) }
             type Query { store: Store }
             """,
             schema -> {
-                var f = schema.field("Store", "customers");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("@asConnection on inline (non-@splitQuery) TableField is not supported");
+                var field = schema.field("Store", "customers");
+                assertThat(field).isInstanceOf(ChildField.BatchedTableField.class);
+                assertThat(((ChildField.BatchedTableField) field).returnType().wrapper())
+                    .isInstanceOf(FieldWrapper.Connection.class);
             }),
 
         AS_CONNECTION_SPLIT_CLASSIFIED(
@@ -7621,10 +7621,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void asConnectionOnAChildRoutineChainDefersOnTheChildSeat() {
-        // Seat-gated and about the seat: a child connection rides the batched keyed re-query
-        // anchor, which a correlated routine child does not compose with. Nothing about the
-        // routine result, which paginates fine at root.
+    void asConnectionOnAChildRoutineChainTakesTheBatchedLeaf() {
+        // A child connection is always fetched in a query of its own, so without @splitQuery the
+        // routine chain takes the batched leaf, which pages it as it pages a table chain.
         var schema = build("""
             type ActorFilm { filmId: Int @field(name: "film_id") }
             type Actor @table(name: "actor") {
@@ -7635,9 +7634,9 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { actors: [Actor!]! }
             """);
-        var f = (UnclassifiedField) schema.field("Actor", "films");
-        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason()).contains("Connection pagination at a child-positioned routine-backed field");
+        var f = (BatchedTableField) schema.field("Actor", "films");
+        assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
+        assertThat(f.pagination()).isNotNull();
     }
 
     @Test

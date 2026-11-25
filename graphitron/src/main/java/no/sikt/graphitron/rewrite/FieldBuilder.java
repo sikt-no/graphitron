@@ -1518,7 +1518,10 @@ class FieldBuilder {
                 buildNodeIdArgPlan(fieldDef, returnType.table(), null));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
-            boolean hasSplitQuery = forcesSplitDelivery(fieldDef);
+            // A child connection is always fetched in a query of its own, @splitQuery written or
+            // not, so the connection wrapper forces the batched arm as the marker does.
+            boolean hasSplitQuery = forcesSplitDelivery(fieldDef)
+                || returnType.wrapper() instanceof FieldWrapper.Connection;
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
             // Synthesise the step-0 parent correlation once per carrier — both inline and
@@ -1560,14 +1563,6 @@ class FieldBuilder {
                     parentSplitSource.loaderRegistration(),
                     tfc.lookup(),
                     tbtParentCorrelation);
-            }
-            if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                // directives lists what is applied here, not the remedy: @splitQuery is absent by
-                // construction on this branch, and naming it would make a per-directive count over
-                // the component report a directive the author never wrote. The remedy stays prose.
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.directiveConflict(
-                    List.of("asConnection"),
-                    "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics"));
             }
             // A same-table field with no @reference whose table has no self-referencing key: the
             // path is empty, so the read has no correlation to the parent. Two @table types on one
@@ -4296,8 +4291,8 @@ class FieldBuilder {
      * node rather than the implicit head), or strictly between hops (the sandwich); in every
      * position it joins as CROSS JOIN LATERAL, correlated through its call arguments. Lands
      * {@link ChildField.TableField} riding the inline correlated-multiset machinery, or
-     * a Table-sourced {@link ChildField.BatchedTableField} when {@code @splitQuery} forces the batched keyed
-     * re-query anchor (the batch key for a routine-headed chain is the routine's column-bound
+     * a Table-sourced {@link ChildField.BatchedTableField} when {@code @splitQuery} or a connection
+     * wrapper forces the batched keyed re-query anchor (the batch key for a routine-headed chain is the routine's column-bound
      * inputs; see {@link #deriveSplitQuerySource}); the single-application case is the
      * degenerate chain {@code [Hop(RoutineCall, Lateral)]}.
      *
@@ -4326,15 +4321,12 @@ class FieldBuilder {
                     yield new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
                         "@lookupKey on a routine-backed child field classifies but does not emit yet"));
                 }
-                // A child connection rides the batched keyed re-query anchor, which a
-                // correlated routine child does not compose with yet. About this seat's
-                // machinery, not about the routine result: the root read paginates.
-                if (walk.tb().returnType().wrapper() instanceof FieldWrapper.Connection) {
-                    yield new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
-                        "Connection pagination at a child-positioned routine-backed field is not "
-                        + "yet supported; the root position paginates"));
-                }
-                boolean hasSplitQuery = ctx.facts.delivery().splitQuery(fieldDef);
+                // A child connection is always fetched in a query of its own, @splitQuery
+                // written or not, so the connection wrapper forces the batched keyed re-query
+                // anchor as the marker does; the batched leaf pages a routine chain as it pages a
+                // table one.
+                boolean hasSplitQuery = ctx.facts.delivery().splitQuery(fieldDef)
+                    || walk.tb().returnType().wrapper() instanceof FieldWrapper.Connection;
                 // @splitQuery forces the batched keyed re-query anchor, which needs a key. A
                 // routine-headed chain's batch key is the routine's column-bound inputs (design
                 // note on deriveSplitQuerySource); an uncorrelated routine head has none, so the
@@ -4497,9 +4489,9 @@ class FieldBuilder {
      * <p>Pagination is not decided here. A Connection return used to reject from this shared
      * seat on a premise about the routine result ("carries no ordering contract"), which
      * conflated carrying no <em>default</em> ordering with being unorderable; the root read
-     * paginates like any other read now. What remains is per-seat and stated at each seat: the
-     * child read chain and the two Mutation write seats carry their own Connection deferrals,
-     * each about that seat's own machinery rather than about the routine.
+     * paginates like any other read now, and a child connection pages through the batched leaf.
+     * What remains is per-seat and stated at each seat: the two Mutation write seats carry their
+     * own Connection deferrals, each about that seat's own machinery rather than about the routine.
      */
     private static Rejection routineChainVerdict(String fieldName,
             ReturnTypeRef.TableBoundReturnType returnType, TableRef terminusTable,

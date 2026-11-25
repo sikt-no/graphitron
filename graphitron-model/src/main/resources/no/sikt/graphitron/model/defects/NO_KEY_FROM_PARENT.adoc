@@ -1,5 +1,9 @@
-Reported at the field. Where a `@service` takes the keys, the detail names the parent's class.
+Reported at the field. Where a `@service` takes the keys, the detail names the parent's class; where a `@routine` is called, the parent's table.
 
 Under a parent holding an object of a class rather than a table's row, a field that fetches its own rows takes their keys off that object: its own columns where it is a jOOQ record, otherwise a member of its class returning records of the table the field reads. A class with no such member hands over no key, so there is nothing to batch the fetch by.
 
 *Next step.* Give the parent's class a member returning records of the field's table. See the xref:directives/service.adoc#constraints[`@service` constraints].
+
+Under a parent's table row, a `@routine` fetched in a query of its own, as a child connection always is, is called once for the whole batch of parents, and its rows are told apart by the parent row each call took a value from. A routine none of whose parameters is bound to one of the row's columns takes nothing from it, so nothing tells its rows apart by parent. Where the path steps through a table before the routine, that step keys it instead.
+
+*Next step.* Bind a parameter to a column of the parent's row in `argMapping`, as `pActorId: $source.actor_id`. See xref:directives/routine.adoc[`@routine`].

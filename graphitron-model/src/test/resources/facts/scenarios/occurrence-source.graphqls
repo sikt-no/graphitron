@@ -33,7 +33,7 @@ type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
     @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
   # A connection under a table-bound parent, its path inferred from film_actor's one key to film, split
   # into its own query as the generator requires of a connection on a table field.
-  actorRows: [FilmActor!]! @asConnection @splitQuery
+  actorRows: [FilmActor!]! @asConnection
 }
 
 type FilmActor @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }

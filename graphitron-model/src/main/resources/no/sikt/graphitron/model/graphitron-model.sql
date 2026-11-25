@@ -13664,15 +13664,19 @@ COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last
 -- and results the stage has just written. The detail is NULL; the code says why.
 CREATE VIEW graphitron_fetcher_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- A field routed by its parent row's tenant and written inline, at the field, a @service being split
--- already: it is a producer of its own, grouping its parents by the tenant they name, which the generator emits only split until its
+-- A field routed by its parent row's tenant and written inline, at the field, a @service and a child
+-- connection being split already: it is a producer of its own, grouping its parents by the tenant they name, which the generator emits only split until its
 -- producer is emitted from the store.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
        'TENANT_FAN_OUT_INLINE_UNSUPPORTED', CAST(NULL AS VARCHAR), 'fetchers'
   FROM graphitron_field_tenant_fan_out tf
   JOIN graphql_ast_element_entry el
     ON el.graph_name = tf.graph_name AND el.coordinate = tf.element_coordinate
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application s
+  JOIN graphitron_field f ON f.graph_name = tf.graph_name AND f.coordinate = tf.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+ WHERE ft.wrapper_type_name IS NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application s
                     WHERE s.graph_name = tf.graph_name AND s.coordinate = tf.element_coordinate
                       AND s.directive_name IN ('splitQuery', 'service'))
 UNION ALL
@@ -13810,6 +13814,7 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
   JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
  WHERE da.directive_name = 'splitQuery' AND da.origin = 'AUTHORED' AND da.source_name IS NOT NULL
+   AND ft.wrapper_type_name IS NULL
    AND (EXISTS (SELECT 1 FROM graphitron_result_class rc
                  WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name)
         AND NOT EXISTS (SELECT 1 FROM graphitron_result r
@@ -13820,7 +13825,28 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                       AND pd.field_name = f.field_name AND pd.kind = 'RECORDS'))
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
                     WHERE p.graph_name = da.graph_name AND p.coordinate = da.coordinate
-                      AND p.directive_name IN ('service', 'routine'));
+                      AND p.directive_name IN ('service', 'routine'))
+UNION ALL
+-- A @splitQuery on a child connection, at the written @splitQuery: each parent pages its own rows,
+-- which one statement shared with the parent cannot do, so a child connection is fetched in a query of
+-- its own whether the directive is written or not (Alf, 2026-11-25). The directive changes nothing
+-- there and is admitted with this warning. The target is read off the field's target alone, so a
+-- function's result type bound to no table is reached as a table's is. A field with its own @service
+-- is a producer of its own and its @splitQuery is that producer's; a @routine's child connection is
+-- split all the same. The arm above leaves connections to this one.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'SPLIT_QUERY_REDUNDANT', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+ WHERE da.directive_name = 'splitQuery' AND da.origin = 'AUTHORED' AND da.source_name IS NOT NULL
+   AND ft.wrapper_type_name IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                    WHERE ro.graph_name = ft.graph_name AND ro.type_name = ft.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
+                    WHERE p.graph_name = da.graph_name AND p.coordinate = da.coordinate
+                      AND p.directive_name = 'service');
 COMMENT ON VIEW graphitron_fetcher_entry_defect_rule IS 'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.';
 
 CREATE VIEW graphitron_write_entry_defect_rule
@@ -30278,7 +30304,31 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
  GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column,
           CASE WHEN x.position IS NULL THEN 'SOURCE_PARAMETER_MISSING'
                WHEN x.nested THEN 'SERVICE_SOURCES_OTHER_TABLE'
-               ELSE 'NO_KEY_FROM_PARENT' END;
+               ELSE 'NO_KEY_FROM_PARENT' END
+UNION ALL
+-- A @routine fetched in a query of its own under a parent's table row, which its CHILD producer row
+-- states (a child connection, always split, or one written with @splitQuery or @tenantFanOut), whose
+-- call takes nothing off that row, at the field: the batch is keyed by the parent, and a routine none of whose parameters is bound to one of the row's
+-- columns is called alike for every parent, so nothing keys its rows (Alf, 2026-11-25). Where the
+-- path steps through a table before the routine, that step departs the row and keys it. The detail is
+-- the parent's table.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'NO_KEY_FROM_PARENT', pt.table_name, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer op
+  JOIN graphitron_occurrence o ON o.graph_name = op.graph_name AND o.coordinate = op.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_tabletype pt ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name
+  JOIN graphitron_join_path_step_routine sr
+    ON sr.graph_name = op.graph_name AND sr.coordinate = op.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE op.start = 'CHILD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step b
+                    WHERE b.graph_name = sr.graph_name AND b.coordinate = sr.coordinate
+                      AND b.target_type = sr.target_type AND b.position < sr.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_parameter sp
+                    WHERE sp.graph_name = sr.graph_name AND sp.coordinate = sr.coordinate
+                      AND sp.target_type = sr.target_type AND sp.position = sr.position
+                      AND sp.from_column IS NOT NULL);
 COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
 
 CREATE VIEW graphitron_occurrence_result_shape_entry_defect_rule
@@ -34743,7 +34793,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('MANY_KEYS_INTO_ONE', 'error', 'GRAPHITRON', 'GRAPHITRON_MANY_KEYS_INTO_ONE',
    'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list. A @service batches one key per parent, so one taking its keys through a member delivering a collection of them is refused whatever its field declares: give the parent''s class a member returning one record.'),
   ('NO_KEY_FROM_PARENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_KEY_FROM_PARENT',
-   'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.'),
+   'A field fetches its own rows in a query of its own, and nothing the parent holds keys those rows: under a parent holding an object, no column of a record and no member returning one; under a parent''s table row, a routine none of whose parameters is bound to one of its columns.'),
   ('SERVICE_PAYLOAD_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_PAYLOAD_IN_A_LIST',
    'A @service hands back a list of table records, or of the class a payload''s data field is read off, under a list of payloads whose field taking them is a list too, and each element fills one payload: make the payload''s field a single one, return one payload, or hand back the payloads themselves.'),
   ('ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED',

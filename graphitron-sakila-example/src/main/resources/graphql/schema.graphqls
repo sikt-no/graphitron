@@ -124,6 +124,29 @@ input ActorFilmLeafFilter {
     title:     String
 }
 
+# The filter of a routine-backed child connection: title filters the function's own result column,
+# and titleStartsWith narrows it through a @condition on the same result, so both reach the page
+# and its totalCount.
+input ActorFilmPageFilter {
+    title:           String
+    titleStartsWith: String
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "actorFilmTitleStartsWith"
+        }, override: true)
+}
+
+# The order a client picks on a routine-backed child connection, over the function's own columns.
+enum ActorFilmSort {
+    FILM_ID @order(fields: [{name: "film_id"}])
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+input ActorFilmOrderBy {
+    field: ActorFilmSort!
+    direction: SortDirection
+}
+
 # The @condition rail's own filter. A node type FK-reachable from `film` in one hop, because an
 # input field carrying @nodeId resolves a route to its node type's table whether or not an
 # argMapping spends it, and `actor` is two hops from `film`. `film` reaches `language` by two keys,
@@ -3148,23 +3171,23 @@ type Film implements Node & Searchable @table(name: "film") @node {
             method: "filmActorJunctionToActor"
         }}
     ]) @defaultOrder(primaryKey: true)
-    # plan-split-query-connection.md §1: @splitQuery + @asConnection. Per-parent Relay pagination
+    # plan-split-query-connection.md §1: a child connection, split without @splitQuery. Per-parent Relay pagination
     # via a ROW_NUMBER() OVER (PARTITION BY parentInput.idx) envelope. Each Film gets its own
     # paginated actor slice via the same junction-path, built into a connection per key.
     actorsConnection(
         first: Int, last: Int, after: String, before: String
-    ): ActorsConnection! @splitQuery @reference(path: [
+    ): ActorsConnection! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
-    # plan-split-query-connection.md §2: dynamic @orderBy on @splitQuery + @asConnection.
+    # plan-split-query-connection.md §2: dynamic @orderBy on a child connection.
     # The emitted `actorsOrderedConnectionOrderBy(env, <ActorTable>)` helper accepts the
     # FK-chain terminal alias as parameter, so the column refs resolve against the Split
     # query's aliased jOOQ Table instance rather than a hard-coded canonical alias.
     actorsOrderedConnection(
         order: [ActorOrderBy] @orderBy,
         first: Int, last: Int, after: String, before: String
-    ): ActorsConnection! @splitQuery @reference(path: [
+    ): ActorsConnection! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
@@ -3370,6 +3393,35 @@ type Actor implements Searchable @table(name: "actor") {
         )
         @reference(path: [{table: "film"}])
         @defaultOrder(primaryKey: true)
+    # A routine-backed child connection, written without @splitQuery: a child connection is always
+    # fetched in a query of its own, each actor paging its own films. An input-object filter whose
+    # field carries a @condition, an @orderBy argument a client may leave out, and the @defaultOrder
+    # the routine's result needs for when it is left out, the result having no primary key.
+    filmsConnection(minLength: Int!, filter: ActorFilmPageFilter, orderBy: ActorFilmOrderBy @orderBy): [ActorFilm!]
+        @asConnection(defaultFirstValue: 10)
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
+    # The same connection written with @splitQuery, which is redundant on a child connection: the
+    # warning's own fixture. It answers the same pages as the field above.
+    filmsConnectionSplit(minLength: Int!, title: String, sort: ActorFilmOrderBy @orderBy): [ActorFilm!]
+        @splitQuery @asConnection(defaultFirstValue: 10)
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
+    # The paged twin of recentFilmsSplit: the hop out of the routine lands on film, so the page is
+    # ordered by film's primary key and totalCount counts the joined chain.
+    recentFilmsConnection(minLength: Int!): [Film!]
+        @asConnection(defaultFirstValue: 10)
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
+        )
+        @reference(path: [{table: "film"}])
     # B2 fixture: Searchable.name maps to first_name on Actor. Combined with Film.name
     # (mapped to title), one Searchable result list mixes typed Records of both shapes
     # under a uniform interface contract.
@@ -3698,15 +3750,15 @@ type Language @table(name: "language") {
     # so the appended film_id has to reach the batched ROW_NUMBER() and seek as well.
     filmsByRentalRate(
         first: Int, last: Int, after: String, before: String
-    ): FilmsConnection! @splitQuery
+    ): FilmsConnection!
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{name: "rental_rate"}])
-    # A related-table sort key on a @splitQuery child connection: the batched ROW_NUMBER() window,
+    # A related-table sort key on a child connection: the batched ROW_NUMBER() window,
     # the seek and the cursor all carry it. The field's own path and the ordering path both reach
     # language, and the ordering path's aliases are locals of its emitted method, so the two never meet.
     filmsByOriginalLanguage(
         first: Int, last: Int, after: String, before: String
-    ): FilmsConnection! @splitQuery
+    ): FilmsConnection!
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
     # The same sort key on a @splitQuery child list: the batched ROW_NUMBER() window orders by it.
@@ -3723,7 +3775,7 @@ type Language @table(name: "language") {
     filmsListByOriginalLanguageDesc: [Film!]! @splitQuery
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}], direction: DESC)
-    # The path: key on a @splitQuery list, and the method: key on a @splitQuery connection and
+    # The path: key on a @splitQuery list, and the method: key on a child connection and
     # an inline child list. A plain list appends no row key, so the inline one lists film_id
     # itself to order the store-1 tie.
     filmsSplitByOriginalLanguageList: [Film!]! @splitQuery
@@ -3731,7 +3783,7 @@ type Language @table(name: "language") {
         @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
     filmsByLatestStock(
         first: Int, last: Int, after: String, before: String
-    ): FilmsConnection! @splitQuery
+    ): FilmsConnection!
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC}])
     filmsInlineByLatestStock: [Film!]!
@@ -3838,13 +3890,13 @@ type FilmsEdge {
 }
 
 # plan-split-query-connection.md §1: pre-expanded connection type referenced by
-# Film.actorsConnection (@splitQuery). Structural detection in FieldBuilder.buildWrapper
+# Film.actorsConnection (a child connection, split). Structural detection in FieldBuilder.buildWrapper
 # picks up edges.node pattern and produces FieldWrapper.Connection.
 type ActorsConnection {
     edges: [ActorsEdge!]!
     nodes: [Actor!]!
     pageInfo: PageInfo!
-    # R414: per-parent totalCount on @splitQuery connections. The rows method emits a shared
+    # R414: per-parent totalCount on child connections. The rows method emits a shared
     # cursor-independent countSource derived table; each per-parent connection's count closure reads
     # its own __idx__ slot, so totalCount serves a real count lazily.
     totalCount: Int

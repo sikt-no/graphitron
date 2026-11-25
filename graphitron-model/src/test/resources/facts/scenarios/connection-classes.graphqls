@@ -1,7 +1,7 @@
 "The class a connection field's producer builds, one field per kind of connection field. The connection type the field returns names the class, and the positions that type fills decide what its constructor takes beyond the page: a count where the type fills TOTAL_COUNT, facets where it fills FACETS. Query.languages is a connection @asConnection synthesises, which counts and carries no facets; Query.filmsByTitle is one whose filter declares a facet, so it also carries facets; Query.filmsPage is an authored connection declaring no totalCount, so it takes no count; Query.films is an authored connection sharing its edge with filmsPage, two classes over one edge; Query.people is a union connection and Film.actors a connection batched over its parents, which name their classes the same way."
 type Film @table(name: "film") {
   title: String
-  actors(first: Int, last: Int, after: String, before: String): ActorsConnection! @splitQuery @reference(path: [
+  actors(first: Int, last: Int, after: String, before: String): ActorsConnection! @reference(path: [
     {key: "film_actor_film_id_fkey"},
     {key: "film_actor_actor_id_fkey"}
   ]) @defaultOrder(primaryKey: true)

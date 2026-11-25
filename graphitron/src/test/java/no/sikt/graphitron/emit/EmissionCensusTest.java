@@ -151,6 +151,7 @@ class EmissionCensusTest {
         }
         EmittedCodeHarness.compileStrictly(units).close();
         assertThat(census.get(EMITTED)).as("the conditions the store emits").containsExactly(
+            "Actor.filmsConnection films_for_actor", "Actor.filmsConnectionSplit films_for_actor",
             "Film.actorsBySplitLookupGenerated actor", "Film.actorsGenerated actor",
             "Film.inlineBundle.languageFiltered language", "Language.filmsByMixedFilter film",
             "Language.filmsByMixedFilterSplit film", "Query.actorFilmsFiltered films_for_actor",

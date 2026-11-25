@@ -73,7 +73,7 @@ type Category @table(name: "category") {
   "Inferred over category's one self-referencing key, to the row it points at."
   parent: Category
   "A connection over the same key, in reverse: the rows pointing here."
-  childPage: [Category!]! @asConnection @splitQuery
+  childPage: [Category!]! @asConnection
 }
 
 type Query {

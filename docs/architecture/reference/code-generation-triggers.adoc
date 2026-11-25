@@ -307,8 +307,9 @@ each producer, what it runs and where it starts.
   an object rather than rows, a payload's data field re-read by key after a write, or a child
   `@service`.
 
-A child connection starts a query of its own whether or not it is written `@splitQuery`: it has no
-inline form, each parent's page being cut by its own cursor, so the split is inferred rather than
+A child connection, a list under a non-root type made a connection by `@asConnection` or by
+returning a hand-written connection type, is always a producer of its own, split, whatever markers
+are written on it: it has no inline form, each parent's page being cut by its own cursor, so the split is inferred rather than
 asked of the author, and a `@splitQuery` written on one is admitted with the `SPLIT_QUERY_REDUNDANT`
 warning (Alf, 2026-11-25).
 

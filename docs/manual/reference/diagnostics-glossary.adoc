@@ -39,11 +39,11 @@ Three prefixes. Triage by which one you saw.
 [#kind-invalid-schema]
 === invalid-schema
 
-*Sample line.* `[invalid-schema] @asConnection on a non-@splitQuery field that returns a paginated child` or `[invalid-schema] lookup fields must not return a connection`.
+*Sample line.* `[invalid-schema] lookup fields must not return a connection`.
 
 *Cause.* The directive combination cannot work, period. Two sub-shapes:
 
-* `DirectiveConflict` reports two or more directives that co-occur in a combination the classifier rejects (`@asConnection` on a non-`@splitQuery` field, `@discriminate` mixed with `@reference`). The error names the conflicting directives.
+* `DirectiveConflict` reports two or more directives that co-occur in a combination the classifier rejects (`@discriminate` mixed with `@reference`). The error names the conflicting directives.
 * `Structural` reports rules that don't reduce to a clean directive enumeration ("lookup fields must not return a connection", "result type does not match input cardinality").
 
 *Next step.* Drop or replace one of the directives, or restructure the schema so the combination doesn't arise. Renames don't help; this is a hard "no". The directive pages in xref:directives/index.adoc[the directive reference] document the admitted directive combinations per directive.

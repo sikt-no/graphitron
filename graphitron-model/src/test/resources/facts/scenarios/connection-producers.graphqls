@@ -1,7 +1,7 @@
 "Connections whose producers a test calls directly: a root connection over the films chosen by id, and each film's actors as a connection batched over its parents, both counting what they page through; and the same two over a union, Customer | Staff: a root connection over the occupants of the addresses chosen by id, and each address's occupants as a connection batched over its parents. The count is a producer of its own, run only when a client reads it."
 type Film @table(name: "film") {
   title: String
-  actors(first: Int, last: Int, after: String, before: String): ActorsConnection! @splitQuery @reference(path: [
+  actors(first: Int, last: Int, after: String, before: String): ActorsConnection! @reference(path: [
     {key: "film_actor_film_id_fkey"},
     {key: "film_actor_actor_id_fkey"}
   ]) @defaultOrder(primaryKey: true)

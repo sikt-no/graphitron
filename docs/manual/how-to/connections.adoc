@@ -87,41 +87,39 @@ Three consequences worth restating here (the sort recipe covers the full set):
 
 Backward pagination reuses the same encoding; the rewrite reverses each `SortField`'s direction via jOOQ's `$field()`/`$sortOrder()` model API, runs the seek, and reverses the in-memory result before returning. A cursor issued from a `first:` page round-trips through a `before:` request and vice versa.
 
-== Composition with `@splitQuery`
+== Child connections
 
-`@asConnection` + `@splitQuery` is the right pattern for paginated child lists (per-parent slices). The combination produces a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY ...)` envelope so each parent's connection page is the leading N+1 rows of its partition; a `DataLoader` batches the dispatch across parents.
+A connection under a non-root type, made one by `@asConnection` or by returning a hand-written connection type, is always fetched in a query of its own, batched across parents through a `DataLoader`. The batch query carries a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY ...)` envelope so each parent's connection page is the leading N+1 rows of its partition: each parent pages its own rows. xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is inferred there, so it is not written; writing it draws the `SPLIT_QUERY_REDUNDANT` warning.
 
 [source,graphql]
 ----
 type Film @table(name: "film") {
     actorsConnection(
         first: Int, last: Int, after: String, before: String
-    ): ActorsConnection! @splitQuery @reference(path: [
+    ): ActorsConnection! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
 }
 ----
 
-Without `@splitQuery`, the same `[Actor!]!` child list under `@asConnection` paginates *across all parents in a single SQL pass*: there is no `PARTITION BY` envelope, and the `first: N` argument applies to the union of all parents' rows. That is rarely the right behavior at the child level; reach for `@splitQuery` whenever the parent appears in a list.
-
 The `totalCount` consequence cited above applies here: a split connection counts every parent of the batch with one grouped statement.
 
 == Constraints and pitfalls
 
 * `@asConnection` applies to list-typed fields. Single-cardinality `@asConnection` is rejected at classify time.
-* The field must have a stable order. Either xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] is set, or xref:../reference/directives/orderBy.adoc[`@orderBy`] is required at runtime; without one, keyset pagination has no anchor and the build fails.
+* The field must have a stable order: the primary key of the table its target type is bound to, an xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`], or a non-null xref:../reference/directives/orderBy.adoc[`@orderBy`] argument. A nullable `@orderBy` argument does not count, since a client may leave it out; without one of these, keyset pagination has no anchor and the build fails with `LIST_ORDER_UNDETERMINED`.
 * `connectionName:` is deprecated. Each connection field should own its own Connection type; the override exists as a transition mechanism for legacy schemas. When set, the dedup is silent — two carriers with the same name and different element types reuse the first registration and only the first carrier's element type appears under that connection's `edges.node`.
 * `totalCount` on a nested connection costs one grouped statement per batch of parents, not one per parent.
 * `totalCount` is lazy on selection but a separate SQL pass when selected. Treat it as observable extra cost; don't assume it's free.
 * `defaultFirstValue:` is the omitted-`first:` default, not a maximum. Set `<maxAllowedPageSize>` to cap every connection's page size; without it a client gets as many rows as it asks for.
 * Cursor wire format embeds the active order's columns. Sort-spec changes invalidate outstanding cursors; treat the column list as part of the public contract.
-* `@asConnection` + `@splitQuery` is the right shape for per-parent paginated children. `@asConnection` alone on a child list paginates across all parents.
+* A child connection is always paged per parent, with or without `@splitQuery`; the directive is inferred there and, written, draws a redundancy warning.
 
 == See also
 
 * xref:../reference/directives/asConnection.adoc[`@asConnection`] establishes the connection wrapper.
-* xref:../reference/directives/splitQuery.adoc[`@splitQuery`] dispatches per-parent connections through a `DataLoader`.
+* xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is the batched fetch a child connection always takes, inferred rather than written.
 * xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] anchors the cursor.
 * xref:../reference/directives/orderBy.adoc[`@orderBy`] supplies dynamic order.
 * xref:sort-results.adoc[How-to: Sort results] covers cursor stability, tie-breakers, and the collation pitfalls that bite at scale.

@@ -17,8 +17,9 @@ import java.util.Objects;
  *
  * <p>{@link Batched}'s trigger is the sealed provenance disjunction, the arm's falsifiable
  * content: an authored marker ({@link Trigger.Authored}), a record-handing parent
- * ({@link Trigger.RecordHandedParent}), or the list-valued polymorphic fan-in
- * ({@link Trigger.PolymorphicFanIn}). The first two were bound at the keystone; the third was
+ * ({@link Trigger.RecordHandedParent}), the list-valued polymorphic fan-in
+ * ({@link Trigger.PolymorphicFanIn}), or a table-bound child connection
+ * ({@link Trigger.PagedChild}). The first two were bound at the keystone; the third was
  * surfaced by this fact's materialization (the batched polymorphic pair mints from a
  * cardinality-plus-participant rule that neither named trigger covers), which is the trigger
  * disjunction doing its falsifiable-content job.
@@ -61,6 +62,16 @@ public sealed interface DeliveryFact {
         record PolymorphicFanIn() implements Trigger {
             public static final PolymorphicFanIn INSTANCE = new PolymorphicFanIn();
         }
+
+        /**
+         * A table-bound child connection: each parent pages its own rows, which one statement
+         * shared with the parent cannot do, so the delivery splits whatever markers are
+         * written. A {@code @splitQuery} written there is redundant and warned about, never the
+         * trigger.
+         */
+        record PagedChild() implements Trigger {
+            public static final PagedChild INSTANCE = new PagedChild();
+        }
     }
 
     /**
@@ -76,7 +87,9 @@ public sealed interface DeliveryFact {
     static DeliveryFact leafDerivedOf(OutputField leaf) {
         return switch (leaf) {
             case ChildField.BatchedTableField f -> new Batched(f.sourceShape() == SourceShape.Record
-                ? Trigger.RecordHandedParent.INSTANCE : Trigger.Authored.INSTANCE);
+                ? Trigger.RecordHandedParent.INSTANCE
+                : f.target().shape() instanceof TargetShape.Connection
+                    ? Trigger.PagedChild.INSTANCE : Trigger.Authored.INSTANCE);
             // The batched pivot's only mint gate is the authored marker; @pivot rejects
             // record-backed parents, so the record-handed trigger cannot arise.
             case ChildField.BatchedPivotField _ -> new Batched(Trigger.Authored.INSTANCE);

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.conditions;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Address;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmsForActor;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Project;
 import org.jooq.Condition;
@@ -130,6 +131,19 @@ public final class InputFieldConditionFixtures {
      */
     public static Condition projectNameAtlas(Project table, org.jooq.Row2<Integer, Integer> projectId) {
         return table.NAME.eq("Atlas");
+    }
+
+    /**
+     * Input-field {@code @condition(override: true)} on a routine's result: narrows
+     * {@code films_for_actor}'s rows to titles starting with {@code titleStartsWith}, read off the
+     * function table the child connection's page is cut from. A {@code null} value maps to
+     * {@code noCondition()}.
+     */
+    public static Condition actorFilmTitleStartsWith(Table<?> table, String titleStartsWith) {
+        if (titleStartsWith == null) {
+            return DSL.noCondition();
+        }
+        return table.field(FilmsForActor.FILMS_FOR_ACTOR.TITLE).startsWith(titleStartsWith);
     }
 
     /**

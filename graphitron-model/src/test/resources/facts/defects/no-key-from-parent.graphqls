@@ -64,3 +64,46 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "co
   MEMBER_UNRESOLVED, FilmTitleView.note,     no.sikt.graphitron.rewrite.test.services.FilmTitleView
   MEMBER_UNRESOLVED, FilmTitleView.title,    no.sikt.graphitron.rewrite.test.services.FilmTitleView
   """)
+
+# Under a parent's table row, a @routine fetched in a query of its own is called once for the whole
+# batch of parents, and its rows are told apart by the row each call took a value from (Alf,
+# 2026-11-25). ActorPage.filmsUnkeyed, a child connection, which is always split, calls
+# films_for_actor with arguments alone, so nothing keys its rows; so does filmsUnkeyedSplit, a list
+# written with @splitQuery. The detail is the parent's table. ActorPage.films binds pActorId to
+# $source.actor_id, and Film.castFilms steps through film_actor before the routine, which keys it,
+# so neither draws it.
+
+type ActorFilm { filmId: Int @field(name: "film_id"), title: String }
+
+type ActorPage @table(name: "actor") {
+  filmsUnkeyed(actorId: Int!, minLength: Int!): [ActorFilm!] @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsUnkeyedSplit(actorId: Int!, minLength: Int!): [ActorFilm!] @splitQuery
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  films(minLength: Int!): [ActorFilm!] @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+extend type Film {
+  castFilms(minLength: Int!): [ActorFilm!] @asConnection
+    @reference(path: [{table: "film_actor"}])
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+extend type Query { actorPages: [ActorPage!]! }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'NO_KEY_FROM_PARENT' AND coordinate LIKE 'ActorPage.%'", rows: """
+  code,               coordinate,                  detail
+  NO_KEY_FROM_PARENT, ActorPage.filmsUnkeyed,      actor
+  NO_KEY_FROM_PARENT, ActorPage.filmsUnkeyedSplit, actor
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  NO_KEY_FROM_PARENT, Film.castFilms
+  """)

@@ -6,10 +6,10 @@
 type CursorSubject @table(name: "cursor_subject") {
     subjectId: Int! @field(name: "subject_id")
     periods(first: Int, last: Int, after: String, before: String): [CursorPeriod!]!
-        @asConnection @splitQuery @reference(path: [{key: "cursor_period_subject_id_fkey"}])
+        @asConnection @reference(path: [{key: "cursor_period_subject_id_fkey"}])
         @defaultOrder(primaryKey: true)
     periodsDesc(first: Int, last: Int, after: String, before: String): [CursorPeriod!]!
-        @asConnection @splitQuery @reference(path: [{key: "cursor_period_subject_id_fkey"}])
+        @asConnection @reference(path: [{key: "cursor_period_subject_id_fkey"}])
         @defaultOrder(primaryKey: true, direction: DESC)
     blobs(first: Int, last: Int, after: String, before: String): [CursorBlob!]! @asConnection
 }
