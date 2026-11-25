@@ -7,7 +7,7 @@ priority: 3
 theme: pagination
 depends-on: []
 created: 2026-11-12
-last-updated: 2026-11-12
+last-updated: 2026-11-25
 ---
 
 # Is a child connection fetched in a query of its own without @splitQuery?
@@ -26,6 +26,28 @@ type Film @table(name: "film") {
         @defaultOrder(primaryKey: true)
 }
 ```
+
+## Answered: always split
+
+Alf ruled on 2026-11-25 that a child connection is always fetched in a query of its own, so
+`@splitQuery` is inferred there, and written there it is admitted with the `SPLIT_QUERY_REDUNDANT`
+warning (`code-generation-triggers.adoc`, "Producer"). R1169 carries the walk half of that answer
+and the documentation: one paged-child delivery trigger for every child connection, the table-backed
+arm's "add @splitQuery" conflict removed, the warning's stored arm, and the manual pages below made
+to say one thing.
+
+What stays with this item:
+
+* **The store's claim rule.** `graphitron_producer_claim_rule` claims a child routine only under
+  `@splitQuery`, so one field's two spellings get different producers: `SELECT` starting at `CHILD`
+  unsplit, `ROUTINE` starting at `CHILD` split. The claim reads the connection wrapper as it reads
+  `@splitQuery`. R1169's fact document states both claims and its execution tests show the two
+  spellings answer the same pages, so this change is checked when it lands.
+* **A paged child with nothing to key a batch on** (a same-table child with no key, a routine child
+  with no parameter bound to a parent column) is refused under the new spelling by a stored defect,
+  across child shapes, one code for the rule.
+
+The sections below are the question as it was filed.
 
 ## The accounts
 
