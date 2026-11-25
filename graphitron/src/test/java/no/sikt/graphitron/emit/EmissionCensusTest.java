@@ -350,13 +350,15 @@ class EmissionCensusTest {
                 .containsExactly("Query.internalNode", "Query.node", "Query.nodes");
             soft.assertThat(multiTables).as("the roots over several tables the store emits").containsExactly(
                 "Query.converterPlacesConnection", "Query.displayNamedConnection", "Query.documents",
-                "Query.documentsConnection", "Query.occupantsByAddress", "Query.occupantsByFilter",
-                "Query.occupantsByLastName", "Query.occupantsByMixedNamePrefix", "Query.occupantsByName",
-                "Query.occupantsByNameConnection", "Query.occupantsByNamePrefix", "Query.occupantsByStoreId",
-                "Query.occupantsByTypedNamePrefix", "Query.occupantsOrdered", "Query.occupantsOrderedByKey",
-                "Query.occupantsOrderedByList", "Query.occupantsOrderedConnection", "Query.occupantsStartingWithM",
-                "Query.pagedItems", "Query.pagedItemsByName", "Query.search", "Query.searchConnection",
-                "Query.stockByLanguage", "Query.stockByLanguageOverride");
+                "Query.documentsConnection", "Query.occupantById", "Query.occupantByOptionalId",
+                "Query.occupantsByAddress", "Query.occupantsByFilter", "Query.occupantsByIds",
+                "Query.occupantsByIdsConnection", "Query.occupantsByLastName", "Query.occupantsByMixedNamePrefix",
+                "Query.occupantsByName", "Query.occupantsByNameConnection", "Query.occupantsByNamePrefix",
+                "Query.occupantsByNullableIds", "Query.occupantsByStoreId", "Query.occupantsByTypedNamePrefix",
+                "Query.occupantsOrdered", "Query.occupantsOrderedByKey", "Query.occupantsOrderedByList",
+                "Query.occupantsOrderedConnection", "Query.occupantsStartingWithM", "Query.pagedItems",
+                "Query.pagedItemsByName", "Query.search", "Query.searchConnection", "Query.stockByLanguage",
+                "Query.stockByLanguageOverride");
             soft.assertThat(emitted).as("the roots the store emits").containsExactly(
                 "Query.actorsByFilmFilter", "Query.actorsByFilmFilterConnection", "Query.actorsByFilmIds",
                 "Query.addressesByCountryName", "Query.addressesByCustomerIds",
@@ -424,11 +426,7 @@ class EmissionCensusTest {
                     "Query.customerById", "Query.filmById"))
                 .containsEntry("LOOKUP_NODE_ID", List.of(
                     "Query.filmActorByNodeId", "Query.filmsByNodeIdArgWithLookupKey"))
-                .containsEntry("NODE_ID_DISPATCH", List.of(
-                    "Query.occupantById", "Query.occupantByOptionalId", "Query.occupantsByIds",
-                    "Query.occupantsByIdsConnection", "Query.occupantsByNullableIds"))
-                .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID",
-                    "NODE_ID_DISPATCH");
+                .containsOnlyKeys("FACETED", "LOOKUP_INPUT_FIELD", "LOOKUP_KEY_CONVERTED", "LOOKUP_NODE_ID");
         });
     }
 }

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD;
@@ -89,8 +90,6 @@ public final class RootQuery {
         LOOKUP_KEY_CONVERTED,
         /** Its rows may be several types', told apart by the table each is a row of, and it is a lookup over them. */
         POLYMORPHIC,
-        /** Its rows are several tables', and a node-id argument names one of them by the id's type. */
-        NODE_ID_DISPATCH,
         /**
          * Its rows are told apart by a discriminator, and a participant on a detail table of its own reads
          * a field the joined read does not project: a node id, or an inherited reference it would alias
@@ -172,12 +171,33 @@ public final class RootQuery {
      * the client asks for none, {@code null} for a list or a record.
      */
     public record MultiTable(String coordinate, String parentType, String fieldName, boolean list,
-                             List<Branch> branches, Ordered ordered, Integer pageSize) implements Result {
+                             List<Branch> branches, Ordered ordered, Integer pageSize, List<Dispatch> dispatches)
+            implements Result {
         public MultiTable {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(parentType, "parentType");
             Objects.requireNonNull(fieldName, "fieldName");
             branches = List.copyOf(branches);
+            dispatches = List.copyOf(dispatches);
+        }
+    }
+
+    /**
+     * A node-id argument of a root over several tables whose participants decode it as different node
+     * types: its name, whether it takes a list, and each participant's decode, by participant type in
+     * participant order. An id none of them decodes is the client's mistake, told apart before any
+     * branch reads.
+     */
+    public record Dispatch(String argument, boolean list, Map<String, NodeDecode> byParticipant) {
+        public Dispatch {
+            byParticipant = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(byParticipant));
+        }
+    }
+
+    /** How one participant decodes a node id: the node type, its type id, its table and its key columns in order. */
+    public record NodeDecode(String nodeType, String typeId, TableRef table, List<ColumnRef> keyColumns) {
+        public NodeDecode {
+            keyColumns = List.copyOf(keyColumns);
         }
     }
 
@@ -513,15 +533,6 @@ public final class RootQuery {
         if (store.dsl().fetchExists(sk, sk.GRAPH_NAME.eq(graph), sk.COORDINATE.eq(coordinate), sk.KIND.ne("COLUMN"))) {
             return new NotYet(coordinate, Reason.SORT_KEY_NOT_A_COLUMN);
         }
-        var ni = GRAPHITRON_OCCURRENCE_NODE_ID;
-        var oa = GRAPHITRON_OCCURRENCE;
-        if (store.dsl().fetchExists(selectOne().from(ni)
-                .join(oa).on(oa.GRAPH_NAME.eq(ni.GRAPH_NAME), oa.COORDINATE.eq(ni.COORDINATE))
-                .where(ni.GRAPH_NAME.eq(graph), oa.FIELD_COORDINATE.eq(coordinate),
-                    oa.ARGUMENT_COORDINATE.eq(oa.COORDINATE),
-                    ni.NODE_TYPE_NAME.in(participants.map(r -> r.value1()))))) {
-            return new NotYet(coordinate, Reason.NODE_ID_DISPATCH);
-        }
         var tc = GRAPHITRON_TENANT_COLUMN;
         var branches = new ArrayList<Branch>();
         var byBound = new LinkedHashMap<String, Branch>();
@@ -542,9 +553,69 @@ public final class RootQuery {
         if (branches.isEmpty()) {
             return new NotYet(coordinate, Reason.POLYMORPHIC);
         }
+        var dispatches = dispatches(store, coordinate, byBound);
+        if (dispatches == null) {
+            return new NotYet(coordinate, Reason.NOT_ONE_TABLE);
+        }
         return new MultiTable(coordinate, at.parentType(), at.fieldName(),
             connection || "RECORD_LIST".equals(at.shape()), branches, ordered(store, coordinate, byBound, connection),
-            pageSize);
+            pageSize, dispatches);
+    }
+
+    /**
+     * The node-id arguments of a root over several tables that its participants decode as more than one
+     * node type, in the arguments' declared order, each participant's decode read off the id's key
+     * columns at its table; an argument every participant decodes as one node type is a filter alone.
+     * {@code null} where a participant's decode is not stated whole: no type id, or no table to read.
+     */
+    private static List<Dispatch> dispatches(StoreHandle store, String coordinate, Map<String, Branch> byBound) {
+        var ni = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var oa = GRAPHITRON_OCCURRENCE;
+        var ga = GRAPHITRON_ARGUMENT;
+        var gn = GRAPHITRON_NODE;
+        var c = SQL_COLUMN;
+        record Read(String argument, boolean list, String bound, String nodeType, String typeId, String source,
+                    String schema, String table, ColumnRef column) {}
+        var reads = store.dsl()
+            .select(ga.ARGUMENT_NAME, ga.LIST_DEPTH, ni.BOUND, ni.NODE_TYPE_NAME, gn.TYPE_ID, ni.TABLE_SOURCE_NAME,
+                ni.TABLE_SCHEMA, ni.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+            .from(ni)
+            .join(oa).on(oa.GRAPH_NAME.eq(ni.GRAPH_NAME), oa.COORDINATE.eq(ni.COORDINATE))
+            .join(ga).on(ga.GRAPH_NAME.eq(oa.GRAPH_NAME), ga.COORDINATE.eq(oa.ELEMENT_COORDINATE))
+            .join(c).on(c.SOURCE_NAME.eq(ni.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(ni.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(ni.TABLE_NAME), c.COLUMN_NAME.eq(ni.COLUMN_NAME))
+            .leftJoin(gn).on(gn.GRAPH_NAME.eq(ni.GRAPH_NAME), gn.TYPE_NAME.eq(ni.NODE_TYPE_NAME))
+            .where(ni.GRAPH_NAME.eq(store.graphName()), oa.FIELD_COORDINATE.eq(coordinate),
+                oa.ARGUMENT_COORDINATE.eq(oa.COORDINATE))
+            .orderBy(ga.ORDINAL, ni.BOUND, ni.POSITION)
+            .fetch(r -> new Read(r.value1(), r.value2() > 0, r.value3(), r.value4(), r.value5(), r.value6(),
+                r.value7(), r.value8(), new ColumnRef(r.value9(), r.value10(), r.value11(), r.value12())));
+        var byArgument = new LinkedHashMap<String, List<Read>>();
+        reads.forEach(read -> byArgument.computeIfAbsent(read.argument(), k -> new ArrayList<>()).add(read));
+        var out = new ArrayList<Dispatch>();
+        for (var argument : byArgument.values()) {
+            // The participants told apart by the id's type: more than one node type among them.
+            if (argument.stream().filter(read -> byBound.containsKey(read.bound())).map(Read::nodeType).distinct()
+                    .count() < 2) {
+                continue;
+            }
+            var byParticipant = new LinkedHashMap<String, NodeDecode>();
+            for (var entry : byBound.entrySet()) {
+                var keys = argument.stream().filter(read -> read.bound().equals(entry.getKey())).toList();
+                if (keys.isEmpty()) {
+                    continue;
+                }
+                var first = keys.getFirst();
+                var table = tableRef(store, first.source(), first.schema(), first.table());
+                if (first.typeId() == null || table == null) {
+                    return null;
+                }
+                byParticipant.put(entry.getValue().typeName(), new NodeDecode(first.nodeType(), first.typeId(), table,
+                    keys.stream().map(Read::column).toList()));
+            }
+            out.add(new Dispatch(argument.getFirst().argument(), argument.getFirst().list(), byParticipant));
+        }
+        return out;
     }
 
     /**

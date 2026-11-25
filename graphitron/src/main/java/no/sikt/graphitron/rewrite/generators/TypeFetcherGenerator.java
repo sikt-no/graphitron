@@ -217,8 +217,8 @@ public class TypeFetcherGenerator {
 
     /**
      * A root over several tables as the store states it: its participants and their tables, each
-     * branch filtered by its table's condition method as its stored signature calls it, no node-id
-     * dispatch, and its rows in the order the store states, else in key order, then by type: a list or
+     * branch filtered by its table's condition method as its stored signature calls it, each node-id
+     * argument its participants decode as different node types guarded before the branches read, and its rows in the order the store states, else in key order, then by type: a list or
      * a record, or a connection paging by the store's page size.
      */
     private static List<MethodSpec> storeMultiTableMethods(TypeFetcherEmissionContext ctx,
@@ -241,13 +241,25 @@ public class TypeFetcherGenerator {
         }
         var ordering = Optional.ofNullable(multiTable.ordered()).map(ordered -> orderingOf(ordered, byType));
         var branchWhere = MultiTablePolymorphicEmitter.BranchWhere.ofGlue(glue);
+        // Each node-id argument the participants decode as different node types, by the decode helper
+        // each one's node type mints beside the encoder, as the node types' own decodes are named.
+        var encoder = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
+        var dispatches = multiTable.dispatches().stream().map(dispatch -> {
+            var decodes = new LinkedHashMap<String, no.sikt.graphitron.rewrite.model.HelperRef.Decode>();
+            dispatch.byParticipant().forEach((participant, decode) -> decodes.put(participant,
+                new no.sikt.graphitron.rewrite.model.HelperRef.Decode(encoder,
+                    no.sikt.graphitron.emit.NodeIdHelperNames.decode(decode.nodeType()), decode.keyColumns(),
+                    decode.typeId(), decode.table())));
+            return new no.sikt.graphitron.rewrite.model.NodeIdArgDispatch(dispatch.argument(), dispatch.list(), decodes);
+        }).toList();
         if (multiTable.pageSize() != null) {
             return MultiTablePolymorphicEmitter.emitRootConnectionMethods(ctx, multiTable.parentType(),
-                multiTable.fieldName(), participants, branchWhere, List.of(), registry, multiTable.pageSize(), ordering,
+                multiTable.fieldName(), participants, branchWhere, dispatches, registry, multiTable.pageSize(), ordering,
                 outputPackage, ctx.connectionAt(multiTable.parentType(), multiTable.fieldName()));
         }
         return MultiTablePolymorphicEmitter.emitMethods(ctx, multiTable.parentType(), multiTable.fieldName(),
-            participants, branchWhere, List.of(), registry, multiTable.list(), ordering, outputPackage);
+            participants, branchWhere, dispatches, registry, multiTable.list(), ordering, outputPackage);
     }
 
     /**

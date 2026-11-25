@@ -1019,8 +1019,11 @@ static method needs no holder.
     A list or a record read over a multi-table interface or union, each participant in its own key
     order, is the store's too: its participants off `graphitron_occurrence_participant`, each branch's
     condition call off `graphitron_occurrence_condition_signature` at the participant's table, fed to
-    `MultiTablePolymorphicEmitter` in place of the walk's field. One a node-id argument dispatches by
-    the id's type waits as `NODE_ID_DISPATCH`. One ordered across its participants, by a
+    `MultiTablePolymorphicEmitter` in place of the walk's field. One whose node-id argument its
+    participants decode as different node types is the store's too: each participant's decode, its node
+    type's key columns and table off `graphitron_occurrence_node_id` and its type id off
+    `graphitron_node`, guards an id no participant decodes before any branch reads, as the walk's did;
+    `MultiTableNodeIdDispatchParityTest` holds the two dispatches equal. One ordered across its participants, by a
     `@defaultOrder` or an `@orderBy` choice taking one order or a list, is the store's too, its order
     read per participant table off `graphitron_occurrence_order` and its sort keys, lined up by
     position; `ORDER_POSITIONS_DISAGREE` refuses an order whose tables' keys differ in number or, at a
@@ -1033,8 +1036,7 @@ static method needs no holder.
     A connection over several tables is the store's too, its page size read as a single-table
     connection's and its order always stated, so the cursor encodes the columns the walk's did and a
     client's cursor survives the upgrade; `MultiTableConnectionOrderParityTest` holds the two orders
-    equal on what the cursor reads. One a node id dispatches waits as `NODE_ID_DISPATCH`, a faceted
-    one as `FACETED`, and a lookup over several tables as `POLYMORPHIC`. Faceted connections remain
+    equal on what the cursor reads. A faceted one waits as `FACETED`, and a lookup over several tables as `POLYMORPHIC`. Faceted connections remain
     beside them. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
