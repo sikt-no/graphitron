@@ -57,7 +57,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code UNION}s, a leading {@code WITH} carried onto every arm, and each arm parsed alone; if that
  * split ever mis-reads a view, the arms it produces fail to parse and are named here.
  *
- * <p>The report is for reading; a gate over it is a separate test.
+ * <p>{@code views.tsv} also carries each view's union nesting depth, which is gated: no view nests a
+ * union deeper than {@value #MAX_UNION_DEPTH}. H2 parses a chain of set operations left-deep, one level
+ * per operator, and every level is a parsed statement holding the tokens of every arm beneath it, so
+ * a deep chain costs heap with the square of its depth in every session that holds the view's plan.
+ * The depth is counted as H2 builds it: a chain of n arms nests n - 1 deep, an operand in brackets
+ * adds its own depth beneath its place in the chain, and a union inside a subquery or a CTE counts
+ * where it sits. The bound and the remedies, a rule split into its natural families or a long view's
+ * arms bracketed as a balanced tree, are the fact model's views section.
  */
 class ViewComplexityTest {
 
@@ -74,8 +81,12 @@ class ViewComplexityTest {
     record Arm(String view, int index, String kind, int blocks, int maxInputs, int wideBlocks,
                int conditions, int guards, long planWeight, int viewRefs, String reason, String head) {}
 
+    /** The deepest a view's unions may nest. */
+    static final int MAX_UNION_DEPTH = 7;
+
     private static List<String> views;
     private static List<Arm> arms;
+    private static Map<String, Integer> unionDepths;
 
     @BeforeAll
     static void measure() throws IOException {
@@ -87,6 +98,8 @@ class ViewComplexityTest {
             }
         }
         views = List.copyOf(bodies.keySet());
+        unionDepths = new LinkedHashMap<>();
+        bodies.forEach((view, body) -> unionDepths.put(view, unionDepth(body)));
         var names = Set.copyOf(views);
         arms = new ArrayList<>();
         bodies.forEach((view, body) -> {
@@ -117,6 +130,93 @@ class ViewComplexityTest {
             .allSatisfy(arm -> assertThat(arm.reason()).isNotBlank());
         assertThat(Files.readAllLines(REPORT.resolve("views.tsv"))).as("the view report's rows")
             .hasSize(views.size() + 1);
+    }
+
+    @Test
+    @DisplayName("no view nests a union deeper than seven")
+    void noViewNestsAUnionDeeperThanSeven() {
+        var deep = new ArrayList<String>();
+        unionDepths.forEach((view, depth) -> {
+            if (depth > MAX_UNION_DEPTH) {
+                deep.add(view + " nests a union " + depth + " deep");
+            }
+        });
+        assertThat(deep)
+            .as("views nesting a union deeper than " + MAX_UNION_DEPTH + ": split each into its natural"
+                + " families, or bracket a view that must stay long as a balanced tree")
+            .isEmpty();
+    }
+
+    @Test
+    @DisplayName("the union depth is counted as H2 nests it")
+    void theUnionDepthIsCountedAsH2NestsIt() {
+        assertThat(unionDepth("SELECT 1")).isZero();
+        assertThat(unionDepth("SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3")).isEqualTo(2);
+        assertThat(unionDepth("(SELECT 1 UNION ALL SELECT 2) UNION ALL (SELECT 3 UNION ALL SELECT 4)"))
+            .isEqualTo(2);
+        assertThat(unionDepth("SELECT 1 FROM (SELECT 1 UNION SELECT 2 UNION SELECT 3) t UNION ALL SELECT 4"))
+            .isEqualTo(3);
+        assertThat(unionDepth("SELECT 'a UNION b' UNION ALL SELECT 'c'")).isEqualTo(1);
+    }
+
+    /**
+     * How deep a body's set operations nest as H2 parses them: a chain of n operands left-deep, so the
+     * first two sit n - 1 levels down and each later one a level less, every operand adding its own
+     * depth, a bracketed union or one inside a subquery, beneath its place.
+     */
+    static int unionDepth(String body) {
+        return chain(body, 0)[0];
+    }
+
+    /** The depth of the chain starting at {@code from}, up to its closing bracket, and where it ended. */
+    private static int[] chain(String text, int from) {
+        var upper = text.toUpperCase(Locale.ROOT);
+        var operands = new ArrayList<Integer>();
+        int current = 0;
+        boolean quoted = false;
+        int i = from;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (quoted) {
+                quoted = c != '\'';
+                i++;
+                continue;
+            }
+            if (c == '\'') {
+                quoted = true;
+                i++;
+            } else if (c == '(') {
+                var inner = chain(text, i + 1);
+                current = Math.max(current, inner[0]);
+                i = inner[1];
+            } else if (c == ')') {
+                i++;
+                break;
+            } else if (setOperator(upper, text, i) > 0) {
+                operands.add(current);
+                current = 0;
+                i += setOperator(upper, text, i);
+            } else {
+                i++;
+            }
+        }
+        operands.add(current);
+        int k = operands.size();
+        int depth = 0;
+        for (int j = 0; j < k; j++) {
+            depth = Math.max(depth, operands.get(j) + k - 1 - Math.max(j - 1, 0));
+        }
+        return new int[] {depth, i};
+    }
+
+    /** The length of a set operator's keyword at {@code at}, or 0 where none starts. */
+    private static int setOperator(String upper, String text, int at) {
+        for (var keyword : List.of("UNION", "INTERSECT", "EXCEPT")) {
+            if (upper.startsWith(keyword, at) && boundary(text, at - 1) && boundary(text, at + keyword.length())) {
+                return keyword.length();
+            }
+        }
+        return 0;
     }
 
     private static Arm measure(String view, int index, String text, Set<String> views) {
@@ -395,7 +495,8 @@ class ViewComplexityTest {
         Files.write(REPORT.resolve("arms.tsv"), armRows);
 
         record ViewRow(String view, int arms, int unparsed, boolean values, int blocks, int maxInputs,
-                       int wideBlocks, int conditions, int guards, long planWeight, int viewRefs) {}
+                       int wideBlocks, int conditions, int guards, long planWeight, int viewRefs,
+                       int unionDepth) {}
         var rows = new ArrayList<ViewRow>();
         for (var view : views) {
             var own = arms.stream().filter(arm -> arm.view().equals(view)).toList();
@@ -408,15 +509,17 @@ class ViewComplexityTest {
                 own.stream().mapToInt(Arm::conditions).sum(),
                 own.stream().mapToInt(Arm::guards).sum(),
                 own.stream().mapToLong(Arm::planWeight).sum(),
-                own.stream().mapToInt(Arm::viewRefs).sum()));
+                own.stream().mapToInt(Arm::viewRefs).sum(),
+                unionDepths.get(view)));
         }
         rows.sort(Comparator.comparingLong(ViewRow::planWeight).reversed().thenComparing(ViewRow::view));
         var viewRows = new ArrayList<String>();
-        viewRows.add("view\tarms\tunparsedArms\tvalues\tblocks\tmaxInputs\twideBlocks\tconditions\tguards\tplanWeight\tviewRefs");
+        viewRows.add("view\tarms\tunparsedArms\tvalues\tblocks\tmaxInputs\twideBlocks\tconditions\tguards\tplanWeight\tviewRefs\tunionDepth");
         rows.forEach(row -> viewRows.add(String.join("\t", row.view(), String.valueOf(row.arms()),
             String.valueOf(row.unparsed()), String.valueOf(row.values()), String.valueOf(row.blocks()),
             String.valueOf(row.maxInputs()), String.valueOf(row.wideBlocks()), String.valueOf(row.conditions()),
-            String.valueOf(row.guards()), String.valueOf(row.planWeight()), String.valueOf(row.viewRefs()))));
+            String.valueOf(row.guards()), String.valueOf(row.planWeight()), String.valueOf(row.viewRefs()),
+            String.valueOf(row.unionDepth()))));
         Files.write(REPORT.resolve("views.tsv"), viewRows);
     }
 }

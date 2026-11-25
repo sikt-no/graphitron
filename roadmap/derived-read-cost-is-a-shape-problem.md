@@ -1958,31 +1958,6 @@ someone to profile.
   write subtype, and a write's otherwise; a stored placement per outbox is read instead.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's
   own shutdown hook closes the database, so a long session's store does not keep growing.
-* **No view nests a union deeper than seven** `open`, E's.
-  A deep union is banned (Alf, 2026-11-25; fact-model's views section owns the rule): H2 parses a
-  chain of union arms left-deep and every level keeps the tokens of every arm beneath it, so a chain
-  of n arms holds about n²/2 arms' worth of parsed text in each session holding its plan. It costs
-  the build now. graphitron-model's test fork, capped at 4,096 MB, ran out of heap twice on
-  2026-11-24/25. In the green run that followed, its own GC log showed 142 full collections, with
-  the heap live after a full collection averaging 3,388 MB and peaking at 4,024 MB. A heap dump of
-  the fork found parsed tokens holding most of it, `graphitron_occurrence_depth_entry_defect_rule`
-  alone about a quarter of them in 76 copies across 48 sessions.
-  Eighteen views nest deeper on trunk at c514f01e06, counted as H2 builds them:
-  `graphitron_occurrence_depth_entry_defect_rule` 26, `graphitron_occurrence_producer_entry_defect_rule`
-  24, `graphitron_occurrence_build_entry_defect_rule` 23, `graphitron_occurrence_tenant_entry_defect_rule`
-  17, `graphitron_anchor_entry_defect_rule` 15, `graphitron_occurrence_binding_entry_defect_rule`,
-  `graphitron_field_minted_candidate_rule`, `graphitron_fetcher_entry_defect_rule` and
-  `graphitron_entity_key_entry_defect_rule` 14, `lint_violation`, `graphitron_voucher_entry_defect_rule`
-  and `graphitron_occurrence_taken_rule` 13, `graphitron_argmapping_pair_entry_defect_rule` 10,
-  `graphitron_occurrence_order_entry_defect_rule` and `graphitron_occurrence_node_id_rule` 9, and
-  `graphitron_occurrence_condition_parameter_rule`, `graphitron_join_path_step_rule` and
-  `graphitron_argmapping_pair_entry_defect_pair_rule` 8.
-  Each is split into its natural families, the arms judging one kind of thing a rule of their own
-  that its stage writes with a statement of its own, the depth and producer rules first; what must
-  stay long is bracketed as a balanced tree. The fork's heap live after a full collection is
-  measured before and after. Ends with the gate in `ViewComplexityTest`: it reports each view's
-  union nesting depth beside its arms and fails on any view deeper than seven, naming it, with no
-  allow-list, so it lands with the last split.
 
 ### A capture reads only what changed `open`
 
