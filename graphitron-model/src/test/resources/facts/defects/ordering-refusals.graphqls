@@ -94,13 +94,14 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   71,          LIST_ORDER_UNDETERMINED,     public.films_for_actor
   77,          LIST_ORDER_UNDETERMINED,     public.film_list
   77,          PARTICIPANT_WITHOUT_PRIMARY_KEY, FilmListEntry
-  135,         LIST_ORDER_UNDETERMINED,     public.role_assignment
-  136,         LIST_ORDER_UNDETERMINED,     public.role_assignment
-  146,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
-  162,         ORDER_FIELDS_EMPTY,
-  180,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
-  189,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
-  196,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  137,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  138,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  148,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  164,         ORDER_FIELDS_EMPTY,
+  184,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  193,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  200,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  202,         LIST_ORDER_UNDETERMINED,     public.role_assignment
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
@@ -112,6 +113,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kin
   Query.filmRowsChosenDefaulted, ActorFilmChoiceSort.TITLE, FIELDS
   Query.filmRowsChosenRequired,  ActorFilmChoiceSort.TITLE, FIELDS
   Query.rolesChosen,             RoleChoiceSort.CODE,       FIELDS
+  Query.rolesChosenList,         RoleChoiceSort.CODE,       FIELDS
   Query.rolesChosenRequired,     RoleChoiceSort.CODE,       FIELDS
   """)
 
@@ -168,7 +170,9 @@ type HolderNamingNothing @table(name: "role_holder") {
 # the keyless role_assignment, and ActorPages.filmsPage, a routine child connection with no order at
 # all. The near misses draw nothing: the argument non-null, filmRowsChosenRequired and
 # rolesChosenRequired; a @defaultOrder written, filmRowsChosenDefaulted; and
-# ActorPages.recentFilmsPage, which hops from the routine on to film and is ordered by its key.
+# ActorPages.recentFilmsPage, which hops from the routine on to film and is ordered by its key. A
+# list-valued @orderBy never stands in, non-null or not, since a client may send it empty (Alf,
+# 2026-11-26): Query.rolesChosenList is refused.
 
 enum ActorFilmChoiceSort { TITLE @order(fields: [{name: "title"}]) }
 input ActorFilmChoiceOrderBy { field: ActorFilmChoiceSort!, direction: SortDirection }
@@ -195,4 +199,5 @@ extend type Query {
         @defaultOrder(fields: [{name: "film_id"}])
     rolesChosen(order: RoleChoiceOrderBy @orderBy): [RoleAssignment!]!
     rolesChosenRequired(order: RoleChoiceOrderBy! @orderBy): [RoleAssignment!]!
+    rolesChosenList(order: [RoleChoiceOrderBy!]! @orderBy): [RoleAssignment!]!
 }
