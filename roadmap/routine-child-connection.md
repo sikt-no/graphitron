@@ -1,7 +1,7 @@
 ---
 id: R1169
 title: "Connection pagination on a routine-backed child field"
-status: In Review
+status: Ready
 bucket: feature
 priority: 5
 theme: routine
@@ -510,3 +510,61 @@ refuse that chain, although its batch is keyed by the first hop's correlation. T
 only where the routine is the path's first step (`position` 0 in `graphitron_join_path_step_parameter`).
 That is the same domain as the walk's `lateralHead` refusal it replaces. The fact document's
 hops-then-routine chain, which claims no defect, holds the implementer to it.
+
+### Round 3: In Review → Done, rework requested (session_01WkW2JJP3u4Mqb5fJrjVnw4, 2026-11-25)
+
+Question 1 passes. The delivery is the change the spec approved:
+
+* In the walk, the routine child's Connection deferral and the table arm's "add @splitQuery"
+  conflict are both gone. A child connection takes `BatchedTableField` with or without the marker.
+* The batched leaf's surface pin is cut back to one routine node.
+* `DeliveryFact.Trigger.PagedChild` exists, and `leafDerivedOf` derives it from the connection
+  wrapper.
+* In the store, the second `SPLIT_QUERY_REDUNDANT` arm reaches a target bound to no table. The
+  `NO_KEY_FROM_PARENT` arm is confined to a routine with no step before it. The order rule counts
+  only a stated default or a non-null `@orderBy`.
+* The manual and the defect pages say what the first-client draft said.
+* The two in-flight deviations are written into the body: no `@pivot` connection exists, and a
+  child connection is exempt from `TENANT_FAN_OUT_INLINE_UNSUPPORTED`.
+
+The full `mvn install -Plocal-db` is green at `9d02018`, `DeliveryFactPinTest` included. The
+execution tests in `RoutineFieldExecutionTest` show the goal working: per-parent pages,
+`totalCount` and the empty page, the cursor, the order argument, the filter through its column and
+through its `@condition`, split and unsplit answering alike, the catalog terminus, and two and three
+statements for four actors. Question 2 fails on one point: part of the completeness evidence the
+spec named for itself did not arrive, and the spec body does not say so.
+
+1. **The fact document leaves out the producer claims and several shapes the Tests section listed
+   (question 2).** The spec's "Fact document" bullet names `scenarios/routine-child-connection` as
+   carrying several claims that the delivered document does not have:
+   * the producer's start `CHILD` and result `CONNECTION` (the facts "the child flip keeps");
+   * both producer claims for one field, `SELECT` unsplit and `ROUTINE` split, with a header saying
+     those `ROUTINE` rows are what the R876 node replaces;
+   * the sakila shape (`title`, `sort`);
+   * the split spelling;
+   * the inline list as a near miss;
+   * the filter's `@condition`.
+
+   The delivered document claims the path steps, the step parameters, one filter term (`title`) and
+   the order source. No other fact document states a producer row for a routine child connection.
+   Those producer rows are the facts the spec says the R876 child flip must keep, so without them
+   that node's parity check has nothing stored to compare against. The flip is already moving
+   (`2d6bd49`).
+
+   This is satisfied when the missing claims are stated, or when the spec body records which were
+   dropped and why. One constraint: a field written with `@splitQuery` stores a
+   `SPLIT_QUERY_REDUNDANT` warning, so it cannot sit in a `scenarios` document. The split spelling's
+   `ROUTINE` claim belongs beside `Actor.filmsSplit` in `defects/split-query-redundant`, which
+   already holds both spellings of one field. The unsplit `SELECT` start `CHILD`, result
+   `CONNECTION` row belongs in the scenario. A plain inline routine list with no read surface is a
+   valid near miss there. The inline list with a filter or `@orderBy` is a defect and is R1179's.
+
+Non-blocking:
+
+* `FixtureWarningsGateTest` reads `report().warnings()`, which stored warnings such as
+  `SPLIT_QUERY_REDUNDANT` do not reach. So "`FixtureWarningsGateTest` expects it" could not be
+  delivered as the spec worded it. The warning on the sakila fixture is not pinned anywhere. The
+  rule itself is pinned in `defects/split-query-redundant`, and that is enough.
+* `RejectionRenderingTest` still uses the retired conflict text as an arbitrary string.
+* The changelog's two R1169 lines say "the commit carrying this line". The approving pass replaces
+  that with `51769f3c` and `46c62be7`.

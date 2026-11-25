@@ -48,13 +48,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
+| `R1169` | Connection pagination on a routine-backed child field | Ready | 2026-11-25 <sub>created 2026-11-11</sub> | [plan](routine-child-connection.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-20 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-14 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Review | 2026-11-19 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | In Review | 2026-11-23 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |
-| `R1169` | Connection pagination on a routine-backed child field | In Review | 2026-11-25 <sub>created 2026-11-11</sub> | [plan](routine-child-connection.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -520,7 +520,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1179` [**A filter or order argument on an inline routine child crashes the generator**](inline-routine-child-read-surface-crashes.md) — Backlog, bug
 - `R735` [**Project a key column across a list of node ids into an array-valued parameter**](projected-key-column-across-a-node-id-list.md) — Backlog, feature
 - `R720` [**Three routine read-surface residues: prose naming the directive, a non-discriminating order pin, and a misfiled rejection**](routine-binding-prose-names-the-directive.md) — Backlog, cleanup
-- `R1169` [**Connection pagination on a routine-backed child field**](routine-child-connection.md) — In Review, feature
+- `R1169` [**Connection pagination on a routine-backed child field**](routine-child-connection.md) — Ready, feature
 - `R662` [**Ordering over a routine chain may name columns from any node**](routine-chain-ordering-spans-nodes.md) — Backlog, feature
 - `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement
 - `R447` [**Routine chains: remaining fetch-form breadth**](routine-chain-fetch-form-breadth.md) — Backlog, feature
