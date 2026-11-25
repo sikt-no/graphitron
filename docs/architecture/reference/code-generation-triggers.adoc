@@ -303,8 +303,14 @@ each producer, what it runs and where it starts.
 
 * A `ROOT` producer is a field of a root type. It has no source and runs from nothing.
 * A `CHILD` producer starts a query of its own from what its parent produced, batched over all its
-  parents: a `@splitQuery` field, a table-bound field under a parent that holds an object rather than
-  rows, a payload's data field re-read by key after a write, or a child `@service`.
+  parents: a `@splitQuery` field, a child connection, a table-bound field under a parent that holds
+  an object rather than rows, a payload's data field re-read by key after a write, or a child
+  `@service`.
+
+A child connection starts a query of its own whether or not it is written `@splitQuery`: it has no
+inline form, each parent's page being cut by its own cursor, so the split is inferred rather than
+asked of the author, and a `@splitQuery` written on one is admitted with the `SPLIT_QUERY_REDUNDANT`
+warning (Alf, 2026-11-25).
 
 A mutation over a routine that returns one row of a table calls the routine once and re-reads by
 the record's key (Alf, 2026-11-24, replacing his 2026-11-23 ruling that the record itself be the
