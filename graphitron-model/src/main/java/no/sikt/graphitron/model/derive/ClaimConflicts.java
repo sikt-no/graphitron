@@ -141,7 +141,7 @@ public final class ClaimConflicts {
         if (DEFERRED.equals(code)) {
             return Rejection.deferred("@" + AuthoredClaim.ROUTINE.directive() + " with @"
                 + AuthoredClaim.LOOKUP_KEY.directive()
-                + " on a root field classifies but does not emit yet");
+                + " on one field classifies but does not emit yet");
         }
         String named = directives.stream().map(n -> "@" + n).collect(Collectors.joining(", "));
         return Rejection.directiveConflict(directives, named + " are mutually exclusive");

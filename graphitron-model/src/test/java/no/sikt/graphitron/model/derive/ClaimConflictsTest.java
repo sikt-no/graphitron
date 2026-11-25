@@ -136,8 +136,8 @@ class ClaimConflictsTest {
     void routineWithLookupKeyMintsThePinnedDeferral() {
         var v = conflictAt("Query.routineAndKey");
         assertThat(v.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(v.message()).isEqualTo("Field 'Query.routineAndKey': @routine with @lookupKey on a"
-            + " root field classifies but does not emit yet");
+        assertThat(v.message()).isEqualTo("Field 'Query.routineAndKey': @routine with @lookupKey on one"
+            + " field classifies but does not emit yet");
     }
 
     @Test

@@ -102,7 +102,10 @@ public final class EntryDefectClaims {
             .execute();
     }
 
-    /** Each {@code @routine} a site's field's written path steps through and no producer claim holds. */
+    /**
+     * Each {@code @routine} a site's field's written path steps through and no producer claim holds,
+     * under a conflict or the deferral the routine's pairing with {@code @lookupKey} is reported as.
+     */
     private static void steps(DSLContext dsl, Table<?> s, LocalDateTime readAt, String stage) {
         var pc = GRAPHITRON_JOIN_PATH_CLAIM;
         var pe = GRAPHITRON_AST_PATH_ENTRY;
@@ -122,7 +125,7 @@ public final class EntryDefectClaims {
                     pe.ANCHOR_LINE.eq(pc.SOURCE_LINE), pe.ANCHOR_COLUMN.eq(pc.SOURCE_COLUMN))
                 .join(re).on(re.GRAPH_NAME.eq(pe.GRAPH_NAME), re.SOURCE_NAME.eq(pe.SOURCE_NAME),
                     re.SOURCE_LINE.eq(pe.ELEMENT_LINE), re.SOURCE_COLUMN.eq(pe.ELEMENT_COLUMN))
-                .where(site(s, "CODE").eq("CLAIMS_CONFLICT"))
+                .where(site(s, "CODE").in("CLAIMS_CONFLICT", "ROUTINE_LOOKUP_DEFERRED"))
                 .and(notExists(selectOne().from(r)
                     .where(r.GRAPH_NAME.eq(pc.GRAPH_NAME), r.COORDINATE.eq(pc.ELEMENT_COORDINATE),
                         r.KIND.eq("ROUTINE")))))

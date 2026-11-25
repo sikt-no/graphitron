@@ -5717,21 +5717,19 @@ SELECT f.graph_name, f.coordinate, 'SERVICE', f.coordinate, da.source_name, da.s
                            < (da.source_name, da.source_line, da.source_column)
                         OR (e.source_name IS NULL AND da.source_name IS NULL AND e.ordinal < da.ordinal)))
 UNION ALL
--- @routine on a query or mutation root field, or on a child @splitQuery takes out of its parent's
--- statement. Below a root and not split, a routine is a lateral in the parent's statement, which
--- the field reads.
+-- @routine on a query or mutation root field. Below a root a routine is a step of the field's path,
+-- never a producer of its own, split or not (Alf, 2026-11-25): inline it is a lateral in the parent's
+-- statement, and split, or as a child connection, the producer is the split's SELECT and the routine
+-- the path's first step.
 SELECT f.graph_name, f.coordinate, 'ROUTINE', f.coordinate, da.source_name, da.source_line,
        da.source_column
   FROM graphitron_field f
   JOIN graphitron_directive_application da
     ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
    AND da.directive_name = 'routine'
- WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
+ WHERE EXISTS (SELECT 1 FROM graphql_root_operation ro
                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
                   AND ro.operation IN ('QUERY', 'MUTATION'))
-    OR EXISTS (SELECT 1 FROM graphitron_directive_application s
-                WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
-                  AND s.directive_name = 'splitQuery'))
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application e
                     WHERE e.graph_name = da.graph_name AND e.coordinate = da.coordinate
                       AND e.directive_name = da.directive_name
@@ -13446,7 +13444,9 @@ COMMENT ON VIEW graphitron_field_tenant_fan_out_rule IS 'One row the field tenan
 -- Which kind of producer each field would be if anything reached it, the candidates
 -- graphitron_producer_candidate stores: its one claim where it has exactly one, and otherwise what
 -- its position and its target make it. A field with two claims is no candidate here and a defect
--- path-claims raises; @lookupKey with @routine is deferred and has no row either.
+-- path-claims raises; @lookupKey with a root @routine is deferred and has no row either. Below the
+-- root a @routine is a path step and no claim, so a split child with @lookupKey beside one is a
+-- LOOKUP candidate, deferred by path-claims all the same.
 CREATE VIEW graphitron_producer_candidate_rule (graph_name, type_name, field_name, kind) AS
 WITH claim_count (graph_name, type_name, field_name, claims, kind) AS (
   SELECT f.graph_name, f.type_name, f.field_name, COUNT(DISTINCT c.kind), MIN(c.kind)
@@ -24025,7 +24025,10 @@ CREATE VIEW graphitron_path_claim_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- What the claim conflict rule weighs at each element. This rule's winners are the strongest claims
 -- of each family, an overridden claim being no defect; beside them, a @routine a field's written
--- path steps through and no producer claim holds, which no claim can share a field with.
+-- path steps through and no producer claim holds, weighed as the ROUTINE its application writes: a
+-- child @routine is a step of the path and never a producer (Alf, 2026-11-25), so its pairing with
+-- another claim is judged as a root routine's is, a @lookupKey beside it deferred and a @service a
+-- conflict.
 WITH contender (graph_name, coordinate, kind) AS (
   SELECT DISTINCT c.graph_name, c.coordinate, c.kind
     FROM graphitron_claim c
@@ -24035,7 +24038,7 @@ WITH contender (graph_name, coordinate, kind) AS (
                       WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
                         AND sk.family = k.family AND s.priority < c.priority)
   UNION ALL
-  SELECT DISTINCT pc.graph_name, pc.element_coordinate, 'ROUTINE_STEP'
+  SELECT DISTINCT pc.graph_name, pc.element_coordinate, 'ROUTINE'
     FROM graphitron_join_path_claim pc
     JOIN graphitron_ast_path_entry pe
       ON pe.graph_name = pc.graph_name AND pe.source_name = pc.source_name
@@ -25508,7 +25511,8 @@ UNION ALL
 -- says which tenant's database to read. A field graphitron reads with a statement of its own and
 -- marked @tenantFanOut says so itself, reading every tenant the request may see, a route the
 -- connection does not state yet. The marker says nothing for any other producer, a @service among
--- them, which is called once and fans out over nothing.
+-- them, which is called once and fans out over nothing, nor for a statement whose path starts at a
+-- @routine, a database routine's SQL being nothing graphitron runs once per tenant.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
        'UNROUTED_CHILD', CAST(NULL AS VARCHAR), 'occurrence-routes'
   FROM graphitron_occurrence_producer p
@@ -25523,7 +25527,14 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
    AND NOT (p.kind = 'SELECT'
             AND EXISTS (SELECT 1 FROM graphitron_directive_application fo
                          WHERE fo.graph_name = f.graph_name AND fo.coordinate = f.coordinate
-                           AND fo.directive_name = 'tenantFanOut'))
+                           AND fo.directive_name = 'tenantFanOut')
+            AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_routine sr
+                             WHERE sr.graph_name = p.graph_name AND sr.coordinate = p.coordinate
+                               AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step b
+                                                WHERE b.graph_name = sr.graph_name
+                                                  AND b.coordinate = sr.coordinate
+                                                  AND b.target_type = sr.target_type
+                                                  AND b.position < sr.position)))
 UNION ALL
 -- A tenant an author named for a root call whose result is a global table's, at the @tenant or the
 -- $tenant pair: a global table's rows are read on the key with an empty tenant part, there being no
@@ -35181,7 +35192,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('VOUCHER_ACCEPT_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_NOT_GENERATED',
    '@accept is on a type with a connection below it, at any depth through the types its subtree reads, and a connection does not yet read on the vouched connection: read those rows as a list, in the entity''s SELECT, a split query or a @service.'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
-   '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.'),
+   '@routine with @lookupKey on one field, at the root or as a step of a split child''s path, classifies but graphitron does not generate it yet.'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
    '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.'),
   ('CONDITION_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_WITHOUT_METHOD',

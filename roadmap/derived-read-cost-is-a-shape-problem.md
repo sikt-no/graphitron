@@ -1264,11 +1264,6 @@ static method needs no holder.
     child-routine arms of `ArgmappingProjectionDefects` (the key-column type mismatch at a child
     routine, and the list deferral at a child `@routine`), which move into the store over it. The
     editor's `argMapping` completion at `@routine` is its own node, off the critical path.
-  * **A split child `@routine` is a path routine, claimed by E** `open`, E's. `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
-    `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
-    the walk's first step from the parent's keys. When it lands, a child routine connection's two
-    spellings converge: written with `@splitQuery` or without, it claims no `ROUTINE` producer, its
-    producer is the split re-query, and the routine is the path's first step.
 * **A routine step's parameter splits by what binds it** `open`, off the critical path.
   `graphitron_join_path_step_parameter` carries a column (`from_*`) and an argument coordinate, one
   of them null by CHECK, two key shapes in one row: it splits into a column subtype and an argument
@@ -1277,6 +1272,13 @@ static method needs no holder.
   being of different grains ("unfortunate, the tables have different granularity", Alf); the call
   fill's `landing_coordinate` has the same gap. The split states the argument subtype's coordinate
   once, held to its landing by key.
+* **The editor's claim-conflict reads take the stored defect** `open`, off the critical path. Two
+  language-server readers decide a claim conflict themselves from `graphitron_producer_claim`:
+  `FieldColumnTable` silences a field's column scope where two producer kinds stand but for the
+  hard-coded LOOKUP/ROUTINE pair, and `DiagnosticFacts` counts producer claims for its CONFLICT arm.
+  Neither sees a `@routine` a field's path steps through, which is no claim, so a split child
+  `@routine` beside a `@service` or a `@lookupKey` is no longer silenced. Both read
+  `graphitron_entry_defect` for `CLAIMS_CONFLICT` and `ROUTINE_LOOKUP_DEFERRED` instead.
 * **The editor completes `argMapping` at a `@routine`** `open`, off the critical path. The language
   server completes an `argMapping` on `@service`, `@condition` and `@externalField` and has nothing
   at `@routine`, root or child: only `ExternalCodeReference.argMapping` is wired, its left side reads
@@ -1820,8 +1822,8 @@ output package they are written to are settled.
     on "The root query fetchers are emitted from the store, claimed by C". A split-query child reads its DataLoader and its connection off the store.
     It does not wait for the projection units: its `$project` stays the walk's until that tier flips, as
     the store-emitted roots' does (Alf, 2026-11-25). A child `@routine` arrives as the first step of the
-    split's join path, never as a `ROUTINE` producer, so the routine case follows
-    "A split child `@routine` is a path routine, claimed by E".
+    split's join path, never as a `ROUTINE` producer: a split child routine is a `SELECT` producer
+    whose path starts at the routine.
   * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
     `blocked`, F's, on the same two nodes. A connection field and its count and facet siblings read
     their query and connection off the store; it releases R1119's slice 8e.3 for connection-typed

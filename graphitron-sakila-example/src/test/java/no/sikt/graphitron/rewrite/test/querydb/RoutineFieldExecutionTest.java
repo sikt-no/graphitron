@@ -573,6 +573,27 @@ class RoutineFieldExecutionTest {
         assertThat(totalCount(actors, "JOAN", "recentFilmsConnection")).isEqualTo(0);
     }
 
+    @Test
+    void aTableFieldUnderAChildRoutineResultReadsTheSameInBothSpellings() {
+        // ActorFilmCard is bound to no table; its film field reaches film from the function's row by
+        // film_id. A child @routine is a step of the path, split or not, so the inline list and the
+        // @splitQuery twin answer the same cards, and the title is film's own column.
+        var actors = actorsOf(execute("""
+            { allActors { firstName
+                filmCards(minLength: 50) { filmId film { title } }
+                filmCardsSplit(minLength: 50) { filmId film { title } }
+            } }
+            """));
+        for (String actor : List.of("PENELOPE", "NICK", "ED", "JOAN")) {
+            assertThat(fieldOf(actors, actor, "filmCardsSplit", "film")).as(actor)
+                .isEqualTo(fieldOf(actors, actor, "filmCards", "film"));
+        }
+        assertThat(fieldOf(actors, "PENELOPE", "filmCardsSplit", "filmId")).containsExactly(1, 3);
+        assertThat(fieldOf(actors, "PENELOPE", "filmCardsSplit", "film"))
+            .containsExactly(Map.of("title", "ACADEMY DINOSAUR"), Map.of("title", "ADAPTATION HOLES"));
+        assertThat(fieldOf(actors, "JOAN", "filmCards", "filmId")).isEmpty();
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> actorsOf(Map<String, Object> data) {
         return (List<Map<String, Object>>) data.get("allActors");

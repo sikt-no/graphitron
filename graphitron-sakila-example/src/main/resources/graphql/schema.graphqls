@@ -3422,10 +3422,32 @@ type Actor implements Searchable @table(name: "actor") {
             argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
+    # A field under a child routine's result that reaches a table: ActorFilmCard.film takes its film
+    # off films_for_actor's rows by the name-matched film_id. A child @routine is a step of the path in
+    # either spelling, so the inline list and its @splitQuery twin answer the same cards.
+    filmCards(minLength: Int!): [ActorFilmCard!]
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
+    filmCardsSplit(minLength: Int!): [ActorFilmCard!] @splitQuery
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
     # B2 fixture: Searchable.name maps to first_name on Actor. Combined with Film.name
     # (mapped to title), one Searchable result list mixes typed Records of both shapes
     # under a uniform interface contract.
     name:      String! @field(name: "FIRST_NAME")
+}
+
+# The result of films_for_actor under Actor.filmCards and filmCardsSplit, bound to no table: its film
+# field reaches the film catalog table from the function's row.
+type ActorFilmCard {
+    filmId: Int  @field(name: "FILM_ID")
+    film:   Film
 }
 
 # Plain-object nesting type. No @table, no @record. Nested under Film.summary; the

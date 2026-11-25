@@ -5,9 +5,16 @@
 # field written with @splitQuery draws the directive's redundancy warning, which the defects document
 # split-query-redundant states. FilmCast.castFilms steps through film_actor before the routine, and
 # Actor.recentFilms hops on from the routine to film; both page as Actor.films does.
+#
+# A child @routine is a step of the path and never a producer, split or not (Alf, 2026-11-25), so a
+# field under its result reads the same in both spellings: ActorFilmCard.film, a table-bound field of
+# a type no table binds, takes its film off the function's rows by the path's name-matched step from
+# films_for_actor to film, under Actor.filmCards inline and Actor.filmCardsSplit split alike, with no
+# lift and no payload re-read, and neither spelling draws a defect.
 
 type ActorFilm { filmId: Int @field(name: "film_id"), title: String }
 type Film @table(name: "film") { title: String }
+type ActorFilmCard { filmId: Int @field(name: "film_id"), film: Film }
 
 input ActorFilmPageFilter {
   title: String
@@ -24,6 +31,12 @@ input ActorFilmOrderBy { field: ActorFilmSort!, direction: SortDirection }
 type Actor @table(name: "actor") {
   films(minLength: Int!, filter: ActorFilmPageFilter, orderBy: ActorFilmOrderBy @orderBy): [ActorFilm!]
     @asConnection(defaultFirstValue: 10)
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmCards(minLength: Int!): [ActorFilmCard!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmCardsSplit(minLength: Int!): [ActorFilmCard!] @splitQuery
     @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
   recentFilms(minLength: Int!): [Film!] @asConnection
@@ -43,6 +56,10 @@ type Query { actors: [Actor!]!, casts: [FilmCast!]! }
 extend schema @expectEquals(relation: "graphitron_join_path_step",
     where: "coordinate LIKE 'Actor.%' OR coordinate LIKE 'FilmCast.%'", rows: """
   coordinate,         target_type, position, from_table,      to_table
+  Actor.filmCards,          ActorFilmCard, 0,  actor,           films_for_actor
+  Actor.filmCards.film,     Film,          0,  films_for_actor, film
+  Actor.filmCardsSplit,     ActorFilmCard, 0,  actor,           films_for_actor
+  Actor.filmCardsSplit.film, Film,         0,  films_for_actor, film
   Actor.films,        ActorFilm,   0,        actor,           films_for_actor
   Actor.recentFilms,  Film,        0,        actor,           films_for_actor
   Actor.recentFilms,  Film,        1,        films_for_actor, film
@@ -70,4 +87,20 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order",
   Actor.films,       public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE,  FIELDS
   Actor.films,       public.films_for_actor, ActorFilmSort.TITLE,   CHOICE,  FIELDS
   Actor.recentFilms, public.film,            Actor.recentFilms,     DEFAULT, IMPLICIT_PRIMARY_KEY
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_producer", rows: """
+  coordinate,           kind
+  Actor.filmCardsSplit, ROUTINE
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_producer_lift", rows: """
+  coordinate
+  Actor.filmCards.film
+  Actor.filmCardsSplit.film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_payload_data_field", rows: """
+  type_name,     field_name
+  ActorFilmCard, film
   """)

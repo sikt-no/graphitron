@@ -308,7 +308,7 @@ class EmissionCensusTest {
                 "Language.filmsInlineByOriginalLanguageDesc", "PivotNestingHost.labelsComputedRow",
                 "PivotNestingHost.labelsWithFilms", "PivotNestingHost.languageNames",
                 "PivotNestingHost.origin.language", "Store.customers"))
-            .containsEntry("NARROWED_LIST", List.of("Actor.films", "Actor.filmsNested", "Actor.recentFilms",
+            .containsEntry("NARROWED_LIST", List.of("Actor.filmCards", "Actor.films", "Actor.filmsNested", "Actor.recentFilms",
                 "Actor.recentFilmsInferred",
                 "FanAlpha.details", "FanAlpha.marks", "FanBeta.details", "FanBeta.marks", "FanItem.details",
                 "Film.actors", "Film.actorsGenerated", "Film.castFilms", "Film.castRecentFilms", "Film.filmDetails.actorsByLookup",

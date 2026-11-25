@@ -479,7 +479,7 @@ final class SchemaQueries {
                     ? "Type '" + row.value2() + "': "
                     : "Field '" + row.value2() + "." + row.value3() + "': ";
                 String sentence = deferred
-                    ? "@routine with @lookupKey on a root field classifies but does not emit yet"
+                    ? "@routine with @lookupKey on one field classifies but does not emit yet"
                     : ordered(Stream.concat(row.value4().stream(), row.value5().stream()).toList())
                         .stream().map(n -> "@" + n).collect(Collectors.joining(", "))
                         + " are mutually exclusive";
