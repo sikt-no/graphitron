@@ -28228,7 +28228,10 @@ CREATE VIEW graphitron_occurrence_read_order_entry_defect_rule
 -- a mutation's routine is a write, whose plural order ROUTINE_WRITE_PLURAL_UNORDERED owns. A child
 -- handed a record over a keyless table has no key to be re-read by, which is NO_KEY_FROM_PARENT's,
 -- so nothing here exempts it. An @orderBy whose input offers no choice is ORDER_INPUT_SHAPE's, not
--- stacked here.
+-- stacked here. An @orderBy argument a client may leave out states no default: where it is left out
+-- the rows are read in the default order, so only a non-null one stands in for it (Alf, 2026-11-25).
+-- The default is the primary key of the table the rows are read on; a routine's result has none
+-- unless its type is bound to a table by its own @table, so it needs a @defaultOrder.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column, 'LIST_ORDER_UNDETERMINED',
        t.bound, 'occurrence-orderings'
   FROM graphitron_occurrence_binding_table t
@@ -28245,7 +28248,8 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                         WHERE rr.graph_name = f.graph_name AND rr.type_name = f.type_name
                           AND rr.field_name = f.field_name))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_order r
-                    WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+                    WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound
+                      AND r.kind = 'DEFAULT')
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                     WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                       AND d.directive_name = 'defaultOrder')
@@ -28253,6 +28257,8 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                      JOIN graphql_directive_application ob
                        ON ob.graph_name = k.graph_name AND ob.coordinate = k.element_coordinate
                       AND ob.directive_name = 'orderBy'
+                     JOIN graphitron_argument a
+                       ON a.graph_name = k.graph_name AND a.coordinate = k.element_coordinate AND a.non_null
                     WHERE k.graph_name = o.graph_name AND k.parent_coordinate = o.coordinate
                       AND k.kind = 'FIELD_ARGUMENT')
 UNION ALL
@@ -34725,7 +34731,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ORDER_CHOICE_ON_INLINE_LIST', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDER_CHOICE_ON_INLINE_LIST',
    'An @orderBy argument sits on a list read inside its parent''s query, and graphitron does not yet apply a client''s choice of order there, so the choice would be accepted and dropped: read the list in a query of its own with @splitQuery, or order it with @defaultOrder.'),
   ('LIST_ORDER_UNDETERMINED', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ORDER_UNDETERMINED',
-   'A list or connection over a table with no primary key, or over a table-valued function''s result, states no order, neither @defaultOrder nor an @orderBy argument, so its rows arrive in whatever order the database returns them, differently from run to run: add @defaultOrder, naming the function''s columns with fields: on a function''s result, an @orderBy argument, or a primary key to the table.'),
+   'A list or connection over a table with no primary key, or over a table-valued function''s result, states no order, neither @defaultOrder nor an @orderBy argument a client must give, so where none is given its rows arrive in whatever order the database returns them, differently from run to run: add @defaultOrder naming the result''s columns with fields:, or make the @orderBy argument non-null.'),
   ('LIST_ELEMENT_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_CONDITION',
    'An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object: put @condition(override: true) on the list field to take the whole list instead.'),
   ('LIST_ELEMENT_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NODE_ID',

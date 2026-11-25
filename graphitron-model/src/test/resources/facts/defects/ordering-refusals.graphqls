@@ -93,10 +93,13 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   69,          LIST_ORDER_UNDETERMINED,     public.stint
   71,          LIST_ORDER_UNDETERMINED,     public.films_for_actor
   77,          LIST_ORDER_UNDETERMINED,     public.film_list
-  126,         LIST_ORDER_UNDETERMINED,     public.role_assignment
-  127,         LIST_ORDER_UNDETERMINED,     public.role_assignment
-  137,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
-  153,         ORDER_FIELDS_EMPTY,
+  134,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  135,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  145,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  161,         ORDER_FIELDS_EMPTY,
+  179,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  188,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  195,         LIST_ORDER_UNDETERMINED,     public.role_assignment
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
@@ -104,6 +107,11 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kin
   Film.actorsSorted,       ActorSort.LAST_NAME,     FIELDS
   Query.actorsFullySorted, ActorFullSort.LAST_NAME, FIELDS
   Query.actorsFullySorted, ActorFullSort.ACTOR_ID,  PRIMARY_KEY
+  Query.filmRowsChosen,          ActorFilmChoiceSort.TITLE, FIELDS
+  Query.filmRowsChosenDefaulted, ActorFilmChoiceSort.TITLE, FIELDS
+  Query.filmRowsChosenRequired,  ActorFilmChoiceSort.TITLE, FIELDS
+  Query.rolesChosen,             RoleChoiceSort.CODE,       FIELDS
+  Query.rolesChosenRequired,     RoleChoiceSort.CODE,       FIELDS
   """)
 
 input ActorUndirectedOrderBy {
@@ -151,4 +159,39 @@ union Searchable = Film | FilmListEntry
 # at the application, on a type nothing reaches as on any other.
 type HolderNamingNothing @table(name: "role_holder") {
     rolesNamingNothing: [RoleAssignment!]! @defaultOrder(fields: [])
+}
+
+# An @orderBy argument a client may leave out states no order for when it is left out (Alf,
+# 2026-11-25), so a list with nothing to fall back on needs a @defaultOrder beside it, or the
+# argument non-null: Query.filmRowsChosen over films_for_actor's result and Query.rolesChosen over
+# the keyless role_assignment, and ActorPages.filmsPage, a routine child connection with no order at
+# all. The near misses draw nothing: the argument non-null, filmRowsChosenRequired and
+# rolesChosenRequired; a @defaultOrder written, filmRowsChosenDefaulted; and
+# ActorPages.recentFilmsPage, which hops from the routine on to film and is ordered by its key.
+
+enum ActorFilmChoiceSort { TITLE @order(fields: [{name: "title"}]) }
+input ActorFilmChoiceOrderBy { field: ActorFilmChoiceSort!, direction: SortDirection }
+
+enum RoleChoiceSort { CODE @order(fields: [{name: "role_code"}]) }
+input RoleChoiceOrderBy { field: RoleChoiceSort!, direction: SortDirection }
+
+type ActorPages @table(name: "actor") {
+    filmsPage(minLength: Int!): [ActorFilm!] @asConnection
+        @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    recentFilmsPage(minLength: Int!): [Film!] @asConnection
+        @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+        @reference(path: [{table: "film"}])
+}
+
+extend type Query {
+    actorPages: [ActorPages!]!
+    filmRowsChosen(actorId: Int!, minLength: Int!, order: ActorFilmChoiceOrderBy @orderBy): [ActorFilm!]!
+        @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    filmRowsChosenRequired(actorId: Int!, minLength: Int!, order: ActorFilmChoiceOrderBy! @orderBy): [ActorFilm!]!
+        @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    filmRowsChosenDefaulted(actorId: Int!, minLength: Int!, order: ActorFilmChoiceOrderBy @orderBy): [ActorFilm!]!
+        @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+        @defaultOrder(fields: [{name: "film_id"}])
+    rolesChosen(order: RoleChoiceOrderBy @orderBy): [RoleAssignment!]!
+    rolesChosenRequired(order: RoleChoiceOrderBy! @orderBy): [RoleAssignment!]!
 }
