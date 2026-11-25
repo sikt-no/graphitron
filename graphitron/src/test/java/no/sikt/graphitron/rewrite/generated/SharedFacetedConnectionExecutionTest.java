@@ -25,8 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The two root producers of the fact scenario {@code connection-shared-facets.graphqls}, called
  * directly against the shared database: both build the one class their connection type names, and
  * each fills its count and its facets from its own arguments. Query.films counts and buckets every
- * film; Query.filmsById those it is handed. Every read is over the seeded films 1 to 5, whose
- * original languages are 3, 2, 2, none and 1.
+ * film; Query.filmsById those it is handed. The facet's filter argument and column are each producer's
+ * own: Query.filmsByIdWhere takes it through where:, and Query.filmsByLength groups it by length. Every
+ * read is over the seeded films 1 to 5, whose original languages are 3, 2, 2, none and 1, and whose
+ * lengths are 86, 48, 50, 117 and 169.
  */
 @ExecutionTier
 class SharedFacetedConnectionExecutionTest {
@@ -97,5 +99,34 @@ class SharedFacetedConnectionExecutionTest {
             .as("the other producer counts under its own arguments, every film")
             .isGreaterThanOrEqualTo(5)
             .isNotEqualTo(fewer.totalCount(fewerEnv));
+    }
+
+    @Test
+    void eachProducerFiltersAndGroupsTheSharedFacetByItsOwnArgumentAndColumn() {
+        var dsl = TestDatabase.dsl();
+
+        var where = new HashMap<String, Object>();
+        where.put("filmIds", List.of(1, 2, 3, 4, 5));
+        where.put("where", Map.of("originalLanguageId", List.of(2)));
+        where.put("first", 10);
+        Connections.FilmsByLanguageConnection byWhere = QueryFetchers.rowsFilmsByIdWhere(dsl, env(dsl, where));
+        var whereEnv = env(dsl, where, "originalLanguageId");
+        assertThat(byWhere.totalCount(whereEnv)).as("the films where: selects").isEqualTo(2);
+        assertThat(buckets(byWhere.facets(whereEnv)))
+            .as("by original language, its own filter through where: left out")
+            .containsExactly(List.of(2, 2), List.of(1, 1), List.of(3, 1), Arrays.asList(null, 1));
+
+        var length = new HashMap<String, Object>();
+        length.put("filmIds", List.of(1, 2, 3, 4, 5));
+        length.put("filter", Map.of("originalLanguageId", List.of(48)));
+        length.put("first", 10);
+        Connections.FilmsByLanguageConnection byLength = QueryFetchers.rowsFilmsByLength(dsl, env(dsl, length));
+        var lengthEnv = env(dsl, length, "originalLanguageId");
+        assertThat(byLength.totalCount(lengthEnv)).as("the one film 48 long").isEqualTo(1);
+        // length is a smallint, so a bucket's value is the column's Short.
+        assertThat(buckets(byLength.facets(lengthEnv)).stream()
+                .map(bucket -> List.of(((Number) bucket.get(0)).intValue(), bucket.get(1))).toList())
+            .as("by length, its own filter left out")
+            .containsExactly(List.of(48, 1), List.of(50, 1), List.of(86, 1), List.of(117, 1), List.of(169, 1));
     }
 }

@@ -205,6 +205,10 @@ public final class LauncherCommands {
         var roots = store == null
             ? java.util.Map.<String, no.sikt.graphitron.emit.RootQuery.Result>of()
             : no.sikt.graphitron.emit.RootQuery.read(store);
+        // Each root's facets per occurrence, which a faceted root the walk still launches groups by.
+        var facets = store == null
+            ? java.util.Map.<String, List<no.sikt.graphitron.emit.RootQuery.Facet>>of()
+            : no.sikt.graphitron.emit.RootQuery.facets(store);
         var rows = new ArrayList<LauncherCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
@@ -218,7 +222,7 @@ public final class LauncherCommands {
                     case ROOT_CATALOG -> roots.get(field.qualifiedName())
                         instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted
                         ? storeRootRow(emitted, units)
-                        : rootCatalogRow(schema, field, conditions, units);
+                        : rootCatalogRow(schema, field, conditions, units, facets.get(field.qualifiedName()));
                     case BATCHED_CHILD_CATALOG -> batchedChildRow(schema, field, conditions, units);
                 });
             }
@@ -368,12 +372,19 @@ public final class LauncherCommands {
         if (root.facets().isEmpty()) {
             return null;
         }
-        boolean takesEnv = root.condition() != null && root.condition().takesContext();
-        boolean takesDsl = root.condition() != null && root.condition().takesSession();
-        var entries = root.facets().stream().map(facet -> {
+        return facetPlanOf(root.parentType(), root.fieldName(), root.facets(),
+            root.condition() != null && root.condition().takesContext(),
+            root.condition() != null && root.condition().takesSession(), root.table().primaryKeyColumns(), units);
+    }
+
+    /** A root's facet plan from the store's facets of its occurrence; see {@link #storeFacetPlanOf}. */
+    private static FacetPlan facetPlanOf(String parentType, String fieldName,
+            List<no.sikt.graphitron.emit.RootQuery.Facet> facets, boolean takesEnv, boolean takesDsl,
+            List<no.sikt.graphitron.model.jooq.ColumnRef> distinctKey, GeneratedUnits units) {
+        var entries = facets.stream().map(facet -> {
             var spec = new FacetSpec(facet.filterArgument(), facet.name(), facet.column().sqlName(),
                 facet.valueType(), facet.valueNullable(), facet.bucketType(), facet.referenceBound());
-            var fragment = new GlueCall(units.facetConditionMethod(root.parentType(), root.fieldName(), facet.name()),
+            var fragment = new GlueCall(units.facetConditionMethod(parentType, fieldName, facet.name()),
                 takesEnv, takesDsl);
             FacetPlan.Grouping grouping = facet.steps().isEmpty()
                 ? new FacetPlan.Grouping.CarrierColumn(facet.column())
@@ -382,8 +393,8 @@ public final class LauncherCommands {
                     facet.column());
             return new FacetPlan.Entry(spec, fragment, grouping);
         }).toList();
-        return new FacetPlan(new GlueCall(units.facetBaseConditionMethod(root.parentType(), root.fieldName()),
-            takesEnv, takesDsl), entries, root.table().primaryKeyColumns());
+        return new FacetPlan(new GlueCall(units.facetBaseConditionMethod(parentType, fieldName),
+            takesEnv, takesDsl), entries, distinctKey);
     }
 
     /**
@@ -553,19 +564,19 @@ public final class LauncherCommands {
      * statement (membership lives on the verdict alone).
      */
     private static LauncherCommand rootCatalogRow(GraphitronSchema schema, GraphitronField field,
-            ConditionRelation conditions, GeneratedUnits units) {
+            ConditionRelation conditions, GeneratedUnits units, List<no.sikt.graphitron.emit.RootQuery.Facet> facets) {
         return switch (field) {
             case QueryField.QueryTableField qtf -> {
                 if (qtf.routine() instanceof RoutineResolution.Chain chain) {
                     yield routineRow(qtf, chain, whereOf(qtf, conditions),
-                        facetPlanOf(schema, qtf, conditions, units), units);
+                        facetPlanOf(schema, qtf, conditions, units, facets), units);
                 }
                 var mapping = keyedLookupOf(
                     schema.operationMembersOf(qtf.parentTypeName(), qtf.name()));
                 yield mapping != null
                     ? lookupRow(qtf, mapping, whereOf(qtf.parentTypeName(), qtf.name(), conditions), units)
                     : row(qtf, whereOf(qtf, conditions), units,
-                        facetPlanOf(schema, qtf, conditions, units),
+                        facetPlanOf(schema, qtf, conditions, units, facets),
                         tenancyOf(schema, qtf, units));
             }
             case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
@@ -1382,7 +1393,7 @@ public final class LauncherCommands {
      * key is the row's table's primary key.
      */
     private static FacetPlan facetPlanOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
-            ConditionRelation conditions, GeneratedUnits units) {
+            ConditionRelation conditions, GeneratedUnits units, List<no.sikt.graphitron.emit.RootQuery.Facet> stored) {
         var specs = ConditionCommands.facetsFor(schema, qtf.parentTypeName(), qtf.name());
         if (specs.isEmpty()) {
             return null;
@@ -1390,6 +1401,13 @@ public final class LauncherCommands {
         var row = conditionRowOf(qtf, conditions).orElseThrow(() -> new IllegalStateException(
             "faceted coordinate '" + qtf.qualifiedName() + "' has no condition row; facet inputs"
             + " are filters, so a faceted coordinate always has one"));
+        // The store's facets are this occurrence's own, where the classifier's are its connection
+        // type's, the first carrier's: a field sharing the type with its own filter argument or column
+        // groups by what the store states for it.
+        if (stored != null && !stored.isEmpty()) {
+            return facetPlanOf(qtf.parentTypeName(), qtf.name(), stored, row.readsRequestContext(),
+                row.readsSession(), row.table().primaryKeyColumns(), units);
+        }
         var fragmentRefs = row.facets().stream().map(f -> f.method()).toList();
         var ownByField = new java.util.HashMap<String, FacetFragment.Own>();
         for (var fragment : row.facets()) {

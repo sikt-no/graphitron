@@ -511,9 +511,8 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     `@asFacet` does not need `@asConnection`, and using it hands the facets shape to graphitron,
     which mints the facets type and the connection type's `facets` field, an authored connection
     type included (Alf, 2026-11-13). The store can mint them, but the runtime schema-shape classes
-    (`SchemaShapePlanner`), the fetcher registrations and the facet specs (`FacetPlan`'s groupings,
-    condition fragments) are still built from the classified schema, where an authored connection's
-    structural arm has no facets; minting in the store alone would leave the type unwired, and
+    (`SchemaShapePlanner`) and the fetcher registrations are still built from the classified schema,
+    where an authored connection's structural arm has no facets; minting in the store alone would leave the type unwired, and
     extending the classifier grows what is retiring. Shipped without it (Alf, 2026-11-18);
     `asFacet.adoc` says authored connections do not gain facets yet. With it goes
     `CONNECTION_FACETS_FIELD_DECLARED`'s restriction to types no `@asConnection` mints. Until then an `@asFacet` filter taken only by fields returning authored
@@ -521,20 +520,6 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     `FACET_SURFACED_NOWHERE` (Alf, 2026-11-18); the deferral goes with this node. Open from the former R606: where derived types
     live, and the derived stratum's provenance; first-occurrence-wins dedup of a duplicate facet
     name stays the walk's refusal, the store counting a facet reached before dedup.
-  * **The facet plans read the store's per-occurrence facets** `open`.
-    A producer's facet groupings and condition fragments (`LauncherCommands`' facet plan,
-    `ConditionCommands`' facet bindings, `RootLauncherRenderer.facetBindings`) are built from the
-    classifier's facet specs, held per connection type (`ConnectionSynthesisRelation.facetsAt`). Two
-    fields sharing a connection type whose facets differ only in filter argument or column are
-    therefore still refused by the walk (`ConnectionPromoter`'s `MintedShape` compares whole facet
-    specs), though the filter argument and the column are each producer's own and the store accepts
-    them: a valid schema refused, until this node. They read `graphitron_occurrence_producer_facet`
-    instead, per producing occurrence (its filter argument, and the column the binding resolves,
-    which the stored binding must carry), the condition and launcher producers taking the store;
-    then the walk's facet comparison is deleted, not relaxed: the classifier is dissolving and does
-    not grow per-field facet specs (Alf, 2026-11-18). Pinned by a scenario of three fields sharing one
-    faceted connection type with `filter:`, `where:` and a different column, called directly, each
-    leaving its own facet's filter out of its buckets and grouping by its own column.
   * **Every store defect has a reference entry** `open`.
     Defects moved into the store (`graphitron_defect_type`: a code, its severity, its basis,
     `GRAPHITRON` or the `UNSUPPORTED` deferral, its LSP code and its one-sentence `statement`), but

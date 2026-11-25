@@ -1319,9 +1319,10 @@ public final class RootQuery {
      * Each faceted root connection's facets in the order it surfaces them, by occurrence: each facet's
      * binding, the column its filter occurrence binds where its path lands, and the steps that path
      * takes from the connection's table. A root with a facet the store states no column for is absent,
-     * which holds it back.
+     * which holds it back. Read for every root, the walk's launcher building a root the store holds
+     * back for another reason from it too.
      */
-    private static Map<String, List<Facet>> facets(StoreHandle store) {
+    public static Map<String, List<Facet>> facets(StoreHandle store) {
         var pf = GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var fo = GRAPHITRON_OCCURRENCE.as("fo");

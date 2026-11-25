@@ -151,12 +151,12 @@ public final class ConnectionSynthesisRelation {
     /**
      * The shape one carrier mints under its connection name, compared across carriers by
      * {@link Builder#add}: two rows minting the same connection name must project the same
-     * element type, item nullability, edge type and facets, because the registry keeps only one
-     * reconciled entry per name. Construction-internal; never stored on a row (the reconciled
-     * facts live on the registry entry).
+     * element type, item nullability and edge type, because the registry keeps only one reconciled
+     * entry per name. Their facets are not compared: a producer's filter argument and column are its
+     * own, and the facets record the type carries is {@code CONNECTION_FACETS_DISAGREE}'s in the store.
+     * Construction-internal; never stored on a row (the reconciled facts live on the registry entry).
      */
-    record MintedShape(String elementTypeName, boolean itemNullable, String edgeName,
-                       List<FacetSpec> facets) {}
+    record MintedShape(String elementTypeName, boolean itemNullable, String edgeName) {}
 
     /** A minted-name-axis disagreement: the already-registered row the new row disagrees with. */
     record NameAxisConflict(ConnectionSynthesis existingRow) {}

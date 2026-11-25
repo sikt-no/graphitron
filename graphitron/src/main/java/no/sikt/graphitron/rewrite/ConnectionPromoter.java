@@ -168,8 +168,7 @@ final class ConnectionPromoter {
                 parent.getName(), fieldDef.getName(), promotion.connectionName(), rowMinted);
         }
         var conflict = relation.add(row, new ConnectionSynthesisRelation.MintedShape(
-            promotion.elementTypeName(), promotion.itemNullable(), promotion.edgeName(),
-            promotion.facets()));
+            promotion.elementTypeName(), promotion.itemNullable(), promotion.edgeName()));
         if (conflict != null) {
             var other = conflict.existingRow();
             ctx.addDiagnostic(ValidationError.forField(
@@ -178,7 +177,7 @@ final class ConnectionPromoter {
                     + other.parentTypeName() + "." + other.fieldName() + "' and '"
                     + parent.getName() + "." + fieldDef.getName() + "' both mint connection type '"
                     + promotion.connectionName() + "' but disagree on its shape (element type, "
-                    + "item nullability, edge type or facets). Carriers sharing one connection "
+                    + "item nullability or edge type). Carriers sharing one connection "
                     + "name must project the same shape; give one of them its own connection name."),
                 carrierLocation));
         }
