@@ -630,15 +630,10 @@ public class GraphitronSchemaValidator {
     /**
      * Validates a {@link no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField}
      * or {@link no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField}'s participant set
-     * against the constraints of the two-stage native fetcher emission:
-     *
-     * <ul>
-     *   <li>Every {@link no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound} participant
-     *       must declare a primary key. Stage 1 needs row identity per branch.</li>
-     *   <li>All TableBound participants must share the same PK arity. Stage 1 projects
-     *       {@code (typename, pk0..pkN-1)} per branch and orders on those key columns, and the
-     *       column count must align across UNION ALL branches; the emitter does not NULL-pad.</li>
-     * </ul>
+     * against the constraints of the two-stage native fetcher emission. That every participant has a
+     * primary key, and every participant's as many columns, is the store's
+     * {@code PARTICIPANT_WITHOUT_PRIMARY_KEY} and {@code PARTICIPANT_KEYS_DIFFER_IN_ARITY}, which stop
+     * generation before the walk.
      *
      * <p>{@link no.sikt.graphitron.rewrite.model.ParticipantRef.Unbound} participants are
      * skipped: they are handled by the {@code @error} carrier path or never reach the SQL
@@ -646,8 +641,7 @@ public class GraphitronSchemaValidator {
      * has its own dedicated single-table emitter and bypasses this check.
      *
      * <p>Scoped to fields, not types, so an interface like {@code Node} (dispatched via
-     * {@code QueryNodeFetcher}, not the multi-table polymorphic emitter) does not trip the
-     * arity rule when its implementers have heterogeneous PK shapes.
+     * {@code QueryNodeFetcher}, not the multi-table polymorphic emitter) is not judged here.
      *
      * @param qualifiedName field qualified name used in the error message header (e.g.
      *                      {@code "Query.search"}). Pass {@code field.qualifiedName()}.
@@ -660,42 +654,6 @@ public class GraphitronSchemaValidator {
             .map(p -> (no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound) p)
             .toList();
         if (tableBound.isEmpty()) return;
-
-        for (var tb : tableBound) {
-            if (!tb.table().hasPrimaryKey()) {
-                errors.add(new ValidationError(
-                    qualifiedName,
-            Rejection.structural("Field '" + qualifiedName + "': participant '" + tb.typeName()
-                        + "' has no primary key on table '" + tb.table().tableName()
-                        + "'; multi-table interface/union fetchers require a primary key on every participant"),
-                    location
-                ));
-            }
-        }
-
-        // Arity check: only meaningful when every participant has at least one PK column.
-        // PK-less participants surface their own dedicated error above; reporting an arity
-        // mismatch on top would noise the message stream.
-        var pkBearing = tableBound.stream()
-            .filter(tb -> tb.table().hasPrimaryKey())
-            .toList();
-        if (pkBearing.size() >= 2) {
-            int expected = pkBearing.get(0).table().primaryKeyColumns().size();
-            for (var tb : pkBearing.subList(1, pkBearing.size())) {
-                int actual = tb.table().primaryKeyColumns().size();
-                if (actual != expected) {
-                    errors.add(new ValidationError(
-                        qualifiedName,
-                Rejection.structural("Field '" + qualifiedName + "': primary-key arity mismatch — '" + pkBearing.get(0).typeName()
-                            + "' has " + expected + " PK column" + (expected == 1 ? "" : "s")
-                            + " but '" + tb.typeName() + "' has " + actual
-                            + "; v1 multi-table interface/union fetchers require uniform PK arity across participants"),
-                        location
-                    ));
-                    return; // one mismatch is enough; subsequent ones are noise
-                }
-            }
-        }
 
         // Same-table discriminability floor: same-table polymorphism must be modeled as a
         // single-table discriminated interface (TableInterfaceType: @table @discriminate). Two

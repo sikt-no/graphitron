@@ -23,7 +23,7 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Validates {@link UnionField} (the multi-table polymorphic child case for unions). Mirrors
- * {@link InterfaceFieldValidationTest}; same PK-presence and PK-arity rules apply.
+ * {@link InterfaceFieldValidationTest}.
  */
 @UnitTier
 class UnionFieldValidationTest {
@@ -56,19 +56,6 @@ class UnionFieldValidationTest {
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
             participants, Map.of(), rowKeyedFor(ADDRESS), TestFixtures.fkColumnsLift(), ADDRESS, resultTypeFor(ADDRESS));
         assertThat(validate(field)).isEmpty();
-    }
-
-    @Test
-    void rejects_unionMemberWithoutPrimaryKey() {
-        var noPk = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
-            new ParticipantRef.TableBound("Kpis", noPk, null));
-        var field = new UnionField("Address", "activities", null,
-            new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
-            participants, Map.of(), rowKeyedFor(ADDRESS), TestFixtures.fkColumnsLift(), ADDRESS, resultTypeFor(ADDRESS));
-        assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
-            "Field 'Address.activities': participant 'Kpis' has no primary key");
     }
 
     @Test

@@ -1,0 +1,5 @@
+Reported at the field returning the interface or union, once for each participant whose table's primary key has another number of columns than a participant before it by name.
+
+A field returning an interface or union with no discriminator reads each participant from its own table and combines the reads into one. Each read projects its table's primary key into the same columns, one column per key column, so the reads line up only where every participant's key has as many columns. A node fetcher, a query field returning `Node`, and a `@service` read their rows otherwise, so neither is reported.
+
+*Next step.* Give the field participants whose tables' primary keys have the same number of columns, or split the interface or union into fields that each return such participants. See xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types].

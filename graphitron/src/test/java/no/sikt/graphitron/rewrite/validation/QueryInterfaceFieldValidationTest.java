@@ -24,9 +24,9 @@ import no.sikt.graphitron.rewrite.TestFixtures;
 
 /**
  * Validates {@link QueryInterfaceField} (the multi-table polymorphic root case).
- * Tests cover the well-formed path plus the validator rejections in
- * {@code GraphitronSchemaValidator.validateInterfaceType}: PK-less participants and PK-arity
- * mismatches across participants.
+ * Tests cover the well-formed path plus the validator's same-table rejection; a participant
+ * without a primary key and keys of different arity are the store's
+ * {@code PARTICIPANT_WITHOUT_PRIMARY_KEY} and {@code PARTICIPANT_KEYS_DIFFER_IN_ARITY}.
  */
 @UnitTier
 class QueryInterfaceFieldValidationTest {
@@ -35,11 +35,6 @@ class QueryInterfaceFieldValidationTest {
         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
     private static final TableRef ACTOR = TestFixtures.tableRef("actor", "ACTOR", "Actor",
         List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
-    private static final TableRef BAR = TestFixtures.tableRef("bar", "BAR", "Bar",
-        List.of(
-            new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
-            new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
-    private static final TableRef NO_PK = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
 
     @Test
     void wellFormed_singleTableBoundParticipant_noErrors() {
@@ -71,27 +66,6 @@ class QueryInterfaceFieldValidationTest {
                 "Query", new GraphitronType.RootType("Query", null)),
             java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
         assertThat(validate(sch)).isEmpty();
-    }
-
-    @Test
-    void rejects_participantWithoutPrimaryKey() {
-        // PK validation lives at the field level so the Node interface (heterogeneous PK
-        // arities, dispatched via QueryNodeFetcher) does not trip a false rejection. The error
-        // pins to the field qualified name.
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Film", FILM, null),
-            new ParticipantRef.TableBound("Kpis", NO_PK, null));
-        var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
-        var field = new QueryInterfaceField("Query", "search", null,
-            new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants, List.of(), List.of(), java.util.Optional.empty());
-        var sch = new GraphitronSchema(
-            java.util.Map.of(
-                "Searchable", iface,
-                "Query", new GraphitronType.RootType("Query", null)),
-            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
-        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
-            "Field 'Query.search': participant 'Kpis' has no primary key");
     }
 
     @Test
@@ -135,24 +109,5 @@ class QueryInterfaceFieldValidationTest {
             java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
         assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
             "maps types 'Film' and 'FilmVariant' to the same table");
-    }
-
-    @Test
-    void rejects_mismatchedPkArityAcrossParticipants() {
-        // Film has arity 1, Bar has arity 2 — stage-1 column count mismatch.
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Film", FILM, null),
-            new ParticipantRef.TableBound("Bar", BAR, null));
-        var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
-        var field = new QueryInterfaceField("Query", "search", null,
-            new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants, List.of(), List.of(), java.util.Optional.empty());
-        var sch = new GraphitronSchema(
-            java.util.Map.of(
-                "Searchable", iface,
-                "Query", new GraphitronType.RootType("Query", null)),
-            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
-        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
-            "Field 'Query.search': primary-key arity mismatch");
     }
 }

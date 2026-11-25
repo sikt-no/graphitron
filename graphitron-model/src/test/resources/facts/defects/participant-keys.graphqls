@@ -1,0 +1,44 @@
+# Participants told apart by their tables are read and combined keyed by their tables' primary keys,
+# so each needs one, and every one of a field the same number of columns. A participant on a table with
+# none is PARTICIPANT_WITHOUT_PRIMARY_KEY, which defects/ordering-refusals shows at Query.search, a union
+# with FilmListEntry over the view film_list. Query.links, a union of Film, keyed by film_id, and
+# FilmActor, keyed by actor_id and film_id, is PARTICIPANT_KEYS_DIFFER_IN_ARITY, named at FilmActor,
+# the participant after Film by name; so is a child field, Film.stock, a union of FilmActor and
+# Inventory, named at Inventory. Query.cast, a union of Film and Actor, keyed by one column each, is
+# the near miss.
+
+type Actor @table(name: "actor") {
+    firstName: String @field(name: "first_name")
+}
+
+type FilmActor @table(name: "film_actor") {
+    actorId: Int @field(name: "actor_id")
+}
+
+type Inventory @table(name: "inventory") {
+    storeId: Int @field(name: "store_id")
+}
+
+type Film @table(name: "film") {
+    title: String
+    stock: [Stock!]!
+}
+
+union Link = Film | FilmActor
+
+union Stock = FilmActor | Inventory
+
+union Cast = Film | Actor
+
+type Query {
+    links: [Link!]!
+    cast: [Cast!]!
+    films: [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('PARTICIPANT_WITHOUT_PRIMARY_KEY', 'PARTICIPANT_KEYS_DIFFER_IN_ARITY')", rows: """
+  code,                             coordinate,    detail
+  PARTICIPANT_KEYS_DIFFER_IN_ARITY, Film.stock,    Inventory
+  PARTICIPANT_KEYS_DIFFER_IN_ARITY, Query.links,   FilmActor
+  """)

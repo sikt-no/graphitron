@@ -32,11 +32,6 @@ class QueryUnionFieldValidationTest {
         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
     private static final TableRef ACTOR = TestFixtures.tableRef("actor", "ACTOR", "Actor",
         List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
-    private static final TableRef BAR = TestFixtures.tableRef("bar", "BAR", "Bar",
-        List.of(
-            new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
-            new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
-    private static final TableRef NO_PK = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
 
     @Test
     void wellFormed_twoSameArityParticipants_noErrors() {
@@ -53,24 +48,6 @@ class QueryUnionFieldValidationTest {
                 "Query", new GraphitronType.RootType("Query", null)),
             java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
         assertThat(validate(sch)).isEmpty();
-    }
-
-    @Test
-    void rejects_participantWithoutPrimaryKey() {
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Film", FILM, null),
-            new ParticipantRef.TableBound("Kpis", NO_PK, null));
-        var union = new GraphitronType.UnionType("Document", null, participants);
-        var field = new QueryUnionField("Query", "search", null,
-            new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
-            participants, List.of(), List.of(), java.util.Optional.empty());
-        var sch = new GraphitronSchema(
-            java.util.Map.of(
-                "Document", union,
-                "Query", new GraphitronType.RootType("Query", null)),
-            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
-        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
-            "Field 'Query.search': participant 'Kpis' has no primary key");
     }
 
     @Test
@@ -92,23 +69,5 @@ class QueryUnionFieldValidationTest {
             java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
         assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
             "maps types 'Film' and 'FilmVariant' to the same table");
-    }
-
-    @Test
-    void rejects_mismatchedPkArityAcrossParticipants() {
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Film", FILM, null),
-            new ParticipantRef.TableBound("Bar", BAR, null));
-        var union = new GraphitronType.UnionType("Document", null, participants);
-        var field = new QueryUnionField("Query", "search", null,
-            new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
-            participants, List.of(), List.of(), java.util.Optional.empty());
-        var sch = new GraphitronSchema(
-            java.util.Map.of(
-                "Document", union,
-                "Query", new GraphitronType.RootType("Query", null)),
-            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
-        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
-            "Field 'Query.search': primary-key arity mismatch");
     }
 }

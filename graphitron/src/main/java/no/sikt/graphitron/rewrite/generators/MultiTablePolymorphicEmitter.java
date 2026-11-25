@@ -61,9 +61,9 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
  *
  * <p>The join reads the derived table back through {@link ValuesJoinRowBuilder#onCondition}.
  *
- * <p>Scope: PK-bearing participants with uniform PK arity per interface or union. Validation
- * (in {@code GraphitronSchemaValidator.validateInterfaceType} / {@code validateUnionType})
- * rejects participants without a PK and arity mismatches before code generation runs.
+ * <p>Scope: PK-bearing participants with uniform PK arity per interface or union. The store's
+ * {@code PARTICIPANT_WITHOUT_PRIMARY_KEY} and {@code PARTICIPANT_KEYS_DIFFER_IN_ARITY} refuse the rest
+ * before code generation runs.
  */
 public final class MultiTablePolymorphicEmitter {
 

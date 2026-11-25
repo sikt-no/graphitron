@@ -1018,10 +1018,15 @@ static method needs no holder.
     position; `ORDER_POSITIONS_DISAGREE` refuses an order whose tables' keys differ in number or, at a
     position, in type, which the walk's fold refused, and the reader takes the alignment as an
     invariant. `ORDERING_ACROSS_PARTICIPANTS` still exempts the root lists by their spelling; it moves
-    onto the producer facts when that defect's stage follows the producers'. The walk's refusals of a multi-table root are store codes owed before this
-    route's walk code goes: a participant table without a primary key, participants whose keys
-    differ in arity, and a filter argument the branch call cannot extract (an input bean); the shared
-    table is `PARTICIPANTS_SHARE_A_TABLE` already.
+    onto the producer facts when that defect's stage follows the producers'. A participant table
+    without a primary key is `PARTICIPANT_WITHOUT_PRIMARY_KEY` and participants whose keys differ in
+    arity `PARTICIPANT_KEYS_DIFFER_IN_ARITY`, beside `PARTICIPANTS_SHARE_A_TABLE`, at the root and below,
+    the walk's two checks gone. A filter argument the walk's branch call cannot extract (an input
+    bean, a decoded record, a session read) is no store code: the store's branch calls each
+    participant's own condition method, which the store renders with its beans and its session, so
+    the shape is valid. The walk still refuses it while it classifies the root; when this route's
+    walk code goes, a fact scenario of a union root whose participant condition takes an input bean
+    and reads the session, called directly, pins it.
     A connection over several tables is the store's too, its page size read as a single-table
     connection's and its order always stated, so the cursor encodes the columns the walk's did and a
     client's cursor survives the upgrade; `MultiTableConnectionOrderParityTest` holds the two orders
