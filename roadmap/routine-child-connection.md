@@ -1,7 +1,7 @@
 ---
 id: R1169
 title: "Connection pagination on a routine-backed child field"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: routine
@@ -490,3 +490,17 @@ the pin but not the crosswalk.
 3. **The `DeliveryFactPinTest` crosswalk** (non-blocking). Named under Implementation:
    `DeliveryFact.leafDerivedOf` derives the paged-child trigger from the leaf's connection wrapper
    whatever markers it carries, `@pivot` included.
+
+### Round 2: Spec → Ready, signed off (session_01WkW2JJP3u4Mqb5fJrjVnw4, 2026-11-25)
+
+All three round-1 findings are addressed, and the revision's new claims hold against the tree. Both
+questions pass.
+
+One precision for the implementer, not blocking because the spec's own tests already pin it: the
+new `NO_KEY_FROM_PARENT` arm is worded as a routine step "binds no parameter to a column of the
+parent's table". A hops-then-routine chain, which is in scope, has a routine step that departs the
+hopped table, so its parameters bind there and never to the parent's. Read literally, the arm would
+refuse that chain, although its batch is keyed by the first hop's correlation. The arm should apply
+only where the routine is the path's first step (`position` 0 in `graphitron_join_path_step_parameter`).
+That is the same domain as the walk's `lateralHead` refusal it replaces. The fact document's
+hops-then-routine chain, which claims no defect, holds the implementer to it.
