@@ -8977,7 +8977,11 @@ session_binding_type (graph_name, source_name, source_line, source_column, posit
       OR (SELECT COUNT(*) FROM handle_member m
            WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) = 1
 ),
+-- Its arms are bracketed as a balanced tree, which nests them about log2 n deep: the rule groups
+-- them whole, and H2 keeps a parsed copy of a union at every level of its nesting.
 pair_defect (graph_name, source_name, source_line, source_column, position, code, detail) AS (
+  (
+  (
   SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
          'SESSION_BINDING_WITHOUT_IDENTITY', sp.bound_to
     FROM session_pair sp
@@ -8989,7 +8993,9 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
     FROM session_pair sp
    WHERE EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
      AND NOT EXISTS (SELECT 1 FROM store_graph_session_handle h WHERE h.graph_name = sp.graph_name)
+  )
   UNION ALL
+  (
   -- $session.<member> naming a member the handle does not offer. The detail is the member written;
   -- what the handle does offer is graphitron_session_handle_member's rows, which a message joins in.
   SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
@@ -9003,7 +9009,11 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
    WHERE sp.member IS NOT NULL
      AND (SELECT COUNT(*) FROM handle_member m
            WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) > 1
+  )
+  )
   UNION ALL
+  (
+  (
   -- The parameter is not declared as what it reads, on the full spelling. A primitive may bind its
   -- boxed parameter and no other pair is loosened.
   SELECT t.graph_name, t.source_name, t.source_line, t.source_column, t.position,
@@ -9035,7 +9045,9 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
                       WHERE s.graph_name = p.graph_name AND s.source_name = p.source_name
                         AND s.source_line = p.source_line AND s.source_column = p.source_column
                         AND s.directive_name = 'service' AND s.owner = 'service')
+  )
   UNION ALL
+  (
   -- A $context pair not written as one parameter and exactly one key: nothing after the dot, a
   -- second dot, or $tenant on its left, which names no parameter to fill. It fills nothing at any
   -- site, so this is the author's to fix. The detail is the pair's right side as written.
@@ -9046,6 +9058,7 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
      AND (p.target_kind <> 'NAME' OR CHAR_LENGTH(p.bound_to) = 9
           OR POSITION('.', SUBSTRING(p.bound_to, 10)) > 0)
   UNION ALL
+  (
   -- $scope.<member> naming no member of the field's scope. The detail is the member written.
   SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
          'SCOPE_MEMBER_UNKNOWN', SUBSTRING(p.bound_to, 8)
@@ -9075,6 +9088,9 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
                         AND cp.method_name = reference.method_name
                         AND cp.descriptor = reference.method_descriptor
                         AND (cp.parameter_name = p.target_name OR cp.parameter_name IS NULL))
+  )
+  )
+  )
 )
 -- $tenant names the tenant of a @service's call; anywhere else nothing reads it yet. The detail is
 -- the directive the mapping is written under.
@@ -9180,6 +9196,10 @@ session_binding_type (graph_name, source_name, source_line, source_column, posit
       OR (SELECT COUNT(*) FROM handle_member m
            WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) = 1
 )
+-- The arms are bracketed as a balanced tree, which nests them about log2 n deep: the defect rule
+-- copies them whole, and H2 keeps a parsed copy of a union at every level of its nesting.
+(
+(
 SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
        'SESSION_BINDING_WITHOUT_IDENTITY', sp.bound_to
   FROM session_pair sp
@@ -9191,7 +9211,9 @@ SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.posit
   FROM session_pair sp
  WHERE EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
    AND NOT EXISTS (SELECT 1 FROM store_graph_session_handle h WHERE h.graph_name = sp.graph_name)
+)
 UNION ALL
+(
 -- $session.<member> naming a member the handle does not offer. The detail is the member written;
 -- what the handle does offer is graphitron_session_handle_member's rows, which a message joins in.
 SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
@@ -9205,7 +9227,11 @@ SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.posit
  WHERE sp.member IS NOT NULL
    AND (SELECT COUNT(*) FROM handle_member m
          WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) > 1
+)
+)
 UNION ALL
+(
+(
 -- The parameter is not declared as what it reads, on the full spelling. A primitive may bind its
 -- boxed parameter and no other pair is loosened.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column, t.position,
@@ -9237,7 +9263,9 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
                     WHERE s.graph_name = p.graph_name AND s.source_name = p.source_name
                       AND s.source_line = p.source_line AND s.source_column = p.source_column
                       AND s.directive_name = 'service' AND s.owner = 'service')
+)
 UNION ALL
+(
 -- A $context pair not written as one parameter and exactly one key: nothing after the dot, a
 -- second dot, or $tenant on its left, which names no parameter to fill. It fills nothing at any
 -- site, so this is the author's to fix. The detail is the pair's right side as written.
@@ -9248,6 +9276,7 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
    AND (p.target_kind <> 'NAME' OR CHAR_LENGTH(p.bound_to) = 9
         OR POSITION('.', SUBSTRING(p.bound_to, 10)) > 0)
 UNION ALL
+(
 -- $scope.<member> naming no member of the field's scope. The detail is the member written.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
        'SCOPE_MEMBER_UNKNOWN', SUBSTRING(p.bound_to, 8)
@@ -9276,7 +9305,10 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
                       AND cp.class_name = reference.method_class_name
                       AND cp.method_name = reference.method_name
                       AND cp.descriptor = reference.method_descriptor
-                      AND (cp.parameter_name = p.target_name OR cp.parameter_name IS NULL));
+                      AND (cp.parameter_name = p.target_name OR cp.parameter_name IS NULL))
+)
+)
+);
 COMMENT ON VIEW graphitron_argmapping_pair_entry_defect_pair_rule IS 'One row the argMapping pairs stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example brukerId: $session.nope on a handle with no such member gives one SESSION_MEMBER_UNKNOWN row at that entry, its detail nope.';
 
 CREATE VIEW graphitron_call_context_key_rule
