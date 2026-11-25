@@ -52,3 +52,13 @@ extend schema @expectEquals(relation: "graphitron_entry_defect",
   18,          ROUTINE_WRITE_PLURAL_UNORDERED,          inventoryIds
   29,          ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN, last_name
   """)
+
+# The table each order reads, stated on the order: the routine's function result for every plural
+# routine write, and the table the field reads for a plain list. A root list of rentals reads rental.
+extend schema @expectEquals(relation: "graphitron_occurrence_order",
+    where: "coordinate IN ('Mutation.rentFilmsInOrder', 'Mutation.rentFilmsByRentalDate', 'Query.rentals')", rows: """
+  coordinate,                     read_schema, read_table
+  Mutation.rentFilmsByRentalDate, public,      rent_films_in_order
+  Mutation.rentFilmsInOrder,      public,      rent_films_in_order
+  Query.rentals,                  public,      rental
+  """)

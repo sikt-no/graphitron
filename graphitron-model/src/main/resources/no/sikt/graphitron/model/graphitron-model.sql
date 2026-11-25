@@ -27108,9 +27108,13 @@ COMMENT ON COLUMN graphitron_order_input.touched_at IS 'the reading that last wr
 -- order the routine hands its rows back in.
 CREATE VIEW graphitron_occurrence_order_rule
   (graph_name, coordinate, bound, choice, kind, surface, direction, application_coordinate,
-   application_directive, application_ordinal, argument_coordinate) AS
-SELECT graph_name, coordinate, bound, choice, kind, surface, direction, application_coordinate,
-       application_directive, application_ordinal, argument_coordinate
+   application_directive, application_ordinal, argument_coordinate, read_source_name, read_schema,
+   read_table) AS
+SELECT written.graph_name, written.coordinate, written.bound, written.choice, written.kind, written.surface,
+       written.direction, written.application_coordinate, written.application_directive,
+       written.application_ordinal, written.argument_coordinate,
+       COALESCE(fn.source_name, bt.table_source_name), COALESCE(fn.table_schema, bt.table_schema),
+       COALESCE(fn.table_name, bt.table_name)
   FROM (
     SELECT t.graph_name, t.coordinate, t.bound, o.element_coordinate, 'DEFAULT',
            oe.surface, oe.direction,
@@ -27207,7 +27211,19 @@ SELECT graph_name, coordinate, bound, choice, kind, surface, direction, applicat
                           AND d.directive_name = 'order')
   ) written (graph_name, coordinate, bound, choice, kind, surface, direction, application_coordinate,
              application_directive, application_ordinal, argument_coordinate)
- WHERE surface IS NOT NULL;
+  JOIN graphitron_occurrence_binding_table bt
+    ON bt.graph_name = written.graph_name AND bt.coordinate = written.coordinate AND bt.bound = written.bound
+  -- A routine writing a plural identifying mutation answers its function's rows, so its orders read the
+  -- function's result: the one place an order's table is decided.
+  LEFT JOIN graphitron_occurrence_input_order io
+    ON io.graph_name = written.graph_name AND io.coordinate = written.coordinate
+   AND io.declared_by = 'WRITE_SHAPE'
+  LEFT JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
+  LEFT JOIN sql_table fn
+    ON fn.source_name = pr.routine_source_name AND fn.table_schema = pr.table_schema
+   AND fn.table_name = pr.routine_name AND fn.table_type = 'FUNCTION'
+ WHERE written.surface IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_order_rule IS 'One row the order rule computes, in the shape graphitron_occurrence_order stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_order, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_order_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_order.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_order_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_order.coordinate';
@@ -27233,8 +27249,14 @@ CREATE TABLE graphitron_occurrence_order (
   application_directive  VARCHAR,
   application_ordinal    INT,
   argument_coordinate    VARCHAR,
+  read_source_name       VARCHAR   NOT NULL,
+  read_schema            VARCHAR   NOT NULL,
+  read_table             VARCHAR   NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, bound, choice),
+  -- The table the order's names resolve against, so an order cannot outlive the table it reads.
+  FOREIGN KEY (read_source_name, read_schema, read_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   -- What the index subtype references, so only an INDEX order has one.
   UNIQUE (graph_name, coordinate, bound, choice, surface),
   -- The table the list reads, so an order cannot outlive the list's binding.
@@ -27268,6 +27290,9 @@ COMMENT ON COLUMN graphitron_occurrence_order.application_coordinate IS 'the coo
 COMMENT ON COLUMN graphitron_occurrence_order.application_directive IS 'the application''s directive, defaultOrder, order or index, null with the coordinate';
 COMMENT ON COLUMN graphitron_occurrence_order.application_ordinal IS 'the application''s ordinal at its coordinate, null with the coordinate';
 COMMENT ON COLUMN graphitron_occurrence_order.argument_coordinate IS 'the @orderBy argument occurrence a CHOICE is picked through, beneath the field occurrence, for example Query.films(order:); null exactly for a DEFAULT';
+COMMENT ON COLUMN graphitron_occurrence_order.read_source_name IS 'the catalog source of the table the order''s names resolve against';
+COMMENT ON COLUMN graphitron_occurrence_order.read_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_order.read_table IS 'the table the order''s names, keys and index resolve against, stated once for every rule reading the order: the table the field reads, bound''s, but for a routine behind a plural identifying mutation, graphitron_occurrence_input_order''s WRITE_SHAPE, the routine''s function table, whose result the order keeps';
 COMMENT ON COLUMN graphitron_occurrence_order.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The index an INDEX order sorts by: the one of the table the list reads whose name the application's
@@ -27283,8 +27308,6 @@ SELECT DISTINCT r.graph_name, r.coordinate, r.bound, r.choice, r.surface, ix.sou
   LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_occurrence_binding_table t
-    ON t.graph_name = r.graph_name AND t.coordinate = r.coordinate AND t.bound = r.bound
   LEFT JOIN graphitron_ast_order_entry oe
     ON oe.graph_name = r.graph_name AND oe.source_name = ra.source_name
    AND oe.source_line = ra.source_line AND oe.source_column = ra.source_column
@@ -27292,17 +27315,9 @@ SELECT DISTINCT r.graph_name, r.coordinate, r.bound, r.choice, r.surface, ix.sou
     ON ie.graph_name = r.graph_name AND ie.source_name = ra.source_name
    AND ie.source_line = ra.source_line AND ie.source_column = ra.source_column
   JOIN sql_index ix
-    ON ix.source_name = t.table_source_name AND ix.table_schema = t.table_schema
-   AND ix.table_name = t.table_name AND UPPER(ix.index_name) = UPPER(COALESCE(oe.index_ref, ie.index_ref))
- WHERE r.surface = 'INDEX'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_input_order io
-                 JOIN graphitron_occurrence_producer_routine pr
-                   ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
-                 JOIN sql_table ft
-                   ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-                  AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
-                WHERE io.graph_name = r.graph_name AND io.coordinate = r.coordinate
-                  AND io.declared_by = 'WRITE_SHAPE');
+    ON ix.source_name = r.read_source_name AND ix.table_schema = r.read_schema
+   AND ix.table_name = r.read_table AND UPPER(ix.index_name) = UPPER(COALESCE(oe.index_ref, ie.index_ref))
+ WHERE r.surface = 'INDEX';
 COMMENT ON VIEW graphitron_occurrence_order_index_rule IS 'One row the order index rule computes, in the shape graphitron_occurrence_order_index stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_order_index, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_order_index_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_order_index.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_order_index_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_order_index.coordinate';
@@ -27357,23 +27372,13 @@ CREATE VIEW graphitron_occurrence_sort_key_rule
 SELECT r.graph_name, r.coordinate, r.bound, r.choice, cc.position, 'COLUMN',
        COALESCE(r.direction, 'ASC'), CAST(NULL AS VARCHAR)
   FROM graphitron_occurrence_order r
-  JOIN graphitron_occurrence_binding_table t
-    ON t.graph_name = r.graph_name AND t.coordinate = r.coordinate AND t.bound = r.bound
   JOIN sql_primary_key pk
-    ON pk.source_name = t.table_source_name AND pk.table_schema = t.table_schema
-   AND pk.table_name = t.table_name
+    ON pk.source_name = r.read_source_name AND pk.table_schema = r.read_schema
+   AND pk.table_name = r.read_table
   JOIN sql_constraint_column cc
     ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
    AND cc.table_name = pk.table_name AND cc.constraint_name = pk.constraint_name
  WHERE r.surface IN ('PRIMARY_KEY', 'IMPLICIT_PRIMARY_KEY')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_input_order io
-                 JOIN graphitron_occurrence_producer_routine pr
-                   ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
-                 JOIN sql_table ft
-                   ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-                  AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
-                WHERE io.graph_name = r.graph_name AND io.coordinate = r.coordinate
-                  AND io.declared_by = 'WRITE_SHAPE')
 UNION ALL
 -- The order's index's columns, in its order.
 SELECT r.graph_name, r.coordinate, r.bound, r.choice, ic.position, 'COLUMN',
@@ -27447,11 +27452,9 @@ SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, cc.sou
   JOIN graphitron_occurrence_order r
     ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
    AND r.choice = k.choice
-  JOIN graphitron_occurrence_binding_table t
-    ON t.graph_name = r.graph_name AND t.coordinate = r.coordinate AND t.bound = r.bound
   JOIN sql_primary_key pk
-    ON pk.source_name = t.table_source_name AND pk.table_schema = t.table_schema
-   AND pk.table_name = t.table_name
+    ON pk.source_name = r.read_source_name AND pk.table_schema = r.read_schema
+   AND pk.table_name = r.read_table
   JOIN sql_constraint_column cc
     ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
    AND cc.table_name = pk.table_name AND cc.constraint_name = pk.constraint_name
@@ -27470,7 +27473,10 @@ SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, ic.sou
    AND ic.table_name = oi.index_table AND ic.index_name = oi.index_name AND ic.position = k.position
  WHERE k.kind = 'COLUMN'
 UNION ALL
--- A written element's name, at the one column its spelling reaches.
+-- A written element's name, at the one column its spelling reaches on the table the order reads: the
+-- table the field reads, or a plural routine write's function table, whose result's own columns state
+-- the order it keeps, a column of the table the field reads being unable to say which element of the
+-- input a row answers.
 SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, sp.source_name, sp.table_schema,
        sp.table_name, sp.column_name
   FROM graphitron_occurrence_sort_key k
@@ -27480,51 +27486,13 @@ SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, sp.sou
   LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_occurrence_binding_table t
-    ON t.graph_name = r.graph_name AND t.coordinate = r.coordinate AND t.bound = r.bound
   JOIN graphitron_ast_order_field_entry fe
     ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
    AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
    AND fe.position = k.position
   JOIN sql_column_spelling sp
-    ON sp.source_name = t.table_source_name AND sp.table_schema = t.table_schema
-   AND sp.table_name = t.table_name AND sp.spelling_upper = UPPER(fe.name_ref) AND sp.reach = 1
- WHERE k.kind = 'COLUMN' AND r.surface = 'FIELDS'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_input_order io
-                 JOIN graphitron_occurrence_producer_routine pr
-                   ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
-                 JOIN sql_table ft
-                   ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-                  AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
-                WHERE io.graph_name = r.graph_name AND io.coordinate = r.coordinate
-                  AND io.declared_by = 'WRITE_SHAPE')
-UNION ALL
--- A plural routine write's written element's name, at the one column its spelling reaches on the
--- routine's function table: the order the routine's result keeps is stated in its own columns, and a
--- column of the table the field reads cannot say which element of the input a row answers.
-SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, sp.source_name, sp.table_schema,
-       sp.table_name, sp.column_name
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
-  JOIN graphitron_occurrence_input_order io
-    ON io.graph_name = r.graph_name AND io.coordinate = r.coordinate AND io.declared_by = 'WRITE_SHAPE'
-  JOIN graphitron_occurrence_producer_routine pr
-    ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
-  JOIN sql_table ft
-    ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-   AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
-  LEFT JOIN graphitron_directive_application ra
-    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
-   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_ast_order_field_entry fe
-    ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
-   AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
-   AND fe.position = k.position
-  JOIN sql_column_spelling sp
-    ON sp.source_name = ft.source_name AND sp.table_schema = ft.table_schema
-   AND sp.table_name = ft.table_name AND sp.spelling_upper = UPPER(fe.name_ref) AND sp.reach = 1
+    ON sp.source_name = r.read_source_name AND sp.table_schema = r.read_schema
+   AND sp.table_name = r.read_table AND sp.spelling_upper = UPPER(fe.name_ref) AND sp.reach = 1
  WHERE k.kind = 'COLUMN' AND r.surface = 'FIELDS';
 COMMENT ON VIEW graphitron_occurrence_sort_key_column_rule IS 'One row the sort key column rule computes, in the shape graphitron_occurrence_sort_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_column, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_sort_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_column.graph_name';
@@ -27701,8 +27669,12 @@ CREATE VIEW graphitron_occurrence_sort_key_completion_rule
 SELECT r.graph_name, r.coordinate, r.bound, r.choice, rk.position, last.direction, rk.table_source_name,
        rk.table_schema, rk.table_name, rk.column_name
   FROM graphitron_occurrence_order r
+  -- Keys of the table the order reads: a plural routine write's order reads its function's result,
+  -- which no key of the table the field reads identifies, so it is completed by nothing.
   JOIN graphitron_occurrence_identifying_key_column rk
     ON rk.graph_name = r.graph_name AND rk.coordinate = r.coordinate AND rk.bound = r.bound
+   AND rk.table_source_name = r.read_source_name AND rk.table_schema = r.read_schema
+   AND rk.table_name = r.read_table
   JOIN graphitron_occurrence_sort_key last
     ON last.graph_name = r.graph_name AND last.coordinate = r.coordinate AND last.bound = r.bound
    AND last.choice = r.choice
@@ -27710,14 +27682,6 @@ SELECT r.graph_name, r.coordinate, r.bound, r.choice, rk.position, last.directio
     ON ao.graph_name = r.graph_name AND ao.coordinate = r.argument_coordinate
   LEFT JOIN graphitron_argument ga ON ga.graph_name = ao.graph_name AND ga.coordinate = ao.element_coordinate
  WHERE (r.kind = 'DEFAULT' OR ga.list_depth = 0)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_input_order io
-                 JOIN graphitron_occurrence_producer_routine pr
-                   ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
-                 JOIN sql_table ft
-                   ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-                  AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
-                WHERE io.graph_name = r.graph_name AND io.coordinate = r.coordinate
-                  AND io.declared_by = 'WRITE_SHAPE')
    -- The row key: no better ranked key identifies the table's rows.
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column b
                     WHERE b.graph_name = rk.graph_name AND b.coordinate = rk.coordinate AND b.bound = rk.bound
@@ -27866,42 +27830,18 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_method.touched_at IS 'the readi
 -- keys do not line up by position.
 CREATE VIEW graphitron_occurrence_order_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A primary key the table the order reads lacks: the table the field reads, or a plural routine write's
+-- function table, which has none.
 SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ORDER_PRIMARY_KEY_MISSING',
-       t.bound, 'occurrence-orderings'
-  FROM graphitron_occurrence_order r
-  LEFT JOIN graphitron_directive_application ra
-    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
-   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_occurrence_binding_table t
-    ON t.graph_name = r.graph_name AND t.coordinate = r.coordinate AND t.bound = r.bound
- WHERE r.surface = 'PRIMARY_KEY'
-   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
-                    WHERE pk.source_name = t.table_source_name AND pk.table_schema = t.table_schema
-                      AND pk.table_name = t.table_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_input_order io
-                 JOIN graphitron_occurrence_producer_routine pr
-                   ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
-                 JOIN sql_table ft
-                   ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-                  AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
-                WHERE io.graph_name = r.graph_name AND io.coordinate = r.coordinate
-                  AND io.declared_by = 'WRITE_SHAPE')
-UNION ALL
--- A plural routine write's primaryKey: true, read on the routine's function table, which has none.
-SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ORDER_PRIMARY_KEY_MISSING',
-       ft.table_schema || '.' || ft.table_name, 'occurrence-orderings'
+       r.read_schema || '.' || r.read_table, 'occurrence-orderings'
   FROM graphitron_occurrence_order r
   JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_occurrence_input_order io
-    ON io.graph_name = r.graph_name AND io.coordinate = r.coordinate AND io.declared_by = 'WRITE_SHAPE'
-  JOIN graphitron_occurrence_producer_routine pr
-    ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
-  JOIN sql_table ft
-    ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-   AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
  WHERE r.surface = 'PRIMARY_KEY'
+   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                    WHERE pk.source_name = r.read_source_name AND pk.table_schema = r.read_schema
+                      AND pk.table_name = r.read_table)
 UNION ALL
 SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ELEMENT_UNRESOLVED',
        COALESCE(oe.index_ref, ie.index_ref), 'occurrence-orderings'
@@ -30883,24 +30823,20 @@ UNION ALL
 -- where it writes none.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN', COALESCE(fe.name_ref, 'method:'), 'occurrence-depth-defects'
-  FROM graphitron_occurrence_input_order io
-  JOIN graphitron_occurrence_producer_routine pr
-    ON pr.graph_name = io.graph_name AND pr.coordinate = io.coordinate
+  FROM graphitron_occurrence_order r
+  -- The order reads a function's result, which only a plural routine write's does.
   JOIN sql_table ft
-    ON ft.source_name = pr.routine_source_name AND ft.table_schema = pr.table_schema
-   AND ft.table_name = pr.routine_name AND ft.table_type = 'FUNCTION'
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = io.graph_name AND r.coordinate = io.coordinate AND r.kind = 'DEFAULT'
-   AND r.surface = 'FIELDS'
+    ON ft.source_name = r.read_source_name AND ft.table_schema = r.read_schema
+   AND ft.table_name = r.read_table AND ft.table_type = 'FUNCTION'
   JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
   JOIN graphitron_ast_order_field_entry fe
     ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
    AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
-  JOIN graphitron_occurrence o ON o.graph_name = io.graph_name AND o.coordinate = io.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = r.graph_name AND o.coordinate = r.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE io.declared_by = 'WRITE_SHAPE' AND fe.shape IN ('METHOD', 'PATH');
+ WHERE r.kind = 'DEFAULT' AND r.surface = 'FIELDS' AND fe.shape IN ('METHOD', 'PATH');
 COMMENT ON VIEW graphitron_occurrence_routine_write_entry_defect_rule IS 'One row the routine write defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a Mutation @routine whose record field is lifted along no path out of the function''s result giving one ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED row at the field.';
 
 CREATE VIEW graphitron_occurrence_source_claim_declaring_table_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
