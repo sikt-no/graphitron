@@ -15,7 +15,7 @@ import static org.jooq.impl.DSL.val;
  * The tables a defect names, written under it in {@code graphitron_entry_defect_table} from the rule
  * view beside the stage raising it: an ambiguous {@code @table}'s candidates, its defect a row of
  * {@link EntryDefects#SPELLED_TABLES}, and the table a filter's name was looked for in, its
- * {@code COLUMN_UNRESOLVED} a row of {@link EntryDefects#TENANTS}. {@link EntryDefects} writes the
+ * {@code COLUMN_UNRESOLVED} a row of {@link EntryDefects#FILTER_COLUMNS}. {@link EntryDefects} writes the
  * defects just before this runs in their stage; this reads the rows that reading marked and marks its
  * own with the same instant, and {@link EntryDefects#sweep} takes what the reading did not mark.
  */

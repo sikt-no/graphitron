@@ -31,6 +31,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE_ENTRY_DEF
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_CLAIM_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_READ_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FILTER_COLUMN_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_GENERATED_SCALAR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE;
@@ -179,9 +182,25 @@ public final class EntryDefects {
     public static final Rule ROUTES =
         new Rule("occurrence-routes", GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE);
 
-    /** The tenant binding defects' rule, {@link OccurrenceTenants}. */
+    /**
+     * The tenant binding defects' rule, {@link OccurrenceTenants}. The stage raises its argument
+     * read, filter column and generated scalar families from rules of their own beside it, so no rule
+     * nests a union deeper than seven.
+     */
     public static final Rule TENANTS =
         new Rule("occurrence-tenants", GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE);
+
+    /** An argument or input field nothing reads. */
+    public static final Rule ARGUMENT_READS =
+        new Rule("occurrence-tenants", GRAPHITRON_OCCURRENCE_ARGUMENT_READ_ENTRY_DEFECT_RULE);
+
+    /** A filter's argument or input field that names no column. */
+    public static final Rule FILTER_COLUMNS =
+        new Rule("occurrence-tenants", GRAPHITRON_OCCURRENCE_FILTER_COLUMN_ENTRY_DEFECT_RULE);
+
+    /** Where a generated scalar's value cannot be bound. */
+    public static final Rule GENERATED_SCALARS =
+        new Rule("occurrence-tenants", GRAPHITRON_OCCURRENCE_GENERATED_SCALAR_ENTRY_DEFECT_RULE);
 
     /**
      * The keys and lift defects' rule, {@link OccurrenceDepthDefects}. The stage raises its other
