@@ -7,50 +7,89 @@ priority: 5
 theme: routine
 depends-on: []
 created: 2026-11-11
-last-updated: 2026-11-12
+last-updated: 2026-11-25
 ---
 
 # Connection pagination on a routine-backed child field
 
 ## Goal
 
-A child field whose rows come from a table-valued function can be paged as a connection, filtered, and ordered by the client. `@asConnection` on a `@routine` child field that is fetched in a query of its own generates the same paged, filtered, ordered connection with `totalCount` that it generates on a table-backed child, with the parent row feeding the function through `$source`. Today the connection fails the build as deferred, and a filter or an order argument on the same field crashes the generator, so an author who needs the shape writes a `@service` that calls an array-taking function once per batch and rebuilds the connection, the filters, the ordering and the cursors by hand, and every new filter or sort key then has to be added in two places.
+A child field whose rows come from a table-valued function can be paged as a connection, filtered,
+and ordered by the client, written as the consumer wrote it plus the `@defaultOrder` its rows need. `@asConnection` on a `@routine`
+child field generates the same paged, filtered, ordered connection with `totalCount` that it
+generates on a table-backed child, with the parent row feeding the function through `$source`, and
+with no `@splitQuery` written: a child connection is always fetched in a query of its own, so the
+directive is inferred (Alf, 2026-11-25). Today the connection fails the build as deferred, and a
+filter or an order argument on the same field crashes the generator, so an author who needs the
+shape writes a `@service` that calls an array-taking function once per batch and rebuilds the
+connection, the filters, the ordering and the cursors by hand, and every new filter or sort key then
+has to be added in two places.
 
-The shape, as a minimal pair on the sakila example's `Actor` type. `@splitQuery` is the directive that takes a child field out of its parent's SQL statement and fetches it for every parent in one batch statement; every child connection is written with it today.
+The consumer is tilgangsstyring (GitHub issue 577):
 
 ```graphql
-type ActorFilm {
-    filmId: Int    @field(name: "FILM_ID")
-    title:  String
-}
-
-type Actor @table(name: "actor") {
-    # Generates today (Actor.filmsSplit in the sakila example): one batch statement for all
-    # actors, a plain list for each.
-    filmsSplit(minLength: Int!): [ActorFilm!] @splitQuery
-        @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
-        @defaultOrder(fields: [{name: "film_id"}])
-
-    # This item: the same field paged, filtered on a result column, and ordered by the client.
-    filmsSplitConnection(minLength: Int!, title: String, sort: ActorFilmOrderBy @orderBy): [ActorFilm!]
-        @splitQuery @asConnection(defaultFirstValue: 10)
-        @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
-        @defaultOrder(fields: [{name: "film_id"}])
+type FeideApplikasjon implements Node @table(name: "feide_applikasjon") {
+  brukerdelegeringer(
+    filter: BrukerdelegeringerFilterInput
+    orderBy: BrukerdelegeringerOrderByInput @orderBy
+  ): [Brukerdelegering!]!
+    @routine(name: "auth.delegeringstak_for_applikasjon", argMapping: "pApplikasjon: $source.subjekt_id")
+    @asConnection(defaultFirstValue: 10)
+    @defaultOrder(fields: [{name: "..."}])  # added: Brukerdelegering is bound to no table, so no key orders it
 }
 ```
 
-When this lands, each actor's `filmsSplitConnection` is a connection over that actor's function result. `first` and `after` page it. The `sort` argument, or the `@defaultOrder` when it is omitted, supplies the cursor columns; a function result has no primary key to fall back on, so one of the two must be there. `title` filters the function's rows like any argument naming a column of the result, and a `@condition` composes the same way. `totalCount` counts the function's rows for that actor after filtering. All actors' pages come from one batch statement, and all their counts from one more.
+`Brukerdelegering` reads the function's result columns, the filter input composes with `@condition`,
+and the order is an `@orderBy` input. As filed the field has no `@defaultOrder`. The default order of a
+list is the primary key of the table its target type is bound to, and `Brukerdelegering` is the
+function's result type, bound to no table, so the consumer adds a `@defaultOrder`, naming the result
+columns a client who leaves `orderBy` out is paged by. When this lands, each parent's
+`brukerdelegeringer` is a connection over that parent's function result: `first` and `after` page
+it, the filter and its `@condition` narrow it, `orderBy` orders it and is what the cursor encodes,
+and `totalCount` counts the parent's rows after filtering. All parents' pages come from one batch
+statement, and all their counts from one more.
 
-Two neighbouring outcomes ride the same change, because the same two guards hold them back:
+Because the inference is one rule for every child connection, it lands for the table-backed child
+too: `@asConnection` on a table-backed child list without `@splitQuery`, which the build refuses
+today ("add @splitQuery"), generates the same per-parent connection. A `@splitQuery` written on a
+child connection is admitted and warned redundant. Two neighbouring outcomes ride the same change,
+because the same two guards hold them back: the unpaged split form with a filter or an order
+argument generates, where it crashes today.
 
-* The unpaged form with a filter or an order argument, `filmsSplit(minLength: Int!, title: String, sort: ActorFilmOrderBy @orderBy)`, generates. Today it crashes the generator.
-* `@asConnection` on a routine child with no `@splitQuery` reports what the same spelling reports on a table-backed child: add `@splitQuery`. Today it says the feature is deferred.
+## Rulings this item lands under
 
-The request came from a consumer schema (GitHub issue 577) whose field is the paged shape with a filter input and an `@orderBy` argument, written without `@splitQuery`.
+* **The walk exception** (Alf, 2026-11-25; `pipeline-overview.adoc`, the paragraph on the walk being
+  drained): paging a child connection is opened on the walk, as the one exception to the walk taking
+  no new features. It covers exactly: the paged-child delivery trigger below, lifting
+  `classifyChildRoutineChain`'s Connection deferral and the table-backed arm's directive conflict, and
+  lifting `ChildField.BatchedTableField`'s routine surface pin. It covers no new walk verdict and no
+  walk validator change. Anything else this shape turns up, R1179's inline filter crash included, is
+  stated in the store. The item's fact-document and execution tests are the parity check the child
+  flip ("A batched child's fetcher is emitted from the store") must pass unchanged.
+* **A child connection is always split** (Alf, 2026-11-25; `code-generation-triggers.adoc`,
+  "Producer"): `@splitQuery` is inferred on a child connection, and written there it is admitted with
+  the `SPLIT_QUERY_REDUNDANT` warning. This answers R1178's question; R1178 keeps the store's claim
+  rule and the refusal for a paged child with nothing to key a batch on.
+* **Land the warning** (Alf, 2026-11-25): the warning ships with a changelog line, and FS-plattform's
+  sites are counted below.
+* **`@defaultOrder` is required only where the target type's table has no primary key to stand in for
+  it** (Alf, 2026-11-25: "We only require @defaultOrder if there is no PK we can use as the default
+  @defaultOrder", and "we look at the pk of the target type, not all possible types"). The default
+  order of a list or connection is the primary key of the table its target type is bound to. A target
+  type bound to no table, as a function's result type is, or bound to a keyless table, has none, and
+  with no `@defaultOrder` it is refused where an omitted order argument would leave it ordered by
+  nothing. A target type bound to a table with a primary key keeps that key as its fallback, a routine
+  child whose path hops to such a table included, and a non-null order argument can never be omitted.
+  No key is inferred by matching a function's columns against other tables' keys. The remedy named
+  is `@defaultOrder`.
 
 ## Evidence
 
-Measured on trunk at `1edfd5b` with a throwaway spike, none of which is committed. The spike made two edits: it deleted the Connection gate in `FieldBuilder.classifyChildRoutineChain`, and it reduced the routine-node surface pin in `ChildField.BatchedTableField`'s constructor to "exactly one routine node". It then added fixtures beside `Actor.filmsSplit` in the sakila example and ran them against the seeded database (`minLength: 50`; four actors, PENELOPE, NICK, ED, and JOAN who is cast in nothing).
+**The split spelling generates and executes.** A throwaway spike on trunk at `1edfd5b` deleted the
+Connection gate in `FieldBuilder.classifyChildRoutineChain` and reduced the routine surface pin in
+`ChildField.BatchedTableField`'s constructor to "exactly one routine node", added fixtures beside
+`Actor.filmsSplit` in the sakila example, and ran them against the seeded database (`minLength: 50`;
+four actors, PENELOPE, NICK, ED, and JOAN who is cast in nothing):
 
 | Query | Result per actor |
 |---|---|
@@ -61,105 +100,277 @@ Measured on trunk at `1edfd5b` with a throwaway spike, none of which is committe
 | list with `title:` one title | the one row for the actor cast in it, empty lists for the others |
 | list with `sort: {field: TITLE, direction: DESC}` | each actor's films in descending title order |
 
-So downstream of those two guards the batched machinery already renders the whole shape: `BatchedRowsFragments.connectionTail` and `windowedPageTail` take the lateral call through the same `fromBridgeAndParentJoin` topology the list form uses, for the page statement and for the count source alike, and `LauncherCommands.batchedResultOf` maps any connection-wrapped `BatchedTableField` to `ResultShape.Connection`. No emitter change was needed. What the spike did not do: run the generator's own test tier, count statements, or exercise a chain with `@reference` hops.
+Downstream of those two guards the batched machinery already renders the whole shape:
+`BatchedRowsFragments.connectionTail` and `windowedPageTail` take the lateral call through the same
+`fromBridgeAndParentJoin` topology the list form uses, for the page statement and for the count
+source alike, and `LauncherCommands.batchedResultOf` maps any connection-wrapped `BatchedTableField`
+to `ResultShape.Connection`. No emitter change was needed.
 
-What the tree does today, without the spike:
+**On trunk the store stands in its way nowhere.** Since the spike, the store's verdict stops
+`validate` and `generate` before the walk classifies anything, so a stored defect on the shape would
+refuse it whatever the walk does. A throwaway fact document captured on trunk at `43166204db` six
+`Actor` fields over `films_for_actor` and read what the store holds for them:
 
-* The connection is refused by `FieldBuilder.classifyChildRoutineChain` with `Rejection.deferred("Connection pagination at a child-positioned routine-backed field is not yet supported; the root position paginates")`, pinned by `GraphitronSchemaBuilderTest.asConnectionOnAChildRoutineChainDefersOnTheChildSeat`.
-* A filter or an `@orderBy` argument on a routine child, with or without `@splitQuery`, reaches the leaf constructors' surface pins and escapes as an uncaught `IllegalArgumentException`: the build fails with "TableField with a routine-node path must be the inline correlated chain shape (exactly one lateral routine node, no filters/argument-ordering/pagination, non-Connection); other routine chain shapes classify as typed Deferred" (or its `BatchedTableField` twin), with no field coordinate. Confirmed for the inline form with a `title: String` argument on a copy of `Actor.films`. The message's own premise, that the classifier defers those shapes first, stopped holding when the routine read surface opened to filters and ordering at the root.
-* `docs/manual/reference/directives/routine.adoc` says pagination is the one axis that does not compose at a child position. It is one of three.
-* The fact store already states the paged shape. A throwaway fact document gave the rows below. The third row is this item's shape and needs no store change. The fourth is the spelling this item refuses; what the store says about it belongs to R1178.
+| Field | Stored defect | `graphitron_occurrence_producer` |
+|---|---|---|
+| the consumer's shape with `@splitQuery` (filter input, `@orderBy` input, no `@defaultOrder`) | none | `ROUTINE`, `CHILD` |
+| the consumer's shape as written, no `@splitQuery` | none | `SELECT`, `CHILD` |
+| split, no order argument and no `@defaultOrder` | `LIST_ORDER_UNDETERMINED`, detail `public.films_for_actor` | `ROUTINE`, `CHILD` |
+| the sakila spelling (split, `title`, `sort`, `@defaultOrder`) | none | `ROUTINE`, `CHILD` |
+| an inline routine list with an `@orderBy` argument | `ORDER_CHOICE_ON_INLINE_LIST` at the argument | none |
+| a table-backed child connection, no `@splitQuery` | none | `SELECT`, `CHILD` |
 
-| Field | `graphitron_producer_claim` | `graphitron_occurrence_producer` | `graphitron_occurrence_producer_result` |
-|---|---|---|---|
-| `films` (inline list) | none | none | none |
-| `filmsSplit` | `ROUTINE` | `ROUTINE`, `CHILD` | `RECORD_LIST`, `films_for_actor` |
-| `@splitQuery @asConnection` | `ROUTINE` | `ROUTINE`, `CHILD` | `CONNECTION` |
-| `@asConnection` alone | none | `SELECT`, `CHILD` | `CONNECTION` |
+So no filter-family, depth or result-shape code fires on the paged routine child, split or not; an
+unordered one is refused by the stored order rule, which names a primary key the function cannot
+have; and the inline form's order argument is already refused in the store. The two spellings of one
+field get different producer claims, `SELECT` unsplit and `ROUTINE` split, because
+`graphitron_producer_claim_rule` claims a child routine only under `@splitQuery`; R1178 makes the
+claim read the connection wrapper. The unsplit spelling has no spike evidence: it needs the delivery
+trigger below before the walk takes it.
+
+**What the walk does today:**
+
+* The connection is refused by `FieldBuilder.classifyChildRoutineChain` with
+  `Rejection.deferred("Connection pagination at a child-positioned routine-backed field is not yet supported; the root position paginates")`,
+  pinned by `GraphitronSchemaBuilderTest.asConnectionOnAChildRoutineChainDefersOnTheChildSeat`.
+* A routine chain is batched only on the `@splitQuery` half of its markers
+  (`DeliveryFactRelation`: "the @pivot and @routine chains batch on the @splitQuery half alone"), and
+  a table-backed child connection without `@splitQuery` draws the directive conflict "@asConnection
+  on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection
+  semantics".
+* A filter or an `@orderBy` argument on a routine child reaches the leaf constructors' surface pins
+  and escapes as an uncaught `IllegalArgumentException` with no field coordinate.
+
+**FS-plattform's exposure to the warning**, read-only on `fs-main` at `946fc4aa20`, over `.graphql`
+and `.graphqls`: of 107 child fields carrying `@asConnection`, 106 also write `@splitQuery`, which the
+old rule required, and each will draw `SPLIT_QUERY_REDUNDANT`: sis 84, tilgangsstyring 16, opptak 4,
+utdanningsregisteret 1, fskode 1.
 
 ## Decisions
 
-* **A routine child connection is written with `@splitQuery`, as every child connection is today.** The table-backed child arm of the classifier refuses `@asConnection` without `@splitQuery`, and `docs/manual/how-to/split-vs-inline.adoc` documents that as the one case where the directive is required. This item puts the routine child under that rule instead of under a deferral of its own. Whether the rule itself should go, so that a child connection is split with nothing written, is a question about every child shape at once, and the tree gives three different answers to it; R1178 carries it. If that ruling makes `@splitQuery` optional, this item's field keeps working unchanged and the refusal below dissolves there together with the table-backed one.
-* **The batched leaf's surface pin lifts whole.** `ChildField.BatchedTableField` pins a routine-bearing path to no filters, no order argument, no pagination and no connection. The spike exercised all four through the existing emit, and the consumer's field carries three of them, so lifting one and leaving the others would hand the consumer the next crash.
-* **The inline leaf keeps its pin.** A filter or an order argument on a routine child that is *not* split still cannot generate: an order argument on an inline child list is lowered for no child shape, and nobody has shown the inline lateral rendering a filter. That the pin fires as a crash instead of a located error is a defect of its own, R1179.
-* **An uncorrelated routine child needs no new ruling.** A connection requires `@splitQuery`, and `@splitQuery` on a routine child with no parameter bound to a parent column is already a directive conflict, there being nothing to key the batch on.
-* **Every single-routine chain position is in scope.** The gate and the pin are per leaf, not per chain shape, so the routine may end the path (rows are the function's result), be followed by `@reference` hops (rows are a catalog table's, ordered by its primary key), or follow hops. Chains with more than one routine node stay with R447.
+* **One delivery trigger for every child connection.** The walk's delivery relation gains a
+  paged-child trigger: a child field whose target is wrapped in a connection is batched, whatever
+  markers it carries. It is stated once for every child shape, as the rule is one rule
+  (`defects-as-facts.adoc`, "The supertype"); a routine-only trigger would state it per shape.
+* **The batched leaf's surface pin lifts whole.** `ChildField.BatchedTableField` pins a routine path
+  to no filters, no order argument, no pagination and no connection. The spike exercised all four
+  through the existing emit, and the consumer's field carries three of them.
+* **The inline leaf keeps its pin.** An inline routine list with a filter still cannot generate, and
+  its crash is R1179's. Its order argument is already refused in the store
+  (`ORDER_CHOICE_ON_INLINE_LIST`), so R1179 is left with the filter.
+* **No new walk verdict.** The unsplit spelling takes the batched arm instead of being refused, and
+  the missing order is the stored `LIST_ORDER_UNDETERMINED`, which stops the build before the walk's
+  own ordering checks. `GraphitronSchemaValidator` is not touched.
+* **The stored order refusal stops naming a primary key where there is none.** `LIST_ORDER_UNDETERMINED`
+  includes the shared ordering guidance, whose next step offers "a column, index or primary key the
+  table has". A target type bound to no table has none; the code gets a next step of its own: add
+  `@defaultOrder` naming the result's columns.
+* **An omittable order argument whose target type has no keyed table needs a `@defaultOrder`.** The
+  consumer's field is this shape. Its order argument's runtime fallback is `OrderBySpec.None` (no
+  `@defaultOrder`, no primary key), neither the store nor the walk refuses it today (an order argument
+  counts as an order stated), and when a client leaves `orderBy` out the generated page orders by
+  nothing and calls `seek()` with zero fields, which jOOQ 3.20 refuses. Under the ruling,
+  `LIST_ORDER_UNDETERMINED` covers it, and the consumer adds a `@defaultOrder` naming result columns.
+  The same hole on a list or connection whose target type is bound to a keyless table is refused by the
+  same rule. A function returning `SETOF` a table needs no clause of its own: its result type is bound
+  to that table only by its own `@table`, the store deriving no binding from the function, so with the
+  directive written it orders by the table's key and without it it is refused like any other.
+  It is a new refusal, so it lands as a breaking change. FS-plattform's reach, read-only at
+  `946fc4aa20`: 17 fields carry a nullable `@orderBy` argument and no `@defaultOrder`, none of them
+  routine-backed, and every one reads a table with a primary key in its module's jOOQ catalog (sis 13
+  fields over 7 tables, opptak 2, utdanningsregisteret 2), so no FS field is refused. The consumer's
+  field is not in FS yet; it is a hand-written `@service` there today.
+* **Every single-routine chain position is in scope.** The trigger and the pin are per leaf, not per
+  chain shape, so the routine may end the path, be followed by `@reference` hops, or follow hops.
+  Chains with more than one routine node stay with R447.
 
 ## Implementation
 
-* `FieldBuilder.classifyChildRoutineChain`: delete the Connection gate and its comment. With `@splitQuery` the method already reaches the `ChildField.BatchedTableField` arm and already passes `tfc.filters()`, `tfc.orderBy()` and `tfc.pagination()`; nothing is added there. Where the wrapper is a connection and `@splitQuery` is absent, yield the verdict the table-backed arm yields for the same spelling, `Rejection.directiveConflict(List.of("asConnection"), "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics")`, before the `TableField` mint, whose constructor would otherwise throw. The wording is the existing rule's, repeated at a second site on purpose: it is a transitional walk verdict that R1178 either dissolves or moves into the store as one defect, and a shared helper would only give it a second home in code that is leaving. Update the method's javadoc, and the paragraph in `routineChainVerdict`'s javadoc that says the child read chain carries its own Connection deferral.
-* `ChildField.BatchedTableField`'s compact constructor: reduce the routine-node surface pin (the block commented "(5) leaf-specific surface pins") to its first clause, exactly one routine node, and reword its message and comment to say that. The `OnLateralArgs` empty-key check after it stays. `ChildField.TableField`'s twin pin is not touched.
-* `GraphitronSchemaValidator.validateBatchedTableField`: an unordered routine child connection would, as the code reads, draw two errors, the cross-cutting "paginated fields must have ordering (add @defaultOrder or @orderBy)" and this method's "@splitQuery connections require a non-empty ORDER BY (add @defaultOrder, @orderBy, or a primary key on the target table)", the second offering a primary key on a function result. Confirm it first. If it holds, narrow this method's guard to the case it alone covers (a `Fixed` ordering with no entries), so the shape reports once and is not told to key a function. That also turns two errors into one for a table-backed split connection over a table with no primary key, which is the same duplicate.
-* Nothing in `plan/` or `render/` is expected to change; the spike generated, compiled and executed the shape with those untouched. The generator's own test tier was not run under the spike, so a census, ratchet or pin test that counts leaves or shapes (`DeliveryFactPinTest`, `EmissionCensusTest`, `CommandSeamRatchetTest` are the likely ones) may need its expectation moved; that is expected fallout, not a design change.
-* No store change. The store already claims the split, paged routine child as a `ROUTINE` producer starting at `CHILD` with a `CONNECTION` result.
+The walk, under the exception:
+
+* `DeliveryFact.Trigger` gains a paged-child arm, and `DeliveryFactRelation` produces
+  `Batched(paged child)` for a child field whose target is connection-wrapped, before the marker
+  reads. The classifier's batched-leaf arms agree with it, and `DeliveryFactPinTest` holds the two
+  equal.
+* `FieldBuilder.classifyChildRoutineChain`: delete the Connection gate and its comment, and take the
+  `ChildField.BatchedTableField` arm for a connection whether or not `@splitQuery` is written. The
+  arm already passes `tfc.filters()`, `tfc.orderBy()` and `tfc.pagination()`. Update the method's
+  javadoc and the paragraph in `routineChainVerdict`'s javadoc on the child chain's Connection
+  deferral.
+* The table-backed child arm (`classifyObjectReturnChildField`): the "add @splitQuery" directive
+  conflict goes, and a connection-wrapped child takes the batched arm.
+* `ChildField.BatchedTableField`'s compact constructor: reduce the routine surface pin (the block
+  commented "(5) leaf-specific surface pins") to its first clause, exactly one routine node, and
+  reword its message and comment to say that. The `OnLateralArgs` empty-key check after it stays.
+  `ChildField.TableField`'s twin pin is not touched.
+* Nothing in `plan/` or `render/` is expected to change. A census, ratchet or pin test that counts
+  leaves or shapes (`DeliveryFactPinTest`, `EmissionCensusTest`, `CommandSeamRatchetTest`) may need
+  its expectation moved.
+
+The store:
+
+* `graphitron_fetcher_entry_defect_rule`'s `SPLIT_QUERY_REDUNDANT` arm gains a branch for a child
+  field whose target is wrapped in a connection, read off the target and wrapper relations it already
+  joins. Its exclusion of a field carrying `@service` or `@routine` keeps `@service` and drops
+  `@routine` where the target is a connection, the routine child connection being split anyway.
+* `LIST_ORDER_UNDETERMINED.adoc` gets its own next step for a function's result, as above.
+* The order rule's `LIST_ORDER_UNDETERMINED` arm widens to a list or connection with no primary key
+  to fall back on and no `@defaultOrder`, whose order argument may be omitted. Its commit is a
+  breaking change (`feat!`), recording the FS count above.
+
+Fixtures and examples follow the recommended spelling: `@splitQuery` comes off every child
+connection in the sakila example, in `code-generation-triggers.adoc`'s examples and in the manual,
+and exactly one sakila child connection keeps it as the warning's own fixture, which
+`FixtureWarningsGateTest` expects. A `@condition` method on `films_for_actor`'s result is added to
+`InputFieldConditionFixtures` for the consumer's filter shape.
 
 ## User documentation (first-client check)
 
-`docs/manual/reference/directives/routine.adoc` changes in three places. In "The read surface", the paragraph that begins "At a child position, pagination is the one axis that does not compose yet" becomes:
+* `docs/manual/reference/directives/routine.adoc`, "The read surface": the paragraph that begins "At
+  a child position, pagination is the one axis that does not compose yet" becomes: at a child
+  position the read surface composes on a field fetched in a query of its own, which a connection
+  always is, and filters, an `@orderBy` argument and `@asConnection` apply there as at the root; on
+  the inline list form a `@defaultOrder` is the whole read surface. "Fetch forms and @splitQuery"
+  gains the consumer's shape as its paged example, written without `@splitQuery`, and "Constraints"
+  drops "at a child position `@asConnection` is reported as deferred".
+* `docs/manual/how-to/split-vs-inline.adoc` stops calling a child connection the one case
+  `@splitQuery` is required: a child connection is always split, and writing the directive there
+  draws a redundancy warning.
+* `docs/manual/how-to/connections.adoc` and `docs/manual/reference/directives/asConnection.adoc` stop
+  saying `@asConnection` alone on a child list "paginates across all parents in a single SQL pass":
+  each parent pages, with or without the directive.
+* `docs/architecture/reference/code-generation-triggers.adoc`, "Producer", states the rule (the
+  ruling's own commit) and its examples drop `@splitQuery` from child connections.
+* `roadmap/changelog.md`, in the feat commit that adds the warning: "@splitQuery on a child
+  connection is now inferred; written there, it is redundant and warns."
+* The ordering ruling is recorded where the order-determinism rule is documented: the shared
+  guidance in `graphitron-model`'s `defects/_ordering.adoc` (the fallback is the primary key of the
+  table the target type is bound to, and `@defaultOrder` is required where there is none), and the
+  architecture page that owns list order, if one states it, in this item's docs commit.
+* `docs/manual/reference/directives/defaultOrder.adoc`, "Constraints" (the bullets on
+  `primaryKey: true` and on a list with no primary key), and `docs/manual/how-to/sort-results.adoc`,
+  "Determinism gates", say a table-valued function's result "declares no key" or has "nothing to fall
+  back to". That is made accurate rather than removed: the fallback is the primary key of the table
+  the field's target type is bound to; a function's result type is bound to none, so it has no
+  fallback unless the field hops to a table or its type writes `@table`, and then the key is that
+  table's.
 
-> At a child position the read surface composes on the field that is fetched in a query of its
-> own, the one carrying `@splitQuery` (see "Fetch forms and @splitQuery"): filters, an `@orderBy`
-> argument and `@asConnection` all apply there as they do at the root. A child connection needs
-> `@splitQuery`, as it does on a table-backed child. On the inline form a `@defaultOrder` is the
-> whole read surface. On a `Mutation` field `@asConnection` is a build error, the write's
-> post-commit re-read being keyed rather than paged.
-
-"Fetch forms and @splitQuery" gains, after its two paragraphs:
-
-> The split form is also where a routine child pages. Each parent gets its own page and its own
-> `totalCount`, from one batch statement for the pages and one for the counts:
->
-> ```graphql
-> type Actor @table(name: "actor") {
->     filmsSplitConnection(minLength: Int!, title: String, sort: ActorFilmOrderBy @orderBy): [ActorFilm!]
->         @splitQuery @asConnection(defaultFirstValue: 10)
->         @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
->         @defaultOrder(fields: [{name: "film_id"}])
-> }
-> ```
->
-> `minLength` is spent on the function's parameter. `title` names a column of the function's
-> result and filters it. `sort` orders the page and is what the cursor encodes; without it the
-> `@defaultOrder` does both.
-
-In "Constraints", the last bullet's closing clause "at a child position `@asConnection` is reported as deferred" becomes "at a child position `@asConnection` needs `@splitQuery`, and filters and an `@orderBy` argument compose on the `@splitQuery` form only".
-
-If those three read simply, the design holds: nothing new is asked of the author beyond the directive a child connection already takes. The example is the sakila fixture below, so the page can select it from the fact document instead of printing a snippet nothing checks.
+If those read simply, the design holds: the consumer writes the field as they did plus a
+`@defaultOrder`, which the build names when it is missing, and nothing else is asked of an author.
 
 ## Tests
 
-* **Fact document**, `scenarios/routine-child-split` under `graphitron-model/src/test/resources/facts/`: a routine child fetched in a query of its own, as a list and as a connection. It states `Actor.films` (inline), `Actor.filmsSplit`, the paged field of the Goal, a routine-then-hop chain and a hops-then-routine chain, both split and paged, and claims the rows of `graphitron_producer_claim`, `graphitron_occurrence_producer` and `graphitron_occurrence_producer_result` for each, the first three as measured above, with the inline field claimed absent. No existing document states a `$source` routine child with `@splitQuery`; `scenarios/producer-kinds` is the keystone for producer kinds and has no routine child, so the new document's header names that as its variation. Sitting under `scenarios/`, it is also generated by `GenerateTestSchemas` and compiled, which is the evidence that every chain position generates code that compiles.
-* **Execution fixtures** in the sakila example beside `Actor.filmsSplit`: `Actor.filmsSplitConnection` as in the Goal (routine terminus, `title` filter, `sort` argument over an order input on `film_id` and `title`), and `Actor.recentFilmsSplitConnection`, the paged twin of `Actor.recentFilmsSplit` (the hop to `film` after the routine, primary-key order).
-* **Execution tests**, in `RoutineFieldExecutionTest` or beside the `Film.actorsConnection` tests in `GraphQLQueryTest`, which already owns the statement counter:
-  * first page per parent with `totalCount` and `hasNextPage`, the actor with no films included (an empty page counting 0), to the values in the Evidence table;
+* **Fact document**, `scenarios/routine-child-connection` under `graphitron-model/src/test/resources/facts/`:
+  the consumer's shape and the sakila one, each split and unsplit, a routine-then-hop chain and a
+  hops-then-routine chain, and the inline list as a near miss. It claims the facts the child flip
+  keeps: the producer's start `CHILD` and result `CONNECTION`, the path's steps and
+  `graphitron_join_path_step_parameter` rows, the filter's `graphitron_occurrence_filter_term` rows and
+  its `@condition`, the order source, and no defect. It also states both producer claims for one
+  field, `SELECT` unsplit and `ROUTINE` split, and its header says those `ROUTINE` rows are what "A
+  split child `@routine` is a path routine" replaces, so the parity the flip passes is behaviour, in
+  the execution tests, not those rows.
+* **Defects documents:** `SPLIT_QUERY_REDUNDANT` on a routine child connection and a table-backed one
+  written with `@splitQuery`, and absent on the same fields written without it;
+  `LIST_ORDER_UNDETERMINED` on an unordered routine child connection, with the next step that names no
+  primary key; on an omittable order argument with no `@defaultOrder` whose target type is the
+  function's result type, and whose target type is bound to a keyless table; and absent where the
+  argument is non-null, where a `@defaultOrder` is written, where the target type is bound to a table
+  with a primary key, and on a routine child that hops to such a table (`Film` after
+  `films_for_actor`), which orders by that table's key.
+* **Execution fixtures** in the sakila example beside `Actor.filmsSplit`: the consumer's shape over
+  `films_for_actor` written without `@splitQuery` (an input-object filter whose field carries a
+  `@condition`, an `@orderBy` input, and the `@defaultOrder` the ruling asks of it), the sakila
+  shape with `title`, `sort` and `@defaultOrder` written with `@splitQuery` as the warning's fixture,
+  and the paged twin of `Actor.recentFilmsSplit`, the hop to `film` after the routine, ordered by its
+  primary key.
+* **Execution tests**, in `RoutineFieldExecutionTest` or beside the `Film.actorsConnection` tests in
+  `GraphQLQueryTest`, which already owns the statement counter, for each fixture:
+  * first page per parent with `totalCount` and `hasNextPage`, the actor with no films included (an
+    empty page counting 0), to the values in the Evidence table;
   * the `after` cursor pages every parent forward;
-  * statement count for all four actors: two without `totalCount` (the root and one batch page statement), three with it. This is the proof of batching and the one thing the spike left unmeasured;
-  * a descending `sort` changes the first page and the cursor, and `title` narrows both the page and `totalCount`;
-  * on the catalog-terminus field, a column only `film` has (`description`) is returned and `totalCount` counts the joined chain.
-* **The refusal**: `GraphitronSchemaBuilderTest.asConnectionOnAChildRoutineChainDefersOnTheChildSeat` is rewritten in place for the verdict that replaces the deferral (a directive conflict naming `asConnection`, the table-backed arm's message). It is the same case with a new answer, not a new case in a truth table that takes none.
-* **The pin**: whichever test constructs a `BatchedTableField` over a routine path gains the one remaining refusal, two routine nodes.
-* `FixtureWarningsGateTest` matches build warnings naming `films_for_actor`; the new fixtures may add to what it expects.
+  * statement count for all four actors, asserted: two without `totalCount` (the root and one batch
+    page statement), three with it;
+  * the order argument changes the first page and the cursor, and the filter, through its column and
+    through its `@condition`, narrows both the page and `totalCount`;
+  * the split and the unsplit spelling of the same field answer the same pages;
+  * on the catalog-terminus field, a column only `film` has (`description`) is returned and
+    `totalCount` counts the joined chain.
+* **The refusal that goes:** `GraphitronSchemaBuilderTest.asConnectionOnAChildRoutineChainDefersOnTheChildSeat`
+  and the table-backed arm's `@asConnection`-without-`@splitQuery` case are rewritten in place for the
+  batched classification. Same cases with new answers; the walk's truth tables take no new case.
+* **The pin:** whichever test constructs a `BatchedTableField` over a routine path gains the one
+  remaining refusal, two routine nodes.
 
 ## Retired vocabulary
 
-* The rejection text "Connection pagination at a child-positioned routine-backed field is not yet supported; the root position paginates".
-* The manual's "pagination is the one axis that does not compose yet" and "at a child position `@asConnection` is reported as deferred".
-* On the batched leaf, the surface description "no filters/argument-ordering/pagination, non-Connection" and the claim that "other routine chain shapes classify as typed Deferred". Both stay true of, and stay written on, the inline `TableField` pin until R1179.
+* The rejection text "Connection pagination at a child-positioned routine-backed field is not yet
+  supported; the root position paginates".
+* The directive conflict "@asConnection on inline (non-@splitQuery) TableField is not supported; add
+  @splitQuery for batched connection semantics".
+* The manual's "pagination is the one axis that does not compose yet", "at a child position
+  `@asConnection` is reported as deferred", "the one case `@splitQuery` is required", and
+  "paginates across all parents in a single SQL pass".
+* On the batched leaf, the surface description "no filters/argument-ordering/pagination,
+  non-Connection". It stays true of, and stays written on, the inline `TableField` pin until R1179.
 
 ## Roadmap entries
 
-* R1178, filed with this spec: whether a child connection is fetched in a query of its own without `@splitQuery`. Not a dependency; this item lands under the rule as it stands.
-* R1179, filed with this spec: a filter or an order argument on an inline routine child crashes the generator.
-* R447's parked note on connection pagination over a catalog-terminus chain is replaced by a pointer here: the root form shipped with the routine read surface, and the child form is this item.
-* R662 says `@asConnection` over a routine chain is rejected or deferred; when this lands that is true of neither position, and its note on cursor columns spanning two aliases becomes the live constraint.
+* R1178: answered by the ruling. It keeps the store's claim rule (a connection wrapper read as
+  `@splitQuery` is) and the stored refusal for a paged child with nothing to key a batch on; the walk
+  half and the documentation are this item's.
+* R1179: a filter on an inline routine child crashes the generator. Its order argument is now refused
+  in the store; the filter is what is left, and it owes a stored defect, not a walk fix.
+* R447's parked note on connection pagination over a catalog-terminus chain points here.
+* R662 says `@asConnection` over a routine chain is rejected or deferred; when this lands that is true
+  of neither position, and its note on cursor columns spanning two aliases becomes the live
+  constraint.
+* The R876 node "A batched child's fetcher is emitted from the store" takes this item's fact-document
+  and execution tests as its parity check.
 
 ## Other solutions we've considered
 
-* **`@asConnection` alone implies the split.** The store's producer rule already reads that way, the consumer's SDL is written that way, and `@splitQuery` beside a connection carries no choice, there being no inline form of a child connection. It is not taken here because it is not a routine question: it changes what a table-backed child accepts, needs a delivery trigger the classifier's `DeliveryFact.Trigger` does not have, and has to reconcile three manual pages that disagree. Doing it for routine children alone would leave two child shapes answering the same question differently. R1178 is that decision, for every child shape at once.
-* **Paging inside the parent's statement.** A correlated multiset cannot carry per-parent pagination: the cursor is an argument of the child field, and the page would have to be cut inside each parent's nested cell. This is why no child connection is inline.
-* **List-shaped routine parameters**, so the function takes every parent's key at once, as the consumer's hand-written workaround does. The batch statement already calls a single-key function once per distinct parent key through the lateral join, so the array form buys nothing here and would need the routine binding to learn list parameters.
-* **Folding this into R447.** That item is breadth of chain shapes (several routine nodes, `@lookupKey`, record-backed and interface parents). This is the read surface on a shape that already emits, and it has a consumer waiting.
+* **Requiring `@splitQuery`, refused on the walk.** The first draft put the routine child under the
+  rule every child connection was under and repeated the table-backed arm's conflict. The ruling that
+  a child connection is always split removes the refusal for both shapes, and the consumer's field
+  works as written.
+* **Generating an order from the order input's first value** when a client omits it. It needs no
+  author change, but it orders by something the author never stated, chosen by the accident of enum
+  declaration order, against the rule that a list's order is stated.
+* **Paging inside the parent's statement.** A correlated multiset cannot carry per-parent pagination:
+  the cursor is an argument of the child field, and the page would have to be cut inside each
+  parent's nested cell. This is why no child connection is inline.
+* **List-shaped routine parameters**, so the function takes every parent's key at once, as the
+  consumer's workaround does. The batch statement already calls a single-key function once per
+  distinct parent key through the lateral join.
+* **Folding this into R447.** That item is breadth of chain shapes; this is the read surface on a
+  shape that already emits, and it has a consumer waiting.
 
 ## Architect consultation
 
-Consulted at pickup and at the `@splitQuery` fork, before the spike. It found that the store's producer rule already treats every child connection as split, while the classifier refuses one without `@splitQuery` and three manual pages give three accounts, and that no architecture page states the rule; taken as R1178, with the accounts and the measured store rows recorded there, and named under Decisions and Other solutions. It argued that requiring `@splitQuery` writes the walk's answer into a new arm the store contradicts, and that a ruling should come first; partly taken: the plan keeps the rule every child connection is under today so the consumer's shape is not held behind a cross-shape ruling, states the refusal as transitional, and makes the item indifferent to how the ruling falls. It advised against a shared helper for the repeated verdict, the walk being transitional; taken. It predicted that the store states an unsplit routine connection child as a `SELECT` producer; confirmed by measurement and recorded under Evidence and in R1178. It said classification evidence belongs in a fact document and that the truth tables take no new cases; taken under Tests. It listed the manual pages a change of the general rule must move together (`asConnection.adoc`, `split-vs-inline.adoc`, `connections.adoc`, `code-generation-triggers.adoc`); recorded in R1178, since this item changes `routine.adoc` only. It did not see the leaf constructors' surface pins; the spike found them.
+Consulted at the first pickup and at the `@splitQuery` fork (see git history), and again at this
+revision on 2026-11-25. At this revision it raised:
+
+* The unsplit refusal is a debt the exception ruling names, and a routine-only stored code would
+  split one rule per shape (`defects-as-facts.adoc`, "The supertype"); and the store emits the unsplit
+  form as the `SELECT` child it already states once the child flip lands, settling the question by
+  default. Overtaken by the ruling that a child connection is always split: there is no refusal.
+* Whether the consumer, who writes no `@splitQuery`, is served by a refusal at all. Taken to Alf; the
+  ruling is that they are served by the inference.
+* The missing-order refusal the author meets is the stored one, so the "never a primary key" fix
+  belongs in its guidance, not in the walk's validator. Taken: the validator is untouched, and the
+  guidance is fixed.
+* The fact document's planned `ROUTINE` claims are the rows the path-routine node rewrites, so the
+  parity check must be behaviour plus the facts the flip keeps. Taken under Tests.
+* The exception needs its limits written down. Taken under Rulings.
+* The inline pin stays out of scope, and the trial should check whether the store already refuses the
+  inline order argument. It does (`ORDER_CHOICE_ON_INLINE_LIST`); recorded under Decisions and in
+  R1179.
+
+Consulted a second time on 2026-11-25, on where a function result's default order would come from
+once a primary key was ruled the fallback. It raised that a connection's order must identify a row
+(`sort-results.adoc`, "Determinism gates"), which a key matched by name against other tables does
+not: the consumer's function covers 17 tables' keys by name, ten on a column every row of one
+parent's page shares. It also raised that the catalog-wide relation stating such matches
+(`sql_name_matched_key_column`) is dissolving, and that a dissolving relation is not re-keyed or
+extended to carry a new reader. Alf ruled that the key is the primary key of the target type's table,
+not one inferred from other tables; recorded under Rulings and Decisions.
