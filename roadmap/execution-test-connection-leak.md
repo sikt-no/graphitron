@@ -126,3 +126,19 @@ After landing, the trunk build on GitHub and the next release job on GitLab pass
 - **A source-text rule in `SakilaDatabaseGuardTest`.** That guard reads source because the calls it bans leave no trace in a compiled class; a field's type and annotations do, and the module already checks annotations by reflection.
 - **A runtime check of live connections instead of the enforcement test.** This was the author's first lean, since it would be exact and would also catch a connection the runtime fails to return. Two costs decided against it for this item. A per-class check has to run after the class's fields close, but JUnit runs the after-all callbacks of a later-registered extension first, and `AutoCloseExtension` is a default extension registered before any autodetected one, so the check would run before the close unless it did the closing itself, which is the harness-owned option above. A suite-wide count on the `test.db.url` path shares the server with other clients (the `-T 1C` reactor in CI, a developer's other builds), so it needs a key for this JVM's connections that no test can overwrite, and tests set `application_name` themselves. The runtime half of such a check belongs with the fan-out question under Findings.
 - **A context per test method.** `@BeforeEach` and `@AfterEach` also bound the count, but open a connection per test, about 1800 instead of about 95, and settle no lifetime question that `@AutoClose` leaves open.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready review, session_1c60fba0-d82e-4fcb-a91d-786381dcef68, 2026-11-25)
+
+Verdict: request revisions. Question 1 holds; question 2 fails on one point.
+
+Question 1 holds. When this lands, an execution test class in `graphitron-sakila-example` closes its fixture connection when it finishes, so the suite peaks near 19 connections instead of 101, both CI pipelines pass at PostgreSQL's default limit, the Testcontainers path stops asking for 400, and the template a consumer copies from `test-your-schema.adoc` closes its `dsl` instead of holding it to JVM exit. The claims about the tree check out: the field census (95 = 72 + 21 + 2, and the 21 direct classes by name), `SakilaDatabase`'s accessors and its `withCommand`, the JUnit 6.1.3 and jOOQ 3.20.11 behaviour the plan leans on, and every class, docs section and properties comment the plan names.
+
+**The `DSL_CTX` exemption rests on a shape the two fields do not have.** The plan says `ScatterSingleByIdxTest.DSL_CTX` and `ScatterLookupByIdxTest.DSL_CTX` "hold a plain `DSLContext` from their initializers", lists them under Unchanged, and has `FixtureCloseEnforcementTest` exempt a field that holds a non-`AutoCloseable` value once its class is initialized. On trunk both are declared `private static DSLContext DSL_CTX;` with no initializer, and are assigned `DSL.using(SQLDialect.POSTGRES)` inside `@BeforeAll`. So after class initialization they are `null`, the same as a fixture field, and:
+
+- the rule as written requires `@AutoClose` on both;
+- `@AutoClose` on either throws `ExtensionConfigurationException` in the class's after-all, because `AutoCloseExtension` looks up `close()` on the runtime value and `DefaultDSLContext` has none;
+- the planted "dialect-only one passes" case, written to the shape the plan describes, passes while the real run fails on these two classes, so the planted cases would not catch the mismatch.
+
+An implementer cannot satisfy the rule and leave these classes unchanged, and has to choose how to reconcile them. What would satisfy this: the plan says which shape the two fields end in and makes the exemption, the Unchanged list and the planted dialect-only case agree with it. Either arm is the author's to pick: move the two assignments to field initializers (and take the two classes off Unchanged), or restate the exemption so it covers a dialect-only field assigned in `@BeforeAll`.
