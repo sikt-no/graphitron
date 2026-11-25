@@ -43,9 +43,10 @@ What stays with this item:
   unsplit, `ROUTINE` starting at `CHILD` split. The claim reads the connection wrapper as it reads
   `@splitQuery`. R1169's fact document states both claims and its execution tests show the two
   spellings answer the same pages, so this change is checked when it lands.
-* **A paged child with nothing to key a batch on** (a same-table child with no key, a routine child
-  with no parameter bound to a parent column) is refused under the new spelling by a stored defect,
-  across child shapes, one code for the rule.
+
+The stored refusal for a paged child with nothing to key a batch on moved to R1169 (Alf, 2026-11-25):
+a same-table child with no path written is `NO_ROUTE_TO_TARGET`, and a routine child with no
+parameter bound to a parent column is `NO_KEY_FROM_PARENT`, its statement widened there.
 
 The sections below are the question as it was filed.
 
