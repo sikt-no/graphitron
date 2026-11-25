@@ -82,6 +82,10 @@ public final class OccurrenceProducers {
         OccurrenceBuilds.write(dsl, graph, touchedAt, OccurrenceBuilds.SERVICE);
         OccurrenceBuilds.sweep(dsl, graph, touchedAt, OccurrenceBuilds.SERVICE);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.PRODUCERS);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.SERVICE_SHAPES);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.SERVICE_SOURCES);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.SERVICE_RETURNS);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.FACETS);
     }
 
     /**

@@ -48,6 +48,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NEED_ENTRY_D
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_RESULT_SHAPE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_WRITE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SERVICE_SHAPE_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SERVICE_SOURCE_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SERVICE_RETURN_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FACET_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -104,10 +108,27 @@ public final class EntryDefects {
 
     /**
      * The call defects' rule, {@link OccurrenceProducers}: a root routine's parameter nothing fills, and
-     * a re-read of what a delete removed.
+     * a re-read of what a delete removed. The stage raises its @service and facet families from rules
+     * of their own beside it, so no rule nests a union deeper than seven.
      */
     public static final Rule PRODUCERS =
         new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE);
+
+    /** The @service shapes graphitron does not generate or a Java method cannot declare. */
+    public static final Rule SERVICE_SHAPES =
+        new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_SERVICE_SHAPE_ENTRY_DEFECT_RULE);
+
+    /** What a @service's source parameter collects and the records it answers are keyed by. */
+    public static final Rule SERVICE_SOURCES =
+        new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_SERVICE_SOURCE_ENTRY_DEFECT_RULE);
+
+    /** A @service's answer that does not match its field. */
+    public static final Rule SERVICE_RETURNS =
+        new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_SERVICE_RETURN_ENTRY_DEFECT_RULE);
+
+    /** The facets of a connection its producers disagree on or graphitron does not generate yet. */
+    public static final Rule FACETS =
+        new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_FACET_ENTRY_DEFECT_RULE);
 
     /** The node id binding defects' rule, {@link OccurrenceBindings}. */
     public static final Rule BINDINGS =

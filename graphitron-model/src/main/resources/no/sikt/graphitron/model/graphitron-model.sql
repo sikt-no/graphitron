@@ -23719,88 +23719,6 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
  WHERE pp.kind = 'DELETE' AND cp.start = 'CHILD' AND cp.kind IN ('SELECT', 'LOOKUP')
 UNION ALL
--- A @service whose field returns a connection, at the field: the service answers rows and graphitron
--- would page them, which is not generated for a service yet, so it is refused until then.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'SERVICE_CONNECTION_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE p.kind = 'SERVICE' AND r.shape = 'CONNECTION'
-UNION ALL
--- A @service under an object whose rows may be any of several participants, at the field: its parents'
--- answers would be lifted participant by participant, which is generated for a root call only, so it
--- is refused until then. An outcome, whose members are the call's success and its errors, is no such
--- answer, and a union is refused for a service of its own.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
-                WHERE pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
-                    WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
-                      AND po.field_name = f.field_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_type t
-                    WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'UNION')
-UNION ALL
--- A child @service whose source parameter collects a class that is neither a jOOQ table record nor
--- a jOOQ row or record of the key columns, or leaves its element unbounded, at the field: nothing says
--- how to put a parent's key into one, so there is no batch to hand it. The detail is the class, the
--- collection itself where its element is unbounded.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'SERVICE_SOURCES_NOT_KEYS', mp.element_class, 'occurrence-producers'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
-  JOIN graphitron_occurrence_call_parameter cp
-    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
-  JOIN graphitron_occurrence_call_method cm
-    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
-  JOIN code_method_parameter mp
-    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
-   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
- WHERE p.kind = 'SERVICE' AND p.start = 'CHILD' AND mp.element_class IS NOT NULL
-   -- Keys in no container delivering many are the batch shape's.
-   AND EXISTS (SELECT 1 FROM code_delivery_container dc
-                WHERE dc.container_class = mp.erased_class AND dc.multiplies)
-   AND NOT REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_call_parameter_table kt
-                    WHERE kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
-                      AND kt.class_name = cm.method_class_name AND kt.method_name = cm.method_name
-                      AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position
-                      AND kt.fit = 'RECORD')
-UNION ALL
--- A child @service under a @table type whose source parameter collects records of another table, at
--- the field: the batch is the parent rows' keys, and nothing turns a row of the parent's table into a
--- record of another, so no lift is stated and the call has nothing to be handed. The detail is the
--- record class.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'SERVICE_SOURCES_OTHER_TABLE', mp.element_class, 'occurrence-producers'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
-  JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.type_name
-  JOIN graphitron_occurrence_call_parameter cp
-    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
-  JOIN graphitron_occurrence_call_method cm
-    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
-  JOIN code_method_parameter mp
-    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
-   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
-  JOIN graphitron_call_parameter_table kt
-    ON kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
-   AND kt.class_name = cm.method_class_name AND kt.method_name = cm.method_name
-   AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position AND kt.fit = 'RECORD'
- WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
-   AND NOT (kt.table_source_name = tt.table_source_name AND kt.table_schema = tt.table_schema
-            AND kt.table_name = tt.table_name)
-UNION ALL
 -- An input object reached again inside itself under a class a call builds, at the input field that
 -- reaches it again: the occurrences stop there, so building the class would drop the nested value
 -- rather than build it. The detail is the input type.
@@ -23814,39 +23732,6 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.stated_by = 'SERVICE'
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
  WHERE it.type_kind = 'INPUT_OBJECT'
-UNION ALL
--- A @service handing back records of a table with no primary key, at the field, at a root or under an
--- object: the records it answers are read back from their table by its primary key, so there is
--- nothing to read them back by. The detail is the table. A child's key table lacking one is the depth
--- defects stage's arm of the same rule.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'KEY_TABLE_WITHOUT_PRIMARY_KEY', r.table_name, 'occurrence-producers'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE p.kind = 'SERVICE' AND r.table_name IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
-                    WHERE pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema
-                      AND pk.table_name = r.table_name)
-UNION ALL
--- A @service handing back records of a table whose primary key is too wide to lift them by, at the
--- field: the records are read back through a derived table holding each one's position, its parent's
--- and its key, a typed record of the key's columns and two more, and jOOQ types records up to the
--- widest RecordN only. The detail is the table.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'SERVICE_KEY_TOO_WIDE_UNSUPPORTED', r.table_name, 'occurrence-producers'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
-  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
-  JOIN sql_primary_key pk
-    ON pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema AND pk.table_name = r.table_name
- WHERE p.kind = 'SERVICE'
-   AND (SELECT COUNT(*) FROM sql_constraint_column kc
-         WHERE kc.source_name = pk.source_name AND kc.table_schema = pk.table_schema
-           AND kc.table_name = pk.table_name AND kc.constraint_name = pk.constraint_name) + 2
-       > (SELECT MAX(t.degree) FROM code_tuple_class t WHERE t.kind = 'RECORD')
 UNION ALL
 -- A GraphQL enum value a service parameter or input member takes as a constant of a Java enum that
 -- declares none of its name, at the parameter's field or the member's input field: the value is
@@ -23910,6 +23795,86 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE k.source_name = g.source_name AND k.class_name = g.class_name
                       AND k.constant_name = COALESCE(b.name_ref, v.value_name))
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- A node fetcher with no argument it decodes, at the field's declaration: a query-root field
+-- returning the Node interface decodes its argument named id, or ids where it returns a list (Alf,
+-- 2026-11-19), and this one has none, so no id reaches it. A field with a @service is a service,
+-- and runs what the service returns.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'NODE_FETCHER_WITHOUT_ID', CASE WHEN f.is_list THEN 'ids' ELSE 'id' END, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence fo ON fo.graph_name = p.graph_name AND fo.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = fo.graph_name AND f.coordinate = fo.element_coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INTERFACE'
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'LOOKUP' AND p.start = 'ROOT' AND f.named_type = 'Node'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
+                    WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate)
+UNION ALL
+-- A name on a root @routine's argMapping entry that no IN parameter of the routine carries, at the
+-- mapping: the routine the producer calls, its parameters by the generated method's names, which
+-- argMapping binds by. Judged here rather than with the other mappings' names, the routine being
+-- resolved after the pairs are. Silent where the generated method was compiled without parameter
+-- names. Once per mapping, the detail the first such name.
+SELECT pe.graph_name, pe.source_name, pe.source_line, pe.source_column,
+       'ARGMAPPING_PARAMETER_UNKNOWN', MIN(pe.target_name), 'occurrence-producers'
+  FROM graphitron_occurrence_call oc
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = oc.graph_name AND pr.coordinate = oc.coordinate
+  JOIN graphitron_argmapping_site site
+    ON site.graph_name = oc.graph_name AND site.coordinate = oc.application_coordinate
+   AND site.directive_name = oc.application_directive AND site.ordinal = oc.application_ordinal
+   AND site.owner = 'argMapping'
+  JOIN graphitron_ast_argmapping_pair_entry pe
+    ON pe.graph_name = site.graph_name AND pe.source_name = site.source_name
+   AND pe.source_line = site.source_line AND pe.source_column = site.source_column
+ WHERE oc.call_kind = 'ROUTINE' AND pe.target_kind = 'NAME'
+   AND NOT EXISTS (SELECT 1 FROM sql_routine_parameter rp
+                    WHERE rp.source_name = pr.routine_source_name AND rp.table_schema = pr.table_schema
+                      AND rp.routine_name = pr.routine_name
+                      AND (rp.jooq_name = pe.target_name OR REGEXP_LIKE(rp.jooq_name, '^arg[0-9]+$')))
+ GROUP BY pe.graph_name, pe.source_name, pe.source_line, pe.source_column;
+COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS, SERVICE_CONNECTION_UNSUPPORTED, SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED, SERVICE_CHILD_VALIDATION_UNSUPPORTED or SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for the service deferrals';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
+
+CREATE VIEW graphitron_occurrence_service_shape_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A @service whose field returns a connection, at the field: the service answers rows and graphitron
+-- would page them, which is not generated for a service yet, so it is refused until then.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_CONNECTION_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE p.kind = 'SERVICE' AND r.shape = 'CONNECTION'
+UNION ALL
+-- A @service under an object whose rows may be any of several participants, at the field: its parents'
+-- answers would be lifted participant by participant, which is generated for a root call only, so it
+-- is refused until then. An outcome, whose members are the call's success and its errors, is no such
+-- answer, and a union is refused for a service of its own.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
+                WHERE pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                    WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
+                      AND po.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type t
+                    WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'UNION')
 UNION ALL
 -- A @service whose field answers a union, at the field: a Java method declares one result type, and
 -- no Java type is a union of others, so what the method answers says nothing of which member it is.
@@ -23981,8 +23946,100 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND (mp.erased_class NOT IN ('java.util.Set', 'java.util.List', 'java.util.Collection', 'org.jooq.Result')
         OR mp.erased_class = 'org.jooq.Result' AND REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
         OR COALESCE(m.result_erased_class, '') NOT IN ('java.util.Map', 'java.util.List', 'org.jooq.Result')
-        OR m.result_erased_class IN ('java.util.List', 'org.jooq.Result') AND mp.erased_class = 'java.util.Set')
+        OR m.result_erased_class IN ('java.util.List', 'org.jooq.Result') AND mp.erased_class = 'java.util.Set');
+COMMENT ON VIEW graphitron_occurrence_service_shape_entry_defect_rule IS 'One row the service shape defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, a @service whose field answers a union giving one SERVICE_UNION_RETURN row at the field.';
+
+CREATE VIEW graphitron_occurrence_service_source_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A child @service whose source parameter collects a class that is neither a jOOQ table record nor
+-- a jOOQ row or record of the key columns, or leaves its element unbounded, at the field: nothing says
+-- how to put a parent's key into one, so there is no batch to hand it. The detail is the class, the
+-- collection itself where its element is unbounded.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_SOURCES_NOT_KEYS', mp.element_class, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD' AND mp.element_class IS NOT NULL
+   -- Keys in no container delivering many are the batch shape's.
+   AND EXISTS (SELECT 1 FROM code_delivery_container dc
+                WHERE dc.container_class = mp.erased_class AND dc.multiplies)
+   AND NOT REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_call_parameter_table kt
+                    WHERE kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
+                      AND kt.class_name = cm.method_class_name AND kt.method_name = cm.method_name
+                      AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position
+                      AND kt.fit = 'RECORD')
 UNION ALL
+-- A child @service under a @table type whose source parameter collects records of another table, at
+-- the field: the batch is the parent rows' keys, and nothing turns a row of the parent's table into a
+-- record of another, so no lift is stated and the call has nothing to be handed. The detail is the
+-- record class.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_SOURCES_OTHER_TABLE', mp.element_class, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.type_name
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN graphitron_call_parameter_table kt
+    ON kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
+   AND kt.class_name = cm.method_class_name AND kt.method_name = cm.method_name
+   AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position AND kt.fit = 'RECORD'
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+   AND NOT (kt.table_source_name = tt.table_source_name AND kt.table_schema = tt.table_schema
+            AND kt.table_name = tt.table_name)
+UNION ALL
+-- A @service handing back records of a table with no primary key, at the field, at a root or under an
+-- object: the records it answers are read back from their table by its primary key, so there is
+-- nothing to read them back by. The detail is the table. A child's key table lacking one is the depth
+-- defects stage's arm of the same rule.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'KEY_TABLE_WITHOUT_PRIMARY_KEY', r.table_name, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE p.kind = 'SERVICE' AND r.table_name IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                    WHERE pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema
+                      AND pk.table_name = r.table_name)
+UNION ALL
+-- A @service handing back records of a table whose primary key is too wide to lift them by, at the
+-- field: the records are read back through a derived table holding each one's position, its parent's
+-- and its key, a typed record of the key's columns and two more, and jOOQ types records up to the
+-- widest RecordN only. The detail is the table.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_KEY_TOO_WIDE_UNSUPPORTED', r.table_name, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN sql_primary_key pk
+    ON pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema AND pk.table_name = r.table_name
+ WHERE p.kind = 'SERVICE'
+   AND (SELECT COUNT(*) FROM sql_constraint_column kc
+         WHERE kc.source_name = pk.source_name AND kc.table_schema = pk.table_schema
+           AND kc.table_name = pk.table_name AND kc.constraint_name = pk.constraint_name) + 2
+       > (SELECT MAX(t.degree) FROM code_tuple_class t WHERE t.kind = 'RECORD');
+COMMENT ON VIEW graphitron_occurrence_service_source_entry_defect_rule IS 'One row the service source defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, a child @service under a @table type whose source parameter collects records of another table giving one SERVICE_SOURCES_OTHER_TABLE row at the field.';
+
+CREATE VIEW graphitron_occurrence_service_return_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A @service whose payload's data field encodes the records it hands back into ids of a node,
 -- @nodeId(typeName:) written, and the records are another table's than the node's: an id is encoded
 -- from the node table's own record, so the keys read off another table's would name rows of the wrong
@@ -24166,8 +24223,11 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
             ELSE m.result_delivery = 'MANY' END
    AND EXISTS (SELECT 1 FROM graphitron_type_backing b
                 WHERE b.graph_name = df.graph_name AND b.type_name = df.named_type
-                  AND b.class_name = m.result_element_class)
-UNION ALL
+                  AND b.class_name = m.result_element_class);
+COMMENT ON VIEW graphitron_occurrence_service_return_entry_defect_rule IS 'One row the service return defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, a @service answering records of another table than the one its field''s type is bound to giving one SERVICE_RETURN_MISMATCH row at the field.';
+
+CREATE VIEW graphitron_occurrence_facet_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- Producers of one connection type filling different facets, at each producing field: the facets
 -- record is the type's, so every producer must fill the same one, facet by facet the same name,
 -- value type and nullability in the same place. A producer's filter argument and column are its own
@@ -24304,56 +24364,8 @@ SELECT fb.graph_name, fb.source_name, fb.source_line, fb.source_column,
                   AND bf.field_name = fb.field_name
                   AND NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
                                    WHERE cc.graph_name = cf.graph_name AND cc.type_name = cf.type_name
-                                     AND cc.field_name = cf.field_name))
-UNION ALL
--- A node fetcher with no argument it decodes, at the field's declaration: a query-root field
--- returning the Node interface decodes its argument named id, or ids where it returns a list (Alf,
--- 2026-11-19), and this one has none, so no id reaches it. A field with a @service is a service,
--- and runs what the service returns.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'NODE_FETCHER_WITHOUT_ID', CASE WHEN f.is_list THEN 'ids' ELSE 'id' END, 'occurrence-producers'
-  FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence fo ON fo.graph_name = p.graph_name AND fo.coordinate = p.coordinate
-  JOIN graphitron_field f ON f.graph_name = fo.graph_name AND f.coordinate = fo.element_coordinate
-  JOIN graphitron_type t
-    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INTERFACE'
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE p.kind = 'LOOKUP' AND p.start = 'ROOT' AND f.named_type = 'Node'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
-                    WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate)
-UNION ALL
--- A name on a root @routine's argMapping entry that no IN parameter of the routine carries, at the
--- mapping: the routine the producer calls, its parameters by the generated method's names, which
--- argMapping binds by. Judged here rather than with the other mappings' names, the routine being
--- resolved after the pairs are. Silent where the generated method was compiled without parameter
--- names. Once per mapping, the detail the first such name.
-SELECT pe.graph_name, pe.source_name, pe.source_line, pe.source_column,
-       'ARGMAPPING_PARAMETER_UNKNOWN', MIN(pe.target_name), 'occurrence-producers'
-  FROM graphitron_occurrence_call oc
-  JOIN graphitron_occurrence_producer_routine pr
-    ON pr.graph_name = oc.graph_name AND pr.coordinate = oc.coordinate
-  JOIN graphitron_argmapping_site site
-    ON site.graph_name = oc.graph_name AND site.coordinate = oc.application_coordinate
-   AND site.directive_name = oc.application_directive AND site.ordinal = oc.application_ordinal
-   AND site.owner = 'argMapping'
-  JOIN graphitron_ast_argmapping_pair_entry pe
-    ON pe.graph_name = site.graph_name AND pe.source_name = site.source_name
-   AND pe.source_line = site.source_line AND pe.source_column = site.source_column
- WHERE oc.call_kind = 'ROUTINE' AND pe.target_kind = 'NAME'
-   AND NOT EXISTS (SELECT 1 FROM sql_routine_parameter rp
-                    WHERE rp.source_name = pr.routine_source_name AND rp.table_schema = pr.table_schema
-                      AND rp.routine_name = pr.routine_name
-                      AND (rp.jooq_name = pe.target_name OR REGEXP_LIKE(rp.jooq_name, '^arg[0-9]+$')))
- GROUP BY pe.graph_name, pe.source_name, pe.source_line, pe.source_column;
-COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS, SERVICE_CONNECTION_UNSUPPORTED, SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED, SERVICE_CHILD_VALIDATION_UNSUPPORTED or SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for the service deferrals';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
+                                     AND cc.field_name = cf.field_name));
+COMMENT ON VIEW graphitron_occurrence_facet_entry_defect_rule IS 'One row the facet defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, producers of one connection type filling different facets giving one CONNECTION_FACETS_DISAGREE row at each producing field.';
 
 -- What a service answers to a call that names nothing, where it is an empty value the generated code
 -- can build without a connection.
@@ -32436,6 +32448,10 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-participants', 'graphitron_entry_defect', 'graphitron_occurrence_participant_entry_defect_rule'),
   ('occurrence-participants', 'graphitron_occurrence_participant', 'graphitron_occurrence_participant_rule'),
   ('occurrence-producers', 'graphitron_entry_defect', 'graphitron_occurrence_producer_entry_defect_rule'),
+  ('occurrence-producers', 'graphitron_entry_defect', 'graphitron_occurrence_service_shape_entry_defect_rule'),
+  ('occurrence-producers', 'graphitron_entry_defect', 'graphitron_occurrence_service_source_entry_defect_rule'),
+  ('occurrence-producers', 'graphitron_entry_defect', 'graphitron_occurrence_service_return_entry_defect_rule'),
+  ('occurrence-producers', 'graphitron_entry_defect', 'graphitron_occurrence_facet_entry_defect_rule'),
   ('occurrence-producers', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
   ('occurrence-producers', 'graphitron_occurrence_call', 'graphitron_occurrence_call_rule'),
   ('occurrence-producers', 'graphitron_occurrence_call', 'graphitron_occurrence_routine_call_rule'),
@@ -34290,10 +34306,26 @@ INSERT INTO meta_relation VALUES
    'One row the routine parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a root routine''s call: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.',
    'A root routine''s parameters are its call-surface parameter list, each taking the argument its argMapping entry lands on or, unmentioned, the argument of its exact name, as the walk binds them. The routine''s own fill rule beside the service''s, the write''s and the condition''s, so no kind''s rule branches on another.'),
+  ('graphitron_occurrence_service_shape_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the service shape defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, a @service whose field answers a union giving one SERVICE_UNION_RETURN row at the field.',
+   'The @service shapes graphitron does not generate or a Java method cannot declare: a connection, a union, polymorphic or validating children, several occurrences, a batch the frame cannot key. A family of the occurrence-producers stage beside its other rules, so no rule nests a union deeper than seven.'),
+  ('graphitron_occurrence_service_source_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the service source defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, a child @service under a @table type whose source parameter collects records of another table giving one SERVICE_SOURCES_OTHER_TABLE row at the field.',
+   'What a @service''s source parameter collects and the records it answers are keyed by: no keys, another table''s records, a table with no primary key or one too wide to lift by. A family of the occurrence-producers stage beside its other rules, so no rule nests a union deeper than seven.'),
+  ('graphitron_occurrence_service_return_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the service return defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, a @service answering records of another table than the one its field''s type is bound to giving one SERVICE_RETURN_MISMATCH row at the field.',
+   'A @service''s answer that does not match its field: the records, the class, the map key or the cardinality its field takes. A family of the occurrence-producers stage beside its other rules, so no rule nests a union deeper than seven.'),
+  ('graphitron_occurrence_facet_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the facet defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-producers inserts this view''s rows for one graph into graphitron_entry_defect, producers of one connection type filling different facets giving one CONNECTION_FACETS_DISAGREE row at each producing field.',
+   'The facets of a connection: producers disagreeing on them, facets not generated yet, and an @asFacet no faceted connection surfaces. A family of the occurrence-producers stage beside its other rules, so no rule nests a union deeper than seven.'),
   ('graphitron_occurrence_producer_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.',
-   'A defect is raised by the first stage holding its facts (Alf, 2026-11-13): a root routine''s fills are written here, so a parameter none reaches is judged here rather than at a later stage reading them.'),
+   'A defect is raised by the first stage holding its facts (Alf, 2026-11-13): a root routine''s fills are written here, so a parameter none reaches is judged here rather than at a later stage reading them. The stage''s @service and facet families have rules of their own beside it, so no rule nests a union deeper than seven.'),
   ('graphitron_occurrence_write_call_rule', 'graph-occurrence-call', 'graphitron',
    'One row the write call rule computes, in the shape graphitron_occurrence_call stores for a write''s call: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call, which is the name every reader spells.',
