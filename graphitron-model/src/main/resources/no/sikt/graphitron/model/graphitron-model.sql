@@ -19859,13 +19859,6 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_TTL
  WHERE e.ttl IS NULL OR e.ttl = 'PT'
     OR NOT REGEXP_LIKE(e.ttl, '^PT([0-9]+H)?([0-9]+M)?([0-9]+S)?$')
 UNION ALL
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_VOUCHES_FOR_EMPTY', s.coordinate, 'vouchers'
-  FROM marker s
- WHERE NOT EXISTS (SELECT 1 FROM claim_entry c
-                    WHERE c.graph_name = s.graph_name AND c.source_name = s.source_name
-                      AND c.source_line = s.source_line AND c.source_column = s.source_column
-                      AND c.position = 0)
-UNION ALL
 -- A vouched-for field that names no absorbed field: a name the type does not declare, the voucher field itself,
 -- or a nested selection. One row per @issue, the detail the first such name written.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_VOUCHED_FOR_NOT_ABSORBED',
@@ -19879,7 +19872,41 @@ SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_VOU
                     WHERE e.graph_name = c.graph_name AND e.source_name = c.source_name
                       AND e.source_line = c.source_line AND e.source_column = c.source_column
                       AND e.position < c.position AND e.field_name = c.field_name)
- GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
+ GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column;
+COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an @issue whose vouchesFor names a field the type does not declare gives one VOUCHER_VOUCHED_FOR_NOT_ABSORBED row at the @issue.';
+-- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_name IS 'the file of the marker or the member';
+-- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.code IS 'the rule broken';
+-- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.detail IS 'the type, the coordinate, or the vouched-for field or duration as written'
+
+CREATE VIEW graphitron_voucher_field_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+WITH marker (graph_name, source_name, source_line, source_column, directive_name, type_name,
+             coordinate) AS (
+  SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.directive_name, i.type_name,
+         d.coordinate
+    FROM graphql_directive_application d
+    JOIN graphql_type_element i ON i.graph_name = d.graph_name AND i.type_name = d.coordinate
+   WHERE d.directive_name IN ('issue', 'accept')
+),
+issue AS (SELECT * FROM marker WHERE directive_name = 'issue'),
+-- Each selection either marker's vouchesFor parsed into, the two parses read alike.
+claim_entry (graph_name, source_name, source_line, source_column, position, field_name) AS (
+  SELECT graph_name, source_name, source_line, source_column, position, field_name
+    FROM graphitron_ast_issue_vouched_for_entry
+  UNION ALL
+  SELECT graph_name, source_name, source_line, source_column, position, field_name
+    FROM graphitron_ast_accept_vouched_for_entry
+)
+-- A type carries one voucher field, so it issues or accepts, not both: refused at each marker.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_VOUCHES_FOR_EMPTY', s.coordinate, 'vouchers'
+  FROM marker s
+ WHERE NOT EXISTS (SELECT 1 FROM claim_entry c
+                    WHERE c.graph_name = s.graph_name AND c.source_name = s.source_name
+                      AND c.source_line = s.source_line AND c.source_column = s.source_column
+                      AND c.position = 0)
 UNION ALL
 -- A vouched-for field named twice, on either marker.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_VOUCHED_FOR_REPEATED',
@@ -19942,13 +19969,7 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column, 'VOUCHER_MEM
    AND NOT EXISTS (SELECT 1 FROM graphitron_voucher_component c
                     WHERE c.graph_name = m.graph_name AND c.type_name = m.type_name
                       AND c.field_name = m.field_name);
-COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an @issue whose vouchesFor names a field the type does not declare gives one VOUCHER_VOUCHED_FOR_NOT_ABSORBED row at the @issue.';
--- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_name IS 'the file of the marker or the member';
--- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_line IS 'its line';
--- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.code IS 'the rule broken';
--- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.detail IS 'the type, the coordinate, or the vouched-for field or duration as written'
+COMMENT ON VIEW graphitron_voucher_field_entry_defect_rule IS 'One row the voucher field defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example vouchers inserts this view''s rows for one graph into graphitron_entry_defect, a vouched-for field named twice giving one VOUCHER_VOUCHED_FOR_REPEATED row at the marker.';
 
 -- A federation @key's refusals, the entity key stage's own, judged from how each key field binds at
 -- its entity's table. An entity is resolved by a SELECT on its table, so a key needs a table-bound
@@ -26287,60 +26308,6 @@ SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
                   AND nt.table_schema = pw.table_schema AND nt.table_name = pw.table_name
                   AND nt.node_count > 1)
 UNION ALL
--- An @externalField whose reference resolved to a method it may name, bound at a table its values are
--- rows of that the method does not accept: its parameter is typed on another table's class or record,
--- so the binding has no expression, no call having been pinned there.
--- Reported once per reference, at the reference, the first table the parameter does not accept in
--- the detail.
-SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
-       'PARAMETER_MISMATCH', MIN(b.bound), 'occurrence-bindings'
-  FROM graphitron_occurrence_binding b
-  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
-  JOIN graphitron_code_reference r
-    ON r.graph_name = o.graph_name AND r.coordinate = o.element_coordinate
-   AND r.directive_name = 'externalField' AND r.kind = 'ROOT'
-  JOIN code_external_field_method m
-    ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
-   AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
- WHERE b.kind = 'EXPRESSION'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_expression e
-                    WHERE e.graph_name = b.graph_name AND e.coordinate = b.coordinate AND e.bound = b.bound)
- GROUP BY r.graph_name, r.source_name, r.source_line, r.source_column
-UNION ALL
--- An @externalField whose field also writes a @reference path: the expression would bind at the
--- path's landing, which the binding does not state yet, so it is deferred rather than bound at the
--- source table the path leaves. Reported at the @reference, the directive to remove.
-SELECT ref.graph_name, ref.source_name, ref.source_line, ref.source_column,
-       'EXTERNAL_FIELD_PATH_UNSUPPORTED', x.coordinate, 'occurrence-bindings'
-  FROM graphitron_binding_claim x
-  JOIN graphitron_directive_application ref
-    ON ref.graph_name = x.graph_name AND ref.coordinate = x.coordinate
-   AND ref.directive_name = 'reference'
- WHERE x.kind = 'EXPRESSION' AND ref.source_line IS NOT NULL
-UNION ALL
--- A @condition's parameter nothing binds, at the reference the @condition names its method by: once
--- per written directive, the detail the first such parameter.
-SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-       COALESCE(r.source_column, da.source_column), d.code,
-       -- The first such parameter, or where none carries a name, the class compiled without them.
-       CASE WHEN d.code = 'PARAMETER_NAMES_MISSING' THEN MIN(cm.method_class_name) ELSE MIN(d.parameter_name) END,
-       'occurrence-bindings'
-  FROM graphitron_occurrence_call_parameter_defect d
-  JOIN graphitron_occurrence_call oc
-    ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
-  LEFT JOIN graphitron_occurrence_call_method cm
-    ON cm.graph_name = d.graph_name AND cm.coordinate = d.coordinate AND cm.call = d.call
-  JOIN graphitron_directive_application da
-    ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
-   AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
-  LEFT JOIN graphitron_code_reference r
-    ON r.graph_name = oc.graph_name AND r.coordinate = oc.application_coordinate
-   AND r.directive_name = oc.application_directive AND r.ordinal = oc.application_ordinal
-   AND r.owner = oc.application_directive AND r.method_descriptor IS NOT NULL
- WHERE d.call_kind IN ('CONDITION') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
- GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-          COALESCE(r.source_column, da.source_column), d.code
-UNION ALL
 -- A written argMapping path projecting out of a node id that resolves to no one key column, where the
 -- pair is written: once per string, the key columns it could have meant being
 -- graphitron_entry_defect_key_column's under it.
@@ -26429,8 +26396,68 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                       AND pc.kind = 'SERVICE'
                      JOIN graphitron_claim_kind pk ON pk.kind = pc.kind AND pk.family = 'PRODUCER'
                     WHERE fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate)
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column;
+COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
+
+CREATE VIEW graphitron_occurrence_method_binding_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- An @externalField whose reference resolved to a method it may name, bound at a table its values are
+-- rows of that the method does not accept: its parameter is typed on another table's class or record,
+-- so the binding has no expression, no call having been pinned there.
+-- Reported once per reference, at the reference, the first table the parameter does not accept in
+-- the detail.
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
+       'PARAMETER_MISMATCH', MIN(b.bound), 'occurrence-bindings'
+  FROM graphitron_occurrence_binding b
+  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+  JOIN graphitron_code_reference r
+    ON r.graph_name = o.graph_name AND r.coordinate = o.element_coordinate
+   AND r.directive_name = 'externalField' AND r.kind = 'ROOT'
+  JOIN code_external_field_method m
+    ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
+   AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+ WHERE b.kind = 'EXPRESSION'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_expression e
+                    WHERE e.graph_name = b.graph_name AND e.coordinate = b.coordinate AND e.bound = b.bound)
+ GROUP BY r.graph_name, r.source_name, r.source_line, r.source_column
 UNION ALL
+-- An @externalField whose field also writes a @reference path: the expression would bind at the
+-- path's landing, which the binding does not state yet, so it is deferred rather than bound at the
+-- source table the path leaves. Reported at the @reference, the directive to remove.
+SELECT ref.graph_name, ref.source_name, ref.source_line, ref.source_column,
+       'EXTERNAL_FIELD_PATH_UNSUPPORTED', x.coordinate, 'occurrence-bindings'
+  FROM graphitron_binding_claim x
+  JOIN graphitron_directive_application ref
+    ON ref.graph_name = x.graph_name AND ref.coordinate = x.coordinate
+   AND ref.directive_name = 'reference'
+ WHERE x.kind = 'EXPRESSION' AND ref.source_line IS NOT NULL
+UNION ALL
+-- A @condition's parameter nothing binds, at the reference the @condition names its method by: once
+-- per written directive, the detail the first such parameter.
+SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+       COALESCE(r.source_column, da.source_column), d.code,
+       -- The first such parameter, or where none carries a name, the class compiled without them.
+       CASE WHEN d.code = 'PARAMETER_NAMES_MISSING' THEN MIN(cm.method_class_name) ELSE MIN(d.parameter_name) END,
+       'occurrence-bindings'
+  FROM graphitron_occurrence_call_parameter_defect d
+  JOIN graphitron_occurrence_call oc
+    ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
+  LEFT JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = d.graph_name AND cm.coordinate = d.coordinate AND cm.call = d.call
+  JOIN graphitron_directive_application da
+    ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
+   AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
+  LEFT JOIN graphitron_code_reference r
+    ON r.graph_name = oc.graph_name AND r.coordinate = oc.application_coordinate
+   AND r.directive_name = oc.application_directive AND r.ordinal = oc.application_ordinal
+   AND r.owner = oc.application_directive AND r.method_descriptor IS NOT NULL
+ WHERE d.call_kind IN ('CONDITION') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
+ GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+          COALESCE(r.source_column, da.source_column), d.code;
+COMMENT ON VIEW graphitron_occurrence_method_binding_entry_defect_rule IS 'One row the method binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a @condition''s parameter nothing binds giving one PARAMETER_NAMES_MISSING row at the reference naming its method.';
+
+CREATE VIEW graphitron_occurrence_field_read_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A field of a participant a discriminator tells apart under a @service, answering an object with no
 -- table of its own read down a path rather than off the row, at the field: the service's lift reads
 -- each participant off the one shared row, so it is refused until such a read is generated there. A
@@ -26572,7 +26599,7 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
                     WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate)
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
-COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
+COMMENT ON VIEW graphitron_occurrence_field_read_entry_defect_rule IS 'One row the field read defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a @service parameter filled from an argument read through a list above its last step giving one SERVICE_ARGUMENT_PATH_UNSUPPORTED row at the argMapping.';
 
 -- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
 -- input object one takes, that binds a column or a node id of the table the list reads; and an input
@@ -32884,6 +32911,8 @@ INSERT INTO meta_stage_rule VALUES
   ('nodes', 'graphitron_node_table', 'graphitron_node_table_rule'),
   ('occurrence-bindings', 'graphitron_argmapping_landing_key_column', 'graphitron_argmapping_landing_key_column_rule'),
   ('occurrence-bindings', 'graphitron_entry_defect', 'graphitron_occurrence_binding_entry_defect_rule'),
+  ('occurrence-bindings', 'graphitron_entry_defect', 'graphitron_occurrence_method_binding_entry_defect_rule'),
+  ('occurrence-bindings', 'graphitron_entry_defect', 'graphitron_occurrence_field_read_entry_defect_rule'),
   ('occurrence-bindings', 'graphitron_entry_defect_key_column', 'graphitron_entry_defect_key_column_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_table_rule'),
@@ -33093,6 +33122,7 @@ INSERT INTO meta_stage_rule VALUES
   ('voucher-members', 'graphitron_voucher_field', 'graphitron_voucher_field_rule'),
   ('vouchers', 'graphitron_accept_vouched_for', 'graphitron_accept_vouched_for_rule'),
   ('vouchers', 'graphitron_entry_defect', 'graphitron_voucher_entry_defect_rule'),
+  ('vouchers', 'graphitron_entry_defect', 'graphitron_voucher_field_entry_defect_rule'),
   ('vouchers', 'graphitron_voucher_vouched_for', 'graphitron_voucher_vouched_for_rule'),
   ('vouchers', 'graphitron_voucher_component', 'graphitron_voucher_component_rule');
 
@@ -35947,10 +35977,14 @@ INSERT INTO meta_relation VALUES
    'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.',
    'The stage''s own defects, decided from the producers, readers, errors fields, outcomes and results it has just written, so each reads only what is upstream of it and none waits for a later stage''s facts.'),
+  ('graphitron_voucher_field_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the voucher field defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example vouchers inserts this view''s rows for one graph into graphitron_entry_defect, a vouched-for field named twice giving one VOUCHER_VOUCHED_FOR_REPEATED row at the marker.',
+   'The fields a voucher vouches for or carries: none, one named twice, one the accepting type does not declare, a member the voucher cannot carry as one scalar read off a column. A family of the vouchers stage beside its other rules, so no rule nests a union deeper than seven.'),
   ('graphitron_voucher_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an @issue whose vouchesFor names a field the type does not declare gives one VOUCHER_VOUCHED_FOR_NOT_ABSORBED row at the @issue.',
-   'The voucher stage''s own defects, decided from the transcription, the capture entries, the membership and what the stage has just written, so each reads only what is upstream of it and none waits for a later stage''s facts.'),
+   'The voucher stage''s own defects, decided from the transcription, the capture entries, the membership and what the stage has just written, so each reads only what is upstream of it and none waits for a later stage''s facts. Its voucher field family has a rule of its own beside it, so no rule nests a union deeper than seven.'),
   ('graphitron_entity_key_vouched_for_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the entity key vouched-for defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example entity-key-alternatives inserts this view''s rows for one graph into graphitron_entry_defect, a vouched-for field reading no column of the accepting type''s own table giving one VOUCHER_VOUCHED_FOR_NOT_A_COLUMN row at the @accept.',
@@ -35963,10 +35997,18 @@ INSERT INTO meta_relation VALUES
    'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.',
    'The entity key stage''s own defects, judged from how each key field binds at its entity''s table, which the occurrence bindings state, so the rule reads stored bindings rather than the classified fields the refusals were once made from. Its @accept family has a rule of its own beside it, so no rule nests a union deeper than seven.'),
+  ('graphitron_occurrence_method_binding_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the method binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a @condition''s parameter nothing binds giving one PARAMETER_NAMES_MISSING row at the reference naming its method.',
+   'An @externalField''s or a @condition''s method its binding cannot call: a parameter of another table, a path beside the expression, a parameter nothing binds. A family of the occurrence-bindings stage beside its other rules, so no rule nests a union deeper than seven.'),
+  ('graphitron_occurrence_field_read_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the field read defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a @service parameter filled from an argument read through a list above its last step giving one SERVICE_ARGUMENT_PATH_UNSUPPORTED row at the argMapping.',
+   'What a field reads where it is bound that graphitron does not read yet: a discriminated participant''s object or value read off another table, a list above a service argument''''s last step, a generated scalar on a column not text, a projection reading the session. A family of the occurrence-bindings stage beside its other rules, so no rule nests a union deeper than seven.'),
   ('graphitron_occurrence_binding_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.',
-   'The defects of a node id inferred from the one node over a table where no node or several are, written by the occurrence-bindings stage that writes graphitron_occurrence_node_id, whose missing row they judge.'),
+   'The defects of a node id inferred from the one node over a table where no node or several are, written by the occurrence-bindings stage that writes graphitron_occurrence_node_id, whose missing row they judge. Its method binding and field read families have rules of their own beside it, so no rule nests a union deeper than seven.'),
   ('graphitron_occurrence_member_fill_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the member fill defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, two input fields filling one member of one object giving one MEMBER_FILLED_TWICE row at the second.',

@@ -45,7 +45,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_FIELD_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_METHOD_BINDING_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FIELD_READ_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_MEMBER_FILL_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARAMETER_BUILD_ENTRY_DEFECT_RULE;
@@ -142,9 +145,21 @@ public final class EntryDefects {
     public static final Rule FACETS =
         new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_FACET_ENTRY_DEFECT_RULE);
 
-    /** The node id binding defects' rule, {@link OccurrenceBindings}. */
+    /**
+     * The node id binding defects' rule, {@link OccurrenceBindings}. The stage raises its method
+     * binding and field read families from rules of their own beside it, so no rule nests a union
+     * deeper than seven.
+     */
     public static final Rule BINDINGS =
         new Rule("occurrence-bindings", GRAPHITRON_OCCURRENCE_BINDING_ENTRY_DEFECT_RULE);
+
+    /** An @externalField's or a @condition's method that its binding cannot call. */
+    public static final Rule METHOD_BINDINGS =
+        new Rule("occurrence-bindings", GRAPHITRON_OCCURRENCE_METHOD_BINDING_ENTRY_DEFECT_RULE);
+
+    /** What a field reads where it is bound that graphitron does not read yet. */
+    public static final Rule FIELD_READS =
+        new Rule("occurrence-bindings", GRAPHITRON_OCCURRENCE_FIELD_READ_ENTRY_DEFECT_RULE);
 
     /** The written orderings' and lookup keys' defects, judged by the field targets. */
     public static final Rule FIELD_TARGETS =
@@ -258,8 +273,15 @@ public final class EntryDefects {
     public static final Rule CODE_REFERENCES =
         new Rule("code-references", GRAPHITRON_CODE_REFERENCE_ENTRY_DEFECT_RULE);
 
-    /** The voucher stage's rule, {@link Vouchers}. */
+    /**
+     * The voucher stage's rule, {@link Vouchers}. The stage raises its voucher field family from a
+     * rule of its own beside it, so no rule nests a union deeper than seven.
+     */
     public static final Rule VOUCHERS = new Rule("vouchers", GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE);
+
+    /** The fields a voucher vouches for or carries. */
+    public static final Rule VOUCHER_FIELDS =
+        new Rule("vouchers", GRAPHITRON_VOUCHER_FIELD_ENTRY_DEFECT_RULE);
 
     /**
      * The argMapping pairs stage's rule: a {@code $tenant} where nothing reads it, and the session,

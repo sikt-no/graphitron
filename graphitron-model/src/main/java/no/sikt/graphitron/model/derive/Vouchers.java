@@ -62,5 +62,6 @@ public final class Vouchers {
                 .where(ar.GRAPH_NAME.eq(graphName)))
             .execute();
         EntryDefects.derive(dsl, graphName, readAt, EntryDefects.VOUCHERS);
+        EntryDefects.derive(dsl, graphName, readAt, EntryDefects.VOUCHER_FIELDS);
     }
 }

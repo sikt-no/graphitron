@@ -96,8 +96,8 @@ graphitron_routine_result_rule graphql_field
 # judges a member's shape there and reports at its own line.
 graphitron_voucher_component_rule graphql_field
 graphitron_voucher_component_rule graphql_type
-graphitron_voucher_entry_defect_rule graphql_field
-graphitron_voucher_entry_defect_rule graphql_type
+graphitron_voucher_field_entry_defect_rule graphql_field
+graphitron_voucher_field_entry_defect_rule graphql_type
 
 # The voucher field is minted after every field the author declared on its type, and is written
 # before the emitted population exists (the voucher-members stage runs ahead of macro expansion,

@@ -62,6 +62,8 @@ public final class OccurrenceBindings {
         OccurrenceProjections.derive(dsl, graph, touchedAt);
         ProjectionSessions.derive(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.METHOD_BINDINGS);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.FIELD_READS);
         EntryDefectKeyColumns.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS.stage());
     }
 }

@@ -309,10 +309,11 @@ class SupertypeSignatureGateTest {
         // surface written, stored as the key's column subtype so its readers stop reconstructing it.
         "graphitron_occurrence_sort_key_column_rule|sql_constraint_column,sql_index_column",
         // The voucher stage's refusals, which judge both markers' vouched-for fields by the rules they share,
-        // an empty or repeated claim, and resolve each against its own marker's claim relation. The
-        // supertype it reconstructs is the sibling pair recorded above, kept apart by decision.
+        // an empty or repeated claim: the markers' own rule and the vouched-for fields' rule beside it
+        // each read the two entry relations. The supertype they reconstruct is the sibling pair recorded
+        // above, kept apart by decision.
         "graphitron_voucher_entry_defect_rule|graphitron_ast_accept_vouched_for_entry,graphitron_ast_issue_vouched_for_entry",
-        "graphitron_voucher_entry_defect_rule|graphitron_accept_vouched_for,graphitron_voucher_vouched_for");
+        "graphitron_voucher_field_entry_defect_rule|graphitron_ast_accept_vouched_for_entry,graphitron_ast_issue_vouched_for_entry");
 
 
 

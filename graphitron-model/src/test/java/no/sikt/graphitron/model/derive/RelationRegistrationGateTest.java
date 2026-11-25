@@ -354,6 +354,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_built_class", Arm.DERIVED);
         registrations.put("graphitron_occurrence_built_class_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_binding_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_method_binding_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_field_read_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_code_reference_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_build_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_member_fill_entry_defect_rule", Arm.DERIVED);
@@ -555,6 +557,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_entity_key_accept_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_entity_key_vouched_for_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_voucher_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_voucher_field_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_minted_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_anchor_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_root_field_entry_defect_rule", Arm.DERIVED);
