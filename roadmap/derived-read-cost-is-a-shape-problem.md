@@ -2187,6 +2187,10 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
 * **A test that sets the JVM's zone or locale is isolated, and the build says so** `open`. A scan
   of test sources fails a `TimeZone.setDefault` or `Locale.setDefault` in a class without
   `@Isolated`; the UTC mark makes it hygiene rather than the capture's only defence.
+* **A pooled test store stays near its live size while a test runs** `open`. On trunk
+  `EmittedRegistryAgreementTest` grows its pooled store past 6 GB mid-run, with 43% of a smaller
+  sibling live and a few hundred MB left after it compacts at close, so a nearly full disk fails the
+  build; compacting between documents, or a store per document closed after each, are the options.
 
 ## User documentation (first-client check): paths
 
