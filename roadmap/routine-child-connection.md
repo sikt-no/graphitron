@@ -148,6 +148,31 @@ utdanningsregisteret 1, fskode 1.
 
 ## Decisions
 
+* **A child connection with nothing to key a batch on is refused in the store, before the walk.**
+  Lifting the "add @splitQuery" conflict lets an unsplit child connection reach the batched arm, and
+  the walk's keyless refusals fire only under a written `@splitQuery`, so without a stored refusal a
+  keyless field would reach the batched leaf's `OnLateralArgs` check and throw. The store already
+  refuses one of the two shapes and states the other under an existing code (Alf, 2026-11-25: the
+  stored refusal moves here from R1178):
+  * A table-backed child on its parent's own table with no path written is `NO_ROUTE_TO_TARGET`
+    today, whose statement covers "a field with no path written [that] starts … on its target's own
+    table, so there is no join to infer". It reports under that code, spelled with or without
+    `@splitQuery`, and draws no second code.
+  * A routine child connection none of whose parameters is bound to a column of the parent's row is
+    `NO_KEY_FROM_PARENT`, whose rule is the same one at another kind of parent: a field fetching its
+    own rows takes its key from its parent, and here nothing keys them. Its statement widens from
+    "A field fetches its own rows under a parent holding an object, and nothing the parent holds, no
+    column of a record and no member returning one, keys those rows." to "A field fetches its own rows
+    in a query of its own, and nothing the parent holds keys those rows: under a parent holding an
+    object, no column of a record and no member returning one; under a parent's table row, a routine
+    none of whose parameters is bound to one of its columns." Its guidance gains a paragraph for the
+    routine with its next step, bind a parameter to `$source.<column>`, and never mentions
+    `@splitQuery`.
+  The store's verdict stops `validate` and `generate` before the walk classifies anything, so for
+  these fields neither `uncorrelatedSameTableSplitMessage`, the routine arm's `DIR_SPLIT_QUERY`
+  refusal nor the `OnLateralArgs` `IllegalArgumentException` is reached, and the exception still adds
+  no walk verdict. The changed statement is a changed message, so its commit is `feat`; it refuses
+  nothing the walk accepts today.
 * **One delivery trigger for every child connection.** The walk's delivery relation gains a
   paged-child trigger: a child field whose target is wrapped in a connection is batched, whatever
   markers it carries. It is stated once for every child shape, as the rule is one rule
@@ -191,7 +216,10 @@ The walk, under the exception:
 * `DeliveryFact.Trigger` gains a paged-child arm, and `DeliveryFactRelation` produces
   `Batched(paged child)` for a child field whose target is connection-wrapped, before the marker
   reads. The classifier's batched-leaf arms agree with it, and `DeliveryFactPinTest` holds the two
-  equal.
+  equal. `DeliveryFact.leafDerivedOf`, the crosswalk the pin compares against, tells the paged-child
+  trigger from `Authored` by the leaf's target wrapper: a `BatchedTableField` over a connection
+  derives the paged-child trigger whatever markers it carries, a `@pivot` connection included, so a
+  connection written with `@splitQuery` pins as the paged child, not as authored.
 * `FieldBuilder.classifyChildRoutineChain`: delete the Connection gate and its comment, and take the
   `ChildField.BatchedTableField` arm for a connection whether or not `@splitQuery` is written. The
   arm already passes `tfc.filters()`, `tfc.orderBy()` and `tfc.pagination()`. Update the method's
@@ -209,10 +237,20 @@ The walk, under the exception:
 
 The store:
 
-* `graphitron_fetcher_entry_defect_rule`'s `SPLIT_QUERY_REDUNDANT` arm gains a branch for a child
-  field whose target is wrapped in a connection, read off the target and wrapper relations it already
-  joins. Its exclusion of a field carrying `@service` or `@routine` keeps `@service` and drops
-  `@routine` where the target is a connection, the routine child connection being split anyway.
+* `graphitron_fetcher_entry_defect_rule` gains a second `SPLIT_QUERY_REDUNDANT` arm for a child
+  connection, rather than a branch of the existing one, which inner-joins `graphitron_tabletype` and
+  so never sees a target bound to no table (a function's result type, `ActorFilm` or
+  `Brukerdelegering`). The new arm reads the connection off `graphitron_field_target.wrapper_type_name`
+  at a child position and the target from `graphitron_field_target` alone, keeps the `@service`
+  exclusion and drops `@routine` from it, and excludes the fields the first arm already reports, so
+  the stage's statement never meets one position twice. The rule holds 7 arms nesting 6 deep, so it
+  stays within the bound of seven.
+* `graphitron_occurrence_depth_entry_defect_rule`, the keys family that already raises
+  `NO_KEY_FROM_PARENT`, gains one arm: a routine child producer, a connection or written with
+  `@splitQuery`, whose routine step binds no parameter to a column of the parent's table
+  (`graphitron_join_path_step_parameter`), reported at the field, the detail naming the parent's table.
+  The rule holds 7 arms nesting 6 deep, so it stays within seven. Its statement in
+  `graphitron_defect_type` and `NO_KEY_FROM_PARENT.adoc` change as above.
 * `LIST_ORDER_UNDETERMINED.adoc` gets its own next step for a function's result, as above.
 * The order rule's `LIST_ORDER_UNDETERMINED` arm widens to a list or connection with no primary key
   to fall back on and no `@defaultOrder`, whose order argument may be omitted. Its commit is a
@@ -270,7 +308,11 @@ If those read simply, the design holds: the consumer writes the field as they di
   split child `@routine` is a path routine" replaces, so the parity the flip passes is behaviour, in
   the execution tests, not those rows.
 * **Defects documents:** `SPLIT_QUERY_REDUNDANT` on a routine child connection and a table-backed one
-  written with `@splitQuery`, and absent on the same fields written without it;
+  written with `@splitQuery`, and absent on the same fields written without it; one keyless case per
+  arm, each spelled with and without `@splitQuery`: a table-backed child connection on its parent's
+  own table with no `@reference` draws `NO_ROUTE_TO_TARGET` and no `NO_KEY_FROM_PARENT`, and a routine
+  child connection with no parameter bound to `$source` draws `NO_KEY_FROM_PARENT`, while the
+  correlated sakila fields draw neither;
   `LIST_ORDER_UNDETERMINED` on an unordered routine child connection, with the next step that names no
   primary key; on an omittable order argument with no `@defaultOrder` whose target type is the
   function's result type, and whose target type is bound to a keyless table; and absent where the
@@ -315,9 +357,9 @@ If those read simply, the design holds: the consumer writes the field as they di
 
 ## Roadmap entries
 
-* R1178: answered by the ruling. It keeps the store's claim rule (a connection wrapper read as
-  `@splitQuery` is) and the stored refusal for a paged child with nothing to key a batch on; the walk
-  half and the documentation are this item's.
+* R1178: answered by the ruling. It keeps only the store's claim rule (a connection wrapper read as
+  `@splitQuery` is); the walk half, the documentation and the stored refusal for a paged child with
+  nothing to key a batch on are this item's.
 * R1179: a filter on an inline routine child crashes the generator. Its order argument is now refused
   in the store; the filter is what is left, and it owes a stored defect, not a walk fix.
 * R447's parked note on connection pagination over a catalog-terminus chain points here.
@@ -424,3 +466,24 @@ written with `@splitQuery` changes provenance from `Authored` to the paged-child
 includes a `@pivot` connection if one reaches the relation. `DeliveryFact.leafDerivedOf` must then
 tell the two apart from the leaf's target shape. The Implementation section names the relation and
 the pin but not the crosswalk.
+
+#### Author's reply (2026-11-25)
+
+1. **A keyless child connection.** Taken, under Alf's ruling that the stored refusal moves here from
+   R1178. The two shapes split by code. A table-backed child on its parent's own table with no path
+   written is already `NO_ROUTE_TO_TARGET` in the store, whose statement covers a field with no path
+   written starting on its target's own table; it reports under that code with or without
+   `@splitQuery`, and draws no second one. A routine child with no parameter bound to the parent is
+   `NO_KEY_FROM_PARENT`, its statement widened from a parent holding an object to a parent's table
+   row as well, one rule stated once; one new arm in the keys family raises it. The store's verdict
+   stops generation before the walk, so neither the empty-marker message nor the `OnLateralArgs`
+   exception can be reached, and the exception adds no walk verdict. Recorded under Decisions,
+   Implementation and Tests, which carry one keyless case per arm, each with and without
+   `@splitQuery`; R1178 keeps only the claim rule.
+2. **`SPLIT_QUERY_REDUNDANT` on a target bound to no table.** Taken: the connection case is a second
+   arm, reading the connection off `graphitron_field_target.wrapper_type_name` and the target from
+   `graphitron_field_target` alone, with no join to `graphitron_tabletype`, so a function's result type
+   is reached. It excludes the fields the first arm reports.
+3. **The `DeliveryFactPinTest` crosswalk** (non-blocking). Named under Implementation:
+   `DeliveryFact.leafDerivedOf` derives the paged-child trigger from the leaf's connection wrapper
+   whatever markers it carries, `@pivot` included.
