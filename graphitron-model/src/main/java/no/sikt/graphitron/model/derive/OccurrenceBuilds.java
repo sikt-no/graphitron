@@ -50,6 +50,9 @@ public final class OccurrenceBuilds {
         OccurrenceNodeIdShapes.write(dsl, graph, readAt);
         OccurrenceNodeIdShapes.sweep(dsl, graph, readAt);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.BUILDS);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.MEMBER_FILLS);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.PARAMETER_BUILDS);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.NODE_ID_LANDINGS);
         EntryDefectColumns.derive(dsl, graph, readAt, EntryDefects.BUILDS.stage());
         EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.BUILDS, EntryDefects.BUILDS.stage());
     }

@@ -13,7 +13,7 @@ import static org.jooq.impl.DSL.val;
 /**
  * The columns a defect names, written under it in {@code graphitron_entry_defect_column} from the rule
  * view beside the stage raising it: the columns a validating service's record reads through no getter,
- * its {@code VALIDATION_COLUMN_UNCHECKED} a row of {@link EntryDefects#BUILDS}. {@link EntryDefects}
+ * its {@code VALIDATION_COLUMN_UNCHECKED} a row of {@link EntryDefects#PARAMETER_BUILDS}. {@link EntryDefects}
  * writes the defects just before this runs in their stage; this reads the rows that reading marked and
  * marks its own with the same instant, and {@link EntryDefects#sweep} takes what the reading did not
  * mark.

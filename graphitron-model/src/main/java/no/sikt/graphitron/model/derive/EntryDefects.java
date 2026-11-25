@@ -38,6 +38,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RUL
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_MEMBER_FILL_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARAMETER_BUILD_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_LANDING_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE;
@@ -146,8 +149,24 @@ public final class EntryDefects {
     public static final Rule ORDERINGS =
         new Rule("occurrence-orderings", GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE);
 
-    /** The build and decode-shape defects' rule, {@link OccurrenceBuilds}. */
+    /**
+     * The node id slot defects' rule, {@link OccurrenceBuilds}: where a decoded id meets the parameter
+     * or member taking it. The stage raises its member fill, parameter build and node id landing
+     * families from rules of their own beside it, so no rule nests a union deeper than seven.
+     */
     public static final Rule BUILDS = new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE);
+
+    /** How an input object's fields fill the members of the class a call builds. */
+    public static final Rule MEMBER_FILLS =
+        new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_MEMBER_FILL_ENTRY_DEFECT_RULE);
+
+    /** What a call's parameter takes an input object as. */
+    public static final Rule PARAMETER_BUILDS =
+        new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_PARAMETER_BUILD_ENTRY_DEFECT_RULE);
+
+    /** Where a node id lands on a table. */
+    public static final Rule NODE_ID_LANDINGS =
+        new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_NODE_ID_LANDING_ENTRY_DEFECT_RULE);
 
     /** The participant defects' rule, {@link OccurrenceParticipants}. */
     public static final Rule PARTICIPANTS =
