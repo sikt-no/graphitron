@@ -20,6 +20,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_ENTRY_D
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_LANDING_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROOT_FIELD_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATOR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MACRO_EXPANSION_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_TYPE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY_DEFECT_RULE;
@@ -261,9 +263,19 @@ public final class EntryDefects {
 
     /**
      * The anchor stage's rule, {@link no.sikt.graphitron.model.capture.document.GraphitronAnchor}: what the
-     * documents and the gatherers ahead of this one decide alone.
+     * documents and the gatherers ahead of this one decide alone. The stage raises its root field and
+     * discriminator families from rules of their own beside it, so no rule nests a union deeper than
+     * seven.
      */
     public static final Rule ANCHOR = new Rule("anchor", GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE);
+
+    /** What a root field's directives state that it cannot be. */
+    public static final Rule ROOT_FIELDS =
+        new Rule("anchor", GRAPHITRON_ROOT_FIELD_ENTRY_DEFECT_RULE);
+
+    /** A @discriminator no container reads or two members share. */
+    public static final Rule DISCRIMINATORS =
+        new Rule("anchor", GRAPHITRON_DISCRIMINATOR_ENTRY_DEFECT_RULE);
 
     /** The macro-expansion stage's rule, judging the expanded schema's fields, connections and carriers. */
     public static final Rule MACRO_EXPANSION =

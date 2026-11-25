@@ -22748,6 +22748,109 @@ COMMENT ON COLUMN graphitron_occurrence_list_element_defect.touched_at IS 'when 
 -- being read.
 CREATE VIEW graphitron_anchor_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A @node on a type that does not implement Node. The interface is the contract @node publishes to
+-- clients, so a type cannot be promoted to a node without it, a node this subgraph does not resolve
+-- included: resolvability is a fact of its own, and Query.node answers such a node's id with null.
+-- Reported at the @node, which is where an author decides between adding the interface and dropping
+-- the directive. A root operation type is a root before it is anything else. The interface also
+-- holds the type to an id field, so a node without one is a schema problem rather than a defect.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR), 'anchor'
+  FROM graphql_directive_application n
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
+                    WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
+                      AND i.interface_name = 'Node')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
+UNION ALL
+-- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
+-- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
+-- root operation type is a root before it is anything else. A type that also lacks the interface
+-- is both defects, each its own decision for the author.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR), 'anchor'
+  FROM graphql_directive_application n
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application t
+                    WHERE t.graph_name = n.graph_name AND t.coordinate = n.coordinate
+                      AND t.directive_name = 'table')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
+UNION ALL
+-- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
+-- period, or nothing on one side of the last one. Reported with the reference as written.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref, 'anchor'
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
+   AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
+UNION ALL
+-- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
+-- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
+-- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part, 'anchor'
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                     JOIN code_class k ON k.source_name = g.source_name
+                    WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name)
+UNION ALL
+-- A @scalarType naming a class the reading read and a constant it does not declare as a public
+-- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
+-- declared as some other type are one refusal, and the reference is what the author edits.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref, 'anchor'
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND NOT EXISTS (SELECT 1 FROM code_graph_class k
+                     JOIN code_scalar_constant c
+                       ON c.source_name = k.source_name AND c.class_name = k.class_name
+                    WHERE k.graph_name = e.graph_name
+                      AND k.class_name = e.scalar_ref_class_part
+                      AND c.field_name = e.scalar_ref_field_part)
+UNION ALL
+-- A @referenceFor naming a type an earlier @referenceFor on the same declaration already names, at
+-- each application after the first written. Read off the entries within one file, a declaration and
+-- what is applied to it being written together, reaching the siblings through the parent position;
+-- the first is the anchor kept. The detail is the type.
+SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column,
+       'REFERENCE_FOR_DUPLICATE_TYPE', r.participant_type_ref, 'anchor'
+  FROM graphitron_ast_reference_for_entry r
+  JOIN graphql_ast_entry e
+    ON e.graph_name = r.graph_name AND e.source_name = r.source_name
+   AND e.source_line = r.source_line AND e.source_column = r.source_column
+  JOIN graphql_ast_entry e2
+    ON e2.graph_name = e.graph_name AND e2.source_name = e.source_name
+   AND e2.parent_line = e.parent_line AND e2.parent_column = e.parent_column
+  JOIN graphitron_ast_reference_for_entry r2
+    ON r2.graph_name = e2.graph_name AND r2.source_name = e2.source_name
+   AND r2.source_line = e2.source_line AND r2.source_column = e2.source_column
+ WHERE r2.participant_type_ref = r.participant_type_ref
+   AND (e2.source_line < e.source_line
+        OR (e2.source_line = e.source_line AND e2.source_column < e.source_column));
+COMMENT ON VIEW graphitron_anchor_entry_defect_rule IS 'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.';
+
+CREATE VIEW graphitron_root_field_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
 -- An application counts where it names a routine, which is where it has a graphitron_ast_routine_entry.
 WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
@@ -22849,86 +22952,6 @@ SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
        'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR), 'anchor'
   FROM root_reference rr
 UNION ALL
--- A @node on a type that does not implement Node. The interface is the contract @node publishes to
--- clients, so a type cannot be promoted to a node without it, a node this subgraph does not resolve
--- included: resolvability is a fact of its own, and Query.node answers such a node's id with null.
--- Reported at the @node, which is where an author decides between adding the interface and dropping
--- the directive. A root operation type is a root before it is anything else. The interface also
--- holds the type to an id field, so a node without one is a schema problem rather than a defect.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR), 'anchor'
-  FROM graphql_directive_application n
- WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
-                    WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
-                      AND i.interface_name = 'Node')
-   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
-UNION ALL
--- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
--- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
--- root operation type is a root before it is anything else. A type that also lacks the interface
--- is both defects, each its own decision for the author.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR), 'anchor'
-  FROM graphql_directive_application n
- WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application t
-                    WHERE t.graph_name = n.graph_name AND t.coordinate = n.coordinate
-                      AND t.directive_name = 'table')
-   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
-UNION ALL
--- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
--- period, or nothing on one side of the last one. Reported with the reference as written.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref, 'anchor'
-  FROM graphql_directive_application a
-  JOIN graphitron_ast_scalar_type_entry e
-    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-   AND e.source_line = a.source_line AND e.source_column = a.source_column
- WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
-   AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
-UNION ALL
--- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
--- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
--- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part, 'anchor'
-  FROM graphql_directive_application a
-  JOIN graphitron_ast_scalar_type_entry e
-    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-   AND e.source_line = a.source_line AND e.source_column = a.source_column
- WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
-   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
-                     JOIN code_class k ON k.source_name = g.source_name
-                    WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN code_class k ON k.source_name = g.source_name
-                WHERE g.graph_name = e.graph_name)
-UNION ALL
--- A @scalarType naming a class the reading read and a constant it does not declare as a public
--- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
--- declared as some other type are one refusal, and the reference is what the author edits.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref, 'anchor'
-  FROM graphql_directive_application a
-  JOIN graphitron_ast_scalar_type_entry e
-    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-   AND e.source_line = a.source_line AND e.source_column = a.source_column
- WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
-   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN code_class k ON k.source_name = g.source_name
-                WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
-   AND NOT EXISTS (SELECT 1 FROM code_graph_class k
-                     JOIN code_scalar_constant c
-                       ON c.source_name = k.source_name AND c.class_name = k.class_name
-                    WHERE k.graph_name = e.graph_name
-                      AND k.class_name = e.scalar_ref_class_part
-                      AND c.field_name = e.scalar_ref_field_part)
-UNION ALL
 -- A field on the subscription root, at the field's own declaration. Meaningful under the
 -- specification and under the directives alike: graphitron generates no subscription resolver
 -- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
@@ -22946,28 +22969,64 @@ UNION ALL
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column,
        'MUTATION_UPSERT', CAST(NULL AS VARCHAR), 'anchor'
   FROM graphitron_ast_mutation_entry m
- WHERE m.operation = 'UPSERT'
-UNION ALL
--- A @referenceFor naming a type an earlier @referenceFor on the same declaration already names, at
--- each application after the first written. Read off the entries within one file, a declaration and
--- what is applied to it being written together, reaching the siblings through the parent position;
--- the first is the anchor kept. The detail is the type.
-SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column,
-       'REFERENCE_FOR_DUPLICATE_TYPE', r.participant_type_ref, 'anchor'
-  FROM graphitron_ast_reference_for_entry r
-  JOIN graphql_ast_entry e
-    ON e.graph_name = r.graph_name AND e.source_name = r.source_name
-   AND e.source_line = r.source_line AND e.source_column = r.source_column
-  JOIN graphql_ast_entry e2
-    ON e2.graph_name = e.graph_name AND e2.source_name = e.source_name
-   AND e2.parent_line = e.parent_line AND e2.parent_column = e.parent_column
-  JOIN graphitron_ast_reference_for_entry r2
-    ON r2.graph_name = e2.graph_name AND r2.source_name = e2.source_name
-   AND r2.source_line = e2.source_line AND r2.source_column = e2.source_column
- WHERE r2.participant_type_ref = r.participant_type_ref
-   AND (e2.source_line < e.source_line
-        OR (e2.source_line = e.source_line AND e2.source_column < e.source_column))
-UNION ALL
+ WHERE m.operation = 'UPSERT';
+COMMENT ON VIEW graphitron_root_field_entry_defect_rule IS 'One row the root field defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example anchor inserts this view''s rows for one graph into graphitron_entry_defect, a read surface written on a write giving one READ_SURFACE_ON_WRITE row at its site.';
+
+CREATE VIEW graphitron_discriminator_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, fe.type_name, fe.field_name, r.coordinate, r.source_name, r.source_line,
+         r.source_column
+    FROM graphql_directive_application r
+    JOIN graphitron_ast_routine_entry re
+      ON re.graph_name = r.graph_name AND re.source_name = r.source_name
+     AND re.source_line = r.source_line AND re.source_column = r.source_column
+    JOIN graphql_field_element fe
+      ON fe.graph_name = r.graph_name AND fe.coordinate = r.coordinate
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fe.graph_name AND ro.type_name = fe.type_name
+     AND ro.operation = 'MUTATION'
+   WHERE r.directive_name = 'routine'
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphql_directive_application r2
+                        JOIN graphitron_ast_routine_entry re2
+                          ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
+                         AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
+                       WHERE r2.graph_name = r.graph_name AND r2.coordinate = r.coordinate
+                         AND r2.directive_name = 'routine')
+),
+-- A root field's first @reference with no @routine written before it. A @routine establishes the
+-- table-bound producer a @reference must be part of, and a root field has no source row, so a path
+-- written there departs from nothing until a routine written ahead of it gives it one. A @routine
+-- written only after the @reference starts its query too late for it, so that @reference is refused
+-- as well.
+root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
+    FROM graphitron_field_reference_entry fr
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
+     AND ro.operation IN ('QUERY', 'MUTATION')
+   WHERE fr.source_name IS NOT NULL
+     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
+                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
+                          AND f2.field_name = fr.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application r
+                       JOIN graphitron_ast_routine_entry re
+                         ON re.graph_name = r.graph_name AND re.source_name = r.source_name
+                        AND re.source_line = r.source_line AND re.source_column = r.source_column
+                      WHERE r.graph_name = fr.graph_name
+                        AND r.coordinate = fr.type_name || '.' || fr.field_name
+                        AND r.directive_name = 'routine' AND r.source_name = fr.source_name
+                        AND (r.source_line < fr.source_line
+                             OR (r.source_line = fr.source_line
+                                 AND r.source_column < fr.source_column)))
+),
+-- Union membership and interface implementation as one container and member, as graphql_poly_member
+-- states them, read off the two tables holding them.
+poly_member (graph_name, container_name, member_type_name) AS (
+  SELECT graph_name, union_name, member_type_name FROM graphql_union_member
+  UNION ALL
+  SELECT graph_name, interface_name, type_name FROM graphql_implements_interface
+)
 -- A @discriminator on a type that is a member of no container writing @discriminate, so there is no
 -- column for the value to match.
 SELECT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_WITHOUT_DISCRIMINATE',
@@ -23003,7 +23062,7 @@ SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DI
     ON v2.graph_name = va2.graph_name AND v2.source_name = va2.source_name
    AND v2.source_line = va2.source_line AND v2.source_column = va2.source_column
  WHERE v2.discriminator_value = v.discriminator_value;
-COMMENT ON VIEW graphitron_anchor_entry_defect_rule IS 'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.';
+COMMENT ON VIEW graphitron_discriminator_entry_defect_rule IS 'One row the discriminator defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example anchor inserts this view''s rows for one graph into graphitron_entry_defect, a @discriminator value two members of one discriminated container write giving one DISCRIMINATOR_DUPLICATE row at each application.';
 
 -- The defects the macro-expansion stage raises, off the expanded schema it has just written: its
 -- fields, connections, connection carriers and arguments, beside the transcription.
@@ -32688,6 +32747,8 @@ INSERT INTO meta_stage_rule VALUES
   ('assert-types', 'graphitron_assert_type_node', 'graphitron_assert_type_node_rule'),
   ('assert-types', 'graphitron_entry_defect', 'graphitron_assert_type_entry_defect_rule'),
   ('anchor', 'graphitron_entry_defect', 'graphitron_anchor_entry_defect_rule'),
+  ('anchor', 'graphitron_entry_defect', 'graphitron_root_field_entry_defect_rule'),
+  ('anchor', 'graphitron_entry_defect', 'graphitron_discriminator_entry_defect_rule'),
   ('argmapping-landings', 'graphitron_argmapping_landing', 'graphitron_argmapping_landing_rule'),
   ('argmapping-landings', 'graphitron_argmapping_pair_defect', 'graphitron_argmapping_landing_entry_defect_pair_rule'),
   ('argmapping-landings', 'graphitron_argmapping_step', 'graphitron_argmapping_step_head_rule'),
@@ -35766,10 +35827,18 @@ INSERT INTO meta_relation VALUES
    'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.',
    'The stage''s own defects, read off the stored connection''s absence as the stage''s last statement, so every root service call and routine write of a tenanted graph has a route or a defect, and the route is decided once.'),
+  ('graphitron_root_field_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the root field defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example anchor inserts this view''s rows for one graph into graphitron_entry_defect, a read surface written on a write giving one READ_SURFACE_ON_WRITE row at its site.',
+   'What a root field''s directives state that it cannot be: a chain headed by several routines, a read surface on a write, a root path with nothing to depart from, a subscription field, an upsert. A family of the anchor stage beside its other rules, so no rule nests a union deeper than seven.'),
+  ('graphitron_discriminator_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the discriminator defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example anchor inserts this view''s rows for one graph into graphitron_entry_defect, a @discriminator value two members of one discriminated container write giving one DISCRIMINATOR_DUPLICATE row at each application.',
+   'A @discriminator no discriminated container reads, or whose value two of its members write. A family of the anchor stage beside its other rules, so no rule nests a union deeper than seven.'),
   ('graphitron_anchor_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.',
-   'The anchor stage''s own defects, decided from the transcription, the decoded entries, the classpath reading and the graph''s sources alone, none of which a graphitron stage writes, so they are raised by the phase''s first stage and wait for no later stage''s facts.'),
+   'The anchor stage''s own defects, decided from the transcription, the decoded entries, the classpath reading and the graph''s sources alone, none of which a graphitron stage writes, so they are raised by the phase''s first stage and wait for no later stage''s facts. Its root field and discriminator families have rules of their own beside it, so no rule nests a union deeper than seven.'),
   ('graphitron_macro_expansion_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the macro-expansion stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a mutation field returning [Film] @asConnection with a @routine gives one CONNECTION_RETURN row at its @routine.',

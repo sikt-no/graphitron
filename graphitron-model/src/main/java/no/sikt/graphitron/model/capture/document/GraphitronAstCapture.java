@@ -140,6 +140,8 @@ public final class GraphitronAstCapture {
         new AnchorStage("anchor", GraphitronAnchor.class, (dsl, graph, readAt) -> {
             GraphitronAnchor.write(dsl, graph, readAt);
             EntryDefects.derive(dsl, graph, readAt, EntryDefects.ANCHOR);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.ROOT_FIELDS);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.DISCRIMINATORS);
         }),
         // The fields each @issue absorbs into its voucher, from the transcription alone, ahead of the
         // expansion whose authored sets withhold them.

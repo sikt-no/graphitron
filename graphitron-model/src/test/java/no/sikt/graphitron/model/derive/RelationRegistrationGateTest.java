@@ -555,6 +555,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_voucher_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_minted_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_anchor_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_root_field_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_discriminator_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_macro_expansion_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_table_type_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_assert_type_entry_defect_rule", Arm.DERIVED);
