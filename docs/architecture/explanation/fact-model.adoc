@@ -292,7 +292,10 @@ relations, one per assertion, and an element making several writes to several of
 position. The position is what says they are one step, so composition is a join and every relation
 stays total.
 
-One tell is worth carrying away from that example, stated as a tell and not as the rule: where a discriminator column's value implies which of the row's columns are null, ask whether the rows have one key shape. Key shape is what decides. A join path's step is the second shipped instance: how it joins is a subtype per key shape, `graphitron_join_path_step_key` and `graphitron_join_path_step_inferred_key` naming the foreign key ridden, `graphitron_join_path_step_primary_key` and `graphitron_join_path_step_matched_key` naming the table whose primary key joins, so no row carries a foreign key's columns null because it rode none.
+One tell is worth carrying away from that example, stated as a tell and not as the rule: where a discriminator column's value implies which of the row's columns are null, ask whether the rows have one key shape. Key shape is what decides. A join path's step is the second shipped instance: how it joins is a subtype per key shape, `graphitron_join_path_step_key` and `graphitron_join_path_step_inferred_key` naming the foreign key ridden, `graphitron_join_path_step_primary_key` and `graphitron_join_path_step_matched_key` naming the table whose primary key joins, so no row carries a foreign key's columns null because it rode none. A routine step's parameter is
+the third: bound from a column of the table the step departs or from an argument, two key shapes, it
+splits into a column subtype and an argument subtype (Alf, 2026-11-25), rather than carrying a
+column and an argument coordinate one of which is always null.
 
 `@asConnection` is the counter-case that keeps the rule honest. A page size and an overridden type
 name are two optional attributes of one assertion, both left out by most authors and neither changing

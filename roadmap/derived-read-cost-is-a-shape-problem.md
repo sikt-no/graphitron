@@ -1269,6 +1269,14 @@ static method needs no holder.
     the walk's first step from the parent's keys. When it lands, a child routine connection's two
     spellings converge: written with `@splitQuery` or without, it claims no `ROUTINE` producer, its
     producer is the split re-query, and the routine is the path's first step.
+* **A routine step's parameter splits by what binds it** `open`, off the critical path.
+  `graphitron_join_path_step_parameter` carries a column (`from_*`) and an argument coordinate, one
+  of them null by CHECK, two key shapes in one row: it splits into a column subtype and an argument
+  subtype (Alf, 2026-11-25, recorded in fact-model). The argument subtype's coordinate restates the
+  landing's `landing_coordinate`, and nothing holds the two equal, the step parameter and the landing
+  being of different grains ("unfortunate, the tables have different granularity", Alf); the call
+  fill's `landing_coordinate` has the same gap. The split states the argument subtype's coordinate
+  once, held to its landing by key.
 * **The editor completes `argMapping` at a `@routine`** `open`, off the critical path. The language
   server completes an `argMapping` on `@service`, `@condition` and `@externalField` and has nothing
   at `@routine`, root or child: only `ExternalCodeReference.argMapping` is wired, its left side reads
