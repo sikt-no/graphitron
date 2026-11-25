@@ -1,8 +1,9 @@
-# Whether a step of a join path reaches one row of the table it arrives at: the columns it arrives
-# on cover a primary or unique key there. A key ridden from its declaring table covers the key it
-# references; ridden toward it, it covers one only where a UNIQUE holds its columns. A step matched
-# by name out of a routine's result lands on its table's primary key. A step joining by a condition
-# method alone has no columns, and so no row: undecided.
+# Whether a step of a join path reaches one row of the table it arrives at. A step riding a key reads
+# sql_referential_constraint_reach for the way it rode: from its declaring table it arrives on the key
+# it references; toward it, on its own columns, which reach one row only where a UNIQUE holds them. A
+# step matched by name out of a routine's result lands on its table's primary key; the other way, into
+# a routine's result, is a call rather than a join by columns, so no step rides a name-matched key
+# that way. A step joining by a condition method alone has no columns, and so no row: undecided.
 
 type Film @table(name: "film") {
   title: String

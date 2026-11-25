@@ -6349,6 +6349,26 @@ COMMENT ON COLUMN sql_referential_constraint_column.referenced_constraint_name I
 COMMENT ON COLUMN sql_referential_constraint_column.referenced_position IS 'the position in the referenced constraint''s own column list that this column references, which is where the REFERENCES list puts it and not, in general, this column''s own position: SQL lets that list order the key''s columns any way it likes. A position rather than a column name, so the referenced column has one answer, the referenced constraint''s own sql_constraint_column row';
 COMMENT ON COLUMN sql_referential_constraint_column.touched_at IS 'when the reading that produced this row ran, swept as sql_referential_constraint''s instant is';
 
+CREATE TABLE sql_referential_constraint_reach (
+  source_name     VARCHAR NOT NULL,
+  table_schema    VARCHAR NOT NULL,
+  table_name      VARCHAR NOT NULL,
+  constraint_name VARCHAR NOT NULL,
+  direction       VARCHAR NOT NULL,
+  to_one          BOOLEAN NOT NULL,
+  PRIMARY KEY (source_name, table_schema, table_name, constraint_name, direction),
+  FOREIGN KEY (source_name, table_schema, table_name, constraint_name)
+    REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name) ON DELETE CASCADE,
+  CHECK (direction IN ('FORWARD', 'BACKWARD'))
+);
+COMMENT ON TABLE sql_referential_constraint_reach IS 'One way a foreign key is ridden, and whether a row it leaves meets at most one row where it arrives. For example film_actor_actor_id_fkey ridden FORWARD meets one actor, and ridden BACKWARD many film_actor rows.';
+COMMENT ON COLUMN sql_referential_constraint_reach.source_name IS 'the catalog source of the table declaring the key, as on sql_referential_constraint';
+COMMENT ON COLUMN sql_referential_constraint_reach.table_schema IS 'that table''s schema';
+COMMENT ON COLUMN sql_referential_constraint_reach.table_name IS 'the table declaring the key';
+COMMENT ON COLUMN sql_referential_constraint_reach.constraint_name IS 'the key''s SQL name; with the three columns before it, the key';
+COMMENT ON COLUMN sql_referential_constraint_reach.direction IS 'FORWARD from the declaring table to the one the key references, arriving on the referenced columns; BACKWARD the other way, arriving on the key''s own columns';
+COMMENT ON COLUMN sql_referential_constraint_reach.to_one IS 'TRUE where the columns the key arrives on cover every column of some PRIMARY KEY or UNIQUE constraint of the table it arrives at, so a row it leaves meets at most one row there: FORWARD wherever the referenced key is one, BACKWARD where the key''s own columns hold a key of the declaring table';
+
 
 CREATE TABLE sql_table_reference (
   source_name            VARCHAR NOT NULL,
@@ -12431,31 +12451,65 @@ COMMENT ON COLUMN graphitron_join_path_step_to_one.graph_name IS 'the owning gra
 COMMENT ON COLUMN graphitron_join_path_step_to_one.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_join_path_step_to_one.target_type IS 'the need''s target type, as on the step';
 COMMENT ON COLUMN graphitron_join_path_step_to_one.position IS 'the step''s position; with the columns before it, the step';
-COMMENT ON COLUMN graphitron_join_path_step_to_one.to_one IS 'TRUE where the step''s graphitron_join_path_step_column to_columns cover every column of some PRIMARY KEY or UNIQUE constraint of its to_table, so a row the step leaves meets at most one row there; FALSE where they cover none, so it can meet many. The pairs are oriented the way the step rode its key, so a foreign key ridden from its declaring table covers the key it references, and one ridden toward it covers a key only where a UNIQUE holds its columns';
+COMMENT ON COLUMN graphitron_join_path_step_to_one.to_one IS 'TRUE where a row the step leaves meets at most one row of its to_table: for a step riding a foreign key, written or inferred, sql_referential_constraint_reach''s answer for that key ridden the way the step rode it; for a step joining a table-valued function''s result to a table by name-matched columns, TRUE arriving at the table, whose whole primary key they match, and FALSE arriving at the function''s result';
 COMMENT ON COLUMN graphitron_join_path_step_to_one.touched_at IS 'when the reading that last took the step ran, as on the step';
 
--- Whether each step joining by columns covers a primary or unique key of the table it reaches with
--- the columns it arrives on. A step's pairs all carry its to_table, so one row per step.
+-- Whether each step joining by columns reaches one row of the table it arrives at. A step riding a
+-- foreign key, written or inferred, reaches as sql_referential_constraint_reach states that key does
+-- the way the step rode it: forward where it leaves on the key's own columns, backward otherwise. A
+-- step joining a table-valued function's result to a table by name-matched columns rides no key: it
+-- reaches one row where it arrives at the table, the matched columns being that table's whole primary
+-- key, and not where it arrives at the function's result. That arm goes with
+-- sql_name_matched_key_column.
 CREATE VIEW graphitron_join_path_step_to_one_rule
   (graph_name, coordinate, target_type, position, to_one) AS
+SELECT k.graph_name, k.coordinate, k.target_type, k.position, rr.to_one
+  FROM (SELECT graph_name, coordinate, target_type, position, constraint_source_name, constraint_schema,
+               constraint_table, constraint_name
+          FROM graphitron_join_path_step_key
+        UNION ALL
+        SELECT graph_name, coordinate, target_type, position, constraint_source_name, constraint_schema,
+               constraint_table, constraint_name
+          FROM graphitron_join_path_step_inferred_key) k
+  JOIN sql_referential_constraint_reach rr
+    ON rr.source_name = k.constraint_source_name AND rr.table_schema = k.constraint_schema
+   AND rr.table_name = k.constraint_table AND rr.constraint_name = k.constraint_name
+   AND rr.direction = CASE WHEN EXISTS (
+         SELECT 1 FROM graphitron_join_path_step_column c
+           JOIN sql_constraint_column fc
+             ON fc.source_name = k.constraint_source_name AND fc.table_schema = k.constraint_schema
+            AND fc.table_name = k.constraint_table AND fc.constraint_name = k.constraint_name
+            AND fc.column_name = c.from_column
+          WHERE c.graph_name = k.graph_name AND c.coordinate = k.coordinate
+            AND c.target_type = k.target_type AND c.position = k.position
+            AND c.from_source_name = k.constraint_source_name AND c.from_schema = k.constraint_schema
+            AND c.from_table = k.constraint_table)
+       THEN 'FORWARD' ELSE 'BACKWARD' END
+ WHERE EXISTS (SELECT 1 FROM graphitron_join_path_step_column c
+                WHERE c.graph_name = k.graph_name AND c.coordinate = k.coordinate
+                  AND c.target_type = k.target_type AND c.position = k.position)
+UNION ALL
 SELECT c.graph_name, c.coordinate, c.target_type, c.position,
-       EXISTS (SELECT 1 FROM sql_constraint k
-                WHERE k.source_name = c.to_source_name AND k.table_schema = c.to_schema
-                  AND k.table_name = c.to_table AND k.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
-                  AND NOT EXISTS (SELECT 1 FROM sql_constraint_column kc
-                                   WHERE kc.source_name = k.source_name
-                                     AND kc.table_schema = k.table_schema
-                                     AND kc.table_name = k.table_name
-                                     AND kc.constraint_name = k.constraint_name
-                                     AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column t
-                                                      WHERE t.graph_name = c.graph_name
-                                                        AND t.coordinate = c.coordinate
-                                                        AND t.target_type = c.target_type
-                                                        AND t.position = c.position
-                                                        AND t.to_column = kc.column_name)))
-  FROM (SELECT DISTINCT graph_name, coordinate, target_type, position, to_source_name, to_schema,
-               to_table
-          FROM graphitron_join_path_step_column) c;
+       EXISTS (SELECT 1 FROM sql_name_matched_key_column nm
+                WHERE nm.source_name = c.from_source_name AND nm.table_schema = c.from_schema
+                  AND nm.table_name = c.from_table AND nm.to_source_name = c.to_source_name
+                  AND nm.to_schema = c.to_schema AND nm.to_table = c.to_table)
+  FROM (SELECT DISTINCT graph_name, coordinate, target_type, position, from_source_name, from_schema,
+               from_table, to_source_name, to_schema, to_table
+          FROM graphitron_join_path_step_column) c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_key k
+                    WHERE k.graph_name = c.graph_name AND k.coordinate = c.coordinate
+                      AND k.target_type = c.target_type AND k.position = c.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_inferred_key k
+                    WHERE k.graph_name = c.graph_name AND k.coordinate = c.coordinate
+                      AND k.target_type = c.target_type AND k.position = c.position)
+   AND EXISTS (SELECT 1 FROM sql_name_matched_key_column nm
+                WHERE (nm.source_name = c.from_source_name AND nm.table_schema = c.from_schema
+                       AND nm.table_name = c.from_table AND nm.to_source_name = c.to_source_name
+                       AND nm.to_schema = c.to_schema AND nm.to_table = c.to_table)
+                   OR (nm.source_name = c.to_source_name AND nm.table_schema = c.to_schema
+                       AND nm.table_name = c.to_table AND nm.to_source_name = c.from_source_name
+                       AND nm.to_schema = c.from_schema AND nm.to_table = c.from_table));
 COMMENT ON VIEW graphitron_join_path_step_to_one_rule IS 'One row the to-one rule computes, in the shape graphitron_join_path_step_to_one stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_join_path_step_to_one, which is the name every reader spells.';
 
 CREATE TABLE graphitron_join_path_step_method (
@@ -34127,6 +34181,10 @@ INSERT INTO meta_grain VALUES
    'one column a folded name reaches on one table',
    'source_name, table_schema, table_name, spelling_upper, column_name',
    'catalog'),
+  ('referential-reach',
+   'one way one foreign key is ridden',
+   'source_name, table_schema, table_name, constraint_name, direction',
+   'catalog'),
   ('constraint-column',
    'one position in one constraint''s column list',
    'source_name, table_schema, table_name, constraint_name, position', 'catalog'),
@@ -37219,6 +37277,10 @@ INSERT INTO meta_relation VALUES
    'One column a written name reaches on a table, folded by case: by its SQL name where any column of the table carries that name, else by its generated jOOQ name.',
    'For example the spelling FILM_ID reaches public.film.film_id by SQL_NAME, with a reach of one.',
    'Which column a written name means is a function of the catalog alone, and it was spelled inline at each rule that asked it: the occurrence column rule and the unresolved and ambiguous column defects each counted sql_column twice per row. Stated once here, those rules join on the folded spelling instead, and a reader that has to resolve a column before its coordinate is an element reads the same rows. Derived rather than transcribed, on sql_name_matched_key_column''s terms: a closure the catalog gatherer computes over rows it has just written, in the family whose facts it is about, with no graph partition. The precedence is the resolver''s: a column''s SQL name before its generated one, the generated one answering only where no SQL name on the table does. Reach is a column rather than a rule inside whoever counts first, so a resolution (reach one) and an ambiguity (reach above one) come off the same rows, as graphitron_tabletype''s arity does, and a spelling no column answers is an absence.'),
+  ('sql_referential_constraint_reach', 'referential-reach', 'jooq',
+   'One way a foreign key is ridden, and whether a row it leaves meets at most one row where it arrives.',
+   'For example film_actor_actor_id_fkey ridden FORWARD meets one actor, and ridden BACKWARD many film_actor rows.',
+   'Whether a hop along a key reaches one row is a function of the catalog alone, and it was spelled inline at each rule that asked it: the join path step''s to-one rule and the sort key path''s hop each tested the arriving columns against every key of the arriving table. Stated once here, both join on the key and the way they rode it. Derived rather than transcribed, on sql_column_spelling''s terms: a closure the catalog gatherer computes over rows it has just written, in the family whose facts it is about, with no graph partition. Both directions are stated, so a reader joins on the way it rode rather than inverting a flag.'),
   ('sql_referential_constraint', 'table-constraint', 'jooq',
    'One foreign key''s reference to the constraint it resolves against.',
    'For example film_actor''s foreign key to film, referencing the film_pkey constraint of public.film.',

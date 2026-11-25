@@ -194,6 +194,11 @@ class SupertypeSignatureGateTest {
         // for, so no one foreign key covers the payload and the gate sees them.
         Set.of("graphitron_join_path_step_inferred_key", "graphitron_join_path_step_key"),
         Set.of("graphitron_join_path_step_matched_key", "graphitron_join_path_step_primary_key"),
+        // Whether a hop reaches one row, at two grains: a foreign key ridden one way, a catalog fact,
+        // and a join path's step, a graph's. The step reads the key's answer where it rides one and
+        // answers a name-matched step itself, so the step's relation is derived from the key's, not a
+        // copy of it a supertype would fold.
+        Set.of("graphitron_join_path_step_to_one", "sql_referential_constraint_reach"),
         // Two members where there were six. The five that left were the argument relations of the
         // five application sites, and they shared a payload because they were one fact keyed five
         // ways; they are one relation now, keyed at the coordinate, so the sharing they were
@@ -308,6 +313,9 @@ class SupertypeSignatureGateTest {
         // and an index are catalog facts of different kinds, and the order reads either by the
         // surface written, stored as the key's column subtype so its readers stop reconstructing it.
         "graphitron_occurrence_sort_key_column_rule|sql_constraint_column,sql_index_column",
+        // The key a step rode, written or inferred, read to ask its reach: the sibling pair above,
+        // kept apart by decision, so the rule reads both rather than a supertype nobody owes.
+        "graphitron_join_path_step_to_one_rule|graphitron_join_path_step_inferred_key,graphitron_join_path_step_key",
         // The voucher stage's refusals, which judge both markers' vouched-for fields by the rules they share,
         // an empty or repeated claim: the markers' own rule and the vouched-for fields' rule beside it
         // each read the two entry relations. The supertype they reconstruct is the sibling pair recorded

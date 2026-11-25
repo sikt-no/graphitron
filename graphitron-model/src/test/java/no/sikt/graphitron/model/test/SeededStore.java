@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.test;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.capture.document.MacroExpansion;
 import no.sikt.graphitron.model.derive.ColumnSpellings;
+import no.sikt.graphitron.model.derive.ReferentialReaches;
 import no.sikt.graphitron.model.derive.MintedKeys;
 import no.sikt.graphitron.model.derive.VoucherMembers;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
@@ -121,6 +122,7 @@ public final class SeededStore {
         // nothing from a derivation nobody ran.
         NameMatchedKeys.derive(dsl);
         ColumnSpellings.derive(dsl);
+        ReferentialReaches.derive(dsl);
         // The element anchors first, because every relation keyed at an emitted coordinate points
         // at them and the supertype transcription below is the first of those. By the production
         // call, so a fixture cannot hold its own idea of what the emitted population is.

@@ -725,7 +725,11 @@ classpath and catalog, and every reader reads that resolution rather than a view
 * **The per-site copies and coordinate-keyed entries go** `open`. The twins lose their
   class, method and argMapping columns.
 * **`sql_name_matched_key_column` is gone** `blocked`, on the child below. With `NameMatchedKeys`,
-  and `fact-model.adoc` stops citing it; the walk's name-match step reads it today and moves too.
+  and `fact-model.adoc` stops citing it; the walk's name-match step reads it today and moves too, and
+  so does `graphitron_join_path_step_to_one_rule`'s arm answering a name-matched step to-one, which
+  goes with it. Every step riding a key reads `sql_referential_constraint_reach`, the to-one test
+  stated once in the sql family (Alf, 2026-11-25); `graphitron_occurrence_producer_lift_rule` asks
+  which key identifies a lift, not whether a hop reaches one row, and is not its reader.
   * **A routine result's name-matched pairs are written where a join asks for them** `open`. By the
     anchor, keyed to the element or the routine write and to both `sql_column` rows, read by the
     walk's step rule and `RoutineWriteQuery`.

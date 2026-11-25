@@ -1,0 +1,17 @@
+# Each way a foreign key is ridden, and whether a row it leaves meets at most one row where it
+# arrives, as the catalog reading states it once for every rule that asks: forward onto the key it
+# references, backward onto its own columns.
+#
+# film_actor_actor_id_fkey ridden forward from film_actor meets one actor, its references being
+# actor's primary key; ridden backward from actor it meets many film_actor rows, actor_id alone holding
+# no key of film_actor. party_individual_party_id_fkey's own column is party_individual's primary key,
+# so it meets one row both ways.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+extend schema @assertContains(relation: "sql_referential_constraint_reach", rows: """
+  table_schema, table_name,       constraint_name,                direction, to_one
+  public,       film_actor,       film_actor_actor_id_fkey,       FORWARD,   TRUE
+  public,       film_actor,       film_actor_actor_id_fkey,       BACKWARD,  FALSE
+  public,       party_individual, party_individual_party_id_fkey, FORWARD,   TRUE
+  public,       party_individual, party_individual_party_id_fkey, BACKWARD,  TRUE
+  """)

@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.capture.jooq;
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.ColumnSpellings;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
+import no.sikt.graphitron.model.derive.ReferentialReaches;
 import no.sikt.graphitron.model.sink.BindBatch;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.jooq.RecordGetters;
@@ -127,8 +128,9 @@ public final class JooqFactCapture {
             return false;
         }
         Progress.started(dsl, graphName, GATHERER);
-        // No catalog read, so no sql_ row moved: the name-matched keys and the column spellings,
-        // which read the sql_ family and nothing else, are what the last reading derived.
+        // No catalog read, so no sql_ row moved: the name-matched keys, the column spellings and the
+        // referential reaches, which read the sql_ family and nothing else, are what the last reading
+        // derived.
         dsl.transaction(tx -> {
             dropMembership(tx.dsl(), graphName, current);
             graphSources(tx.dsl(), graphName, List.copyOf(current), touchedAt, false);
@@ -144,6 +146,7 @@ public final class JooqFactCapture {
             var sources = gather(tx.dsl(), graphName, jooq, entryName, touchedAt);
             NameMatchedKeys.derive(tx.dsl());
             ColumnSpellings.derive(tx.dsl());
+            ReferentialReaches.derive(tx.dsl());
             return sources;
         });
         Progress.completed(dsl, graphName, GATHERER);
