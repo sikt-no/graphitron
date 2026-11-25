@@ -1267,7 +1267,9 @@ static method needs no holder.
     pair link to its argMapping landing, for key-column projection through a node id.
   * **A split child `@routine` is a path routine** `blocked`, F's, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
     `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
-    the walk's first step from the parent's keys.
+    the walk's first step from the parent's keys. When it lands, a child routine connection's two
+    spellings converge: written with `@splitQuery` or without, it claims no `ROUTINE` producer, its
+    producer is the split re-query, and the routine is the path's first step.
 * **An `@outbox` binds its target's columns, its payload a selection set** `open`, off the critical
   path. `argMapping` binds a call's parameters on `@service` and `@routine`, its left side a name the
   store checks; on `@outbox` it names JSON keys nothing declared, and the target's columns are two

@@ -68,8 +68,9 @@ argument generates, where it crashes today.
   flip ("A batched child's fetcher is emitted from the store") must pass unchanged.
 * **A child connection is always split** (Alf, 2026-11-25; `code-generation-triggers.adoc`,
   "Producer"): `@splitQuery` is inferred on a child connection, and written there it is admitted with
-  the `SPLIT_QUERY_REDUNDANT` warning. This answers R1178's question; R1178 keeps the store's claim
-  rule and the refusal for a paged child with nothing to key a batch on.
+  the `SPLIT_QUERY_REDUNDANT` warning. This answers R1178's question, and R1178 is discarded: the
+  refusal for a paged child with nothing to key a batch on is this item's, and the store's claim for
+  a child routine is the R876 node "A split child `@routine` is a path routine".
 * **Land the warning** (Alf, 2026-11-25): the warning ships with a changelog line, and FS-plattform's
   sites are counted below.
 * **`@defaultOrder` is required only where the target type's table has no primary key to stand in for
@@ -124,8 +125,10 @@ So no filter-family, depth or result-shape code fires on the paged routine child
 unordered one is refused by the stored order rule, which names a primary key the function cannot
 have; and the inline form's order argument is already refused in the store. The two spellings of one
 field get different producer claims, `SELECT` unsplit and `ROUTINE` split, because
-`graphitron_producer_claim_rule` claims a child routine only under `@splitQuery`; R1178 makes the
-claim read the connection wrapper. The unsplit spelling has no spike evidence: it needs the delivery
+`graphitron_producer_claim_rule` claims a child routine only under `@splitQuery`. The R876 node "A
+split child `@routine` is a path routine" makes the two converge: a child routine claims no `ROUTINE`
+producer in either spelling, its producer being the split re-query and the routine the path's first
+step. The unsplit spelling has no spike evidence: it needs the delivery
 trigger below before the walk takes it.
 
 **What the walk does today:**
@@ -357,9 +360,9 @@ If those read simply, the design holds: the consumer writes the field as they di
 
 ## Roadmap entries
 
-* R1178: answered by the ruling. It keeps only the store's claim rule (a connection wrapper read as
-  `@splitQuery` is); the walk half, the documentation and the stored refusal for a paged child with
-  nothing to key a batch on are this item's.
+* R1178: discarded, answered by the ruling. Its walk half, its documentation and the stored refusal for a
+  paged child with nothing to key a batch on are this item's; the store's claim for a child routine is
+  "A split child `@routine` is a path routine", under which the two spellings converge.
 * R1179: a filter on an inline routine child crashes the generator. Its order argument is now refused
   in the store; the filter is what is left, and it owes a stored defect, not a walk fix.
 * R447's parked note on connection pagination over a catalog-terminus chain points here.
