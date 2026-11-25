@@ -3458,6 +3458,20 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 
 ## Retired vocabulary
 
+**A recapture reads a catalog whose keys changed under their names, claimed by C** (2026-11-25).
+Reported from opptak's kommunikasjon-utsending: a migration rewritten before it was deployed kept
+`melding_element_fk`'s name and pointed it at a three-column `utsending_element` where it had
+referenced the four-column `utsendingsbunt_element`, and the next capture on the existing store
+failed on the key's own column rows, which repeat its target under their foreign key. The catalog
+reading now writes a foreign key read under its name with another target afresh, its column rows
+going with it by cascade, and does the same for a primary key row whose constraint is read with
+another type, which repeats the type. The rest of the `sql_` family forwards nothing a recapture
+rewrites in place: `sql_column` cascades its field's type on update, positions are keys the sweep
+takes children first, and `sql_referential_constraint_reach` is derived anew after the reading.
+`sql_embeddable_column` repeats its field's kind and would meet the same failure if a field became a
+column under one name; it is left until a catalog does that. `CatalogRecaptureTest` reads a catalog
+twice into one store, the one shape a fact document cannot state.
+
 **Every list states its order or is refused in the store** (2026-11-23). `LIST_ORDER_UNDETERMINED`
 refuses a list or connection with no stated order over a keyless table or a function's result,
 wherever it is read, a lookup, a service and a write exempt as stated facts, and a child handed a

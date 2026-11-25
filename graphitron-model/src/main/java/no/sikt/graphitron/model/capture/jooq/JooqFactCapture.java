@@ -457,6 +457,21 @@ public final class JooqFactCapture {
         if (constraints.isEmpty()) {
             return;
         }
+        // A primary key row repeats its constraint's type under its foreign key, so a constraint read
+        // under its name with another type than last reading's takes that row first; primaryKeys()
+        // writes the table's primary key afresh.
+        var typeOf = new java.util.HashMap<List<String>, String>();
+        constraints.forEach(c -> typeOf.put(List.of(c.at().source(), c.at().schema(), c.at().name(), c.name()), c.type()));
+        var pk = SQL_PRIMARY_KEY;
+        var sources = constraints.stream().map(c -> c.at().source()).distinct().toList();
+        for (var held : dsl.select(pk.SOURCE_NAME, pk.TABLE_SCHEMA, pk.TABLE_NAME, pk.CONSTRAINT_NAME).from(pk)
+                .where(pk.SOURCE_NAME.in(sources)).fetch()) {
+            String type = typeOf.get(List.of(held.value1(), held.value2(), held.value3(), held.value4()));
+            if (type != null && !"PRIMARY KEY".equals(type)) {
+                dsl.deleteFrom(pk).where(pk.SOURCE_NAME.eq(held.value1()), pk.TABLE_SCHEMA.eq(held.value2()),
+                    pk.TABLE_NAME.eq(held.value3())).execute();
+            }
+        }
         var rows = constraints.stream().collect(Rows.toRowList(
             c -> val(c.at().source(), t.SOURCE_NAME),
             c -> val(c.at().schema(), t.TABLE_SCHEMA),
@@ -548,6 +563,26 @@ public final class JooqFactCapture {
         }
         if (keys.isEmpty()) {
             return;
+        }
+        // A key read under its name with another target than last reading's goes first, its columns
+        // with it: they repeat the target under their foreign key, so updating it in place would leave
+        // them naming the old one. The upsert below then writes it, and its columns, afresh.
+        var targetOf = new java.util.HashMap<List<String>, List<String>>();
+        for (int i = 0; i < keys.size(); i++) {
+            var key = keys.get(i);
+            targetOf.put(List.of(owners.get(i).source(), owners.get(i).schema(), owners.get(i).name(), key.constraintName()),
+                List.of(sourceByTable.getOrDefault(key.targetTable(), owners.get(i).source()),
+                    split(key.targetTable())[0], split(key.targetTable())[1], key.referencedConstraintName()));
+        }
+        var sources = owners.stream().map(TableAt::source).distinct().toList();
+        for (var held : dsl.select(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME,
+                    t.REFERENCED_SOURCE_NAME, t.REFERENCED_SCHEMA, t.REFERENCED_TABLE, t.REFERENCED_CONSTRAINT_NAME)
+                .from(t).where(t.SOURCE_NAME.in(sources)).fetch()) {
+            var target = targetOf.get(List.of(held.value1(), held.value2(), held.value3(), held.value4()));
+            if (target != null && !target.equals(List.of(held.value5(), held.value6(), held.value7(), held.value8()))) {
+                dsl.deleteFrom(t).where(t.SOURCE_NAME.eq(held.value1()), t.TABLE_SCHEMA.eq(held.value2()),
+                    t.TABLE_NAME.eq(held.value3()), t.CONSTRAINT_NAME.eq(held.value4())).execute();
+            }
         }
         var indexes = indices(keys.size());
         var rows = indexes.stream().collect(Rows.toRowList(

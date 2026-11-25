@@ -6334,7 +6334,9 @@ CREATE TABLE sql_referential_constraint_column (
   FOREIGN KEY (source_name, table_schema, table_name, constraint_name,
                referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name)
     REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name,
-               referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name),
+               referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name)
+    -- A key read again with another target goes with its columns, which repeat that target.
+    ON DELETE CASCADE,
   FOREIGN KEY (referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name,
                referenced_position)
     REFERENCES sql_constraint_column (source_name, table_schema, table_name, constraint_name, position)
