@@ -638,6 +638,54 @@ for the first two minutes and 1.4 to 1.6 GB after, against 1.2 to 2.0 GB; the fo
 GCs costing 35 s of 776 s, against 331 costing 306 s of 1,058. So the view, not the cache size, was
 what held the heap, and the cache keeps its 1,024.
 
+*Measured 2026-11-25: deep unions.* `graphitron-model`'s fork, capped at 4,096 MB, ran out of heap
+twice once four arms were added to `graphitron_occurrence_depth_entry_defect_rule`. A heap dump of
+it (MAT over every `org.h2.command.Prepared`, 190,457 of them, 78.1 M tokens in 58 sessions) showed
+why: H2 parses a chain of `UNION ALL` arms left-deep, and every level of the nesting is a parsed
+statement holding the tokens of every arm beneath it, so a chain of n arms keeps about n²/2 arms of
+parsed text per session holding its plan. The depth rule alone, 31 arms in 76 copies, held about a
+quarter of all tokens. That made deep unions a rule of the fact model (fact-model.adoc's views
+section: no view nests a union deeper than seven, gated by `ViewComplexityTest`), and the eighteen
+views over it were split into their natural families or bracketed as a balanced tree. The fork's live
+heap after a full GC went from a mean of 3,388 MB and a peak of 4,024 MB (142 full GCs) to 2,354 MB
+and 3,036 MB (27 full GCs).
+
+Six of those views were bracketed rather than split, each being one statement its writer or reader
+takes whole: `graphitron_field_minted_candidate_rule`, `graphitron_occurrence_taken_rule`,
+`graphitron_occurrence_node_id_rule`, `graphitron_occurrence_condition_parameter_rule`,
+`graphitron_join_path_step_rule` and `lint_violation`. Whether splitting them by family would pay off
+was measured before deciding. Method: a private copy of opptak RC58 (graph `opptak-subgraph`), the
+views from the built DDL in both forms with identical rows (checked by `EXCEPT` both ways), the
+database held open by one connection and a fresh session per statement; times are the median of five
+runs after a discarded first, on an idle machine; the plan heap is a separate pass after filling the
+page cache, the heap a session holds after preparing. `taken`'s filter-term arm ran over an empty
+relation, RC58 predating it.
+
+| View | Form | Statements | Plan heap, MB (sum / largest) | Prepare, ms | Execute, ms |
+|---|---|---|---|---|---|
+| minted candidate | balanced | 1 | 0.5 | 12 | 11 |
+| minted candidate | split | 4 | 0.4 / 0.2 | 15 | 9 |
+| taken | balanced | 1 | 0.3 | 6 | 89 |
+| taken | split | 4 | 0.2 / 0.1 | 11 | 168 |
+| node id | balanced | 1 | 0.8 | 68 | 72 |
+| node id | split | 3 | 0.7 / 0.4 | 76 | 148 |
+| condition parameter | balanced | 1 | 1.4 | 50 | 166 |
+| condition parameter | split | 2 | 2.5 / 1.3 | 90 | 163 |
+| join path step | balanced | 1 | 0.8 | 26 | 37 |
+| join path step | split | 3 | 1.0 / 0.6 | 9 | 40 |
+| lint violation | balanced | 1 | 0.9 | 7 | 275 |
+| lint violation | split | 3 | 0.9 / 0.5 | 7 | 221 |
+
+The step rule's real reader, `Steps.position`, run per position per depth, took 34 / 114 ms balanced
+against 69 / 249 ms with a query per family and 47 / 131 ms with the families unioned in the read, at
+position 0; `LintFindings`' read was 6 / 210 ms balanced against 8 / 225 and 9 / 252. A split also
+plans a shared `WITH` once per family (the condition parameter rule's recursive one doubles its
+prepare) and turns one write into two to four.
+
+The conclusion (Alf agreed, 2026-11-25): all six stay balanced. The cost was left-deep nesting, which
+balancing removes; a plan this size gains nothing from being split. Family splits are for clarity in
+defect rules, where a family names what it judges, not for performance.
+
 *Profiled 2026-11-15, `932638c2b7` (before the dissolve) against `924c0f0341`* (the dissolve and the
 first view-over-view steps, with every other session's commits between). The machine was otherwise
 idle, load 2 to 7. `graphitron` alone at `-Xmx4g`, 4,590 tests on both: H2's parse tokens peak at 818
