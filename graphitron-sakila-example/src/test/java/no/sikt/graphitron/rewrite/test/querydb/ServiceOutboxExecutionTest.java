@@ -35,8 +35,12 @@ class ServiceOutboxExecutionTest {
 
     @AfterAll
     static void removeWhatWasWritten() {
-        dsl.execute("delete from outbox where type in ('MarkerWritten', 'MarkerThrown', 'MarkerOwnWritten', 'FilmBlurbRead',"
-            + " 'FilmCardMade', 'FilmAssigned',"
+        // Classes run concurrently against one database, so the marker messages go by this class's own
+        // markers: MutationScopeExecutionTest writes MarkerOwnWritten and OutboxFailureExecutionTest
+        // MarkerThrown, and an unscoped delete here would remove theirs between their write and their count.
+        dsl.execute("delete from outbox where type in ('MarkerWritten', 'MarkerThrown', 'MarkerOwnWritten')"
+            + " and payload ->> 'marker' like 'service-outbox-%'");
+        dsl.execute("delete from outbox where type in ('FilmBlurbRead', 'FilmCardMade', 'FilmAssigned',"
             + " 'FilmActorAssigned', 'FilmActorsAssigned')");
         dsl.execute("delete from mutation_scope_marker where marker like 'service-outbox-%'");
     }
