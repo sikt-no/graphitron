@@ -221,8 +221,9 @@ The walk, under the exception:
   reads. The classifier's batched-leaf arms agree with it, and `DeliveryFactPinTest` holds the two
   equal. `DeliveryFact.leafDerivedOf`, the crosswalk the pin compares against, tells the paged-child
   trigger from `Authored` by the leaf's target wrapper: a `BatchedTableField` over a connection
-  derives the paged-child trigger whatever markers it carries, a `@pivot` connection included, so a
-  connection written with `@splitQuery` pins as the paged child, not as authored.
+  derives the paged-child trigger whatever markers it carries, so a connection written with
+  `@splitQuery` pins as the paged child, not as authored. No `@pivot` connection exists: `@pivot` is
+  single-valued and the walk refuses a list return, so `BatchedPivotField` keeps `Authored`.
 * `FieldBuilder.classifyChildRoutineChain`: delete the Connection gate and its comment, and take the
   `ChildField.BatchedTableField` arm for a connection whether or not `@splitQuery` is written. The
   arm already passes `tfc.filters()`, `tfc.orderBy()` and `tfc.pagination()`. Update the method's
@@ -254,6 +255,11 @@ The store:
   (`graphitron_join_path_step_parameter`), reported at the field, the detail naming the parent's table.
   The rule holds 7 arms nesting 6 deep, so it stays within seven. Its statement in
   `graphitron_defect_type` and `NO_KEY_FROM_PARENT.adoc` change as above.
+* `TENANT_FAN_OUT_INLINE_UNSUPPORTED`, in `graphitron_fetcher_entry_defect_rule`, exempts a child
+  connection beside a `@splitQuery` or `@service` field: a child routed by its parent row's tenant is
+  refused only when written inline, and a child connection is split whether the directive is written
+  or not. Without it, the two multitenant `inventoriesConnection` fixtures would be refused once
+  `@splitQuery` comes off them; the walk already routes a `BatchedTableField` by its parent row.
 * `LIST_ORDER_UNDETERMINED.adoc` gets its own next step for a function's result, as above.
 * The order rule's `LIST_ORDER_UNDETERMINED` arm widens to a list or connection with no primary key
   to fall back on and no `@defaultOrder`, whose order argument may be omitted. Its commit is a
