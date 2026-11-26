@@ -2239,6 +2239,18 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
   `EmittedRegistryAgreementTest` grows its pooled store past 6 GB mid-run, with 43% of a smaller
   sibling live and a few hundred MB left after it compacts at close, so a nearly full disk fails the
   build; compacting between documents, or a store per document closed after each, are the options.
+* **No test stands a store up through GraphitronStore's factories** `open`. `StoreFixtureScanner`
+  recognises only the `GraphitronModelStore` type, so a test opening one through
+  `GraphitronStore.inMemory`, `.at`, `.captured` or `.capturedInMemory` passes the guard
+  unexamined; widening the recogniser to those factories is the landing step, after the test files
+  reaching a store that way move to the harness under a graph name of their own (Alf, 2026-11-26: a
+  test makes no store and needs no clearing, each reading under its own graph in a shared store).
+  In `graphitron-model`: `JooqFactCaptureTest` (8), `ClasspathSourceCaptureTest` (6),
+  `GraphitronStoreTest` (5), `JooqCatalogBuildsTest` (4), `FederationKeyDerivationTest` (4),
+  `CodeCaptureTest` (3), `JooqRecordAccessorCaptureTest` (2), `ConstructionQueryTest` (1),
+  `TaggedInputsPipelineTest` (1); in `graphitron-sakila-example`, `CapturedGenerator` (1), where the
+  guard's scope reaches it. One whose subject is the store's own lifetime, `GraphitronStoreTest`
+  perhaps, goes on the guard's exemption list with that reason instead.
 
 ## User documentation (first-client check): paths
 
