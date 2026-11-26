@@ -351,8 +351,13 @@ public final class PlanCompileGraph {
                     runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME)
                         .ifPresent(ck -> precise(units.get(0), ck));
                 }
-                // Every decode<Type> refuses a key value through the column trip.
-                case NODE_ID_ENCODER -> precise(units.get(0), require(GlobalUnitKind.COLUMN_VALUES));
+                // Every decode<Type> refuses a key value through the column trip, and each node's
+                // strict decode<Type>OrThrow raises the client error, emitted only where the graph
+                // has a node, so that edge is declared rather than precise.
+                case NODE_ID_ENCODER -> {
+                    precise(units.get(0), require(GlobalUnitKind.COLUMN_VALUES));
+                    refOf(GlobalUnitKind.CLIENT_EXCEPTION).ifPresent(ce -> declared(units.get(0), ce));
+                }
                 case ENTITY_FETCHER_DISPATCH -> throw new IllegalStateException(
                     "the entity dispatch family is the sealed relation's data-carrying arm;"
                         + " a fixed row of this kind is unconstructible");

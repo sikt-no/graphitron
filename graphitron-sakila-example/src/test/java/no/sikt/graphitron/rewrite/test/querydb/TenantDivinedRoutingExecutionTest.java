@@ -581,6 +581,17 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get()).isZero();
     }
 
+    @Test
+    void service_malformedIdAtItsTenantSlot_isTheDecodeFailure_notATenantNamedByNothing() {
+        var result = execute("mutation { rateFilmActors(in: [{ id: \"not-a-node-id\" }]) { ranOn } }");
+        assertThat(result.getErrors().toString())
+            .as("routing decodes the slot strictly, so the client reads the decode failure a @nodeId"
+                + " argument gives, not that the call names no tenant")
+            .contains("not-a-node-id", "not a valid FilmActor id")
+            .doesNotContain("names no tenant");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+    }
+
     // ===== @service routed on a @tenant-marked scalar: no row or id names the tenant =====
 
     @Test

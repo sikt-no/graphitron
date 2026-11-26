@@ -11,6 +11,7 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.NodeIdDecodeFailure;
 import no.sikt.graphitron.emit.NodeIdEncoderQuery;
 import no.sikt.graphitron.emit.NodeIdHelperNames;
 import no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.LegacyKeyShape;
@@ -94,7 +95,7 @@ public class NodeIdEncoderClassGenerator {
 
     /**
      * Emits the encoder class with an {@code encode<TypeName>} / {@code decode<TypeName>} pair per
-     * node, in the order {@code nodes} gives them. {@code outputPackage}
+     * node, and the strict {@code decode<TypeName>OrThrow}, in the order {@code nodes} gives them. {@code outputPackage}
      * locates the sibling {@code ColumnValues} every key slot is checked through, and
      * {@code legacyKeyShapes} are the type ids whose old ids {@code decodeColumns} converts.
      */
@@ -356,9 +357,11 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(buildRequireColumnAgreement(columnValues))
             .addMethod(buildDecodeInto());
 
+        var encoderClass = ClassName.get(outputPackage + ".util", CLASS_NAME);
         for (NodeIdEncoderQuery.Node node : nodes) {
             classBuilder.addMethod(buildPerTypeEncode(node));
             classBuilder.addMethod(buildPerTypeDecode(node));
+            classBuilder.addMethod(buildPerTypeDecodeOrThrow(node, outputPackage, encoderClass));
         }
 
         return List.of(classBuilder.build());
@@ -522,6 +525,30 @@ public class NodeIdEncoderClassGenerator {
 
         b.addStatement("return rec");
         return b.build();
+    }
+
+    /**
+     * Emits {@code static RecordN<T1..TN> decode<TypeName>OrThrow(String base64Id)}: the node's key
+     * record, or {@link NodeIdDecodeFailure}'s client error where
+     * {@code decode<TypeName>} finds none, so a reader that must not take a malformed id for an absent
+     * one decodes through the one strict method rather than a check of its own.
+     */
+    private static MethodSpec buildPerTypeDecodeOrThrow(NodeIdEncoderQuery.Node node, String outputPackage,
+                                                        ClassName encoderClass) {
+        List<ColumnRef> key = node.keyColumns();
+        TypeName recordType = ParameterizedTypeName.get(ClassName.get("org.jooq", "Record" + key.size()),
+            key.stream().map(CatalogRefs::columnType).toArray(TypeName[]::new));
+        return MethodSpec.methodBuilder(NodeIdHelperNames.decodeOrThrow(node.typeName()))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(recordType)
+            .addParameter(String.class, "base64Id")
+            .addStatement("$T key = $L(base64Id)", recordType, NodeIdHelperNames.decode(node.typeName()))
+            .beginControlFlow("if (key == null)")
+            .addCode(NodeIdDecodeFailure.throwStatement(outputPackage, encoderClass,
+                node.typeId(), node.typeName(), "base64Id", "base64Id"))
+            .endControlFlow()
+            .addStatement("return key")
+            .build();
     }
 
     /** Returns {@code [a, b, c, ...rest]} as a fresh {@code Object[]}. */

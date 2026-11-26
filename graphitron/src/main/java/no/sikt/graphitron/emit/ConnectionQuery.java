@@ -10,8 +10,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION;
@@ -21,7 +19,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT;
-import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
@@ -49,13 +46,12 @@ public final class ConnectionQuery {
     public enum EmptyKind { LIST, SET, RESULT }
 
     /**
-     * The node a slot's value is an id of: its type id, the tables class and field of its table, and
-     * the generated field names of its key columns in key order.
+     * The node a slot's value is an id of, by its type name: the generated encoder's strict decode of
+     * it is named for that type.
      */
-    public record Node(String typeId, String tablesClass, String tableField, List<String> keyColumns) {
+    public record Node(String typeName) {
         public Node {
-            Objects.requireNonNull(typeId, "typeId");
-            keyColumns = List.copyOf(keyColumns);
+            Objects.requireNonNull(typeName, "typeName");
         }
     }
 
@@ -84,8 +80,7 @@ public final class ConnectionQuery {
         }
     }
 
-    private record RawSlot(List<String> names, Integer keyPosition, String typeId, String tablesClass,
-                           String tableField, List<String> keyColumns) {}
+    private record RawSlot(List<String> names, Integer keyPosition, String typeName) {}
 
     /**
      * That the walk's tenancy agrees with the store's: the walk routes on its tenant scopes,
@@ -131,11 +126,6 @@ public final class ConnectionQuery {
         var s = GRAPHITRON_OCCURRENCE_TENANT_SLOT;
         var st = GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
-        var nd = GRAPHITRON_NODE;
-        var k = GRAPHITRON_NODE_KEYCOLUMN;
-        var col = SQL_COLUMN;
-        var t = SQL_TABLE;
-        var sc = SQL_SCHEMA;
         var e = GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY;
         var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
         var rt = SQL_TABLE.as("rt");
@@ -147,25 +137,7 @@ public final class ConnectionQuery {
                 .where(st.GRAPH_NAME.eq(s.GRAPH_NAME), st.COORDINATE.eq(s.COORDINATE))
                 .orderBy(st.DEPTH))
             .convertFrom(rs2 -> rs2.map(rec -> rec.value1()));
-        var keyColumns = multiset(select(col.JOOQ_NAME).from(k)
-                .join(col).on(col.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), col.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
-                    col.TABLE_NAME.eq(k.TABLE_NAME), col.COLUMN_NAME.eq(k.COLUMN_NAME))
-                .where(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.TYPE_NAME.eq(nodeType))
-                .orderBy(k.POSITION))
-            .convertFrom(rs2 -> rs2.map(rec -> rec.value1()));
-        // The node's wire type id, resolved by the store and never null.
-        var typeId = field(select(nd.TYPE_ID).from(nd)
-            .where(nd.GRAPH_NAME.eq(s.GRAPH_NAME), nd.TYPE_NAME.eq(nodeType)));
-        var tablesClass = field(select(min(sc.TABLES_CLASS_FQN)).from(k)
-            .join(t).on(t.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
-                t.TABLE_NAME.eq(k.TABLE_NAME))
-            .join(sc).on(sc.SOURCE_NAME.eq(t.SOURCE_NAME), sc.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
-            .where(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.TYPE_NAME.eq(nodeType)));
-        var tableField = field(select(min(t.JOOQ_NAME)).from(k)
-            .join(t).on(t.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
-                t.TABLE_NAME.eq(k.TABLE_NAME))
-            .where(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.TYPE_NAME.eq(nodeType)));
-        var slots = multiset(select(names, s.KEY_POSITION, typeId, tablesClass, tableField, keyColumns)
+        var slots = multiset(select(names, s.KEY_POSITION, nodeType)
                 .from(s)
                 .where(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.PRODUCER_COORDINATE.eq(c.COORDINATE))
                 .orderBy(s.SLOT))
@@ -184,8 +156,8 @@ public final class ConnectionQuery {
             .fetch(rec -> new Row(rec.value1(), Outcome.valueOf(rec.value2()),
                 Optional.ofNullable(rec.value3()).map(WhenEmpty::valueOf),
                 rec.value4().stream().map(raw -> new Slot(raw.names(), Optional.ofNullable(raw.keyPosition()),
-                    raw.typeId() == null || raw.keyPosition() == null ? Optional.empty()
-                        : Optional.of(new Node(raw.typeId(), raw.tablesClass(), raw.tableField(), raw.keyColumns()))))
+                    raw.typeName() == null || raw.keyPosition() == null ? Optional.empty()
+                        : Optional.of(new Node(raw.typeName()))))
                     .toList(),
                 Optional.ofNullable(rec.value5()).map(kind -> new Empty(EmptyKind.valueOf(kind),
                     Optional.ofNullable(rec.value6()), Optional.ofNullable(rec.value7())))))

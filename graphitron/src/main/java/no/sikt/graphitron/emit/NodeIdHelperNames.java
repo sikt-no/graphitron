@@ -22,4 +22,12 @@ public final class NodeIdHelperNames {
     public static String decode(String nodeTypeName) {
         return "decode" + nodeTypeName;
     }
+
+    /**
+     * The helper decoding a node's id strictly: the record of its key columns, or the client error an
+     * id that is not one of the node's raises.
+     */
+    public static String decodeOrThrow(String nodeTypeName) {
+        return decode(nodeTypeName) + "OrThrow";
+    }
 }

@@ -770,7 +770,9 @@ public final class ServiceEmission {
     /**
      * How one value the tenant is read from is read: the argument, and where it lies under an input
      * object, the path below it, read over every element of a list it crosses; and where it is a node
-     * id, the tenant column's value out of each id.
+     * id, the tenant column's value out of each id, decoded strictly: an id that is not one of the
+     * node's is the client error a {@code @nodeId} argument raises, never a value naming no tenant.
+     * A value that is no id at all, absent or not a string, names none.
      */
     private static CodeBlock slotRead(ConnectionQuery.Slot slot, Routing routing) {
         var names = slot.names();
@@ -782,13 +784,11 @@ public final class ServiceEmission {
         if (slot.node().isEmpty()) {
             return read;
         }
-        var node = slot.node().get();
-        var tables = ClassName.bestGuess(node.tablesClass());
-        var columns = CodeBlock.join(node.keyColumns().stream()
-            .map(c -> CodeBlock.of("$T.$L.$L", tables, node.tableField(), c)).toList(), ", ");
-        return CodeBlock.of("$T.mapTenantLeaves($L, id -> id instanceof $T s ? $T.decodeColumns($S, s, $L)[$L] : null)",
-            routing.ownedConnections(), read, String.class, routing.nodeIdEncoder(), node.typeId(), columns,
-            slot.keyPosition().orElseThrow());
+        // An expression, since the read sits inside the fold's own statement.
+        var decode = NodeIdHelperNames.decodeOrThrow(slot.node().get().typeName());
+        return CodeBlock.of("$T.mapTenantLeaves($L, id -> id instanceof $T s ? $T.$L(s).value$L() : null)",
+            routing.ownedConnections(), read, String.class, routing.nodeIdEncoder(), decode,
+            slot.keyPosition().orElseThrow() + 1);
     }
 
     /**
