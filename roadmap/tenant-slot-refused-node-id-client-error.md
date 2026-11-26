@@ -24,13 +24,11 @@ mutation {
 }
 ```
 
-On RC47 this answered sis's `UgyldigInput` error with `Invalid node id "abc!!" for this argument: not a valid Undervisningstimeplan id`. On RC58 the field is null and the log shows:
+On RC47 this answered sis's `UgyldigInput` error with `Invalid node id "abc!!" for this argument: not a valid Undervisningstimeplan id`. On RC58 the field is null beside an unmatched error, and the log shows the exception below, thrown in `MutationFetchers.endreTimeplaner` on its way through `OwnedConnections.mapTenantLeaves`:
 
 ```
 NullPointerException: Cannot load from object array because the return value of
 "...NodeIdEncoder.decodeColumns(String, String, org.jooq.Field[])" is null
-  at MutationFetchers.endreTimeplaner
-  at OwnedConnections.mapTenantLeaves
 ```
 
 The promise, in `docs/manual/how-to/tenant-scoping.adoc` (the paragraph on refusing a tenant): an id whose tenant slot does not decode is malformed, and "on an argument it gets the malformed-id client error, since the slot is part of the id".

@@ -47,6 +47,6 @@ The other key refusals keep applying to a non-resolvable key, since they hold wh
 
 ## Surfaces that change
 
-- The `KEY_FIELD_NOT_A_COLUMN` arm of `graphitron_entity_key_entry_defect_rule`, and the diagnostic catalogue's message for the code, which states the rule with no exemption. The view's comment gives `@key(fields: "titel")` as its `KEY_FIELD_NOT_A_COLUMN` example, which the fact document pins as `KEY_FIELD_MISSING`; correct it while there.
+- The `KEY_FIELD_NOT_A_COLUMN` arm of `graphitron_entity_key_entry_defect_rule`, and the diagnostic catalogue's message for the code, which states the rule with no exemption. The view's comment gives `@key(fields: "titel")` as its `KEY_FIELD_NOT_A_COLUMN` example, a name the fact document's `Film` does not declare and so pins as `KEY_FIELD_MISSING`; check whether the comment means a declared field with no column, and say so if it does.
 - The fact document gains the accepted near miss.
 - The user manual states the rule with no exemption in three places, each of which gains it: the `KEY_FIELD_NOT_A_COLUMN` row in `docs/manual/reference/federation.adoc`, and in `docs/manual/how-to/federation-keys.adoc` the paragraph listing what cannot participate in a key and the "Keys must list columns of the type's own table only" bullet.
