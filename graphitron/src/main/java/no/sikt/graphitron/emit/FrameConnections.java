@@ -178,8 +178,9 @@ public final class FrameConnections {
      */
     private static CodeBlock slotRead(ConnectionQuery.Slot slot, Routing routing) {
         var names = slot.names();
+        // Read as an Object: inside the fold's varargs a bare generic read is inferred as the array.
         var read = names.size() == 1
-            ? CodeBlock.of("env.getArgument($S)", names.getFirst())
+            ? CodeBlock.of("env.<$T>getArgument($S)", Object.class, names.getFirst())
             : CodeBlock.of("$T.tenantSlot(env.getArgument($S), $L)", routing.ownedConnections(), names.getFirst(),
                 CodeBlock.join(names.subList(1, names.size()).stream().map(n -> CodeBlock.of("$S", n)).toList(),
                     ", "));
