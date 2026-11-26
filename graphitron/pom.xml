@@ -280,6 +280,10 @@
                                      back to DEBUG, where jOOQ's LoggerListener writes every store
                                      statement to the reactor console. Point it at the source copy. -->
                                 <argument>-Dlogback.configurationFile=${project.basedir}/src/test/resources/logback-test.xml</argument>
+                                <!-- The scenarios are captured into the fact population, and this JVM
+                                     does not see surefire's systemPropertyVariables, so it states the
+                                     population's statement cache itself, as surefire does below. -->
+                                <argument>-Dgraphitron.populationCacheSize=1024</argument>
                                 <argument>-classpath</argument>
                                 <classpath/>
                                 <argument>no.sikt.graphitron.rewrite.test.generate.GenerateTestSchemas</argument>
