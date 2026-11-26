@@ -286,7 +286,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         return new EmitPlan(globals, conditions,
             projectionRelation,
             launchers,
-            FetcherEdgeCommands.produce(schema, conditions, outputPackage),
+            FetcherEdgeCommands.produce(schema, conditions, outputPackage, launchers),
             typeUnits(store, schema, outputPackage, ownership),
             routineWrites,
             keyProjections,

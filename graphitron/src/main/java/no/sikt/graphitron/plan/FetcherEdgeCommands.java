@@ -34,8 +34,9 @@ import java.util.List;
  *   <li><b>Polymorphic roots</b> ({@link QueryField.QueryInterfaceField},
  *       {@link QueryField.QueryUnionField}): the same participant type classes (the stage-2
  *       selects live on the root's fetchers class too), plus the participant-filter glue
- *       classes, derived from the condition relation's rows for the coordinate, never by
- *       re-evaluating filter predicates.</li>
+ *       classes. Where the store states the root over several tables, both come off its
+ *       {@link no.sikt.graphitron.emit.RootQuery.MultiTable}; otherwise off the classified
+ *       participants and the condition relation's rows for the coordinate.</li>
  *   <li><b>Discriminated children</b>
  *       ({@link ChildField.TableInterfaceField}): their re-projections
  *       reference each table-bound participant's projection class. Joined-table participants
@@ -43,7 +44,8 @@ import java.util.List;
  *       {@link ParticipantRef.TableBound} arm mints a target.</li>
  *   <li><b>Node lookups</b> ({@link QueryField.QueryNodeField},
  *       {@link QueryField.QueryNodesField}): the thin entry delegates to the node dispatch
- *       unit, so the one target is the {@code QueryNodeFetcher} global.</li>
+ *       unit, so the one target is the {@code QueryNodeFetcher} global, whether the store states
+ *       the node fetcher or the walk classifies it.</li>
  *   <li><b>Routine writes</b> ({@link MutationField.MutationRoutineWriteField}): the
  *       post-commit SELECT projects the terminus type inline, so the target is the return
  *       type's projection class.</li>
@@ -65,29 +67,44 @@ public final class FetcherEdgeCommands {
 
     private FetcherEdgeCommands() {}
 
+    /**
+     * The relation over {@code schema}'s fields. A root the store states as one over several tables
+     * or as a node fetcher, which {@code launchers} carries, has its row read off the store's verdict;
+     * the walk's root arms answer only for a root the store holds back.
+     */
     public static FetcherEdgeRelation produce(GraphitronSchema schema, ConditionRelation conditions,
-            String outputPackage) {
+            String outputPackage, LauncherRelation launchers) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<FetcherEdgeCommand>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                collect(field, conditions, units, rows);
+                collect(field, conditions, launchers, units, rows);
             }
         }
         return new FetcherEdgeRelation(rows);
     }
 
-    private static void collect(GraphitronField field, ConditionRelation conditions,
+    private static void collect(GraphitronField field, ConditionRelation conditions, LauncherRelation launchers,
             GeneratedUnits units, List<FetcherEdgeCommand> rows) {
         var row = switch (field) {
-            case QueryField qf -> rowOf(qf, conditions, units);
+            case QueryField qf -> {
+                var coordinate = FieldCoordinates.coordinates(qf.parentTypeName(), qf.name());
+                var multiTable = launchers.multiTables().get(coordinate);
+                if (multiTable != null) {
+                    yield storeRowOf(multiTable, units);
+                }
+                if (launchers.nodeFetchers().containsKey(coordinate)) {
+                    yield row(qf.parentTypeName(), qf.name(), units, targets -> targets.add(units.queryNodeFetcher()));
+                }
+                yield rowOf(qf, conditions, units);
+            }
             case MutationField mf -> rowOf(mf, conditions, units);
             case ChildField cf -> {
                 if (cf instanceof ChildField.NestingField nf) {
                     // Nested coordinates have no fieldsOf entry; the walk reaches them through
                     // the nesting field's own children (the condition producer's precedent).
                     for (var nested : nf.nestedFields()) {
-                        collect(nested, conditions, units, rows);
+                        collect(nested, conditions, launchers, units, rows);
                     }
                 }
                 yield childRowOf(cf, units);
@@ -99,6 +116,26 @@ public final class FetcherEdgeCommands {
         if (row != null) {
             rows.add(row);
         }
+    }
+
+    /**
+     * A root over several tables as the store states it: each participant's projection class, in the
+     * store's branch order, and the condition class each branch's condition method is rendered on,
+     * for the branches that have one.
+     */
+    private static FetcherEdgeCommand storeRowOf(no.sikt.graphitron.emit.RootQuery.MultiTable root,
+            GeneratedUnits units) {
+        return row(root.parentType(), root.fieldName(), units, targets -> {
+            for (var branch : root.branches()) {
+                targets.add(units.typeClass(branch.typeName()));
+            }
+            for (var branch : root.branches()) {
+                if (branch.condition() != null) {
+                    targets.add(units.participantConditionMethod(root.parentType(), root.fieldName(),
+                        branch.typeName()).owner());
+                }
+            }
+        });
     }
 
     /**

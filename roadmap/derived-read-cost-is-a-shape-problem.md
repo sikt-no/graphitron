@@ -1035,7 +1035,12 @@ static method needs no holder.
     facets in order off `graphitron_occurrence_producer_facet` and `graphitron_facet_binding`, each
     grouping by the column its filter occurrence binds, off `graphitron_occurrence_column`, across the
     steps its path takes, off `graphitron_join_path_step`, so the facet join and the filter's `EXISTS`
-    narrow one path; `FACETED` goes and the root census holds no reason. Whether a type's
+    narrow one path; `FACETED` goes and the root census holds no reason. The fetcher edges of a root
+    the store states over several tables, or as a node fetcher, are read off its verdict, each
+    participant's projection class and the conditions class its branches call, so the dev loop's
+    recompile graph follows the store; `StoreRootRecompileTest` holds an edit to each in the root's
+    recompile set and an unrelated edit out. The walk's root edge arms answer only for a root the
+    store holds back. Whether a type's
     unit takes the statement's connection is `graphitron_tabletype_session`, which the `@service` lift
     reads and the root fetchers read through `GeneratedUnits.typeClass`; the generated compile holds
     it to the walk's own closure until the units go. A known gap: the walk also marks a unit from a
