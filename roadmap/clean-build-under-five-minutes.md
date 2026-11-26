@@ -335,6 +335,31 @@ parallelises a module's tests is priced against that before it is tried.
       about 8 minutes before `graphitron`, its cost the cores it shares.
     - Next, on an idle machine and interleaved with a 4 GB and 64 control: the model at a population
       cache of 512. `19031ddd38` put 64 and 256 within the noise of each other at 4 GB.
+    - At RC58 (`f6e16dd534`), 2026-11-26, `FactGraphsTest` and `FactExpectationTest` alone, two
+      interleaved rounds: 784 to 860 s at 64 a session and 471 to 557 s at 1,024, where the 4 GB fork
+      sat at its ceiling after every collection with 116 to 130 full collections (2 to 8 at 64).
+      Even at 1,024 the two classes take three times their 108 to 127 s in CI at RC57, so 64 is not
+      the whole of the growth.
+    - RC57 (`b334863b90`) measured alike, the population then `LONG_LIVED` at 1,024: the two classes
+      took 157 to 167 s at the pom's 5 GB, and 188 to 257 s at 4 GB with 24 to 28 full collections,
+      against RC58's 374 to 450 s and 116 to 130. So CI's 8:55 to 18:09 is three causes together:
+      the heap from 5 to 4 GB, the cache from 1,024 to 64, and a population live set that grew
+      between them.
+    - On `a5c84f9e78`, which carries `ea755c1a26`'s cut of about a gigabyte, the two classes at
+      4 GB: 744 to 772 s at 64, 761 to 836 s at 256, 804 to 836 s at 512, and 364 to 419 s at 1,024
+      with 60 to 102 full collections. A capture's statements fit only between 512 and 1,024, so a
+      cache below that saves no planning. But the whole model module at 4 GB and 1,024 ran out of
+      heap after 25:45, with 617 full collections, so 1,024 needs either more heap or step 19.
+    - The test-schema generator in `graphitron` captures into the population too, in an exec JVM that
+      never saw surefire's 1,024: 444 to 468 s at 64 against 148 to 159 s at 1,024 at RC58, which
+      the generate-test-schemas execution now gives it.
+19. **A large population cache without the heap following it.** Open. H2 keeps the cache per session,
+    so what the population's plans hold grows with its stores times their sessions times the cache's
+    size, and the cache is the one lever turned so far: step 18 measures what 1,024 buys and what it
+    costs the 4 GB fork. The other factors are unmeasured: fewer, fuller population stores, and fewer
+    sessions holding plans in each, so one capture's plans serve the next. Count first, in a model
+    fork: the population's stores, the sessions each opens, and the distinct statements a capture
+    prepares.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
