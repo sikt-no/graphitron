@@ -1055,14 +1055,14 @@ static method needs no holder.
     rendered from the store; both move onto the store's rows here. Until then the generated
     compiles guard the signatures, and the edges, which drive only the incremental compile, are
     trusted: a wrong one shows as a missed recompile in a dev loop, never in a clean build.
-* **A root's tenant is the input binding its table's tenant column, stated per producer, claimed by E** `open`, E's. It blocks the TENANTED root flip (A, 2026-11-26). A root's tenant is the argument or input field binding its table's
-  tenant column (Alf, 2026-11-15), so the store derives it, for a root query as for a root
-  service, and an author names `$tenant` only where nothing binds it: a plain value a service
-  hands its method as a parameter binds no column, so a service still names that one. The tenant
-  slot is keyed by the producer occurrence rather than by its call, and the readers of the call
-  key move in the same node: `ConnectionQuery`'s slot read and the connection rule's slot facts. Until it lands a
-  root query on a tenanted table stays on the walk, the rest flipping piece by piece (Alf,
-  2026-11-15).
+* **A root read's scope is stated once, by the stage that binds its tables** `open`, E's, before
+  or with the TENANTED root flip. The connection rule and the route defect rule each work a root
+  read's scope out from `graphitron_occurrence_binding_table` against the tenant column, every table
+  a tenant's, none, or across both, and each restates which root reads have no stored route yet, a
+  node fetcher and a read marked `@tenantFanOut`. A fact more than one rule builds on is stored by the
+  stage that owns it (fact-model.adoc § Grain): one row per root read and its scope, written by
+  occurrence-bindings beside the table bindings, which the connection rule's root branch and the
+  route defect rule's root arm both join, `TENANT_READ_ACROSS_SCOPES` chosen from it.
 * **What a filter means does not depend on where it is written** `open`, off the critical path.
   Today an empty list drops its predicate where a polymorphic participant's all-foreign ids answer
   `falseCondition()`, the lenient node-id decode drops a malformed id with one of another type, a
