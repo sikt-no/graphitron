@@ -157,6 +157,13 @@ input OptionalLanguageFilter {
         @reference(path: [{key: "film_language_id_fkey"}])
 }
 
+input FilmActorsFilter {
+    actors: [ID!] @nodeId(typeName: "ActorNode") @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+        method: "filmsWithActors"
+    }, override: true)
+}
+
 input LanguageIdsPick {
     languageIds: [ID!] @nodeId(typeName: "LanguageNode") @reference(path: [{key: "film_language_id_fkey"}])
 }
@@ -503,6 +510,9 @@ type Query {
             argMapping: "languageIds: languageIds.language_id, originalLanguageId: originalId.language_id"
         }, override: true)
         @defaultOrder(primaryKey: true)
+    # An override @condition on actor ids, a node no path reaches from film: the method is applied to
+    # film's own table, taken by its class, and each id is decoded into the actor's record.
+    filmsWithActors(filter: FilmActorsFilter): [Film!]! @defaultOrder(primaryKey: true)
     filmsOfPickedLanguageIds(pick: LanguageIdsPick): [Film!]!
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",

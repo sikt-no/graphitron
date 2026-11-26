@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ActorRecord;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -90,5 +92,21 @@ public final class ProjectedKeyConditionFixtures {
             return DSL.noCondition();
         }
         return table.field(Film.FILM.FILM_ID).in(filmIds);
+    }
+
+    /**
+     * Narrows films to those any of the named actors play in: an input-field
+     * {@code @condition(override: true)} on a list of {@code @nodeId}s whose node no path reaches from
+     * the film, so it is applied to the film's own table, taken by its class, each id decoded into
+     * the actor's record.
+     */
+    public static Condition filmsWithActors(Film film, List<ActorRecord> actors) {
+        if (actors == null || actors.isEmpty()) {
+            return DSL.noCondition();
+        }
+        var filmActor = FilmActor.FILM_ACTOR;
+        return DSL.exists(DSL.selectOne().from(filmActor)
+            .where(filmActor.FILM_ID.eq(film.FILM_ID))
+            .and(filmActor.ACTOR_ID.in(actors.stream().map(ActorRecord::getActorId).toList())));
     }
 }

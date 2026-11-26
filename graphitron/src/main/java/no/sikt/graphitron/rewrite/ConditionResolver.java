@@ -2,14 +2,12 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
-import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.model.diagnostics.Rejection;
-import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -164,15 +162,6 @@ final class ConditionResolver {
     }
 
     /**
-     * Outcome of {@link #installNodeIdDecode}: the condition with the decode installed, or the
-     * declared-type refusal.
-     */
-    sealed interface DecodeInstall {
-        record Ok(ConditionFilter filter) implements DecodeInstall {}
-        record Rejected(Rejection rejection) implements DecodeInstall {}
-    }
-
-    /**
      * Whether any parameter of {@code filter} binds the whole of {@code slotName}: the same predicate
      * {@link #installNodeIdDecode} installs on, exposed so a caller can ask the question without
      * performing the install. A field-level {@code @condition} sees every argument of its field and
@@ -188,7 +177,8 @@ final class ConditionResolver {
 
     /**
      * Installs the {@code @nodeId} decode on every parameter of {@code filter} bound to the whole of
-     * {@code slotName}, and refuses a parameter whose declared Java type is not the decoded key's.
+     * {@code slotName}. Which declared types take the decoded id is the store's to judge: a record or a
+     * tuple of the key, as {@code NODE_ID_KEY_ARITY_EXCEEDS_SLOT} and its siblings state.
      *
      * <p>This is the site the contract is stated at: a {@code @nodeId} slot's value is decoded before
      * it leaves the generated glue, so the authored method receives the typed key rather than the
@@ -219,14 +209,8 @@ final class ConditionResolver {
      * the key columns, a projection having no way to name a {@code Row}. The remedy the message points
      * at is to name a column or to move the {@code @condition} onto the {@code @nodeId} slot, where
      * this contract applies.
-     *
-     * <p>The refusal exists because the contract's only other enforcer is the consumer's javac
-     * inside emitted glue, a failure with no line back to the SDL. It names the coordinate, the
-     * declared type and the required type, so the remedy is the message.
      */
-    static DecodeInstall installNodeIdDecode(ConditionFilter filter, String coordinate, String slotName,
-                                             HelperRef.Decode decode, boolean list) {
-        TypeName required = decode.decodedKeyType(list);
+    static ConditionFilter installNodeIdDecode(ConditionFilter filter, String slotName, HelperRef.Decode decode) {
         var rewritten = new ArrayList<MethodRef.Param>();
         for (var p : filter.params()) {
             if (!(p instanceof MethodRef.Param.Typed typed)
@@ -236,23 +220,10 @@ final class ConditionResolver {
                 rewritten.add(p);
                 continue;
             }
-            if (!typed.javaType().equals(required)) {
-                // Typed rather than prose, and in the wire-coercion family rather than beside it:
-                // this is that family's comparison run one transform later, the declared type
-                // against what the generator hands the call site rather than against what
-                // graphql-java delivers. Exact equality, the same discipline
-                // WireCoercionResolver.checkScalar applies, so no second assignability derivation
-                // grows here.
-                return new DecodeInstall.Rejected(new WireCoercionError.NodeIdDecodedType(
-                    decode.targetTypeName(), required.toString(), typed.javaType().toString(),
-                    coordinate + ": parameter '" + typed.name() + "' of condition method '"
-                        + filter.methodName() + "'"));
-            }
             rewritten.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
                 new ParamSource.Arg(new CallSiteExtraction.ThrowOnMismatch(decode), arg.path())));
         }
-        return new DecodeInstall.Ok(
-            new ConditionFilter(filter.className(), filter.methodName(), List.copyOf(rewritten)));
+        return new ConditionFilter(filter.className(), filter.methodName(), List.copyOf(rewritten));
     }
 
     /**

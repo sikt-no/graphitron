@@ -26310,8 +26310,23 @@ WITH bound_table (graph_name, coordinate, bound, source_name, schema_name, table
   SELECT graph_name, coordinate, bound, table_source_name, table_schema, table_name
     FROM graphitron_occurrence_column
   UNION
-  SELECT graph_name, coordinate, bound, table_source_name, table_schema, table_name
-    FROM graphitron_occurrence_node_id
+  -- A node id's call is applied to the node's table where a join path from the rows it is read
+  -- under lands there, and otherwise to those rows' own table, the id's key handed to it: the
+  -- table its overload takes is that one.
+  SELECT n.graph_name, n.coordinate, n.bound, COALESCE(r.table_source_name, n.table_source_name),
+         COALESCE(r.table_schema, n.table_schema), COALESCE(r.table_name, n.table_name)
+    FROM graphitron_occurrence_node_id n
+    LEFT JOIN graphitron_occurrence_row_input r
+      ON r.graph_name = n.graph_name AND r.coordinate = n.coordinate
+     AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table pn
+                       JOIN graphitron_join_path jp
+                         ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                        AND jp.target_type = pn.target_type
+                      WHERE pn.graph_name = n.graph_name AND pn.coordinate = n.coordinate
+                        AND pn.start_source_name = r.table_source_name AND pn.start_schema = r.table_schema
+                        AND pn.start_table = r.table_name
+                        AND jp.target_source_name = n.table_source_name AND jp.target_schema = n.table_schema
+                        AND jp.target_table = n.table_name)
 ),
 written (graph_name, element_coordinate, ordinal, class_name, method_name) AS (
   -- The class and method a @condition's condition: names, by the application it is written in.

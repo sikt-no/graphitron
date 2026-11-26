@@ -286,26 +286,6 @@ class NodeIdParticipantRoutePipelineTest {
     // ===== The decoded handoff =====
 
     /**
-     * The refusal that keeps the contract enforceable from the SDL. Declaring the parameter as the
-     * wire string used to be the only thing an author could write; it now names the coordinate and
-     * the type the decoded key has, rather than surfacing as a javac error inside emitted glue with
-     * no line back to the schema.
-     */
-    @Test
-    void aWireStringParameterOnADecodedSlotIsRejectedNamingTheRequiredType() {
-        String message = causeFor("""
-            input StockFilter {
-                languageId: ID @nodeId(typeName: "Language")
-                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdWireString"}, override: true)
-            }
-            type Query { stock(filter: StockFilter): [Stock!]! }
-            """);
-        assertThat(message).contains("languageIdWireString");
-        assertThat(message).contains("java.lang.Integer");
-        assertThat(message).contains("java.lang.String");
-    }
-
-    /**
      * An authored parameter rejects where a routed leaf would dispatch. A bare {@code @nodeId}
      * argument on a multitable root infers its node type from each participant's own table, so the
      * branches decode different types; with no {@code @condition} that is the supported per-branch
@@ -378,33 +358,6 @@ class NodeIdParticipantRoutePipelineTest {
         assertThat(filters)
             .as("and the implicit predicate the decode has to agree with is still there")
             .anySatisfy(f -> assertThat(f).isInstanceOf(GeneratedConditionFilter.class));
-    }
-
-    /**
-     * The declared-type refusal reached through the field-level directive. Same ground as the
-     * argument-level twin above: the contract's only other enforcer is the consumer's javac inside
-     * emitted glue, and the directive's placement does not change which coordinate the slot is at.
-     */
-    @Test
-    void aFieldLevelConditionDeclaringTheWireStringIsRejectedNamingTheRequiredType() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Language implements Node @table(name: "language") @node {
-                id: ID! @nodeId
-                name: String
-            }
-            type Query {
-                languages(languageId: ID @nodeId(typeName: "Language")): [Language!]!
-                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "languageIdWireString"})
-            }
-            """);
-
-        var field = schema.field("Query", "languages");
-        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        String message = ((GraphitronField.UnclassifiedField) field).reason();
-        assertThat(message).contains("Query.languages");
-        assertThat(message).contains("languageIdWireString");
-        assertThat(message).contains("java.lang.Integer");
-        assertThat(message).contains("java.lang.String");
     }
 
     /**

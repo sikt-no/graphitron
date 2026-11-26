@@ -3449,16 +3449,10 @@ class BuildContext {
         Optional<ArgConditionRef> condition =
             buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
         if (condition.isPresent()) {
-            var install = ConditionResolver.installNodeIdDecode(condition.get().filter(),
-                "input field '" + parentTypeName + "." + name + "'", name,
-                FieldBuilder.decodeTargetOf(resolved), list);
-            switch (install) {
-                case ConditionResolver.DecodeInstall.Rejected r -> {
-                    return unresolved(field, name, r.rejection());
-                }
-                case ConditionResolver.DecodeInstall.Ok ok -> condition =
-                    Optional.of(new ArgConditionRef(ok.filter(), condition.get().override()));
-            }
+            condition = Optional.of(new ArgConditionRef(
+                ConditionResolver.installNodeIdDecode(condition.get().filter(), name,
+                    FieldBuilder.decodeTargetOf(resolved)),
+                condition.get().override()));
         }
         switch (resolved) {
             case NodeIdLeafResolver.Resolved.Rejected ignored -> throw new IllegalStateException(

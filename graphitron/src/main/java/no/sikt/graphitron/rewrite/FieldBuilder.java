@@ -2326,16 +2326,9 @@ class FieldBuilder {
             // by widening ServiceCatalog.legacyArgExtraction, which sees a declared type and no slot.
             var slotDecode = decodeTargetOf(resolved);
             if (slotDecode != null && argCondition.isPresent()) {
-                var install = ConditionResolver.installNodeIdDecode(argCondition.get().filter(),
-                    "@nodeId argument '" + name + "' on field '" + fieldDef.getName() + "'",
-                    name, slotDecode, list);
-                switch (install) {
-                    case ConditionResolver.DecodeInstall.Rejected r -> {
-                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection());
-                    }
-                    case ConditionResolver.DecodeInstall.Ok ok -> argCondition =
-                        Optional.of(new ArgConditionRef(ok.filter(), argCondition.get().override()));
-                }
+                argCondition = Optional.of(new ArgConditionRef(
+                    ConditionResolver.installNodeIdDecode(argCondition.get().filter(), name, slotDecode),
+                    argCondition.get().override()));
             }
             switch (resolved) {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
@@ -2787,15 +2780,8 @@ class FieldBuilder {
                         + " generated filter dispatches per branch."));
                     return new TableFieldComponents.Rejected(foldRejections(errors));
                 }
-                var install = ConditionResolver.installNodeIdDecode(fieldCondition, coordinate,
-                    slot.getKey(), slot.getValue().decode(), slot.getValue().list());
-                switch (install) {
-                    case ConditionResolver.DecodeInstall.Rejected r -> {
-                        errors.add(r.rejection());
-                        return new TableFieldComponents.Rejected(foldRejections(errors));
-                    }
-                    case ConditionResolver.DecodeInstall.Ok ok -> fieldCondition = ok.filter();
-                }
+                fieldCondition = ConditionResolver.installNodeIdDecode(fieldCondition, slot.getKey(),
+                    slot.getValue().decode());
             }
         }
         if (fieldCondition != null) {

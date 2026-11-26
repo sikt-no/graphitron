@@ -1,0 +1,40 @@
+# An override @condition on a node id is called on the table it is applied to. Where a join path
+# from the rows the id is read under lands on the node's table, that is the node's table; where none
+# does, the override is applied to the rows' own table, the id's key handed to it, and the overload
+# taking that table is the one called. Query.filmsWithActors filters films by actor ids, which no
+# path reaches from film, and filmsWithActors takes film's own table by its class: the call is on
+# the actor binding and resolves to it.
+
+interface Node { id: ID! }
+
+type Film @table(name: "film") { title: String }
+type Actor implements Node @table(name: "actor") @node { id: ID! }
+
+input FilmActorsFilter {
+  actors: [ID!] @nodeId(typeName: "Actor") @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+      method: "filmsWithActors"}, override: true)
+}
+
+type Query {
+  filmsWithActors(filter: FilmActorsFilter): [Film!]! @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_condition",
+    where: "coordinate = 'Query.filmsWithActors(filter.actors:)'", rows: """
+  coordinate,                            bound,        override_written
+  Query.filmsWithActors(filter.actors:), public.actor, TRUE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_method",
+    where: "coordinate = 'Query.filmsWithActors(filter.actors:)'", rows: """
+  coordinate,                            call,                   method_name
+  Query.filmsWithActors(filter.actors:), condition:public.actor, filmsWithActors
+  """)
+
+# Each id is decoded into the actor's record, the list's element.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape",
+    where: "coordinate = 'Query.filmsWithActors(filter.actors:)'", rows: """
+  coordinate,                            bound,        decode_shape
+  Query.filmsWithActors(filter.actors:), public.actor, OWN_RECORD
+  """)

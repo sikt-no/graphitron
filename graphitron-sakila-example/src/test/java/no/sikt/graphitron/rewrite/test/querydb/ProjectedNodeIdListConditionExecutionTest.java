@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM;
+import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -127,6 +128,26 @@ class ProjectedNodeIdListConditionExecutionTest {
             { filmsOfLanguageIdsFilter(filter: {languageIds: ["not-a-node-id"]}) { filmId } }
             """))
             .isNotEmpty();
+    }
+
+    @Test
+    void anOverrideOnANodeNoPathReachesIsAppliedToTheRowsOwnTable() {
+        var films = dsl.selectDistinct(FILM_ACTOR.FILM_ID)
+            .from(FILM_ACTOR)
+            .where(FILM_ACTOR.ACTOR_ID.eq(1))
+            .orderBy(FILM_ACTOR.FILM_ID)
+            .fetch(FILM_ACTOR.FILM_ID).stream()
+            .filter(SEEDED_FILM_IDS::contains).toList();
+        assertThat(filmIds(execute("""
+            { filmsWithActors(filter: {actors: ["%s"]}) { filmId } }
+            """.formatted(NodeIdEncoder.encode("ActorNode", 1))), "filmsWithActors"))
+            .as("each actor id reaches the method as the actor's record, applied to film's own table")
+            .isEqualTo(films);
+        assertThat(filmIds(execute("""
+            { filmsWithActors(filter: {}) { filmId } }
+            """), "filmsWithActors"))
+            .as("an omitted list constrains nothing")
+            .isEqualTo(SEEDED_FILM_IDS);
     }
 
     private static String languageNodeId(int languageId) {

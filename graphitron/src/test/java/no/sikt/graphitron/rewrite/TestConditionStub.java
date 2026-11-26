@@ -181,15 +181,6 @@ class TestConditionStub {
     }
 
     /**
-     * Fixture: the same slot declared the way the manual used to tell an author to declare it, as the
-     * wire string. Used to pin the classify-time refusal, whose whole reason for existing is that the
-     * only other enforcer of the decoded contract is the consumer's javac inside emitted glue.
-     */
-    public static Condition languageIdWireString(org.jooq.Table<?> table, String languageId) {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
      * Fixture: the composite-key half of {@link #languageIdDecodedKeyCondition}. A node type with an
      * arity-N key decodes to a typed jOOQ {@code Row<N>}, so that is what an authored parameter
      * bound to such a slot declares. The shape is {@code nodeidfixture.reordered_pk_parent}'s
