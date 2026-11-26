@@ -23,6 +23,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_NODE_ID_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_COLUMN_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_FILTERING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_FILTERING_RULE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.exists;
@@ -37,8 +39,9 @@ import static org.jooq.impl.DSL.val;
  * The {@code occurrence-tenants} stage: the call each {@code $tenant} pair or {@code @tenant} names the
  * tenant of, into {@code graphitron_occurrence_binding_tenant}, then every value each call's tenant is
  * read from, into {@code graphitron_occurrence_tenant_slot} and the subtype naming what the slot rests
- * on, then what takes each argument and input field, into {@code graphitron_occurrence_taken}, then the
- * stage's own defects; each marked and swept.
+ * on, and the slots that only filter, into {@code graphitron_occurrence_tenant_slot_filtering}, then
+ * what takes each argument and input field, into {@code graphitron_occurrence_taken}, then the stage's
+ * own defects; each marked and swept.
  *
  * <p>Runs after {@link OccurrenceBuilds}, off the landings, the column and node id bindings and the
  * classes the inputs are built into, all upstream of it.
@@ -60,6 +63,7 @@ public final class OccurrenceTenants {
             GRAPHITRON_OCCURRENCE_TENANT_SLOT_NODE_ID_KEY, List.of("BOUND", "KEY_POSITION:POSITION"));
         var s = GRAPHITRON_OCCURRENCE_TENANT_SLOT;
         dsl.deleteFrom(s).where(s.GRAPH_NAME.eq(graph), s.TOUCHED_AT.ne(touchedAt)).execute();
+        filtering(dsl, graph, touchedAt);
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         dsl.deleteFrom(b).where(b.GRAPH_NAME.eq(graph), b.KIND.eq(TENANT), b.TOUCHED_AT.ne(touchedAt)).execute();
         taken(dsl, graph, touchedAt);
@@ -68,6 +72,27 @@ public final class OccurrenceTenants {
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.FILTER_COLUMNS);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.GENERATED_SCALARS);
         EntryDefectTables.deriveFilterColumns(dsl, graph, touchedAt, EntryDefects.TENANTS.stage());
+    }
+
+    /**
+     * The slots that only filter inside the tenant another slot decides, read off the slots just
+     * written, so after them; a slot swept above takes its row with it.
+     */
+    private static void filtering(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var f = GRAPHITRON_OCCURRENCE_TENANT_SLOT_FILTERING;
+        var r = GRAPHITRON_OCCURRENCE_TENANT_SLOT_FILTERING_RULE;
+        dsl.insertInto(f)
+            .columns(f.GRAPH_NAME, f.PRODUCER_COORDINATE, f.SLOT, f.DECIDING_SLOT, f.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.PRODUCER_COORDINATE, r.SLOT, r.DECIDING_SLOT,
+                    val(touchedAt, f.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph)))
+            .onConflict(f.GRAPH_NAME, f.PRODUCER_COORDINATE, f.SLOT)
+            .doUpdate()
+            .set(f.DECIDING_SLOT, excluded(f.DECIDING_SLOT))
+            .set(f.TOUCHED_AT, excluded(f.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(f).where(f.GRAPH_NAME.eq(graph), f.TOUCHED_AT.ne(touchedAt)).execute();
     }
 
     /**

@@ -19,13 +19,16 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_FILTERING;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The connection each producer of a database-per-tenant graph runs on, as the store states it: its outcome, its tenant part's answer to a call naming no tenant, the values the tenant is read
@@ -137,9 +140,14 @@ public final class ConnectionQuery {
                 .where(st.GRAPH_NAME.eq(s.GRAPH_NAME), st.COORDINATE.eq(s.COORDINATE))
                 .orderBy(st.DEPTH))
             .convertFrom(rs2 -> rs2.map(rec -> rec.value1()));
+        // The slots that decide the tenant: one that only filters inside the tenant another decides
+        // stays out of the fold, its predicate still filtering.
+        var sf = GRAPHITRON_OCCURRENCE_TENANT_SLOT_FILTERING;
         var slots = multiset(select(names, s.KEY_POSITION, nodeType)
                 .from(s)
-                .where(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.PRODUCER_COORDINATE.eq(c.COORDINATE))
+                .where(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.PRODUCER_COORDINATE.eq(c.COORDINATE),
+                    notExists(selectOne().from(sf).where(sf.GRAPH_NAME.eq(s.GRAPH_NAME),
+                        sf.PRODUCER_COORDINATE.eq(s.PRODUCER_COORDINATE), sf.SLOT.eq(s.SLOT))))
                 .orderBy(s.SLOT))
             .convertFrom(rs2 -> rs2.map(Records.mapping(RawSlot::new)));
         return store.dsl()

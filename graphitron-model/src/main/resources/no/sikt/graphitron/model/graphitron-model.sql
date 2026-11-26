@@ -21142,6 +21142,27 @@ SELECT n.graph_name, p.coordinate, n.coordinate || ' ' || n.bound || ' ' || n.po
     OR p.start = 'ROOT' AND p.kind IN ('SELECT', 'LOOKUP');
 COMMENT ON VIEW graphitron_occurrence_tenant_slot_node_id_key_rule IS 'One row the node id key tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.';
 
+CREATE TABLE graphitron_occurrence_tenant_slot_filtering (
+  graph_name          VARCHAR   NOT NULL,
+  producer_coordinate VARCHAR   NOT NULL,
+  slot                VARCHAR   NOT NULL,
+  deciding_slot       VARCHAR   NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, producer_coordinate, slot),
+  FOREIGN KEY (graph_name, producer_coordinate, slot)
+    REFERENCES graphitron_occurrence_tenant_slot (graph_name, producer_coordinate, slot) ON DELETE CASCADE,
+  -- The slot that decides the tenant in its place, under the same producer.
+  FOREIGN KEY (graph_name, producer_coordinate, deciding_slot)
+    REFERENCES graphitron_occurrence_tenant_slot (graph_name, producer_coordinate, slot) ON DELETE CASCADE,
+  CHECK (slot <> deciding_slot)
+);
+COMMENT ON TABLE graphitron_occurrence_tenant_slot_filtering IS 'A tenant slot that only filters: one row per node id slot under a root read that filters inside the tenant a required tenant-column value of the same read decides, and so names no tenant itself. For example Query.filmActorsWhere(filter.actors:), a list of FilmActor ids beside the required filter.filmId on film_actor: an id naming another tenant matches nothing rather than failing the read.';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_filtering.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_filtering.producer_coordinate IS 'the root read whose slot it is';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_filtering.slot IS 'the node id slot that only filters; with the producer, the key';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_filtering.deciding_slot IS 'the required tenant-column slot whose filter compares the same table, the least where several do';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_filtering.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- The occurrence-tenants stage's own defects, off the pairs, the directive applications and the
 -- bindings it has just written.
 CREATE TABLE graphitron_occurrence_taken (
@@ -25704,6 +25725,16 @@ WITH root (graph_name, coordinate, element_coordinate, kind) AS (
                               WHERE fo.graph_name = o.graph_name AND fo.coordinate = o.element_coordinate
                                 AND fo.directive_name = 'tenantFanOut'))
 ),
+-- The slots that decide a producer's tenant: every slot but one that only filters inside the tenant
+-- another decides.
+deciding (graph_name, producer_coordinate, slot, kind, coordinate, guaranteed, per_element, own_argument) AS (
+  SELECT s.graph_name, s.producer_coordinate, s.slot, s.kind, s.coordinate, s.guaranteed, s.per_element,
+         s.own_argument
+    FROM graphitron_occurrence_tenant_slot s
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot_filtering sf
+                      WHERE sf.graph_name = s.graph_name AND sf.producer_coordinate = s.producer_coordinate
+                        AND sf.slot = s.slot)
+),
 fact (graph_name, coordinate, kind, result_scope, bound, several_types, guaranteed,
       per_element, own_argument, has_empty) AS (
   SELECT r.graph_name, r.coordinate, r.kind,
@@ -25740,7 +25771,7 @@ fact (graph_name, coordinate, kind, result_scope, bound, several_types, guarante
                          AND ps.constructor_descriptor = '(Lorg/jooq/DSLContext;)V'),
          -- A slot read off a node id of several node types, an interface's or a union's, each member
          -- decoding the id with its own key: one slot reads one node's key, so none routes the call.
-         EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
+         EXISTS (SELECT 1 FROM deciding s
                    JOIN graphitron_occurrence_node_id n
                      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate
                    JOIN graphitron_occurrence_node_id m
@@ -25748,13 +25779,13 @@ fact (graph_name, coordinate, kind, result_scope, bound, several_types, guarante
                     AND m.node_type_name <> n.node_type_name
                   WHERE s.graph_name = r.graph_name AND s.producer_coordinate = r.coordinate
                     AND s.kind = 'NODE_ID_KEY'),
-         EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
+         EXISTS (SELECT 1 FROM deciding s
                   WHERE s.graph_name = r.graph_name AND s.producer_coordinate = r.coordinate
                     AND s.guaranteed = TRUE),
-         EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
+         EXISTS (SELECT 1 FROM deciding s
                   WHERE s.graph_name = r.graph_name AND s.producer_coordinate = r.coordinate
                     AND s.per_element = TRUE),
-         NOT EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
+         NOT EXISTS (SELECT 1 FROM deciding s
                       WHERE s.graph_name = r.graph_name AND s.producer_coordinate = r.coordinate
                         AND s.per_element = TRUE AND s.own_argument = FALSE),
          EXISTS (SELECT 1 FROM graphitron_occurrence_producer_empty e
@@ -27405,6 +27436,59 @@ COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_coordinate IS 'the occurr
 COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_bound IS 'the table the key occurrence''s binding sits at: the list''s own table, or for an input field''s node id of a node on another table that node''s table, whose key graphitron_occurrence_node_id_carried carries back to the list''s table column by column';
 COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_kind IS 'what the key occurrence binds, COLUMN or NODE_ID, carried so the foreign key holds the row to a binding of that kind';
 COMMENT ON COLUMN graphitron_occurrence_lookup_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_tenant_slot_filtering_rule
+  (graph_name, producer_coordinate, slot, deciding_slot) AS
+-- A node id under a root read that a request may leave out or send through a list, whose filter, on
+-- every table it compares the id on, sits beside a required tenant-column value's filter comparing that
+-- table's own tenant column, both predicates graphitron's own: the two are ANDed, so a row whose id
+-- names another tenant carries that tenant in the column the required value compares and matches
+-- nothing. The id only filters, and the required value decides. A lookup key decides whatever stands
+-- beside it, and a predicate an authored @condition stands in for shows nothing of what it compares.
+SELECT s.graph_name, s.producer_coordinate, s.slot, MIN(d.slot)
+  FROM graphitron_occurrence_tenant_slot s
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = s.graph_name AND p.coordinate = s.producer_coordinate AND p.start = 'ROOT'
+   AND p.kind IN ('SELECT', 'LOOKUP')
+  JOIN graphitron_occurrence_filter_term ft ON ft.graph_name = s.graph_name AND ft.coordinate = s.coordinate
+  JOIN graphitron_occurrence_tenant_slot d
+    ON d.graph_name = s.graph_name AND d.producer_coordinate = s.producer_coordinate
+   AND d.kind = 'COLUMN' AND d.guaranteed = TRUE
+  JOIN graphitron_occurrence_tenant_slot_column dc
+    ON dc.graph_name = d.graph_name AND dc.producer_coordinate = d.producer_coordinate AND dc.slot = d.slot
+  JOIN graphitron_occurrence_filter_term dt
+    ON dt.graph_name = d.graph_name AND dt.coordinate = d.coordinate
+   AND dt.table_source_name = ft.table_source_name AND dt.table_schema = ft.table_schema
+   AND dt.table_name = ft.table_name AND dc.bound = dt.table_schema || '.' || dt.table_name
+ WHERE s.kind = 'NODE_ID_KEY' AND s.guaranteed = FALSE
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key lk
+                    WHERE lk.graph_name = s.graph_name AND lk.key_coordinate = s.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = s.graph_name AND ov.coordinate = s.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                    WHERE ov.graph_name = d.graph_name AND ov.coordinate = d.coordinate)
+   -- On every table the id is compared on, not only this one.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_filter_term other
+                    WHERE other.graph_name = s.graph_name AND other.coordinate = s.coordinate
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot d2
+                                        JOIN graphitron_occurrence_tenant_slot_column dc2
+                                          ON dc2.graph_name = d2.graph_name
+                                         AND dc2.producer_coordinate = d2.producer_coordinate
+                                         AND dc2.slot = d2.slot
+                                        JOIN graphitron_occurrence_filter_term dt2
+                                          ON dt2.graph_name = d2.graph_name AND dt2.coordinate = d2.coordinate
+                                       WHERE d2.graph_name = s.graph_name
+                                         AND d2.producer_coordinate = s.producer_coordinate
+                                         AND d2.kind = 'COLUMN' AND d2.guaranteed = TRUE
+                                         AND dt2.table_source_name = other.table_source_name
+                                         AND dt2.table_schema = other.table_schema
+                                         AND dt2.table_name = other.table_name
+                                         AND dc2.bound = dt2.table_schema || '.' || dt2.table_name
+                                         AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov2
+                                                          WHERE ov2.graph_name = d2.graph_name
+                                                            AND ov2.coordinate = d2.coordinate)))
+ GROUP BY s.graph_name, s.producer_coordinate, s.slot;
+COMMENT ON VIEW graphitron_occurrence_tenant_slot_filtering_rule IS 'One row the filtering tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot_filtering stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this view''s rows for one graph into graphitron_occurrence_tenant_slot_filtering, which is the name every reader spells.';
 
 -- What a written directive says wrong of the field it sits on, judged by that field's target before
 -- any occurrence reads it, raised by field-targets, the first stage holding the field targets: a
@@ -33717,6 +33801,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_authored'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_node_id_key'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_column'),
+  ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_filtering'),
   ('occurrence-builds', 'graphitron_entry_defect'),
   ('occurrence-builds', 'graphitron_entry_defect_column'),
   ('occurrence-builds', 'graphitron_entry_defect_member'),
@@ -34186,6 +34271,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_authored', 'graphitron_occurrence_tenant_slot_authored_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_node_id_key', 'graphitron_occurrence_tenant_slot_node_id_key_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_column', 'graphitron_occurrence_tenant_slot_column_rule'),
+  ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_filtering', 'graphitron_occurrence_tenant_slot_filtering_rule'),
   ('occurrence-values', 'graphitron_occurrence_binding', 'graphitron_occurrence_value_rule'),
   ('occurrences', 'graphitron_occurrence', 'graphitron_occurrence_start_rule'),
   ('occurrences', 'graphitron_occurrence', 'graphitron_occurrence_step_rule'),
@@ -37015,6 +37101,14 @@ INSERT INTO meta_relation VALUES
    'A tenant slot a node id carries: one row per node id under the producer whose key holds the tenant column, at that key position.',
    'For example Mutation.rateFilmsAsRecords(input.film:), a Film id whose key is film_id, the tenant column.',
    'The supertype''s node id arm, with the reference to the key column it rests on.'),
+  ('graphitron_occurrence_tenant_slot_filtering', 'graph-occurrence-tenant-slot', 'graphitron',
+   'A tenant slot that only filters: one row per node id slot under a root read that filters inside the tenant a required tenant-column value of the same read decides, and so names no tenant itself.',
+   'For example Query.filmActorsWhere(filter.actors:), a list of FilmActor ids beside the required filter.filmId on film_actor: an id naming another tenant matches nothing rather than failing the read.',
+   'An override of the slot family rather than an answer: most slots decide the tenant, and a row here states only the ones that do not, naming the slot that decides in their place. Written after the slots, which the rule reads; the connection reads the slots that decide.'),
+  ('graphitron_occurrence_tenant_slot_filtering_rule', 'graph-occurrence-tenant-slot', 'graphitron',
+   'One row the filtering tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot_filtering stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-tenants stage writes this view''s rows for one graph into graphitron_occurrence_tenant_slot_filtering, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_occurrence_tenant_slot_authored_rule', 'graph-occurrence-tenant-slot', 'graphitron',
    'One row the authored tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.',

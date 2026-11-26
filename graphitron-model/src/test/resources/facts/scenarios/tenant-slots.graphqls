@@ -6,6 +6,10 @@
 # or once per element of a list the call's own argument holds, is stated on the slot, a fact of its
 # occurrence.
 #
+# A root read's list of FilmActor ids beside its required filmId only filters: the required value
+# decides the tenant, and the ids filter inside it, an id naming another tenant matching nothing
+# rather than failing the read; one required id decides beside it, as a value every request holds.
+#
 # A stub node, one this subgraph does not fetch by its id, routes a call by its key all the same (Alf,
 # 2026-11-24): FilmActorCode's key holds film_id, so the decoded record names the call's tenant and
 # Query.filmActorByStub has a slot its call is routed by. InventoryCode's key leaves film_id out, so
@@ -21,6 +25,15 @@ type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inven
 type FilmActorCode implements Node @table(name: "film_actor") @node(resolvable: false) { id: ID! }
 type InventoryCode implements Node @table(name: "inventory") @node(resolvable: false) { id: ID! }
 input FilmActorPick { id: ID! @nodeId(typeName: "FilmActorCode") }
+type FilmActorRow @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
+input FilmActorWhere {
+  filmId: Int! @field(name: "film_id")
+  actors: [ID!] @nodeId(typeName: "FilmActorCode")
+}
+input FilmActorPinned {
+  filmId: Int! @field(name: "film_id")
+  actor: ID! @nodeId(typeName: "FilmActorCode")
+}
 input InventoryPick { id: ID! @nodeId(typeName: "InventoryCode") }
 
 input FilmIn @table(name: "film") {
@@ -54,6 +67,8 @@ type Query {
   filmsByKey(filmId: [Int!]! @field(name: "film_id") @lookupKey): [Film]!
   inventoriesOfFilm(filmId: Int! @field(name: "film_id")
     @reference(path: [{key: "inventory_film_id_fkey"}])): [Inventory!]!
+  filmActorsWhere(filter: FilmActorWhere!): [FilmActorRow!]!
+  filmActorsPinned(filter: FilmActorPinned!): [FilmActorRow!]!
 }
 
 # What an author wrote: the pair and the directive are one fact, told apart by where it was written.
@@ -74,6 +89,10 @@ extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows:
   Query.films,        COLUMN,        Query.films(filmId:),           ,             TRUE,       FALSE,       TRUE
   Query.filmsByKey,   COLUMN,        Query.filmsByKey(filmId:),      ,             FALSE,      TRUE,        TRUE
   Query.inventoriesOfFilm, COLUMN,   Query.inventoriesOfFilm(filmId:), ,           TRUE,       FALSE,       TRUE
+  Query.filmActorsWhere,  COLUMN,      Query.filmActorsWhere(filter.filmId:),  ,     TRUE,       FALSE,       TRUE
+  Query.filmActorsWhere,  NODE_ID_KEY, Query.filmActorsWhere(filter.actors:),  1,    FALSE,      FALSE,       FALSE
+  Query.filmActorsPinned, COLUMN,      Query.filmActorsPinned(filter.filmId:), ,     TRUE,       FALSE,       TRUE
+  Query.filmActorsPinned, NODE_ID_KEY, Query.filmActorsPinned(filter.actor:),  1,    TRUE,       FALSE,       TRUE
   Query.filmByNode,   NODE_ID_KEY,   Query.filmByNode(in:),          0,            TRUE,       FALSE,       TRUE
   Query.filmActorByStub, NODE_ID_KEY, Query.filmActorByStub(in.id:), 1,          TRUE,       FALSE,       TRUE
   """)
@@ -85,6 +104,13 @@ extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot_column"
   producer_coordinate,     coordinate,                       bound
   Query.films,             Query.films(filmId:),             public.film
   Query.inventoriesOfFilm, Query.inventoriesOfFilm(filmId:), public.film
+  """)
+
+# The list of ids only filters, under the required filmId on film_actor; the one required id decides
+# too, so filmActorsPinned has no row.
+extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot_filtering", rows: """
+  producer_coordinate,   slot,                                                       deciding_slot
+  Query.filmActorsWhere, Query.filmActorsWhere(filter.actors:) public.film_actor 1, Query.filmActorsWhere(filter.filmId:) public.film_actor column
   """)
 
 # Every tenant value here is required; the record's title, which names no tenant, may be left out.
