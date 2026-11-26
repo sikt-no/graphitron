@@ -1,0 +1,34 @@
+# A root read of a tenant's rows, under a database-per-tenant build whose tenant column is film_id,
+# that no route reaches, beside the root reads the stored connection states no route for on purpose.
+# Query.films names no tenant and is refused; a read naming it only by a value a request may leave
+# out is defects/tenant-binding's. Query.languages reads language, which no tenant column scopes, and
+# runs on the key with an empty tenant part; Query.filmsEverywhere is marked @tenantFanOut and reads
+# every tenant the request may see; Query.node routes by the id it decodes; and Query.search reads
+# film and language in one statement, which no one connection serves and the walk refuses with its
+# own account. None of these four draws a route defect.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! title: String }
+type Language @table(name: "language") { name: String }
+union Searchable = Film | Language
+
+type Query {
+  films: [Film!]!
+  languages: [Language!]!
+  filmsEverywhere: [Film] @tenantFanOut
+  node(id: ID!): Node
+  search: [Searchable]
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('UNROUTED_ROOT_READ', 'TENANT_SLOTS_OPTIONAL_ONLY', 'UNROUTED_SERVICE_CALL')", rows: """
+  code,               coordinate
+  UNROUTED_ROOT_READ, Query.films
+  """)
+
+# The refused read has no connection, and neither has a read the connection states no route for:
+# the fan-out, the node fetcher and the read across scopes.
+extend schema @assertEmpty(relation: "graphitron_occurrence_connection",
+    where: "coordinate IN ('Query.films', 'Query.filmsEverywhere', 'Query.node', 'Query.search')")

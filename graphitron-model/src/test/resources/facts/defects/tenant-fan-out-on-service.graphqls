@@ -29,7 +29,7 @@ type Language @table(name: "language") {
 }
 
 type Query {
-  films: [Film!]!
+  films(filmId: Int! @field(name: "film_id")): [Film!]!
   languages: [Language!]!
   fannedByIds(ids: [Int!]!): [Film!]! @tenantFanOut
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",

@@ -112,7 +112,10 @@ subject it cannot state, and the stage's defect rule, its last statement, raises
 subject the stored relation lacks, choosing the code from stored facts. `occurrence-routes` raises a
 root call's refusals so, `TENANT_SLOTS_OPTIONAL_ONLY`, `ROUTINE_WRITE_TENANT_SCOPED` and
 `UNROUTED_SERVICE_CALL` at a root with no connection, as it raises `UNROUTED_CHILD` at a child with
-none (Alf, 2026-11-18). A defect is not written first for a later rule of its stage to read: the
+none (Alf, 2026-11-18). A root read with no connection draws `UNROUTED_ROOT_READ` or
+`TENANT_SLOTS_OPTIONAL_ONLY` the same way, except a read the connection states no route for yet: a
+node fetcher, a read marked `@tenantFanOut`, and a read across a tenant's tables and global ones,
+which the walk refuses with its own account. A defect is not written first for a later rule of its stage to read: the
 sweep runs once the gatherer's stages have run, so such a rule would read the previous reading's
 defects, and a subject refused then and fixed now would be left with neither its row nor its
 defect.

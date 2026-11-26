@@ -1,0 +1,7 @@
+Reported at the root field.
+
+In a database-per-tenant build each tenant's rows live in that tenant's database. A root field graphitron reads has no parent row to name its tenant, so only its own arguments can: an argument or input field bound to the tenant column, on the table it reads or on one a `@reference` reaches, or a node id whose key holds that column. With none naming it, nothing says which tenant's database to read. A node id of an interface or union over several node types names no one tenant either, since each member decodes it with its own key.
+
+A root field reading only global tables runs on the connection with no tenant and is not reported here. Neither is a node fetcher, which routes by the id it decodes, nor a field marked `@tenantFanOut`, which reads every tenant the request may see.
+
+*Next step.* Bind the tenant column with a required argument or input field, or take a node id whose key holds it, naming one node type with `@nodeId(typeName:)`. A list field may instead be marked `@tenantFanOut`. See xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].

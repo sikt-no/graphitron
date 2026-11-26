@@ -24,7 +24,7 @@ type Language @table(name: "language") {
 }
 
 type Query {
-  films: [Film!]!
+  films(filmId: Int! @field(name: "film_id")): [Film!]!
   languages: [Language!]!
 }
 

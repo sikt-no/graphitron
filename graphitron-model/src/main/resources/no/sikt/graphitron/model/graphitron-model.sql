@@ -25865,12 +25865,16 @@ COMMENT ON VIEW graphitron_occurrence_connection_rule IS 'One row per producer o
 -- is NULL; the code says why.
 CREATE VIEW graphitron_occurrence_route_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- A root service call or routine write of a graph with a tenant column that the stored connection
--- lacks, the connection rule having decided no route reaches it, as UNROUTED_CHILD is raised for a
--- child: by why, a slot read off a node id of several node types, which names no one tenant and is
--- refused as unrouted whatever else the call names, tenant slots that may all be left out on a call
--- that re-reads a tenant's rows or is handed a connection (one needing neither runs unscoped), a
--- routine write onto a tenant's table, or else a call naming no tenant that needs one.
+-- A root service call, routine write or root read of a graph with a tenant column that the stored
+-- connection lacks, the connection rule having decided no route reaches it, as UNROUTED_CHILD is raised
+-- for a child: by why, a slot read off a node id of several node types, which names no one tenant and
+-- is refused as unrouted whatever else the field names, tenant slots that may all be left out on a call
+-- that re-reads a tenant's rows or is handed a connection (one needing neither runs unscoped) or on a
+-- read of a tenant's rows, a routine write onto a tenant's table, or else a field naming no tenant that
+-- needs one. A root read the connection does not state a route for draws nothing here: a node fetcher,
+-- which routes by the id it decodes, a read marked @tenantFanOut, which reads every tenant the request
+-- may see, and a read across a tenant's tables and global ones, which no one connection serves and the
+-- walk refuses with its own account.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
        CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                            JOIN graphitron_occurrence_node_id n
@@ -25880,27 +25884,43 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
                             AND m.node_type_name <> n.node_type_name
                           WHERE s.graph_name = p.graph_name AND s.producer_coordinate = p.coordinate
                             AND s.kind = 'NODE_ID_KEY')
-            THEN 'UNROUTED_SERVICE_CALL'
+            THEN CASE WHEN p.kind IN ('SELECT', 'LOOKUP') THEN 'UNROUTED_ROOT_READ'
+                      ELSE 'UNROUTED_SERVICE_CALL' END
             WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                           WHERE s.graph_name = p.graph_name AND s.producer_coordinate = p.coordinate)
             THEN 'TENANT_SLOTS_OPTIONAL_ONLY'
             WHEN p.kind = 'ROUTINE' THEN 'ROUTINE_WRITE_TENANT_SCOPED'
+            WHEN p.kind IN ('SELECT', 'LOOKUP') THEN 'UNROUTED_ROOT_READ'
             ELSE 'UNROUTED_SERVICE_CALL' END,
        CAST(NULL AS VARCHAR), 'occurrence-routes'
   FROM graphitron_occurrence_producer p
-  JOIN graphitron_occurrence_call c
-    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate AND c.call = 'producer'
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
   JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
  WHERE p.start = 'ROOT'
-   AND (p.kind = 'SERVICE'
-        OR p.kind = 'ROUTINE'
-           AND EXISTS (SELECT 1 FROM graphql_root_operation ro
-                        WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-                          AND ro.operation = 'MUTATION'))
+   AND ((p.kind = 'SERVICE'
+         OR p.kind = 'ROUTINE'
+            AND EXISTS (SELECT 1 FROM graphql_root_operation ro
+                         WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                           AND ro.operation = 'MUTATION'))
+        AND EXISTS (SELECT 1 FROM graphitron_occurrence_call c
+                     WHERE c.graph_name = p.graph_name AND c.coordinate = p.coordinate
+                       AND c.call = 'producer')
+        OR p.kind IN ('SELECT', 'LOOKUP')
+           AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
+                            WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate)
+           AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application fo
+                            WHERE fo.graph_name = f.graph_name AND fo.coordinate = f.coordinate
+                              AND fo.directive_name = 'tenantFanOut')
+           AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
+                            WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate
+                              AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column btc
+                                               WHERE btc.graph_name = bt.graph_name
+                                                 AND btc.source_name = bt.table_source_name
+                                                 AND btc.table_schema = bt.table_schema
+                                                 AND btc.table_name = bt.table_name)))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_connection oc
                     WHERE oc.graph_name = p.graph_name AND oc.coordinate = p.coordinate)
 UNION ALL
@@ -35284,10 +35304,12 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'One context key fills parameters of two Java types across the graph''s calls, and the request context carries one value under a key, which the generated code reads as one class: declare every parameter the key fills as one type.'),
   ('UNROUTED_SERVICE_CALL', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_SERVICE_CALL',
    'A root @service in a database-per-tenant build is handed a connection, or re-reads rows a tenant''s database holds, and nothing in its arguments names the tenant, so it would run on the default source whatever its own SQL touches: name the tenant with $tenant in its argMapping, or take the node table''s record or a jOOQ record carrying the tenant column; a service touching only global data takes no connection. A node id of an interface or union over several node types names no one tenant, each member decoding it with its own key, so a call reading its tenant off one is refused so too, whatever else names it: name one node type with @nodeId(typeName:).'),
+  ('UNROUTED_ROOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_ROOT_READ',
+   'A root field graphitron reads in a database-per-tenant build reads rows a tenant''s database holds, and no argument or input field binds the tenant column, so nothing says which tenant''s database to read: bind the tenant column with a required argument or input field, on the table read or one a @reference reaches, or take a node id whose key holds it. A node id of an interface or union over several node types names no one tenant, each member decoding it with its own key, so a read taking its tenant off one is refused so too, whatever else names it: name one node type with @nodeId(typeName:).'),
   ('ROUTINE_WRITE_TENANT_SCOPED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_TENANT_SCOPED',
    'A @routine mutation in a database-per-tenant build re-reads rows a tenant''s database holds, and a routine write names no tenant, so it runs on the default source and cannot reach that tenant''s rows: return rows of a table no tenant column scopes, or write through a @service that names its tenant with $tenant.'),
   ('TENANT_SLOTS_OPTIONAL_ONLY', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_SLOTS_OPTIONAL_ONLY',
-   'Every value a root @service''s tenant is read from may be left out, and the call needs a tenant, re-reading a tenant''s rows or handed a connection, so a call can name none and nothing says where it runs: make one of them required.'),
+   'Every value a root @service''s or a root read''s tenant is read from may be left out, and the field needs a tenant, reading or re-reading a tenant''s rows or handed a connection, so a request can name none and nothing says where it runs: make one of them required. A root field graphitron reads may instead be marked @tenantFanOut, to read every tenant the request may see when none is given.'),
   ('TENANT_NAMED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_NAMED_TWICE',
    'A call''s tenant is named twice, by a $tenant pair and by @tenant on another argument or input field, so nothing says which it runs on: name it once.'),
   ('TENANT_VALUE_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_VALUE_TYPE_DISAGREES',

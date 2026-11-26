@@ -4,7 +4,7 @@
 
 extend schema @withConfiguration(tenantColumn: "owner_org")
 
-type Query { sites: [OrgSite!]! }
+type Query { sites(ownerOrg: String! @field(name: "owner_org")): [OrgSite!]! }
 type OrgSite @table(name: "org_site") { ownerOrg: String! @field(name: "owner_org") }
 
 extend schema @expectEquals(relation: "graphitron_tenant_column", rows: """
