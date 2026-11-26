@@ -301,6 +301,14 @@ and every reader of a call's parameters takes it from there, a `@service`'s fill
 argument and a root `@routine`'s alike, rather than each working it out again from the flags of the
 binding.
 
+A node id reaches a parameter whole: "NODE_ID_KEY seems wrong. That should be either a NODE_ID_RECORD
+or AS_SENT." (Alf, 2026-11-26). Either the parameter takes the decoded record, or it takes the id as the
+client sent it. A key value is a column of that record, and the author names it: "Yes, if the user
+wants a key component then it must identify that component with an extra path element." (Alf,
+2026-11-26). So `pActorId: filter.actorRef.actor_id` passes the decoded record's `actor_id`, and
+`pActorId: filter.actorRef`, a node id bound to a parameter that takes one column's value, names no
+column and is refused.
+
 '''
 
 == Producer
