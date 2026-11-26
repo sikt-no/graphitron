@@ -1,0 +1,5 @@
+Reported at the root field.
+
+In a database-per-tenant build each tenant's rows live in that tenant's database, and the rows of a table no tenant column scopes live in the default one. A root field graphitron reads runs one statement on one connection. When the tables that statement reads include both kinds, as a union or interface whose members sit on a tenant's table and on a global one can, no connection holds them all. Naming the tenant does not help: the global rows are not in the tenant's database.
+
+*Next step.* Read the tenant's rows and the global rows from fields of their own, for example one root field per member, or a union whose members are all a tenant's tables or all global ones. See xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].

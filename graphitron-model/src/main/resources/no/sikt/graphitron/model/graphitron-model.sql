@@ -25871,12 +25871,26 @@ CREATE VIEW graphitron_occurrence_route_entry_defect_rule
 -- is refused as unrouted whatever else the field names, tenant slots that may all be left out on a call
 -- that re-reads a tenant's rows or is handed a connection (one needing neither runs unscoped) or on a
 -- read of a tenant's rows, a routine write onto a tenant's table, or else a field naming no tenant that
--- needs one. A root read the connection does not state a route for draws nothing here: a node fetcher,
--- which routes by the id it decodes, a read marked @tenantFanOut, which reads every tenant the request
--- may see, and a read across a tenant's tables and global ones, which no one connection serves and the
--- walk refuses with its own account.
+-- needs one. A root read across a tenant's tables and global ones is refused for that first, whatever
+-- names its tenant: one statement runs on one connection, and none holds both. A node fetcher, which
+-- routes by the id it decodes, and a read marked @tenantFanOut, which reads every tenant the request
+-- may see, have no stored route yet and draw nothing here.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
+       CASE WHEN p.kind IN ('SELECT', 'LOOKUP')
+             AND EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
+                           JOIN graphitron_tenant_column btc
+                             ON btc.graph_name = bt.graph_name AND btc.source_name = bt.table_source_name
+                            AND btc.table_schema = bt.table_schema AND btc.table_name = bt.table_name
+                          WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate)
+             AND EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
+                          WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column btc
+                                             WHERE btc.graph_name = bt.graph_name
+                                               AND btc.source_name = bt.table_source_name
+                                               AND btc.table_schema = bt.table_schema
+                                               AND btc.table_name = bt.table_name))
+            THEN 'TENANT_READ_ACROSS_SCOPES'
+            WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                            JOIN graphitron_occurrence_node_id n
                              ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate
                            JOIN graphitron_occurrence_node_id m
@@ -25913,14 +25927,7 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
                             WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate)
            AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application fo
                             WHERE fo.graph_name = f.graph_name AND fo.coordinate = f.coordinate
-                              AND fo.directive_name = 'tenantFanOut')
-           AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
-                            WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate
-                              AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column btc
-                                               WHERE btc.graph_name = bt.graph_name
-                                                 AND btc.source_name = bt.table_source_name
-                                                 AND btc.table_schema = bt.table_schema
-                                                 AND btc.table_name = bt.table_name)))
+                              AND fo.directive_name = 'tenantFanOut'))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_connection oc
                     WHERE oc.graph_name = p.graph_name AND oc.coordinate = p.coordinate)
 UNION ALL
@@ -35304,6 +35311,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'One context key fills parameters of two Java types across the graph''s calls, and the request context carries one value under a key, which the generated code reads as one class: declare every parameter the key fills as one type.'),
   ('UNROUTED_SERVICE_CALL', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_SERVICE_CALL',
    'A root @service in a database-per-tenant build is handed a connection, or re-reads rows a tenant''s database holds, and nothing in its arguments names the tenant, so it would run on the default source whatever its own SQL touches: name the tenant with $tenant in its argMapping, or take the node table''s record or a jOOQ record carrying the tenant column; a service touching only global data takes no connection. A node id of an interface or union over several node types names no one tenant, each member decoding it with its own key, so a call reading its tenant off one is refused so too, whatever else names it: name one node type with @nodeId(typeName:).'),
+  ('TENANT_READ_ACROSS_SCOPES', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_READ_ACROSS_SCOPES',
+   'A root field graphitron reads in a database-per-tenant build reads, in one statement, tables a tenant''s database holds and tables no tenant column scopes, and one statement runs on one connection, which holds either a tenant''s rows or the global ones: read the tenant''s rows and the global rows from fields of their own.'),
   ('UNROUTED_ROOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_ROOT_READ',
    'A root field graphitron reads in a database-per-tenant build reads rows a tenant''s database holds, and no argument or input field binds the tenant column, so nothing says which tenant''s database to read: bind the tenant column with a required argument or input field, on the table read or one a @reference reaches, or take a node id whose key holds it. A node id of an interface or union over several node types names no one tenant, each member decoding it with its own key, so a read taking its tenant off one is refused so too, whatever else names it: name one node type with @nodeId(typeName:).'),
   ('ROUTINE_WRITE_TENANT_SCOPED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_TENANT_SCOPED',
