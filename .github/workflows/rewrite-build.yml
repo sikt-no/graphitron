@@ -9,6 +9,13 @@ on:
     branches:
       - main
       - claude/graphitron-rewrite
+  # The per-tier coverage page (source-coverage) is built nightly from trunk, not on every push:
+  # its two tier reruns of graphitron cost about half an hour. A schedule runs this file as it
+  # stands on the default branch, main, so the nightly run checks trunk out itself, and it only
+  # builds the page: the next trunk push publishes it, since Pages deploys from trunk alone.
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,7 +27,7 @@ permissions:
 # covers every commit before its own. On a pull request only the latest push matters, so a newer
 # push cancels the run in flight.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly') || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -49,6 +56,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'claude/graphitron-rewrite' || '' }}
       - name: Set up JDK 25
         uses: actions/setup-java@v6
         with:
@@ -101,8 +110,8 @@ jobs:
         # -Pcoverage attaches the JaCoCo agent on every run, PRs included: the wiring is
         # continuously exercised, so an argLine regression or agent incompatibility fails
         # on the PR that introduced it instead of on trunk. PR builds pay the agent
-        # overhead without publishing anything; only the trunk-gated steps below read the
-        # CSVs. `install` rather than `verify` because the trunk-gated per-tier runs are
+        # overhead without publishing anything; only the nightly steps below read the
+        # CSVs. `install` rather than `verify` because the nightly per-tier runs are
         # separate -pl :graphitron invocations that resolve graphitron's reactor
         # dependencies from the local repository.
         env:
@@ -134,13 +143,14 @@ jobs:
           path: roadmap/inference-axis-coverage.adoc
           if-no-files-found: error
       - name: Coverage of graphitron's unit tier
-        # Trunk-push only, like the leaf-coverage regen above. The per-tier split is the
+        # Nightly only: the page is up to a day old, and every trunk push saves the two tier
+        # reruns, about 32 minutes of graphitron's suite under the agent. The per-tier split is the
         # figure the source-coverage page exists to publish: unit versus pipeline coverage
         # of the generator source. Each run writes its own exec file (pom config leaves
         # destFile/dataFile/outputDirectory at their defaults so -D wins) and
         # -Dleaf-coverage.skip keeps the tier run from truncating and re-emitting the
         # full-suite classifier traces the leaf-coverage regen above already read.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           mvn test -pl :graphitron -Plocal-db -Pcoverage --batch-mode -Dgroups=unit \
             -Dleaf-coverage.skip -Djacoco.destFile=target/jacoco-unit.exec
@@ -148,7 +158,7 @@ jobs:
             -Djacoco.dataFile=target/jacoco-unit.exec \
             -Djacoco.outputDirectory=target/site/jacoco-unit
       - name: Coverage of graphitron's pipeline tier
-        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           mvn test -pl :graphitron -Plocal-db -Pcoverage --batch-mode -Dgroups=pipeline \
             -Dleaf-coverage.skip -Djacoco.destFile=target/jacoco-pipeline.exec
@@ -156,12 +166,12 @@ jobs:
             -Djacoco.dataFile=target/jacoco-pipeline.exec \
             -Djacoco.outputDirectory=target/site/jacoco-pipeline
       - name: Regenerate source-coverage report
-        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           mvn -pl roadmap-tool exec:java -q \
             -Dexec.args='source-coverage .'
       - name: Upload source-coverage artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           name: source-coverage
@@ -173,6 +183,10 @@ jobs:
     # produced by the `build` job. Trunk-push only; PRs use preview-docs.yml.
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+    permissions:
+      contents: read
+      # The source-coverage page is the last nightly run's artifact.
+      actions: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -189,15 +203,28 @@ jobs:
         with:
           name: inference-axis-coverage
           path: roadmap/
+      - name: Find the last nightly run
+        # The page is the last nightly run's, up to a day old. Before the first nightly run
+        # there is none, and the stub renders.
+        id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow rewrite-build.yml --event schedule \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          echo "run-id=$id" >> "$GITHUB_OUTPUT"
       - name: Download source-coverage artifact
         # Lands at roadmap/source-coverage.adoc. Nothing committed to overwrite: the page
         # has no repo-verifiable fixed point, so render-adoc synthesizes a stub when it is
         # absent (local doc builds, PR previews) and this download replaces the stub path
         # with the real page on trunk.
+        if: steps.nightly.outputs.run-id != ''
         uses: actions/download-artifact@v8
         with:
           name: source-coverage
           path: roadmap/
+          run-id: ${{ steps.nightly.outputs.run-id }}
+          github-token: ${{ github.token }}
       - name: Build docs site
         run: mvn -pl :graphitron-docs -am package -DskipTests
       - name: Upload Pages artifact

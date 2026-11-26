@@ -360,6 +360,11 @@ parallelises a module's tests is priced against that before it is tried.
     sessions holding plans in each, so one capture's plans serve the next. Count first, in a model
     fork: the population's stores, the sessions each opens, and the distinct statements a capture
     prepares.
+20. **The per-tier coverage page builds nightly.** Done 2026-11-26, as Alf decided. GitHub's trunk run
+    reran graphitron's suite per tier under the coverage agent after the reactor, 11.1 min for the
+    unit tier and 21.0 min for the pipeline tier (run 45867383154). Those reruns and the
+    source-coverage page now run nightly from trunk, and a trunk push publishes the last nightly
+    page, so it is up to a day old. The combined coverage stays in every push build.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
