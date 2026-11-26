@@ -1,0 +1,5 @@
+Reported at the `@routine`, naming the parameter.
+
+`$source.<column>` binds a routine parameter to a column of the row the field is read under, which a field below a table-bound type has. A field on `Query` is read under no row, so there is no column to read and the call has nothing to pass the parameter.
+
+*Next step.* Bind the parameter to an argument of the field, `pActorId: actorId`, and add the argument if the field has none. See xref:directives/routine.adoc[`@routine`].

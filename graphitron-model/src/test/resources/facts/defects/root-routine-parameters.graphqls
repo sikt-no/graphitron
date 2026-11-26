@@ -1,0 +1,41 @@
+# A root @routine's parameter takes one value from an argument or an input field of the field. On a
+# root there is no row, so $source binds nothing: Query.byOwnActor is ROUTINE_SOURCE_AT_ROOT. An input
+# object is no one value: Query.byWholeFilter, binding pActorId to filter, is PARAMETER_MISMATCH. A
+# bound value is spent on the call, so @field on it asks for a filter nothing applies:
+# Query.byRenamedLength, on the argument, and Query.byRenamedActor, on the input field, are
+# ROUTINE_BOUND_INPUT_FILTERED. Query.byActor, binding both parameters to plain arguments and filtering
+# by a third the routine does not bind, is the near miss.
+
+type ActorFilm {
+  filmId: Int @field(name: "film_id")
+  title: String
+}
+
+input ActorRef { actorId: Int! }
+input RenamedActorRef { actorId: Int! @field(name: "actor_id") }
+
+type Query {
+  byActor(actorId: Int!, minLength: Int!, title: String): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byOwnActor(minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byWholeFilter(filter: ActorRef!, minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: filter, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byRenamedLength(actorId: Int!, minLength: Int! @field(name: "length")): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byRenamedActor(filter: RenamedActorRef!, minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: filter.actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "coordinate LIKE 'Query.%'", rows: """
+  code,                         coordinate,            detail
+  PARAMETER_MISMATCH,           Query.byWholeFilter,   pActorId
+  ROUTINE_BOUND_INPUT_FILTERED, Query.byRenamedActor,  pActorId
+  ROUTINE_BOUND_INPUT_FILTERED, Query.byRenamedLength, pMinLength
+  ROUTINE_SOURCE_AT_ROOT,       Query.byOwnActor,      pActorId
+  """)

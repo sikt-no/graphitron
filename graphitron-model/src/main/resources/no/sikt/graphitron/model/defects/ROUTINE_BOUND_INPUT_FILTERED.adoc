@@ -1,0 +1,5 @@
+Reported at the `@routine`, naming the parameter.
+
+An argument or input field a `@routine` parameter binds is spent on the call: its value is passed to the database function and never reaches the read of the function's result. A `@field` or `@condition` on it asks for a filter on that read, which would silently do nothing.
+
+*Next step.* Drop the directive from the bound argument or input field. To filter the routine's result as well, add an argument the routine does not bind, which filters its rows as on any field. See xref:directives/routine.adoc[`@routine`].

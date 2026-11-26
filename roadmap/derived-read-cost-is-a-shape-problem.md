@@ -1262,7 +1262,7 @@ static method needs no holder.
 * **A stored defect offers its fix as an editor action** `open`, off the critical path. The walk's lints carry a `LintFix` the language server offers as a code action, deleting a bare redundant directive among them; a stored defect has its message and guidance and no edit. The redundant `@splitQuery` under a class-backed parent lost its action when it became `SPLIT_QUERY_REDUNDANT` (Alf, 2026-11-19: "It's ok to remove"). An edit at the defect's position needs where the directive application ends, which `graphql_ast_entry` does not capture; that input fact comes first, then an edit stated at the code's grain, which the language server and the MCP server both read.
 * **A payload's data field bound to another table than its service's records is refused in the store** `open`, off the critical path. A `@service` handing back a table's records into a payload whose data field's type carries `@table` lifts them for that field by their keys, which holds only where the two tables are one. The walk refuses the other case at the carrier; in the store `SERVICE_RETURN_MISMATCH` checks a bound type only and `SERVICE_PAYLOAD_IN_A_LIST` its own list case, and no rule compares the data field's table with the records'. A document first finds what, if anything, fires there; then one rule raises it at the data field.
 * **An empty routed answer over a non-lifted jOOQ Result names its table** `open`, off the critical path. `ConnectionQuery` builds a service's empty `RESULT` answer over the producer result's table, which is its lift. Since a service is lifted only where its field's type is (Alf, 2026-11-18), a `Result` of a table's records under a type without `@table` has a `RESULT` row and no lifted table, so a call naming no tenant would build its empty answer over nothing. No document reaches it yet (a type without `@table` is unscoped unless `$tenant` names one); the record's own table, read off its class, is what the empty answer needs.
-* **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
+* **A routine call is stated per occurrence and emitted from the store, as a service call is, claimed by C** `open`.
   A root `@routine` is the producer call: its parameters are filled per occurrence in
   `graphitron_occurrence_call_parameter`, widened from service calls to any producer's call, and its
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
@@ -1441,7 +1441,7 @@ pass and no stratum that clears and recomputes.
       is admitted silently. `MutationInputResolver.validateReturnType` also refuses a `@splitQuery` on
       a write payload's data field, a valid schema since the store admits it with the warning
       `SPLIT_QUERY_REDUNDANT` (Alf, 2026-11-19); that refusal goes with the walk, not into the store.
-    * **A root routine's refusals are codes a stage writes** `open`.
+    * **A root routine's refusals are codes a stage writes, claimed by C** `open`.
       `RoutineDirectiveResolver`'s GRAPHITRON refusals, a parameter nothing binds, an argMapping
       naming no IN parameter, a non-scalar leaf, `$source` at a root, an unknown or mistyped
       `$source` column and `@field` or `@condition` on a bound leaf, and its UNSUPPORTED deferrals, a
@@ -1450,7 +1450,15 @@ pass and no stratum that clears and recomputes.
       path goes; a parameter nothing binds is `PARAMETER_UNFILLED`, raised where the root call's fills
       are. A filter input reaching its own type again under the routine root is among them, the
       walk's alone where `INPUT_CYCLE_EXPANDED`'s filter arm reads a field that reads, looks up or
-      counts and a routine's producer is none of those.
+      counts and a routine's producer is none of those. At a root the store already raises an
+      unparseable argMapping, an unresolved or non-table-valued routine (`ELEMENT_UNRESOLVED`), an
+      argMapping naming no IN parameter and a parameter nothing binds; `$source` at a root is
+      `ROUTINE_SOURCE_AT_ROOT`, `@field` or `@condition` on a bound argument or input field
+      `ROUTINE_BOUND_INPUT_FILTERED`, and a parameter bound to an input object `PARAMETER_MISMATCH`,
+      each an arm of `graphitron_occurrence_routine_parameter_defect_rule`, the walk standing aside
+      at a root and keeping its checks below one. A path through a list and a coercing extraction
+      stay the walk's deferrals until "A routine call is stated per occurrence and emitted from the
+      store, as a service call is, claimed by C" decides whether the call path carries them.
     * **What a producer's object result holds is judged by the families it is stated in** `open`.
       The walk's single-channel rules for the type a write, a routine or a service returns are no
       rule of the model: each field under the result is an occurrence with its own lift off its parent, so two
@@ -1736,7 +1744,7 @@ generated Java or SQL as text.
   anchor under a global terminus or the table an object result's re-reading child reads, comes out
   `UNSCOPED`; the walk's tenant binding still refuses those until it goes, and the rule reads every
   table the write's re-read touches first.
-* **A `Mutation` root's `@routine` is store-owned** `blocked`, E's, on "A routine write's refusals are codes a stage writes", "A root routine's refusals are codes a stage writes" and "What the model admits the emitters follow". The walk maps a `Mutation` field led by `@routine` to
+* **A `Mutation` root's `@routine` is store-owned** `blocked`, E's, on "A routine write's refusals are codes a stage writes", "A root routine's refusals are codes a stage writes, claimed by C" and "What the model admits the emitters follow". The walk maps a `Mutation` field led by `@routine` to
   `StoreOwnedField` by its directive alone, as it does a `@service`, neither resolving nor judging it.
   Fetcher ownership and the silencing of walk errors cover routine-write occurrences as they cover
   service ones. Dispatch renders `RoutineWriteQuery`'s row by coordinate, and the edge target and the

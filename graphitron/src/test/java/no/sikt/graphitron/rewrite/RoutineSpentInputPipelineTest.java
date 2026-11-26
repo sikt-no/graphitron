@@ -137,34 +137,8 @@ class RoutineSpentInputPipelineTest {
     }
 
     /**
-     * A spent leaf asking for a filter is a directive conflict: the routine parameter consumes it
-     * before any read surface is reached, so the WHERE clause it asks for would silently do
-     * nothing, which is this item's own failure class one level down.
-     */
-    @Test
-    void aSpentLeafCarryingAFilterDirectiveIsAConflict() {
-        var bundle = TestSchemaHelper.buildBundle(PRELUDE + """
-            input ActorFilmFilter {
-              actorId:   ID! @nodeId(typeName: "Actor")
-              minLength: Int @field(name: "title")
-            }
-            type Query {
-              actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
-                @routine(name: "films_for_actor",
-                         argMapping: "pActorId: filter.actorId.actor_id, pMinLength: filter.minLength")
-                @defaultOrder(fields: [{name: "film_id"}])
-            }
-            """);
-
-        assertThat(rejectionOf(bundle, "Query", "actorFilms"))
-            .isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
-        assertThat(rejectionOf(bundle, "Query", "actorFilms").message())
-            .contains("Query.actorFilms(filter)/minLength")
-            .contains("pMinLength");
-    }
-
-    /**
-     * {@code @nodeId} on a spent leaf is not the conflict above, the projection being its consumer
+     * {@code @nodeId} on a spent leaf is no filter asked for and dropped, which the store refuses as
+     * {@code ROUTINE_BOUND_INPUT_FILTERED}, the projection being its consumer
      * rather than a filter it never gets. Asserted on a field that otherwise classifies, so the
      * case cannot pass by the argument having been rejected for some other reason.
      */

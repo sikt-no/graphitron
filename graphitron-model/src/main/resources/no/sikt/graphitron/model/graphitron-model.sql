@@ -16589,7 +16589,8 @@ CREATE TABLE graphitron_occurrence_call_parameter_defect (
     REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
   CHECK (code IN ('PARAMETER_UNFILLED', 'PARAMETER_AMBIGUOUS', 'PARAMETER_FILLED_TWICE',
-                  'PARAMETER_NAMES_MISSING', 'PARAMETER_MISMATCH', 'PARAMETER_TYPE_UNSPELLED'))
+                  'PARAMETER_NAMES_MISSING', 'PARAMETER_MISMATCH', 'PARAMETER_TYPE_UNSPELLED',
+                  'ROUTINE_SOURCE_AT_ROOT', 'ROUTINE_BOUND_INPUT_FILTERED'))
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that nothing binds, that two fills bind, or that cannot take what fills it: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument by that name and no pair naming it is PARAMETER_UNFILLED at that parameter, under each occurrence of the call.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
@@ -16598,7 +16599,7 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call IS 'which of 
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call_kind IS 'the call''s kind, the split its writing stages share it by';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.position IS 'the parameter''s position in the call';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without its names';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING or PARAMETER_MISMATCH, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, PARAMETER_MISMATCH, ROUTINE_SOURCE_AT_ROOT or ROUTINE_BOUND_INPUT_FILTERED, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.touched_at IS 'the reading that last wrote this row; the stage writing its kind sweeps the rows an older reading wrote';
 
 -- Where a call's parameter defect is reported, and what it is about: the reference the directive the
@@ -18144,9 +18145,11 @@ COMMENT ON VIEW graphitron_occurrence_routine_parameter_rule IS 'One row the rou
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.fill IS 'the fill of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.fill';
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.landing_coordinate';
 
--- A root routine call's parameter nothing binds, where no pair names it, and one a generated
--- scalar's component fills that does not take the component's class. Written by
--- occurrence-producers once the routine calls' fills are.
+-- A root routine call's parameter nothing binds, where no pair names it, one a generated scalar's
+-- component fills that does not take the component's class, one bound to $source, which a root has
+-- no row for, one bound to an input object where the function takes one value, and one bound to an
+-- argument or input field carrying @field or @condition, which the call spends and no filter reads.
+-- Written by occurrence-producers once the routine calls' fills are.
 CREATE VIEW graphitron_occurrence_routine_parameter_defect_rule
   (graph_name, coordinate, call, call_kind, position, parameter_name, code) AS
 SELECT oc.graph_name, oc.coordinate, oc.call, oc.call_kind, sp.position, sp.jooq_name, 'PARAMETER_UNFILLED'
@@ -18196,7 +18199,45 @@ SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position
     ON ge.graph_name = gd.graph_name AND ge.source_name = gd.source_name
    AND ge.source_line = gd.source_line AND ge.source_column = gd.source_column
   JOIN graphitron_generated_scalar_component gc ON gc.kind = ge.kind AND gc.component = l.trailing_name
- WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT' AND sp.binding_type <> gc.java_class;
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT' AND sp.binding_type <> gc.java_class
+UNION ALL
+-- A root routine call's parameter its argMapping binds to $source: a root has no row to read a column
+-- off, so the call has nothing to pass it.
+SELECT DISTINCT oc.graph_name, oc.coordinate, oc.call, oc.call_kind, sp.position, sp.jooq_name,
+       'ROUTINE_SOURCE_AT_ROOT'
+  FROM graphitron_occurrence_call oc
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = oc.graph_name AND pr.coordinate = oc.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name
+  JOIN graphitron_argmapping_pair pp
+    ON pp.graph_name = oc.graph_name AND pp.coordinate = oc.application_coordinate
+   AND pp.directive_name = oc.application_directive AND pp.ordinal = oc.application_ordinal
+   AND pp.target_kind = 'NAME' AND pp.target_name = sp.jooq_name
+ WHERE oc.call_kind = 'ROUTINE'
+   AND (pp.bound_to = '$source' OR pp.bound_to LIKE '$source.%')
+UNION ALL
+-- A root routine call's parameter bound to an input object: the function takes one value of its
+-- parameter's type, and an input object is a map of them.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'PARAMETER_MISMATCH'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = cp.graph_name AND it.coordinate = cp.landing_coordinate
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT' AND it.type_kind = 'INPUT_OBJECT'
+UNION ALL
+-- A root routine call's parameter bound to an argument or input field carrying @field or
+-- @condition: the call spends the value on the parameter, so the filter the directive asks for is
+-- never applied.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'ROUTINE_BOUND_INPUT_FILTERED'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence lo ON lo.graph_name = cp.graph_name AND lo.coordinate = cp.landing_coordinate
+  JOIN graphitron_directive_application d
+    ON d.graph_name = lo.graph_name AND d.coordinate = lo.element_coordinate
+   AND d.directive_name IN ('field', 'condition')
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT';
 COMMENT ON VIEW graphitron_occurrence_routine_parameter_defect_rule IS 'One row the routine parameter defect rule computes, in the shape graphitron_occurrence_call_parameter_defect stores for a root routine''s call: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers writes this view''s rows for one graph into graphitron_occurrence_call_parameter_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_defect_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.coordinate';
@@ -35285,6 +35326,10 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An argument or input field nothing binds: no call takes it as a parameter, itself or anything inside it, and graphitron reads it for no filter, ordering or page, so the value a client sends goes nowhere. An input field is reported where the call takes the argument in part, by argMapping paths that leave it behind. Bind it in the call''s argMapping, or remove it.'),
   ('PARAMETER_NAMES_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_NAMES_MISSING',
    'A method a @service or a @condition calls has a parameter nothing fills by its type, and its class was compiled without -parameters, so the parameter has no name an argument, an argMapping entry or a context key could bind: compile the class with -parameters, as <parameters>true</parameters> on maven-compiler-plugin does.'),
+  ('ROUTINE_SOURCE_AT_ROOT', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_SOURCE_AT_ROOT',
+   'A root field''s @routine binds a parameter to $source, but a root field has no row to read a column off, so the call has nothing to pass it: bind the parameter to an argument of the field.'),
+  ('ROUTINE_BOUND_INPUT_FILTERED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_BOUND_INPUT_FILTERED',
+   'An argument or input field a @routine parameter binds carries @field or @condition, but the call spends its value on the parameter and the value never reaches the read, so the filter the directive asks for would do nothing: drop the directive, or filter on another argument.'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
    'A parameter of a method a @service or a @condition calls, or of a @routine, binds nothing: no argMapping entry names it, no argument has its name, and neither a context key nor its type gives it a value, so the call has nothing to pass it. Bind it in argMapping, or in contextArguments where the directive has one, or name it after the argument it takes; a @routine''s $source.<column> binds it only where the column is one of the row the routine is applied to.'),
   ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',
@@ -35338,7 +35383,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('PARAMETER_TYPE_UNSPELLED', 'error', 'UNSUPPORTED', 'GRAPHITRON_PARAMETER_TYPE_UNSPELLED',
    'A @condition method''s parameter is typed as a member of a parameterised class, Outer<A>.Inner, which the generated condition cannot declare a local of yet: take the member''s own class, or a type the argument arrives as.'),
   ('PARAMETER_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_MISMATCH',
-   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, a @condition parameter taking one Java enum where its argument is a list of them, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar; or a @service or root @routine parameter an argMapping hands a generated scalar''s component, typed as another class than the component''s. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
+   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, a @condition parameter taking one Java enum where its argument is a list of them, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar; or a @service or root @routine parameter an argMapping hands a generated scalar''s component, typed as another class than the component''s; or a root @routine parameter bound to an input object, where the function takes one value. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',

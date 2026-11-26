@@ -285,16 +285,16 @@ final class RoutineDirectiveResolver {
             String columnName = sigils.get(param.name()) instanceof ArgMappingSigil.Binding.SourceColumn sc
                 ? sc.column() : null;
             if (columnName != null) {
+                // At a root there is no row to read $source off: the store's ROUTINE_SOURCE_AT_ROOT.
+                if (isRoot) {
+                    continue;
+                }
                 if (standingTableSqlName == null) {
-                    return new NodeResolved.Rejected(isRoot
-                        ? Rejection.structural("@routine binds parameter '" + param.name() + "' to '"
-                            + sigils.get(param.name()).raw() + "', but a root field has no row for $source to"
-                            + " read; bind it from an argument")
-                        // A record-backed parent: the column would be one of the record's accessors,
-                        // which a routine cannot bind yet.
-                        : Rejection.deferred("@routine binds parameter '" + param.name() + "' to '"
-                            + sigils.get(param.name()).raw() + "' under a parent without a catalog table,"
-                            + " which is not yet supported"));
+                    // A record-backed parent: the column would be one of the record's accessors,
+                    // which a routine cannot bind yet.
+                    return new NodeResolved.Rejected(Rejection.deferred("@routine binds parameter '"
+                        + param.name() + "' to '" + sigils.get(param.name()).raw()
+                        + "' under a parent without a catalog table, which is not yet supported"));
                 }
                 var column = ctx.catalog.resolveColumn(standingTableSqlName, columnName);
                 if (column.isEmpty()) {
@@ -359,7 +359,7 @@ final class RoutineDirectiveResolver {
             } else {
                 path = PathExpr.head(param.name()); // identity-bind, checked above
             }
-            var leafGate = leafTypeGate(param, path, fieldDef, slotTypes);
+            var leafGate = leafTypeGate(param, path, fieldDef, slotTypes, isRoot);
             if (leafGate != null) {
                 return new NodeResolved.Rejected(leafGate);
             }
@@ -368,7 +368,8 @@ final class RoutineDirectiveResolver {
             // consumer downstream reads the resolved coordinate instead of re-deriving one from
             // the path, which at argument grain is all a downstream seat could recover.
             var spent = ServiceCatalog.spentInput(path, parentTypeName, fieldDef, slotTypes);
-            if (spent != null) {
+            // At a root the store judges a filter on a spent input: ROUTINE_BOUND_INPUT_FILTERED.
+            if (spent != null && !isRoot) {
                 var conflict = spentInputDirectiveConflict(param, spent, path);
                 if (conflict != null) {
                     ctx.addDiagnostic(new ValidationError(
@@ -526,7 +527,7 @@ final class RoutineDirectiveResolver {
      */
     private Rejection leafTypeGate(JooqCatalog.RoutineParam param, PathExpr path,
             GraphQLFieldDefinition fieldDef,
-            Map<String, graphql.schema.GraphQLInputType> slotTypes) {
+            Map<String, graphql.schema.GraphQLInputType> slotTypes, boolean isRoot) {
         var segments = path.segments();
         for (int i = 0; i < segments.size() - 1; i++) {
             if (segments.get(i).liftsList()) {
@@ -544,6 +545,9 @@ final class RoutineDirectiveResolver {
             return null; // unresolvable leaf: pass through rather than over-reject
         }
         var named = graphql.schema.GraphQLTypeUtil.unwrapAll(leafType);
+        if (named instanceof graphql.schema.GraphQLInputObjectType && isRoot) {
+            return null; // the store's PARAMETER_MISMATCH at a root routine's parameter
+        }
         if (!(named instanceof graphql.schema.GraphQLScalarType)
                 && !(named instanceof graphql.schema.GraphQLEnumType)) {
             return Rejection.structural(

@@ -7310,26 +7310,6 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void routineParameterBoundToInputObjectLeafRejectsNamingTheType() {
-        // The reported footgun: binding a whole input object to a scalar IN parameter passed
-        // validation and emitted a cast that threw at request time on the argument LinkedHashMap.
-        // The wire-coercion gate has no opinion on a non-scalar leaf, so the routine side owns
-        // this rejection; a jOOQ IN parameter has no bean concept to instantiate.
-        var schema = build(TILGANG_TYPE + TILGANG_INPUT + """
-            type Query {
-              tilganger(input: TilgangInput!, feideId: String!): [Tilgang!]
-                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: input, pServiceId: input.serviceId, pFeideId: feideId")
-            }
-            """);
-        var f = (UnclassifiedField) schema.field("Query", "tilganger");
-        assertThat(f.reason())
-            .contains("parameter 'pEnv' binds to 'input'")
-            .contains("TilgangInput")
-            .contains("not a scalar or enum");
-    }
-
-    @Test
     void splitQueryOnCorrelatedRoutineChildClassifiesAsBatchedTableField() {
         // Batched form: @splitQuery forces the keyed re-query anchor, and a routine-headed
         // chain's batch key IS the routine's column-bound inputs — the SourceColumn bindings
@@ -7487,20 +7467,6 @@ class GraphitronSchemaBuilderTest {
         assertThat(f.reason())
             .contains("@routine parameter 'pEnv' has no binding: 'title' is not an argument of this field")
             .contains("which an entry binds as $source.title");
-    }
-
-    @Test
-    void rootRoutineSourceColumnRejectsAsStructural() {
-        var schema = build(TILGANG_TYPE + """
-            type Query {
-              tilganger(serviceId: String!, feideId: String!): [Tilgang!]!
-                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: $source.title, pServiceId: serviceId, pFeideId: feideId")
-            }
-            """);
-        var f = (UnclassifiedField) schema.field("Query", "tilganger");
-        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(f.reason()).contains("a root field has no row for $source to read");
     }
 
     @Test
