@@ -227,16 +227,12 @@ public final class RoutineWriteEmitter {
                 Optional.of(keyValue.columnJavaName()), argument.javaTypeName());
             var helper = "decode" + coordinate.replaceAll("[^A-Za-z0-9]", "_") + "_" + position;
             helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decoded, decode));
-            return List.of(FillEmitter.argument(ClassName.get(Object.class), local + "Wire", path),
-                CodeBlock.of("$T $L = $L($LWire)", type, local, helper, local));
+            return ArgumentReads.decoded(type, local, path, helper);
         }
         if (argument.listToArray() && type instanceof ArrayTypeName array) {
-            var elements = ParameterizedTypeName.get(LIST, array.componentType());
-            return List.of(FillEmitter.argument(elements, local + "Elements", path),
-                CodeBlock.of("$T $L = $LElements == null ? null : $LElements.toArray(new $T[0])",
-                    type, local, local, local, array.componentType()));
+            return ArgumentReads.array(array, local, path);
         }
-        return List.of(FillEmitter.argument(type, local, path));
+        return List.of(ArgumentReads.value(type, local, path));
     }
 
     /** {@code public static <valueType> <bodyName>(DataFetchingEnvironment env, DSLContext dsl)}. */

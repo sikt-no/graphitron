@@ -54,7 +54,7 @@ public final class GeneratedScalarDecodeEmitter {
         var argument = String.join(".", decode.path());
         var wire = local + "Wire";
         var out = new ArrayList<CodeBlock>();
-        out.add(FillEmitter.argument(STRING, wire, decode.path()));
+        out.add(ArgumentReads.value(STRING, wire, decode.path()));
         out.add(CodeBlock.of("$T $L = $T.$L(env.getGraphQLSchema(), $S, $L)",
             GeneratedScalarEmitter.recordClass(scalars, decode.kind()), local, scalars,
             GeneratedScalarEmitter.decoder(decode.kind()), argument, wire));

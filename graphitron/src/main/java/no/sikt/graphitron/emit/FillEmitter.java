@@ -195,7 +195,7 @@ public final class FillEmitter {
                     if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Decoded decoded) {
                         var helper = "decode" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
                         helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decoded, runtime.decode()));
-                        statements.add(argument(ClassName.get(Object.class), local + "Wire", landing.path()));
+                        statements.add(ArgumentReads.value(ClassName.get(Object.class), local + "Wire", landing.path()));
                         statements.add(CodeBlock.of("$T $L = $L($LWire)", type, local, helper, local));
                         arguments.add(CodeBlock.of("$L", local));
                         continue;
@@ -225,7 +225,7 @@ public final class FillEmitter {
                                     : "nothing says how input object " + String.join(".", landing.path())
                                         + " is made into " + type);
                         }
-                        statements.add(argument(ClassName.get(Object.class), madeLocal + "Wire", landing.path()));
+                        statements.add(ArgumentReads.value(ClassName.get(Object.class), madeLocal + "Wire", landing.path()));
                         statements.add(made(madeType, madeLocal, helper, helpers));
                         asList.ifPresent(list -> statements.add(CodeBlock.of("$T $L = $L == null ? null : new $T<>($L)",
                             type, local, madeLocal, LINKED_HASH_SET, madeLocal)));
@@ -245,12 +245,12 @@ public final class FillEmitter {
                     var readType = asList.orElse(type);
                     var readLocal = asList.isPresent() ? local + "Elements" : local;
                     if ("ENUM".equals(landing.typeKind()) && !STRING.equals(innermost(readType))) {
-                        statements.addAll(enumValue(readType, readLocal, landing.path()));
+                        statements.addAll(ArgumentReads.enumConstant(readType, readLocal, landing.path()));
                     } else {
                         statements.add(liftsThroughList(landing)
-                            ? declare(readType, readLocal, lifted(elementsOf(readType, landing), landing, 0,
+                            ? ArgumentReads.declare(readType, readLocal, lifted(elementsOf(readType, landing), landing, 0,
                                 CodeBlock.of("env.getArgument($S)", landing.path().getFirst()), new int[]{0}))
-                            : argument(readType, readLocal, landing.path()));
+                            : ArgumentReads.value(readType, readLocal, landing.path()));
                     }
                     asList.ifPresent(list -> statements.add(CodeBlock.of("$T $L = $L == null ? null : new $T<>($L)",
                         type, local, readLocal, LINKED_HASH_SET, readLocal)));
@@ -394,43 +394,6 @@ public final class FillEmitter {
     }
 
     /**
-     * An argument read off the fetch: the argument itself target-typed, an input field below it
-     * through each input object on the way, {@code null} wherever one is absent. The routine write
-     * reads its arguments with it too, {@link RoutineWriteEmitter}, along the path the store states.
-     */
-    static CodeBlock argument(TypeName type, String local, List<String> path) {
-        if (path.size() == 1) {
-            return CodeBlock.of("$T $L = env.getArgument($S)", type, local, path.getFirst());
-        }
-        var read = CodeBlock.builder().add("env.getArgument($S) instanceof $T<?, ?> map1", path.getFirst(), MAP);
-        for (int i = 1; i < path.size() - 1; i++) {
-            read.add(" && map$L.get($S) instanceof $T<?, ?> map$L", i, path.get(i), MAP, i + 1);
-        }
-        int last = path.size() - 1;
-        // Boxed, since an absent level reads null; a primitive parameter unboxes it at the call.
-        var boxed = type.box();
-        var value = CodeBlock.of("$L ? ($T) map$L.get($S) : null", read.build(), boxed, last, path.get(last));
-        return declare(boxed, local, value);
-    }
-
-    /**
-     * An enum argument into a Java enum. graphql-java hands an enum value over as its runtime value,
-     * the string the schema gives it, so the string is read off the fetch and turned into the
-     * parameter's constant of the same name, or into a list of them.
-     */
-    private static List<CodeBlock> enumValue(TypeName type, String local, List<String> path) {
-        var wire = local + "Wire";
-        if (type instanceof ParameterizedTypeName list && LIST.equals(list.rawType())) {
-            var element = list.typeArguments().getFirst();
-            return List.of(argument(ParameterizedTypeName.get(LIST, STRING), wire, path),
-                CodeBlock.of("$T $L = $L == null ? null : $L.stream().map($T::valueOf).toList()",
-                    type, local, wire, wire, element));
-        }
-        return List.of(argument(STRING, wire, path),
-            CodeBlock.of("$T $L = $L == null ? null : $T.valueOf($L)", type, local, wire, type, wire));
-    }
-
-    /**
      * An input object, or a list of them, made into the parameter's class by {@code helper}; a list
      * through a helper of its own, {@link #madeList}, added to {@code helpers}.
      */
@@ -487,18 +450,7 @@ public final class FillEmitter {
     /** A value read as {@code Object} and cast to the parameter's type. */
     private static CodeBlock cast(TypeName type, String local, CodeBlock read) {
         var target = type instanceof ParameterizedTypeName ? type : type.box();
-        return declare(type, local, CodeBlock.of("($T) $L", target, read));
-    }
-
-    /**
-     * A local of the parameter's type. A cast from {@code Object} to a generic type cannot be
-     * checked, which the build treats as an error, so such a local suppresses that one warning at the
-     * narrowest scope it can, the declaration itself.
-     */
-    private static CodeBlock declare(TypeName type, String local, CodeBlock value) {
-        return type instanceof ParameterizedTypeName
-            ? CodeBlock.of("@$T($S) $T $L = $L", SuppressWarnings.class, "unchecked", type, local, value)
-            : CodeBlock.of("$T $L = $L", type, local, value);
+        return ArgumentReads.declare(type, local, CodeBlock.of("($T) $L", target, read));
     }
 
     /** The local a parameter's value is held in: its own name, unless the body already uses it. */

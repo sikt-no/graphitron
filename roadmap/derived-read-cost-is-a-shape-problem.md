@@ -1767,7 +1767,9 @@ generated Java or SQL as text.
 
 The generator turns over one emitter at a time, each held to behaviour by tests that run the
 generated classes against PostgreSQL from the fact scenarios. The fixed runtime classes and the
-output package they are written to are settled.
+output package they are written to are settled. A render helper taking plain values, a local's type,
+its name and the path its value sits at, is shared between emitters (`ArgumentReads`); code reading
+the store is not, each emitter's query being its own.
 
 * **The fixed classes' renderers move into `emit`** `open`. The six classes `FixedRuntimeEmitter`
   renders are written by generators that name `GeneratedUnits`, `ErrorDispatchFragments` and the
