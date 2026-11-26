@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model.capture.jooq;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.test.SeededStore;
 import org.jooq.DSLContext;
 import org.jooq.Table;
@@ -10,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import javax.tools.ToolProvider;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,16 +35,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * reading only the second would.
  *
  * <p>The catalog is compiled from source into one directory and rewritten in place between the two
- * readings, so both are the same classpath entry and so the same catalog source, as in a dev loop.
- * That is why this test holds a store of its own where a fact document would not: a scenario keeps
- * its catalog between steps, so no document can state a catalog that changed between two readings of
- * one store, and the failure lives only in the second reading of a store the first one filled.
+ * readings, so both are the same classpath entry and so the same catalog source, as in a dev loop. A
+ * scenario keeps its catalog between steps, so no document can state a catalog that changed between
+ * two readings of one store, and the failure lives only in the second reading of a store the first one
+ * filled. So this reads twice into the thread's shared store under a graph and a catalog source of its
+ * own, and compares with a fresh reading of the changed catalog in the same store, under a second
+ * graph and a second source, its rows told apart by source.
  */
 class CatalogRecaptureTest {
 
     private static final String PACKAGE = "no.sikt.graphitron.model.capture.jooq.recapture";
 
-    private static final String GRAPH = "g";
+    private static final String GRAPH = "CatalogRecaptureTest";
+
+    /** The graph the fresh reading of the changed catalog lands under, beside the recaptured one. */
+    private static final String FRESH_GRAPH = "CatalogRecaptureTest-fresh";
 
     private static final List<Table<?>> COMPARED = List.of(SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN,
         SQL_PRIMARY_KEY, SQL_REFERENTIAL_CONSTRAINT, SQL_REFERENTIAL_CONSTRAINT_COLUMN,
@@ -52,29 +57,27 @@ class CatalogRecaptureTest {
 
     @Test
     @DisplayName("a catalog whose keys changed under their names is read again into the store the first reading filled")
-    void keysChangedUnderTheirNamesAreReadAgain(@TempDir Path tmp) throws Exception {
+    void keysChangedUnderTheirNamesAreReadAgain(@TempDir Path tmp) {
         Path entry = tmp.resolve("catalog");
-        Map<Table<?>, List<String>> recaptured;
-        try (var store = GraphitronStore.inMemory()) {
-            var dsl = store.dsl();
-            SeededStore.seedGraph(dsl, GRAPH);
+        Path freshEntry = tmp.resolve("fresh-catalog");
+        var recaptured = new java.util.LinkedHashMap<Table<?>, List<String>>();
+        var fresh = new java.util.LinkedHashMap<Table<?>, List<String>>();
+        SeededStore.withSeededStore(GRAPH, dsl -> {
             compile(entry, first(), tmp.resolve("sources-1"));
-            capture(dsl, entry, LocalDateTime.of(2026, 11, 25, 10, 0));
-            assertThat(rows(dsl).get(SQL_REFERENTIAL_CONSTRAINT))
+            capture(dsl, GRAPH, entry, LocalDateTime.of(2026, 11, 25, 10, 0));
+            assertThat(rows(dsl, entry).get(SQL_REFERENTIAL_CONSTRAINT))
                 .as("the first reading's foreign key references the four-column element")
                 .anyMatch(row -> row.contains("melding_element_fk") && row.contains("utsendingsbunt_element"));
 
             compile(entry, second(), tmp.resolve("sources-2"));
-            capture(dsl, entry, LocalDateTime.of(2026, 11, 25, 11, 0));
-            recaptured = rows(dsl);
-        }
-        Map<Table<?>, List<String>> fresh;
-        try (var store = GraphitronStore.inMemory()) {
-            var dsl = store.dsl();
-            SeededStore.seedGraph(dsl, GRAPH);
-            capture(dsl, entry, LocalDateTime.of(2026, 11, 25, 12, 0));
-            fresh = rows(dsl);
-        }
+            capture(dsl, GRAPH, entry, LocalDateTime.of(2026, 11, 25, 11, 0));
+            recaptured.putAll(rows(dsl, entry));
+
+            SeededStore.seedGraph(dsl, FRESH_GRAPH);
+            compile(freshEntry, second(), tmp.resolve("sources-3"));
+            capture(dsl, FRESH_GRAPH, freshEntry, LocalDateTime.of(2026, 11, 25, 12, 0));
+            fresh.putAll(rows(dsl, freshEntry));
+        });
         for (var table : COMPARED) {
             assertThat(recaptured.get(table)).as("%s after reading the changed catalog again", table.getName())
                 .containsExactlyElementsOf(fresh.get(table));
@@ -87,27 +90,45 @@ class CatalogRecaptureTest {
             .anyMatch(row -> row.contains("uq_x"));
     }
 
-    private static void capture(DSLContext dsl, Path entry, LocalDateTime touchedAt) throws IOException {
+    private static void capture(DSLContext dsl, String graph, Path entry, LocalDateTime touchedAt) {
         try (var loader = new URLClassLoader(new java.net.URL[] {entry.toUri().toURL()},
                 CatalogRecaptureTest.class.getClassLoader())) {
-            JooqFactCapture.capture(dsl, GRAPH, PACKAGE, loader, List.of(), null, touchedAt);
+            JooqFactCapture.capture(dsl, graph, PACKAGE, loader, List.of(), null, touchedAt);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 
-    /** Each compared relation's rows, every column but the instant, sorted. */
-    private static Map<Table<?>, List<String>> rows(DSLContext dsl) {
+    /**
+     * Each compared relation's rows of the catalog read from {@code entry}, every column but the
+     * instant, sorted, the entry's own path spelled as a placeholder so two readings of one catalog
+     * under two sources compare equal.
+     */
+    private static Map<Table<?>, List<String>> rows(DSLContext dsl, Path entry) {
+        String source = entry.toString();
         var out = new java.util.LinkedHashMap<Table<?>, List<String>>();
         for (var table : COMPARED) {
             var fields = Stream.of(table.fields()).filter(f -> !f.getName().equalsIgnoreCase("touched_at")).toList();
             out.put(table, dsl.select(fields).from(table).fetch().stream()
                 .map(row -> String.join("|", Stream.of(row.intoArray()).map(String::valueOf).toList()) + "|")
+                .filter(row -> row.contains(source))
+                .map(row -> row.replace(source, "<catalog>"))
                 .sorted().toList());
         }
         return out;
     }
 
     /** Compiles {@code sources} into {@code entry}, replacing what it held. */
-    private static void compile(Path entry, Map<String, String> sources, Path sourceRoot) throws IOException {
+    private static void compile(Path entry, Map<String, String> sources, Path sourceRoot) {
+        try {
+            compileChecked(entry, sources, sourceRoot);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static void compileChecked(Path entry, Map<String, String> sources, Path sourceRoot)
+            throws IOException {
         if (Files.exists(entry)) {
             try (var walk = Files.walk(entry)) {
                 for (var path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
