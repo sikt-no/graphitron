@@ -293,6 +293,14 @@ directive application it came from is stored with it, so a reader that needs to 
 directive made a call, a defect rule naming where to fix it among them, joins that application
 rather than working it out again from the call's kind.
 
+How a value the client sends reaches the parameter it binds is decided once: "How clients value
+reach parameters should be worked out once." (Alf, 2026-11-26). Whether the value is passed as it
+arrives, decoded from a node id into a key column, or decoded from a generated scalar into one of its
+components, and how it is converted where it is, is a fact the store states per parameter binding,
+and every reader of a call's parameters takes it from there, a `@service`'s fill, a routine write's
+argument and a root `@routine`'s alike, rather than each working it out again from the flags of the
+binding.
+
 '''
 
 == Producer
