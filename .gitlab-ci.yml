@@ -69,6 +69,10 @@ publish:release:
     POSTGRES_HOST_AUTH_METHOD: trust
   script: |
     set -e
+    # What the build has to work with, so heap and parallelism are set from measurements.
+    nproc
+    free -g 2>/dev/null || head -3 /proc/meminfo
+    java -XX:+PrintFlagsFinal -version 2>/dev/null | grep -E ' (MaxHeapSize|MaxRAM|ActiveProcessorCount) ' || true
     apt-get update -qq && apt-get install -y -qq postgresql-client gcc make git
     # libtree-sitter runtime for the graphitron-lsp tests: jtreesitter 0.26 looks up
     # ts_language_abi_version at Language.load (a symbol introduced in tree-sitter 0.25),

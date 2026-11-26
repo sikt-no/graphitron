@@ -55,6 +55,12 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+      - name: Report the runner's resources
+        # What the build has to work with, so heap and parallelism are set from measurements.
+        run: |
+          nproc
+          free -g 2>/dev/null || head -3 /proc/meminfo
+          java -XX:+PrintFlagsFinal -version 2>/dev/null | grep -E ' (MaxHeapSize|MaxRAM|ActiveProcessorCount) ' || true
       - name: Build + install libtree-sitter from source
         # graphitron-lsp's NativeLibraryBundleTest loads the grammar binary from
         # graphitron-tree-sitter-natives; jtreesitter 0.26 then looks up runtime
