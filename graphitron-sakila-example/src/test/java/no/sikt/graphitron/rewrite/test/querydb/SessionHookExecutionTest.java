@@ -13,6 +13,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -60,6 +61,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ExecutionTier
 class SessionHookExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;                 // superuser, out-of-band setup and cleanup (bypasses RLS)
     static String jdbcUrl;
     static final String PROBE_USER = "rls_probe_user";
@@ -68,10 +70,7 @@ class SessionHookExecutionTest {
     @BeforeAll
     static void startDatabase() throws SQLException {
         jdbcUrl = SakilaDatabase.url();
-        String user = SakilaDatabase.user();
-        String password = SakilaDatabase.password();
-
-        dsl = DSL.using(jdbcUrl, user, password);
+        dsl = SakilaDatabase.dsl();
 
         // A probe table with an RLS policy keyed on app.user_id, and a non-superuser role to
         // query it under (superusers bypass RLS). The policy treats both NULL and the empty

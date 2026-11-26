@@ -8,6 +8,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class RoutineCarrierRlsExecutionTest {
 
+    @AutoClose
     static DSLContext superDsl;            // superuser: out-of-band setup, assertions, cleanup
     static String jdbcUrl;
     static GraphQL graphql;
@@ -50,10 +52,7 @@ class RoutineCarrierRlsExecutionTest {
     @BeforeAll
     static void startDatabase() {
         jdbcUrl = SakilaDatabase.url();
-        String user = SakilaDatabase.user();
-        String password = SakilaDatabase.password();
-
-        superDsl = DSL.using(jdbcUrl, user, password);
+        superDsl = SakilaDatabase.dsl();
 
         // The table, routine and policy live in init.sql (the catalog needs them); the
         // non-superuser role and its grants are this test's own concern. EXECUTE on the

@@ -24,7 +24,7 @@ The skeleton:
 class GraphQLQueryTest {
 
     static PostgreSQLContainer postgres;
-    static DSLContext dsl;
+    static CloseableDSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
     static final List<String> SQL_LOG = new CopyOnWriteArrayList<>();
@@ -57,10 +57,13 @@ class GraphQLQueryTest {
 
     @AfterAll
     static void stopDatabase() {
+        dsl.close();
         if (postgres != null) postgres.stop();
     }
 }
 ----
+
+`stopDatabase` closes `dsl` before it stops the container. A `DSLContext` built from a URL holds one open connection, and the class that opens it closes it; on the `test.db.url` path nothing else ever would (see <<Pitfalls>>). `GraphQLQueryTest` closes its field with JUnit's `@AutoClose` instead, which needs JUnit Jupiter 5.11 or later and closes the field after the class's own `@AfterAll` methods, so it fits a class with no container to stop afterwards.
 
 The `ExecuteListener` is what makes the round-trip-count and SQL-shape assertions possible: every JDBC statement increments `QUERY_COUNT` and adds its rendered SQL to `SQL_LOG`. Tests that need to assert "this was one batched query, not N per-parent queries" reset `QUERY_COUNT` before executing and assert on it after.
 
@@ -254,7 +257,7 @@ The test passes representations via GraphQL variables, and asserts on the dispat
 == Pitfalls
 
 * *Hand-rolling `ExecutionInput.newExecutionInput()` outside the factory.* The factory attaches the `DataLoaderRegistry` and stashes the singleton `GraphitronContextImpl`; bypassing it produces NPEs at first DataLoader lookup and "context value … was not supplied" `IllegalStateException`s at first `contextArgument` read. Always go through `Graphitron.newExecutionInput(dsl, ...)`.
-* *Per-test connection leak.* `@AfterAll` stops the Testcontainers Postgres; a test that holds `dsl` references past class scope leaks a connection. Use `@BeforeAll` / `@AfterAll` (class-scoped) rather than `@BeforeEach` / `@AfterEach` for the database; per-test work happens inside the request.
+* *Connection leak.* The class closes `dsl`, after its own `@AfterAll` work and before the server goes. A `DSLContext` built from a URL holds one open connection until it is closed, and Surefire runs every test class in one JVM by default, so a class that never closes it holds that connection until the JVM exits, and a suite of such classes runs the server out of connections (`FATAL: sorry, too many clients already` at PostgreSQL's default limit of 100). Open and close the database at class scope rather than per test (`@BeforeEach` / `@AfterEach`); per-test work happens inside the request.
 * *`QUERY_COUNT` and `SQL_LOG` are global.* They are static fields on the test class, mutated by the listener that fires on every JDBC statement. Tests that read them must reset (e.g. `QUERY_COUNT.set(0)`, `SQL_LOG.clear()`) immediately before executing the GraphQL query, and the test must run on its own (no parallel test in the class touching the same DB at the same time). The example uses JUnit 5's default sequential execution; if your test class enables parallel execution, switch to per-test counters.
 * *Seed-data drift breaks tests.* Hard-coded row counts (`hasSize(5)`) and specific values (`containsExactly("ACADEMY DINOSAUR", ...)`) tie tests to the seed. Either commit the seed alongside the tests (the example does this) or assert on shape-only (`size > 0`, `every row has a `firstName` key`); avoid the middle ground where the seed is shared but mutable.
 * *`init.sql` runs once per Testcontainers start.* The example's container starts in `@BeforeAll` and stops in `@AfterAll`, so the whole test class shares the same database state. Tests that mutate the data (mutations, deletes) must order their assertions accordingly, or use a per-test transaction rollback. The example uses read-only queries in most tests; mutation tests assert on the post-mutation state.

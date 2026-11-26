@@ -7,6 +7,7 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class EmptyPatchUpdateExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
     /** The write transaction's end markers, {@code commit} or {@code rollback}, in order. */

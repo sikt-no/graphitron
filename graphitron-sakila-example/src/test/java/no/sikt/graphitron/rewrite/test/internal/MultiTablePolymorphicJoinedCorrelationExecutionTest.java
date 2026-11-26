@@ -5,6 +5,7 @@ import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class MultiTablePolymorphicJoinedCorrelationExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

@@ -7,6 +7,7 @@ import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class MultiTableNodeIdRouteExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

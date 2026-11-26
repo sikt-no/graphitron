@@ -7,6 +7,7 @@ import org.jooq.Field;
 import org.jooq.UniqueKey;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +50,7 @@ class TemporalKeyDoesNotCoverExecutionTest {
     /** The columns a two-hop path through this table would bind, the period column excluded. */
     private static final Set<String> BOUND_BY_THE_HOPS = Set.of("party_id", "team_id");
 
+    @AutoClose
     static DSLContext dsl;
 
     @BeforeAll

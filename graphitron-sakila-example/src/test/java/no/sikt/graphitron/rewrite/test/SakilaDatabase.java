@@ -42,7 +42,12 @@ public final class SakilaDatabase {
         return server().password();
     }
 
-    /** A fresh autocommit {@link DSLContext} over the shared database, for out-of-band setup, assertions and cleanup. */
+    /**
+     * A fresh autocommit context over the shared database, for out-of-band setup, assertions and
+     * cleanup. It holds one open connection until it is closed, and the caller closes it: a fixture
+     * field with {@code @AutoClose}, or try-with-resources around an inline use. Every class runs in
+     * one JVM, so a context nobody closes holds its connection until the JVM exits.
+     */
     public static CloseableDSLContext dsl() {
         var s = server();
         return DSL.using(s.url(), s.user(), s.password());
@@ -105,11 +110,7 @@ public final class SakilaDatabase {
                 System.getProperty("test.db.username", "postgres"),
                 System.getProperty("test.db.password", "postgres"));
         }
-        // The suite's classes run concurrently on this one server, and their unpooled sources open
-        // connections of their own, so the default of 100 runs out at peak. fsync=off is the
-        // container's own default command, which withCommand replaces.
-        var container = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql")
-            .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=400");
+        var container = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
         container.start();
         Runtime.getRuntime().addShutdownHook(new Thread(container::stop));
         return new Server(container.getJdbcUrl(), container.getUsername(), container.getPassword());

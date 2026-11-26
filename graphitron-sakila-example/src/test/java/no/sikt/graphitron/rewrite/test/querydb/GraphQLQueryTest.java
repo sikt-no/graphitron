@@ -10,6 +10,7 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 @SuppressWarnings("unchecked") // GraphQL responses are Map<String, Object>; casts to typed shapes are inherent to the assertion style
 class GraphQLQueryTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();

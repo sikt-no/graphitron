@@ -14,6 +14,7 @@ import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -37,11 +38,12 @@ class OutboxCompanionTest {
 
     private static final String ROLLBACK = "rollback";
 
+    @AutoClose
     static DSLContext dsl;
 
     @BeforeAll
     static void start() {
-        dsl = DSL.using(SakilaDatabase.url(), SakilaDatabase.user(), SakilaDatabase.password());
+        dsl = SakilaDatabase.dsl();
     }
 
     private static DataFetchingEnvironment env(String operationName, String alias, Map<String, Object> arguments) {

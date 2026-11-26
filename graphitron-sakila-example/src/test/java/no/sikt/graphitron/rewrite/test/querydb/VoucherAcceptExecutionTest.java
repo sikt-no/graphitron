@@ -17,6 +17,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,7 @@ class VoucherAcceptExecutionTest {
           }
         }""";
 
+    @AutoClose
     static DSLContext superDsl;
     static KeyPair pair;
     static VoucherKeys acceptingKeys;
@@ -80,7 +82,7 @@ class VoucherAcceptExecutionTest {
         String url = SakilaDatabase.url();
         String user = SakilaDatabase.user();
         String password = SakilaDatabase.password();
-        superDsl = DSL.using(url, user, password);
+        superDsl = SakilaDatabase.dsl();
         dropProbeRole();
         superDsl.execute("create role " + PROBE_USER + " login password '" + PROBE_PASSWORD + "'");
         superDsl.execute("grant select on vouched_result, vouched_result_detail, vouched_result_note to " + PROBE_USER);

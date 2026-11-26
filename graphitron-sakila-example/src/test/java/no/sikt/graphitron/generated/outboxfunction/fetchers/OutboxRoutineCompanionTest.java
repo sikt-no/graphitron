@@ -14,6 +14,7 @@ import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,7 @@ class OutboxRoutineCompanionTest {
 
     private static final String ROLLBACK = "rollback";
 
+    @AutoClose
     static DSLContext dsl;
 
     @BeforeAll

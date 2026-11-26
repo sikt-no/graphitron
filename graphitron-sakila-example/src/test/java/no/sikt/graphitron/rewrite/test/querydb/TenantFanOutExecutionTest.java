@@ -12,6 +12,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class TenantFanOutExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;                 // default database, out-of-band setup/cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -60,7 +62,7 @@ class TenantFanOutExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         // Real database-per-tenant with disjoint rows. film_id doubles as the tenant id in the
         // fixture, so tenant 1 holds films 10..11 and tenant 2 film 20 (any values work; the

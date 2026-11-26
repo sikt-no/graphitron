@@ -11,7 +11,7 @@ import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
-import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -42,6 +42,7 @@ class VoucherIssueExecutionTest {
     private static final String CLAIMS = "{\"sub\":\"test-user\"}";
     private static final String QUERY = "{ languages { films { internalGraphitronVoucher } } }";
 
+    @AutoClose
     static DSLContext dsl;
     static KeyPair pair;
     static VoucherKeys keys;
@@ -53,7 +54,7 @@ class VoucherIssueExecutionTest {
         String url = SakilaDatabase.url();
         String user = SakilaDatabase.user();
         String password = SakilaDatabase.password();
-        dsl = DSL.using(url, user, password);
+        dsl = SakilaDatabase.dsl();
         pool = (DataSource) Proxy.newProxyInstance(VoucherIssueExecutionTest.class.getClassLoader(),
             new Class<?>[] {DataSource.class},
             (proxy, method, args) -> switch (method.getName()) {

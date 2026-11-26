@@ -10,6 +10,7 @@ import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class EscapeHatchSessionIdentityExecutionTest {
 
+    @AutoClose
     static DSLContext superDsl;            // superuser: out-of-band setup, assertions, cleanup
     static String jdbcUrl;
     static GraphQL graphql;
@@ -62,7 +64,7 @@ class EscapeHatchSessionIdentityExecutionTest {
     @BeforeAll
     static void startDatabase() {
         jdbcUrl = SakilaDatabase.url();
-        superDsl = DSL.using(jdbcUrl, SakilaDatabase.user(), SakilaDatabase.password());
+        superDsl = SakilaDatabase.dsl();
 
         // The table, routine and policy live in init.sql; the role and its grants are this test's.
         dropProbeRole();

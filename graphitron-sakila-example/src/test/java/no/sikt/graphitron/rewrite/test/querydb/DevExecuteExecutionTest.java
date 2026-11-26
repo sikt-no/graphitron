@@ -10,6 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.jooq.tools.json.JSONValue;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -50,6 +51,7 @@ class DevExecuteExecutionTest {
     static final String CLAIMS = "{\"sub\":\"test-user\"}";
     static final String USER_ID = "test-user";
 
+    @AutoClose
     static DSLContext dsl;               // out-of-band, for independent no-trace assertions
     static String jdbcUrl, jdbcUser, jdbcPassword;
     static GraphQL inAppEngine;
@@ -60,7 +62,7 @@ class DevExecuteExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
         inAppEngine = Graphitron.runtime(SQLDialect.POSTGRES)
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }

@@ -10,6 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class TenantScatterExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;                 // default database, out-of-band setup/cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -45,7 +47,7 @@ class TenantScatterExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         // Real database-per-tenant. tenant_2's film table stays deliberately empty: an empty
         // result is a Success carrying an empty value, distinct from Failed.

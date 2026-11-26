@@ -6,6 +6,7 @@ import no.sikt.graphitron.generated.multischemamutation.Graphitron;
 import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionClaimsRecord;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 @ExecutionTier
 class BuiltInScalarRegistrationExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
 
     @BeforeAll

@@ -39,7 +39,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 class ScatterSingleByIdxTest {
 
     private static Method SCATTER_SINGLE;
-    private static DSLContext DSL_CTX;
+    private static final DSLContext DSL_CTX = DSL.using(SQLDialect.POSTGRES);
     private static Field<Integer> IDX_FIELD;
     private static Field<String> VAL_FIELD;
 
@@ -48,7 +48,6 @@ class ScatterSingleByIdxTest {
         SCATTER_SINGLE = CustomerFetchers.class.getDeclaredMethod(
             "scatterSingleByIdx", Result.class, int.class);
         SCATTER_SINGLE.setAccessible(true);
-        DSL_CTX = DSL.using(SQLDialect.POSTGRES);
         IDX_FIELD = DSL.field("__idx__", Integer.class);
         VAL_FIELD = DSL.field("val", String.class);
     }

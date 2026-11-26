@@ -37,7 +37,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 class ScatterLookupByIdxTest {
 
     private static Method SCATTER_LOOKUP;
-    private static DSLContext DSL_CTX;
+    private static final DSLContext DSL_CTX = DSL.using(SQLDialect.POSTGRES);
     private static Field<Integer> IDX_FIELD;
     private static Field<String> VAL_FIELD;
 
@@ -46,7 +46,6 @@ class ScatterLookupByIdxTest {
         SCATTER_LOOKUP = QueryFetchers.class.getDeclaredMethod(
             "scatterLookupByIdx", Result.class, int.class);
         SCATTER_LOOKUP.setAccessible(true);
-        DSL_CTX = DSL.using(SQLDialect.POSTGRES);
         IDX_FIELD = DSL.field("__idx__", Integer.class);
         VAL_FIELD = DSL.field("val", String.class);
     }

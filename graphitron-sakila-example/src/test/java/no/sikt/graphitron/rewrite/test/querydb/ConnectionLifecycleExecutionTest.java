@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SuppressWarnings("unchecked")
 class ConnectionLifecycleExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;               // out-of-band, for setup and assertions
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -54,7 +56,7 @@ class ConnectionLifecycleExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         countingDataSource = countingDataSource();
         runtime = Graphitron.runtime(SQLDialect.POSTGRES);

@@ -5,6 +5,7 @@ import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +37,7 @@ class ServicePolymorphicReturnExecutionTest {
     private static final String SEEDED_FILM_1_TITLE = "ACADEMY DINOSAUR";
     private static final String SEEDED_ACTOR_1_FIRST_NAME = "PENELOPE";
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

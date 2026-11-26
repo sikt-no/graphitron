@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -33,12 +34,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class LegacyNodeKeyExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 
     @BeforeAll
     static void startDatabase() {
-        dsl = DSL.using(SakilaDatabase.url(), SakilaDatabase.user(), SakilaDatabase.password());
+        dsl = SakilaDatabase.dsl();
         graphql = Graphitron.newGraphQL().build();
     }
 

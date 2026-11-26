@@ -12,6 +12,7 @@ import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,7 @@ class MutationScopeMultiTenantExecutionTest {
     /** The principal tenant 2's mount in {@link #REJECTING_T2} refuses, and tenant 1's accepts. */
     private static final String REJECTED_ON_TWO = "reject-on-two";
 
+    @AutoClose
     static DSLContext dsl;                 // default database, out-of-band setup and observation
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -68,7 +70,7 @@ class MutationScopeMultiTenantExecutionTest {
         jdbcUrl = SakilaDatabase.url();
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         for (String db : List.of(HEALTHY_T1, HEALTHY_T2, BROKEN_T2, REJECTING_T2)) {
             SakilaDatabase.createTenantDatabase(db);

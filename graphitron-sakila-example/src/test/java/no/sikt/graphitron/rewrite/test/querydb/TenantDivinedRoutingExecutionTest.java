@@ -18,6 +18,7 @@ import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class TenantDivinedRoutingExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;                 // default database, out-of-band setup/assertions
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -100,7 +102,7 @@ class TenantDivinedRoutingExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         // Real database-per-tenant: the generated SQL schema-qualifies table names
         // ("public"."film"), so isolation comes from separate databases, not search_path.

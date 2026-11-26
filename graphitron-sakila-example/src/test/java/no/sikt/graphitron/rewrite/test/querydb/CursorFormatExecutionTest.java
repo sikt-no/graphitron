@@ -9,6 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Param;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -50,6 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class CursorFormatExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

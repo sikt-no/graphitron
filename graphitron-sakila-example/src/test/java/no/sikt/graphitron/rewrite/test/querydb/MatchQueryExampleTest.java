@@ -9,6 +9,7 @@ import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.dataloader.DataLoaderRegistry;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 @ExecutionTier
 class MatchQueryExampleTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

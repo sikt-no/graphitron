@@ -10,6 +10,7 @@ import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
 import org.jooq.impl.DefaultConfiguration;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 @ExecutionTier
 class TransactionProviderExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;                 // out-of-band setup, observation and cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -44,7 +46,7 @@ class TransactionProviderExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         dsl.execute("drop schema if exists tx_provider cascade");
         dsl.execute("create schema tx_provider");

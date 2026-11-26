@@ -7,6 +7,7 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 @ExecutionTier
 class BatchCountsExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
 

@@ -63,42 +63,48 @@ class FacetBucketsExecutionTest {
 
     @Test
     void bucketsComeCountFirstThenInTheValuesOrder() {
-        var out = ConnectionHelper.facetBuckets(SakilaDatabase.dsl(), selecting("rating"), SEEDED,
-            Map.of(), List.of(facet("rating", FILM.RATING, false)));
+        try (var dsl = SakilaDatabase.dsl()) {
+            var out = ConnectionHelper.facetBuckets(dsl, selecting("rating"), SEEDED,
+                Map.of(), List.of(facet("rating", FILM.RATING, false)));
 
-        // G and PG tie on two; the enum's declaration order puts G first.
-        assertThat(buckets(out, "rating")).containsExactly(
-            List.of(MpaaRating.G, 2), List.of(MpaaRating.PG, 2), List.of(MpaaRating.NC_17, 1));
+            // G and PG tie on two; the enum's declaration order puts G first.
+            assertThat(buckets(out, "rating")).containsExactly(
+                List.of(MpaaRating.G, 2), List.of(MpaaRating.PG, 2), List.of(MpaaRating.NC_17, 1));
+        }
     }
 
     @Test
     void eachFacetCountsUnderEveryOtherFacetsConditionButNotItsOwn() {
-        var conditions = new LinkedHashMap<String, Condition>();
-        conditions.put("rating", FILM.RATING.in(MpaaRating.G, MpaaRating.PG));
-        conditions.put("originalLanguage", FILM.ORIGINAL_LANGUAGE_ID.eq(2));
-        var out = ConnectionHelper.facetBuckets(SakilaDatabase.dsl(), selecting("rating", "originalLanguage"),
-            SEEDED, conditions, List.of(
-                facet("rating", FILM.RATING, false),
-                facet("originalLanguage", FILM.ORIGINAL_LANGUAGE_ID, true)));
+        try (var dsl = SakilaDatabase.dsl()) {
+            var conditions = new LinkedHashMap<String, Condition>();
+            conditions.put("rating", FILM.RATING.in(MpaaRating.G, MpaaRating.PG));
+            conditions.put("originalLanguage", FILM.ORIGINAL_LANGUAGE_ID.eq(2));
+            var out = ConnectionHelper.facetBuckets(dsl, selecting("rating", "originalLanguage"),
+                SEEDED, conditions, List.of(
+                    facet("rating", FILM.RATING, false),
+                    facet("originalLanguage", FILM.ORIGINAL_LANGUAGE_ID, true)));
 
-        // rating, under original language 2 only: films 2 (G) and 3 (NC-17).
-        assertThat(buckets(out, "rating")).containsExactly(
-            List.of(MpaaRating.G, 1), List.of(MpaaRating.NC_17, 1));
-        // original language, under ratings G and PG only: films 1, 2, 4 and 5, the NULL bucket last.
-        assertThat(buckets(out, "originalLanguage")).containsExactly(
-            List.of(1, 1), List.of(2, 1), List.of(3, 1), Arrays.asList(null, 1));
+            // rating, under original language 2 only: films 2 (G) and 3 (NC-17).
+            assertThat(buckets(out, "rating")).containsExactly(
+                List.of(MpaaRating.G, 1), List.of(MpaaRating.NC_17, 1));
+            // original language, under ratings G and PG only: films 1, 2, 4 and 5, the NULL bucket last.
+            assertThat(buckets(out, "originalLanguage")).containsExactly(
+                List.of(1, 1), List.of(2, 1), List.of(3, 1), Arrays.asList(null, 1));
+        }
     }
 
     @Test
     void aNonNullableFacetDropsTheNullBucket_andAnUnselectedFacetHasNoArm() {
-        var out = ConnectionHelper.facetBuckets(SakilaDatabase.dsl(), selecting("originalLanguage"),
-            SEEDED, Map.of(), List.of(
-                facet("rating", FILM.RATING, false),
-                facet("originalLanguage", FILM.ORIGINAL_LANGUAGE_ID, false)));
+        try (var dsl = SakilaDatabase.dsl()) {
+            var out = ConnectionHelper.facetBuckets(dsl, selecting("originalLanguage"),
+                SEEDED, Map.of(), List.of(
+                    facet("rating", FILM.RATING, false),
+                    facet("originalLanguage", FILM.ORIGINAL_LANGUAGE_ID, false)));
 
-        assertThat(out).containsOnlyKeys("originalLanguage");
-        // Films 2 and 3 share language 2; film 4's NULL is scrubbed.
-        assertThat(buckets(out, "originalLanguage")).containsExactly(
-            List.of(2, 2), List.of(1, 1), List.of(3, 1));
+            assertThat(out).containsOnlyKeys("originalLanguage");
+            // Films 2 and 3 share language 2; film 4's NULL is scrubbed.
+            assertThat(buckets(out, "originalLanguage")).containsExactly(
+                List.of(2, 2), List.of(1, 1), List.of(3, 1));
+        }
     }
 }

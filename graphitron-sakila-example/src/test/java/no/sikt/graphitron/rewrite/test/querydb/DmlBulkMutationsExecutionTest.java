@@ -14,6 +14,7 @@ import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class DmlBulkMutationsExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static String dbUrl;
     static String dbUser;
@@ -55,7 +57,7 @@ class DmlBulkMutationsExecutionTest {
         dbUser = SakilaDatabase.user();
         dbPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(dbUrl, dbUser, dbPassword);
+        dsl = SakilaDatabase.dsl();
 
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
             new org.jooq.ExecuteListener() {

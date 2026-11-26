@@ -13,6 +13,7 @@ import no.sikt.graphitron.generated.federated.schema.GraphitronClientException;
 import no.sikt.graphitron.generated.federated.schema.GraphitronContext;
 import no.sikt.graphitron.generated.federated.util.NodeIdEncoder;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +32,7 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 @ExecutionTier
 class FederationEntitiesDispatchTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
     static final java.util.concurrent.atomic.AtomicInteger QUERY_COUNT = new java.util.concurrent.atomic.AtomicInteger();

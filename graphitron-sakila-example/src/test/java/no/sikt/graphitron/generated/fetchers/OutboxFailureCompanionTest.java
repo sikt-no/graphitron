@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRec
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.CloseableDSLContext;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,7 @@ class OutboxFailureCompanionTest {
 
     private static final String EVENT = "Mutation.insertFilmReportingFailure.failed";
 
+    @AutoClose
     static CloseableDSLContext dsl;
 
     @BeforeAll
@@ -45,12 +47,11 @@ class OutboxFailureCompanionTest {
     @AfterAll
     static void removeTheMessagesWritten() {
         dsl.execute("delete from outbox where type = ? and payload ->> 'title' like 'failure-companion-%'", EVENT);
-        dsl.close();
     }
 
     /** A connection of its own with the session handle the carrier would have mounted on it. */
     private static CloseableDSLContext mounted(String principal) {
-        var mounted = org.jooq.impl.DSL.using(SakilaDatabase.url(), SakilaDatabase.user(), SakilaDatabase.password());
+        var mounted = SakilaDatabase.dsl();
         mounted.configuration().data("no.sikt.graphitron.session.handle", new SessionHandleRecord(principal, 1));
         return mounted;
     }

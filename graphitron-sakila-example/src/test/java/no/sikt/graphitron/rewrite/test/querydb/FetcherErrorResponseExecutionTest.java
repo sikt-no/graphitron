@@ -16,6 +16,7 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -43,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class FetcherErrorResponseExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static String jdbcUrl;
     static String jdbcUser;
@@ -60,7 +62,7 @@ class FetcherErrorResponseExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
         dataSource = (DataSource) Proxy.newProxyInstance(
             FetcherErrorResponseExecutionTest.class.getClassLoader(),
             new Class<?>[]{DataSource.class},

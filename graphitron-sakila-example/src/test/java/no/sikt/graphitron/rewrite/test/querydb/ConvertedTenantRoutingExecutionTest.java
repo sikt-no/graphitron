@@ -11,6 +11,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class ConvertedTenantRoutingExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -57,7 +59,7 @@ class ConvertedTenantRoutingExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         for (String db : List.of(DB_186, DB_1120)) {
             SakilaDatabase.createTenantDatabase(db);

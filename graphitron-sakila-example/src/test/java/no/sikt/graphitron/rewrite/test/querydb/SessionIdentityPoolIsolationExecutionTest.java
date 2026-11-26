@@ -26,6 +26,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -100,6 +101,7 @@ class SessionIdentityPoolIsolationExecutionTest {
     static final String TENANT_1 = "poolisolation_t1";
     static final String TENANT_2 = "poolisolation_t2";
 
+    @AutoClose
     static DSLContext dsl;                 // superuser, out-of-band setup and cleanup (bypasses RLS)
     static AgroalDataSource pool;          // the single-tenant engine's source, a pool of one
     static AgroalDataSource defaultPool;   // the multi-tenant engine's default source
@@ -116,7 +118,7 @@ class SessionIdentityPoolIsolationExecutionTest {
 
     @BeforeAll
     static void setUp() throws SQLException {
-        dsl = DSL.using(SakilaDatabase.url(), SakilaDatabase.user(), SakilaDatabase.password());
+        dsl = SakilaDatabase.dsl();
 
         dropRole();
         dsl.execute("create role " + ROLE + " login password '" + ROLE_PASSWORD + "'");

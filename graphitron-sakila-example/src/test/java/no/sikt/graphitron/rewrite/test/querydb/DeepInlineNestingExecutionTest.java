@@ -7,6 +7,7 @@ import no.sikt.graphitron.generated.util.TableAliases;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class DeepInlineNestingExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger STATEMENT_COUNT = new AtomicInteger();

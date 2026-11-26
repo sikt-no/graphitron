@@ -6,6 +6,7 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +39,7 @@ class ScalarNumberBoundExecutionTest {
     private static final String BY_VARIABLE =
         "query($f: FilmRentalRangeFilter) { filmsByRentalRateRange(filter: $f) { title } }";
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

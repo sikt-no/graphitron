@@ -9,6 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.TableField;
 import org.jooq.VisitListener;
 import org.jooq.impl.DefaultVisitListenerProvider;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class MultiTableOrderingExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

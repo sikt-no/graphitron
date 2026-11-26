@@ -15,6 +15,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -48,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SuppressWarnings("unchecked")
 class MutationScopeExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;               // out-of-band, for assertions and cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
     static final AtomicInteger CONNECTIONS_OPENED = new AtomicInteger();
@@ -66,7 +68,7 @@ class MutationScopeExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
         pool = countingDataSource();
         runtime = Graphitron.runtime(SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();

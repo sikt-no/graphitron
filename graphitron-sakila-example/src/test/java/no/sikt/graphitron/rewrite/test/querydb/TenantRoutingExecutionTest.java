@@ -10,8 +10,8 @@ import no.sikt.graphitron.generated.multitenant.schema.KeyNotPermitted;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
-import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class TenantRoutingExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;                 // superuser, out-of-band setup/cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -52,7 +53,7 @@ class TenantRoutingExecutionTest {
         jdbcUser = SakilaDatabase.user();
         jdbcPassword = SakilaDatabase.password();
 
-        dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
+        dsl = SakilaDatabase.dsl();
 
         dsl.execute("drop schema if exists tenant_a cascade");
         dsl.execute("drop schema if exists tenant_b cascade");

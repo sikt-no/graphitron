@@ -8,6 +8,7 @@ import no.sikt.graphitron.sakila.example.app.SakilaSessions;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class OutboxSessionExecutionTest {
 
+    @AutoClose
     static DSLContext dsl;
 
     @BeforeAll

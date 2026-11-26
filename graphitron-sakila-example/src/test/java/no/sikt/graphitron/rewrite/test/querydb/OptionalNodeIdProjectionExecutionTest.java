@@ -8,6 +8,7 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +49,7 @@ class OptionalNodeIdProjectionExecutionTest {
     /** The films {@code init.sql} seeds, in {@code film_id} order. */
     private static final List<Integer> SEEDED_FILM_IDS = List.of(1, 2, 3, 4, 5);
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

@@ -8,6 +8,7 @@ import no.sikt.graphitron.generated.multischema.Graphitron;
 import no.sikt.graphitron.generated.multischema.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +46,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.list;
 @ExecutionTier
 class MultiSchemaQueryTest {
 
+    @AutoClose
     static DSLContext dsl;
     static GraphQL graphql;
 

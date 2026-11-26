@@ -8,9 +8,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -23,34 +20,19 @@ class TierAnnotationEnforcementTest {
     private static final String CROSS_CUTTING_TAG = "cross-cutting";
 
     @Test
-    void allTestClassesCarryExactlyOneTierIdentity() throws IOException {
-        Path testClasses = Path.of("target/test-classes");
+    void allTestClassesCarryExactlyOneTierIdentity() {
         List<String> violations = new ArrayList<>();
 
-        try (var walk = Files.walk(testClasses)) {
-            walk.filter(p -> p.toString().endsWith(".class"))
-                .filter(p -> !p.getFileName().toString().contains("$"))
-                .forEach(classFile -> {
-                    String className = toClassName(testClasses, classFile);
-                    try {
-                        Class<?> clazz = Class.forName(className);
-                        if (isTestClass(clazz)) {
-                            checkTierIdentity(clazz, violations);
-                        }
-                    } catch (ClassNotFoundException | NoClassDefFoundError ignored) {
-                    }
-                });
-        }
+        // Top-level classes only: a nested class is not a test class of its own here (Surefire's
+        // default excludes skip it), and a @Nested one takes its tier tag from its enclosing class.
+        TestClasses.loaded().stream()
+            .filter(clazz -> clazz.getEnclosingClass() == null)
+            .filter(TierAnnotationEnforcementTest::isTestClass)
+            .forEach(clazz -> checkTierIdentity(clazz, violations));
 
         assertThat(violations)
             .as("Test classes with missing or duplicate tier identities:\n" + String.join("\n", violations))
             .isEmpty();
-    }
-
-    private static String toClassName(Path base, Path classFile) {
-        return base.relativize(classFile).toString()
-            .replace('/', '.').replace('\\', '.')
-            .replaceAll("\\.class$", "");
     }
 
     private static boolean isTestClass(Class<?> clazz) {
