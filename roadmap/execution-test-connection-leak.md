@@ -1,7 +1,7 @@
 ---
 id: R1209
 title: "Execution tests hold a PostgreSQL connection per class until the test JVM exits"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: testing
@@ -40,6 +40,16 @@ The consumer template in `test-your-schema.adoc` has the same leak in a differen
 Not part of this item: `TenantFanOutExecutionTest`'s hanging data source connects five seconds after the scatter stopped waiting, by which time its tenant database is gone, so this run could not tell whether the runtime closes a lease that arrives after a fan-out timed out.
 
 ## Implementation
+
+Shipped at `6e0ebb2`, as planned below. What the implementation settled that the plan left to it:
+
+- The shared walker is `TestClasses.loaded()`, package-private in `no.sikt.graphitron.rewrite.test.internal`. It returns a `List` of every class under `target/test-classes`, nested, local and anonymous ones included, loaded with `Class.forName(name, false, loader)` and so not initialized, and it throws when the walk loads nothing, so none of its three callers can pass on an empty walk. The `ClassNotFoundException` and `LinkageError` swallow lives there and nowhere else.
+- The two existing tests keep top-level classes by `getEnclosingClass() == null`, each with a comment saying why: a nested class is not a test class of its own here (Surefire's default excludes skip it), and a `@Nested` one takes its tier tag and its resource locks from its enclosing class (checked against `junit-jupiter-engine` 6.1.3, whose `NestedClassTestDescriptor.getTags()` adds its parent's).
+- `FixtureCloseEnforcementTest` leaves out its own planted shapes by `getNestHost()`, reads a field's value, which initializes its class, only for a field without `@AutoClose`, and asserts that it found more than 50 annotated fields (93 today), so the rule cannot pass on a walk that stopped reaching the module.
+- `FacetBucketsExecutionTest` wraps each of its three test bodies in the try-with-resources, not only the call.
+- `DmlBulkMutationsExecutionTest` keeps one `DSL.using(dbUrl, dbUser, dbPassword)`: a second connection a test opens in try-with-resources, closed already and not a fixture field.
+- `ArchitectureDocSymbolGuardTest` in `graphitron` gained a `module: graphitron-sakila-example` exemption for `FixtureCloseEnforcementTest`, which `testing.adoc` now names, as it has for every other class of this module those pages cite.
+- The consumer pitfall in `test-your-schema.adoc` is retitled "Connection leak", since the leak it describes outlives a class, not a test.
 
 ### Each fixture context closes when its class finishes
 
@@ -121,6 +131,17 @@ On a private server with a full install behind it, the peak should come in near 
 
 After landing, the trunk build on GitHub and the next release job on GitLab pass at the default limit, which is the goal's own evidence.
 
+### Measured by the implementer (2026-11-26)
+
+Measured on the change as committed before it was rebased into `6e0ebb2`; the rebase brought in seven commits that touch no file of `graphitron-sakila-example`. The web sandbox has no Docker, so the server was a private PostgreSQL 16 cluster of its own (`initdb`, port 55432, `max_connections=1000`, `log_connections` and `log_disconnections` on, `application_name` in the log prefix so the poller's own connections could be left out), seeded from `init.sql`, against a full install of the tree. The suite was `mvn test -pl :graphitron-sakila-example -Plocal-db -Dtest.db.url=jdbc:postgresql://localhost:55432/rewrite_test`; 1816 tests ran, none failed. Concurrency was computed exactly from the server's connect and disconnect lines rather than only sampled.
+
+- Peak concurrent connections: 11, against 101 before and the 19 estimated under Findings. The 0.2-second poller saw 10.
+- Held to exit: none. No connection lived longer than 30 seconds, against 99 held until the JVM exited before. The last second before exit has 4 disconnections, from the last classes to run: two sessions of 13 seconds and two of 15 milliseconds.
+- 719 connections were opened over the run's 42 seconds.
+- Two connection attempts went to `fanout_t2_<run token>` after that database was dropped and failed at connect ("database does not exist"). They are `TenantFanOutExecutionTest`'s late lease, the question under Findings this item leaves open, and hold nothing.
+
+The Done reviewer repeats the measurement; the commands under Tests work as they stand on a machine with Docker.
+
 ## Other solutions we've considered
 
 - **Raise the limit in CI.** The GitLab service can take a `max_connections` command; GitHub's service containers take none. Either way it hides the leak where it is caught, and the architect pointed out that it removes the only alarm. The 400 on the Testcontainers path was this move, made on one path.
@@ -130,6 +151,23 @@ After landing, the trunk build on GitHub and the next release job on GitLab pass
 - **A source-text rule in `SakilaDatabaseGuardTest`.** That guard reads source because the calls it bans leave no trace in a compiled class; a field's type and annotations do, and the module already checks annotations by reflection.
 - **A runtime check of live connections instead of the enforcement test.** This was the author's first lean, since it would be exact and would also catch a connection the runtime fails to return. Two costs decided against it for this item. A per-class check has to run after the class's fields close, but JUnit runs the after-all callbacks of a later-registered extension first, and `AutoCloseExtension` is a default extension registered before any autodetected one, so the check would run before the close unless it did the closing itself, which is the harness-owned option above. A suite-wide count on the `test.db.url` path shares the server with other clients (the `-T 1C` reactor in CI, a developer's other builds), so it needs a key for this JVM's connections that no test can overwrite, and tests set `application_name` themselves. The runtime half of such a check belongs with the fan-out question under Findings.
 - **A context per test method.** `@BeforeEach` and `@AfterEach` also bound the count, but open a connection per test, about 1800 instead of about 95, and settle no lifetime question that `@AutoClose` leaves open.
+
+## Architect consultation
+
+### At take-up (implementer, 2026-11-26)
+
+Raised, and what was done with each:
+
+- Load in the walker and initialize only in the test that reads a value; guard against a vacuous walk; return a `List`, since a `Stream` over `Files.walk` leaves its caller owing a close; filter to top-level classes by `getEnclosingClass() == null` rather than `!isMemberClass()`, which lets local and anonymous classes through, with the reason stated in each caller; repoint `QuarkusTestLockEnforcementTest`'s javadoc, which named its walk as shared with `TierAnnotationEnforcementTest`. All taken; Implementation says where each landed.
+
+### Before handover (implementer, 2026-11-26)
+
+Nothing in the shipped shape pulls against the harness's direction; four points of precision, and what was done with each:
+
+- **The inline half of the rule had no stated enforcer.** `FixtureCloseEnforcementTest` cannot see a context opened inline, the `FacetBucketsExecutionTest` shape, and neither the ruling paragraph nor the test's javadoc said so. Both now say that half is checked by review only. Whether `SakilaDatabaseGuardTest`'s source scan should take it on is left for Alf and Filip.
+- **The floor of 50 annotated fields** puts a number on a count unrelated work changes; a named canary would not. Kept: the margin is wide (93 today), `ArchitectureDocSymbolGuardTest`'s `MIN_PAGES` is the same shape, and a canary naming one class moves when that class does.
+- **For Alf and Filip: the reach of the 2026-11-25 ruling.** "Who closes a fixture connection" reads as binding every module, but its mechanism belongs to `graphitron-sakila-example`: `graphitron`'s `TestDatabase.dsl()` is a shared context over a data source that holds no connection, and `@AutoClose` on a field holding it would throw. One clause settles it, scoping the mechanism sentence to this module or saying that `TestDatabase.dsl()` opens no connection; which reach was meant is Filip's to say, so the page is unchanged on this point.
+- **For Alf and Filip: `graphitron`'s own copies of the walk.** `graphitron/src/test/java/no/sikt/graphitron/rewrite/TierAnnotationEnforcementTest.java` initializes every class it walks and has no guard against a vacuous walk, and `ExemptionRegistryTest` carries a third walk. Two decisions, kept apart: whether one walker moves into `graphitron`'s published test-jar beside the tier annotations, which this module already consumes, is theirs; the missing vacuity guard is a gap whatever they decide.
 
 ## Reviewer findings
 
