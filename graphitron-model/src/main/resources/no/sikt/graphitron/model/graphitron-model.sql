@@ -12649,6 +12649,48 @@ COMMENT ON COLUMN graphitron_join_path_step_parameter.from_schema_ref IS 'the sc
 COMMENT ON COLUMN graphitron_join_path_step_parameter.from_table_ref IS 'the table half of that key, equal to from_table while the column stands';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.from_column_ref IS 'the name half of that key, equal to from_column while the column stands';
 
+-- The written argMapping pair a routine step's argument parameter takes its value through, as a call
+-- fill's is graphitron_occurrence_call_parameter_pair: the step parameter, the pair and the pair's
+-- landing under the step's occurrence, so a reader reaches a node id's key column by keys.
+CREATE TABLE graphitron_join_path_step_parameter_pair (
+  graph_name         VARCHAR   NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  target_type        VARCHAR   NOT NULL,
+  position           INT       NOT NULL,
+  parameter_position INT       NOT NULL,
+  pair_coordinate    VARCHAR   NOT NULL,
+  directive_name     VARCHAR   NOT NULL,
+  ordinal            INT       NOT NULL,
+  owner              VARCHAR   NOT NULL,
+  target_kind        VARCHAR   NOT NULL,
+  target_name        VARCHAR   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, target_type, position, parameter_position),
+  -- The step parameter it is the provenance of, by the parameter's own key.
+  FOREIGN KEY (graph_name, coordinate, target_type, position, parameter_position)
+    REFERENCES graphitron_join_path_step_parameter (graph_name, coordinate, target_type, position, parameter_position)
+    ON DELETE CASCADE,
+  -- The pair's landing under the step's occurrence, so the two cannot drift.
+  FOREIGN KEY (graph_name, pair_coordinate, directive_name, ordinal, owner, target_kind, target_name, coordinate)
+    REFERENCES graphitron_argmapping_landing
+      (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate)
+    ON DELETE CASCADE,
+  CHECK (directive_name = 'routine')
+);
+COMMENT ON TABLE graphitron_join_path_step_parameter_pair IS 'The written argMapping pair a routine step''s argument parameter takes its value through: one row per step parameter a written pair binds from an argument. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pMinLength through its minLength pair, and pActorId, a column, has no row.';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.coordinate IS 'the occurrence whose path the step is on, as on the step parameter, and the call occurrence the pair''s landing is resolved under';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.target_type IS 'the need''s target type, as on the step parameter';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.position IS 'the routine step''s position, as on the step parameter';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.parameter_position IS 'the parameter''s position in the routine''s call; with the four columns before it, the step parameter';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.pair_coordinate IS 'the element the @routine application is written on; with the four columns after it, the graphitron_argmapping_pair';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.directive_name IS 'routine, pinned: the pair is a @routine application''s';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.ordinal IS 'the @routine application''s ordinal at its element';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.owner IS 'the mapping''s owner within the application, as the pair states it';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.target_kind IS 'how the pair names the parameter, as the pair states it';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.target_name IS 'the parameter the pair names';
+COMMENT ON COLUMN graphitron_join_path_step_parameter_pair.touched_at IS 'the reading that last wrote this row; swept with the step parameter';
+
 CREATE TABLE graphitron_join_path_stop (
   graph_name    VARCHAR   NOT NULL,
   coordinate    VARCHAR   NOT NULL,
@@ -16574,7 +16616,7 @@ CREATE TABLE graphitron_occurrence_node_id_slot (
   UNIQUE (graph_name, coordinate, slot, kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (kind IN ('PARAMETER', 'MEMBER', 'RECORD')),
+  CHECK (kind IN ('PARAMETER', 'STEP_PARAMETER', 'MEMBER', 'RECORD')),
   CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
   CHECK ((type_source_name IS NULL) = (declared_type IS NULL))
 );
@@ -16622,6 +16664,38 @@ COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.coordinate IS 'th
 COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.kind IS 'always PARAMETER, pinned so the foreign key holds the row to a slot of that kind';
 COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.slot IS 'the slot the supertype states, spelled from the parameter. Generated, so nothing writes it';
 COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.touched_at IS 'the reading that last wrote this row';
+
+-- The routine step parameter a node id lands on, through the written pair that binds it.
+CREATE TABLE graphitron_occurrence_node_id_slot_step_parameter (
+  graph_name         VARCHAR   NOT NULL,
+  step_coordinate    VARCHAR   NOT NULL,
+  target_type        VARCHAR   NOT NULL,
+  position           INT       NOT NULL,
+  parameter_position INT       NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  kind               VARCHAR   NOT NULL,
+  slot               VARCHAR GENERATED ALWAYS AS (step_coordinate || ' ' || target_type || ' ' || position
+                                                  || ' ' || parameter_position) NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, step_coordinate, target_type, position, parameter_position),
+  FOREIGN KEY (graph_name, coordinate, slot, kind)
+    REFERENCES graphitron_occurrence_node_id_slot (graph_name, coordinate, slot, kind) ON DELETE CASCADE,
+  -- The pair the step parameter is bound through, by the step parameter's own key.
+  FOREIGN KEY (graph_name, step_coordinate, target_type, position, parameter_position)
+    REFERENCES graphitron_join_path_step_parameter_pair (graph_name, coordinate, target_type, position, parameter_position)
+    ON DELETE CASCADE,
+  CHECK (kind = 'STEP_PARAMETER')
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_slot_step_parameter IS 'The routine step parameter a node id lands on: one row per step parameter a written pair binds from an argument or input field that is a node id. For example Actor.filmsOf(ref:) under @routine(name: "films_for_actor", argMapping: "pActorId: ref.actor_id") lands on the step''s pActorId parameter, projecting actor_id.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.step_coordinate IS 'the occurrence whose path the routine step is on; with the next three columns, the step parameter';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.target_type IS 'the need''s target type, as on the step parameter';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.position IS 'the routine step''s position, as on the step parameter';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.parameter_position IS 'the parameter''s position in the routine''s call, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.coordinate IS 'the node id occurrence landing there, the slot''s';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.kind IS 'STEP_PARAMETER, pinned so the foreign key holds the row to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.slot IS 'the slot, spelled from the step parameter''s key';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_step_parameter.touched_at IS 'the reading that last wrote this row; swept with its slot';
 
 -- The member of a built class a node id fills, its own MEMBER binding.
 CREATE TABLE graphitron_occurrence_node_id_slot_member (
@@ -16846,14 +16920,14 @@ COMMENT ON VIEW graphitron_occurrence_node_id_slot_record_column_rule IS 'The co
 -- key columns in key order, or the one key column's value. A landing nothing fits has no row.
 CREATE VIEW graphitron_occurrence_node_id_shape_rule
   (graph_name, coordinate, slot, bound, decode_shape) AS
--- Each parameter, bean member and built record a node id lands on, under any call, against each node
--- table the id binds. One key column a pair projects is that column's value. The whole key lands only on its own
+-- Each parameter, routine step parameter, bean member and built record a node id lands on, under any
+-- call, against each node table the id binds. One key column a pair projects is that column's value. The whole key lands only on its own
 -- record, a record supertype for an id of several node types, or a jOOQ tuple whose degree is the
 -- key's and whose type arguments are its columns' types in key order. An id of several node types
 -- lands only on a record: a column value or a tuple names one node's key.
 SELECT graph_name, coordinate, slot, bound, decode_shape
   FROM (SELECT s.graph_name, s.coordinate, s.slot, k.bound,
-               CASE WHEN pj.bound IS NOT NULL
+               CASE WHEN COALESCE(pj.bound, lk.bound) IS NOT NULL
                     THEN CASE WHEN s.landing_class = pc.binding_type
                                AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
                                                 WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
@@ -16900,9 +16974,21 @@ SELECT graph_name, coordinate, slot, bound, decode_shape
           LEFT JOIN graphitron_occurrence_node_id_slot_projection pj
             ON pj.graph_name = sp.graph_name AND pj.call_coordinate = sp.call_coordinate
            AND pj.call = sp.call AND pj.position = sp.position AND pj.bound = k.bound
+          -- A routine step's parameter projects the key column its pair's landing states.
+          LEFT JOIN graphitron_occurrence_node_id_slot_step_parameter ss
+            ON ss.graph_name = s.graph_name AND ss.coordinate = s.coordinate AND ss.slot = s.slot
+          LEFT JOIN graphitron_join_path_step_parameter_pair spp
+            ON spp.graph_name = ss.graph_name AND spp.coordinate = ss.step_coordinate
+           AND spp.target_type = ss.target_type AND spp.position = ss.position
+           AND spp.parameter_position = ss.parameter_position
+          LEFT JOIN graphitron_argmapping_landing_key_column lk
+            ON lk.graph_name = spp.graph_name AND lk.coordinate = spp.pair_coordinate
+           AND lk.directive_name = spp.directive_name AND lk.ordinal = spp.ordinal AND lk.owner = spp.owner
+           AND lk.target_kind = spp.target_kind AND lk.target_name = spp.target_name
+           AND lk.call_coordinate = spp.coordinate AND lk.bound = k.bound
           LEFT JOIN graphitron_occurrence_node_id kp
-            ON kp.graph_name = pj.graph_name AND kp.coordinate = pj.coordinate AND kp.bound = pj.bound
-           AND kp.position = pj.key_position
+            ON kp.graph_name = s.graph_name AND kp.coordinate = s.coordinate
+           AND kp.bound = COALESCE(pj.bound, lk.bound) AND kp.position = COALESCE(pj.key_position, lk.position)
           LEFT JOIN sql_column pc
             ON pc.source_name = kp.table_source_name AND pc.table_schema = kp.table_schema
            AND pc.table_name = kp.table_name AND pc.column_name = kp.column_name
@@ -17774,6 +17860,38 @@ SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate, cp.call, cp.position
         OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k
                     WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate));
 COMMENT ON VIEW graphitron_occurrence_node_id_slot_parameter_rule IS 'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_parameter stores. For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.';
+
+-- A routine step's parameter a written pair binds from a node id: the class is the binding type the
+-- catalog states at the step routine's parameter position, as a root routine's is, one value and
+-- never a collection, naming no declared type. Only argument parameters have a pair, so only they
+-- have a slot.
+CREATE VIEW graphitron_occurrence_node_id_slot_step_parameter_rule
+  (graph_name, coordinate, step_coordinate, target_type, position, parameter_position, slot, list_depth,
+   erased_class) AS
+SELECT sp.graph_name, sp.argument_coordinate, sp.coordinate, sp.target_type, sp.position,
+       sp.parameter_position,
+       sp.coordinate || ' ' || sp.target_type || ' ' || sp.position || ' ' || sp.parameter_position,
+       COALESCE(a.list_depth, f.list_depth), rp.binding_type
+  FROM graphitron_join_path_step_parameter_pair pr
+  JOIN graphitron_join_path_step_parameter sp
+    ON sp.graph_name = pr.graph_name AND sp.coordinate = pr.coordinate AND sp.target_type = pr.target_type
+   AND sp.position = pr.position AND sp.parameter_position = pr.parameter_position
+  JOIN graphitron_join_path_step_routine st
+    ON st.graph_name = sp.graph_name AND st.coordinate = sp.coordinate AND st.target_type = sp.target_type
+   AND st.position = sp.position
+  JOIN sql_routine_parameter rp
+    ON rp.source_name = st.routine_source_name AND rp.table_schema = st.table_schema
+   AND rp.routine_name = st.routine_name AND rp.position = sp.parameter_position
+  JOIN graphitron_occurrence o ON o.graph_name = sp.graph_name AND o.coordinate = sp.argument_coordinate
+  LEFT JOIN graphitron_argument a ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+ -- A node id, as the call parameter's rule judges one.
+ WHERE EXISTS (SELECT 1 FROM graphitron_binding_claim cl
+                WHERE cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+                  AND cl.kind = 'NODE_ID')
+    OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k
+                WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_occurrence_node_id_slot_step_parameter_rule IS 'The routine step parameter a node id lands on: one row per step parameter a written pair binds from a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_step_parameter stores. For example Actor.filmsOf(ref:) under @routine(name: "films_for_actor", argMapping: "pActorId: ref.actor_id") lands on the step''s pActorId parameter.';
 
 -- The argument a node fetcher decodes, by name as the Relay contract has it (Alf, 2026-11-19): a
 -- query-root field returning the Node interface, which looks up the ids it is handed (a LOOKUP
@@ -22294,49 +22412,90 @@ UNION ALL
 -- id's key column into, where no decode shape fits: the parameter is not of the column's type, or not
 -- a List of it for a list of ids. Under some occurrence of the call, at the reference, or at the
 -- @routine application, which names no method: once per site, the parameters being
--- graphitron_occurrence_node_id_slot_projection's under it. A list at a routine is deferred, below.
-SELECT pj.graph_name, COALESCE(site.source_name, ra.source_name),
-       COALESCE(site.source_line, ra.source_line), COALESCE(site.source_column, ra.source_column),
-       'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
-       MIN('key column ' || c.column_name || ' is ' || c.binding_type
-           || ', and the parameter it binds to is declared ' || COALESCE(s.declared_type, s.erased_class)
-           || ': Declare it '
-           || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
-                   ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END), 'occurrence-builds'
-  FROM graphitron_occurrence_node_id_slot_projection pj
-  JOIN graphitron_occurrence_node_id_slot_parameter sp
-    ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call
-   AND sp.position = pj.position
-  JOIN graphitron_occurrence_node_id_slot s
-    ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
-  JOIN graphitron_occurrence_call_parameter cp
-    ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
-   AND cp.position = sp.position
-  JOIN graphitron_occurrence_node_id n
-    ON n.graph_name = pj.graph_name AND n.coordinate = pj.coordinate AND n.bound = pj.bound
-   AND n.position = pj.key_position
-  JOIN sql_column c
-    ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
-   AND c.table_name = n.table_name AND c.column_name = n.column_name
-  JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
-  LEFT JOIN graphitron_code_reference site
-    ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
-   AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
-        OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
-  -- A routine's call, at the application it came from.
-  LEFT JOIN graphitron_occurrence_call oc
-    ON cp.call_kind = 'ROUTINE' AND oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate
-   AND oc.call = cp.call
-  LEFT JOIN graphitron_directive_application ra
-    ON ra.graph_name = oc.graph_name AND ra.coordinate = oc.application_coordinate
-   AND ra.directive_name = oc.application_directive AND ra.ordinal = oc.application_ordinal
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
-                    WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
-                      AND d.slot = s.slot AND d.bound = pj.bound)
-   AND COALESCE(site.source_line, ra.source_line) IS NOT NULL
-   AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
- GROUP BY pj.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
-          COALESCE(site.source_column, ra.source_column)
+-- graphitron_occurrence_node_id_slot_projection's under it. A routine step's parameter is the second
+-- arm of the bracket, one family kept as one so the union stays balanced. A list at a routine is
+-- deferred, below.
+SELECT kt.graph_name, kt.source_name, kt.source_line, kt.source_column, kt.code, kt.detail, kt.stage
+  FROM (
+  SELECT pj.graph_name AS graph_name, COALESCE(site.source_name, ra.source_name) AS source_name,
+         COALESCE(site.source_line, ra.source_line) AS source_line,
+         COALESCE(site.source_column, ra.source_column) AS source_column,
+         'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT' AS code,
+         MIN('key column ' || c.column_name || ' is ' || c.binding_type
+             || ', and the parameter it binds to is declared ' || COALESCE(s.declared_type, s.erased_class)
+             || ': Declare it '
+             || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
+                     ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END) AS detail, 'occurrence-builds' AS stage
+    FROM graphitron_occurrence_node_id_slot_projection pj
+    JOIN graphitron_occurrence_node_id_slot_parameter sp
+      ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call
+     AND sp.position = pj.position
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+    JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+    JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = pj.graph_name AND n.coordinate = pj.coordinate AND n.bound = pj.bound
+     AND n.position = pj.key_position
+    JOIN sql_column c
+      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+     AND c.table_name = n.table_name AND c.column_name = n.column_name
+    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
+    LEFT JOIN graphitron_code_reference site
+      ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
+     AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
+          OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
+    -- A routine's call, at the application it came from.
+    LEFT JOIN graphitron_occurrence_call oc
+      ON cp.call_kind = 'ROUTINE' AND oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate
+     AND oc.call = cp.call
+    LEFT JOIN graphitron_directive_application ra
+      ON ra.graph_name = oc.graph_name AND ra.coordinate = oc.application_coordinate
+     AND ra.directive_name = oc.application_directive AND ra.ordinal = oc.application_ordinal
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
+                        AND d.slot = s.slot AND d.bound = pj.bound)
+     AND COALESCE(site.source_line, ra.source_line) IS NOT NULL
+     AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
+   GROUP BY pj.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
+            COALESCE(site.source_column, ra.source_column)
+  UNION ALL
+  -- A routine step's parameter a pair projects a node id's key column into, where the catalog's type
+  -- for the parameter is not the column's, at the @routine application the pair is written in: as a
+  -- root routine's, the key column the pair's landing states. A list at a routine is deferred, below.
+  SELECT ss.graph_name, ra.source_name, ra.source_line, ra.source_column,
+         'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
+         MIN('key column ' || c.column_name || ' is ' || c.binding_type
+             || ', and the parameter it binds to is declared ' || s.erased_class
+             || ': Declare it ' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '')), 'occurrence-builds'
+    FROM graphitron_occurrence_node_id_slot_step_parameter ss
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = ss.graph_name AND s.coordinate = ss.coordinate AND s.slot = ss.slot
+    JOIN graphitron_join_path_step_parameter_pair spp
+      ON spp.graph_name = ss.graph_name AND spp.coordinate = ss.step_coordinate
+     AND spp.target_type = ss.target_type AND spp.position = ss.position
+     AND spp.parameter_position = ss.parameter_position
+    JOIN graphitron_argmapping_landing_key_column lk
+      ON lk.graph_name = spp.graph_name AND lk.coordinate = spp.pair_coordinate
+     AND lk.directive_name = spp.directive_name AND lk.ordinal = spp.ordinal AND lk.owner = spp.owner
+     AND lk.target_kind = spp.target_kind AND lk.target_name = spp.target_name
+     AND lk.call_coordinate = spp.coordinate
+    JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate AND n.bound = lk.bound
+     AND n.position = lk.position
+    JOIN sql_column c
+      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+     AND c.table_name = n.table_name AND c.column_name = n.column_name
+    JOIN graphitron_directive_application ra
+      ON ra.graph_name = spp.graph_name AND ra.coordinate = spp.pair_coordinate
+     AND ra.directive_name = spp.directive_name AND ra.ordinal = spp.ordinal
+   WHERE s.list_depth = 0 AND ra.source_line IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
+                        AND d.slot = s.slot AND d.bound = lk.bound)
+   GROUP BY ss.graph_name, ra.source_name, ra.source_line, ra.source_column
+       ) kt
 UNION ALL
 -- A single node's decoded id handed whole to a @service or @condition parameter or a bean member that
 -- cannot take it, at the @nodeId: a place whose shape is not the id's, or a landing no decode shape fits, which
@@ -22411,19 +22570,26 @@ SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
  GROUP BY v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
           COALESCE(da.source_column, el.source_column), v.code
 UNION ALL
--- A list of node ids at a root @routine's parameter, at the @nodeId: a database function takes one
--- value per parameter, an array for a list, and the routine write does not decode a list of ids into
--- one yet. An id written without @nodeId, inferred, is reported at the argument or input field it is;
--- the parameter is the detail, the least where uses differ.
+-- A list of node ids at a @routine's parameter, a root routine's call or a routine step of a child's
+-- path, at the @nodeId: a database function takes one value per parameter, an array for a list, and
+-- no routine call decodes a list of ids into one yet. An id written without @nodeId, inferred, is
+-- reported at the argument or input field it is; the parameter is the detail, the least where uses
+-- differ.
 SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
        COALESCE(da.source_column, el.source_column),
-       'ROUTINE_NODE_ID_LIST_UNSUPPORTED', MIN(cp.parameter_name), 'occurrence-builds'
-  FROM graphitron_occurrence_node_id_slot_parameter sp
-  JOIN graphitron_occurrence_node_id_slot s
-    ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
-  JOIN graphitron_occurrence_call_parameter cp
+       'ROUTINE_NODE_ID_LIST_UNSUPPORTED', MIN(COALESCE(cp.parameter_name, jp.parameter_name)),
+       'occurrence-builds'
+  FROM graphitron_occurrence_node_id_slot s
+  LEFT JOIN graphitron_occurrence_node_id_slot_parameter sp
+    ON sp.graph_name = s.graph_name AND sp.coordinate = s.coordinate AND sp.slot = s.slot
+  LEFT JOIN graphitron_occurrence_call_parameter cp
     ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
    AND cp.position = sp.position AND cp.call_kind = 'ROUTINE'
+  LEFT JOIN graphitron_occurrence_node_id_slot_step_parameter ss
+    ON ss.graph_name = s.graph_name AND ss.coordinate = s.coordinate AND ss.slot = s.slot
+  LEFT JOIN graphitron_join_path_step_parameter jp
+    ON jp.graph_name = ss.graph_name AND jp.coordinate = ss.step_coordinate AND jp.target_type = ss.target_type
+   AND jp.position = ss.position AND jp.parameter_position = ss.parameter_position
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
   LEFT JOIN graphitron_directive_application da
     ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
@@ -22431,6 +22597,7 @@ SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
   LEFT JOIN graphql_ast_element_entry el
     ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate AND da.graph_name IS NULL
  WHERE s.list_depth > 0 AND COALESCE(da.source_line, el.source_line) IS NOT NULL
+   AND (cp.position IS NOT NULL OR jp.parameter_position IS NOT NULL)
  GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
           COALESCE(da.source_column, el.source_column)
 UNION ALL
@@ -33376,6 +33543,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_member'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_parameter'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot_step_parameter'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_projection'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record_column'),
@@ -33392,6 +33560,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_join_path_step_matched_key'),
   ('occurrence-depths', 'graphitron_join_path_step_method'),
   ('occurrence-depths', 'graphitron_join_path_step_parameter'),
+  ('occurrence-depths', 'graphitron_join_path_step_parameter_pair'),
   ('occurrence-depths', 'graphitron_join_path_step_primary_key'),
   ('occurrence-depths', 'graphitron_join_path_step_routine'),
   ('occurrence-depths', 'graphitron_join_path_step_to_one'),
@@ -33692,8 +33861,10 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot', 'graphitron_occurrence_node_id_slot_member_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot', 'graphitron_occurrence_node_id_slot_parameter_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot', 'graphitron_occurrence_node_id_slot_record_rule'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot', 'graphitron_occurrence_node_id_slot_step_parameter_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_member', 'graphitron_occurrence_node_id_slot_member_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_parameter', 'graphitron_occurrence_node_id_slot_parameter_rule'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot_step_parameter', 'graphitron_occurrence_node_id_slot_step_parameter_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_projection', 'graphitron_occurrence_node_id_slot_projection_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record', 'graphitron_occurrence_node_id_slot_record_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record_column', 'graphitron_occurrence_node_id_slot_record_column_rule'),
@@ -34373,6 +34544,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-node-id-slot-parameter',
    'one call parameter a node id lands on, in one graph',
    'graph_name, call_coordinate, call, position', 'sdl'),
+  ('occurrence-node-id-slot-step-parameter',
+   'one routine step parameter a node id lands on, in one graph',
+   'graph_name, step_coordinate, target_type, position, parameter_position', 'sdl'),
   ('occurrence-node-id-slot-member',
    'one built class member a node id fills, in one graph',
    'graph_name, coordinate, bound', 'sdl'),
@@ -34985,7 +35159,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('BUILD_NODE_ID_LIST_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_BUILD_NODE_ID_LIST_UNSUPPORTED',
    'An input field holding a list of node ids sits in an input object built into a jOOQ record, where a list of ids writes no one column, which is not built yet: take the ids as an argument of their own, or give the record one id.'),
   ('ROUTINE_NODE_ID_LIST_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_NODE_ID_LIST_UNSUPPORTED',
-   'A list of node ids reaches a @routine parameter, which takes one value or an array, and the routine write does not decode a list of ids into one yet: take one id, or the list of a key column through a @service.'),
+   'A list of node ids reaches a @routine parameter, at the root or as a step of a child''s path, which takes one value or an array, and no routine call decodes a list of ids into one yet: take one id, or the list of a key column through a @service.'),
   ('BUILD_NODE_ID_SEVERAL_TYPES_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_BUILD_NODE_ID_SEVERAL_TYPES_UNSUPPORTED',
    'An input field holding the id of several node types sits in an input object built into a jOOQ record, which takes one node''s key, so the build does not place it yet: name one node type with @nodeId(typeName:), or take the id outside the record.'),
   ('SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED',
@@ -35508,6 +35682,10 @@ INSERT INTO meta_relation VALUES
    'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id.',
    'For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.',
    'The PARAMETER subtype of graphitron_occurrence_node_id_slot, keyed by the parameter itself, one id landing on one parameter. Whole or projected is the fill''s own provenance, its pair and its landing''s key column, so it is not restated here.'),
+  ('graphitron_occurrence_node_id_slot_step_parameter', 'occurrence-node-id-slot-step-parameter', 'graphitron',
+   'The routine step parameter a node id lands on: one row per step parameter a written pair binds from an argument or input field that is a node id.',
+   'For example Actor.filmsOf(ref:) under @routine(name: "films_for_actor", argMapping: "pActorId: ref.actor_id") lands on the step''s pActorId parameter, projecting actor_id.',
+   'The STEP_PARAMETER subtype of graphitron_occurrence_node_id_slot, keyed by the step parameter itself, so a child routine''s node id is judged on the slot as a root routine''s is. Only argument parameters bound through a written pair have one; the key column it projects is the landing''s, reached through the pair.'),
   ('graphitron_occurrence_node_id_slot_member', 'occurrence-node-id-slot-member', 'graphitron',
    'The member of a built class a node id fills: one row per node id occurrence with a MEMBER binding.',
    'For example Mutation.assignOccupantRecord(in.occupant:) fills OccupantRecordAssignment#occupant.',
@@ -35520,6 +35698,10 @@ INSERT INTO meta_relation VALUES
    'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_parameter stores.',
    'For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.',
    'The rule graphitron_occurrence_node_id_slot_parameter and its supertype row are written from, one plain read of the rows the place already is, after the depth loop and the build have written them.'),
+  ('graphitron_occurrence_node_id_slot_step_parameter_rule', 'occurrence-node-id-slot-step-parameter', 'graphitron',
+   'The routine step parameter a node id lands on: one row per step parameter a written pair binds from a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_step_parameter stores.',
+   'For example Actor.filmsOf(ref:) under @routine(name: "films_for_actor", argMapping: "pActorId: ref.actor_id") lands on the step''s pActorId parameter.',
+   'The rule graphitron_occurrence_node_id_slot_step_parameter and its supertype row are written from, one plain read of the step parameter, its pair and the routine''s catalog parameter, after the depth loop has written them.'),
   ('graphitron_occurrence_node_id_slot_member_rule', 'occurrence-node-id-slot-member', 'graphitron',
    'The member of a built class a node id fills: one row per node id occurrence with a MEMBER binding, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_member stores.',
    'For example Mutation.assignOccupantRecord(in.occupant:) fills OccupantRecordAssignment#occupant.',
@@ -36088,6 +36270,10 @@ INSERT INTO meta_relation VALUES
    'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field.',
    'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from Actor.films(minLength:).',
    'The routine step''s join, as a key step''s is its column pairs: a parameter bound from a column correlates the call with the row the path stands at, one bound from an argument does not.'),
+  ('graphitron_join_path_step_parameter_pair', 'path-step-parameter', 'graphitron',
+   'The written argMapping pair a routine step''s argument parameter takes its value through: one row per step parameter a written pair binds from an argument.',
+   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pMinLength through its minLength pair, and pActorId, a column, has no row.',
+   'A step parameter names the argument it lands on and not the pair: this row is the pair, so a reader goes from the parameter to the landing and the node id key column it projects by keys, as a call fill does.'),
   ('graphitron_join_path_stop', 'path-need', 'graphitron',
    'One need whose join path stopped short: one row per need whose path met a step it could not take, with where and how many moves it found there.',
    'For example {key: "film_actor_actor_id_fkey"} written on a Film field stops the path from film at position 0, no move leaving film.',

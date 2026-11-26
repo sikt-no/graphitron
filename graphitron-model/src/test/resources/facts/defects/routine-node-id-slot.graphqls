@@ -6,15 +6,38 @@
 # into an array yet. rentFilmByCustomer projects customer_id into the Integer pCustomerId and is
 # refused for nothing, the near miss. A routine parameter taking a node id by the argument's name,
 # with no pair, is the whole-key refusal defects/node-id-decode-defect-slot-verdicts pins.
+#
+# A child @routine's parameter is a step of the field's path, judged on the same slot: the written
+# pair that binds it (graphitron_join_path_step_parameter_pair) leads to the key column its landing
+# projects. Language.tilgangerByFilm projects film_id, an Integer, into the function's String
+# pFeideId, refused at the @routine; Language.filmsByActorRefs hands a list of Actor ids to
+# films_for_actor's one-value pActorId, deferred at the @nodeId; Language.filmsByActorRef projects
+# actor_id into the Integer pActorId and is the near miss.
 
 interface Node { id: ID! }
 
 type Film implements Node @table(name: "film") @node { id: ID! }
 type Customer implements Node @table(name: "customer") @node { id: ID! }
+type Actor implements Node @table(name: "actor") @node { id: ID! }
+type ActorFilm { filmId: Int @field(name: "film_id") }
+type Tilgang { organisasjonskode: Int }
+
+type Language @table(name: "language") {
+  filmsByActorRef(actorRef: ID! @nodeId(typeName: "Actor"), minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorRef, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsByActorRefs(actorRefs: [ID!]! @nodeId(typeName: "Actor"), minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorRefs, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  tilgangerByFilm(film: ID! @nodeId(typeName: "Film"), env: String!, serviceId: String!): [Tilgang!]
+    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: film")
+    @defaultOrder(fields: [{name: "organisasjonskode"}])
+}
 type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 type SecureNote @table(name: "secure_note") { noteId: Int! @field(name: "note_id") }
 
-type Query { rental: Rental }
+type Query { rental: Rental, languages: [Language!]! }
 
 type Mutation {
   noteByFilm(owner: ID! @nodeId(typeName: "Film"), note: String!): [SecureNote!]!
@@ -34,6 +57,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
            'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_SLOT_SHAPE_MISMATCH')
   """, rows: """
   coordinate,                            code,                                 detail
+  Language.filmsByActorRefs(actorRefs:), ROUTINE_NODE_ID_LIST_UNSUPPORTED,     pActorId
+  Language.tilgangerByFilm,              NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.lang.String: Declare it Integer"
   Mutation.noteByFilm,                   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.lang.String: Declare it Integer"
   Mutation.rentFilmsByIds(customerIds:), ROUTINE_NODE_ID_LIST_UNSUPPORTED,     pCustomerId
   """)
@@ -41,7 +66,10 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
 # Where each id lands: the routine parameter, at its binding type, one value or, for the list, in a
 # shape no list of ids fills.
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows: """
-  coordinate,                               kind,      list_depth, slot_shape, landing_class
+  coordinate,                               kind,           list_depth, slot_shape, landing_class
+  Language.filmsByActorRef(actorRef:),      STEP_PARAMETER, 0,          SINGLE,     java.lang.Integer
+  Language.filmsByActorRefs(actorRefs:),    STEP_PARAMETER, 1,          MISMATCH,   java.lang.Integer
+  Language.tilgangerByFilm(film:),          STEP_PARAMETER, 0,          SINGLE,     java.lang.String
   Mutation.noteByFilm(owner:),              PARAMETER, 0,          SINGLE,     java.lang.String
   Mutation.rentFilmsByIds(customerIds:),    PARAMETER, 1,          MISMATCH,   java.lang.Integer
   Mutation.rentFilmByCustomer(customerId:), PARAMETER, 0,          SINGLE,     java.lang.Integer
@@ -50,5 +78,19 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows
 # Only the near miss lands, as the projected column's value.
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape", rows: """
   coordinate,                               bound,           decode_shape
+  Language.filmsByActorRef(actorRef:),      public.actor,    KEY_VALUE
   Mutation.rentFilmByCustomer(customerId:), public.customer, KEY_VALUE
+  """)
+
+# The written pair each child routine step's argument parameter is bound through, by the step
+# parameter's own key: every parameter here is an argument's, so each has one.
+extend schema @expectEquals(relation: "graphitron_join_path_step_parameter_pair", rows: """
+  coordinate,                parameter_position, target_name
+  Language.filmsByActorRef,  0,                  pActorId
+  Language.filmsByActorRef,  1,                  pMinLength
+  Language.filmsByActorRefs, 0,                  pActorId
+  Language.filmsByActorRefs, 1,                  pMinLength
+  Language.tilgangerByFilm,  0,                  pEnv
+  Language.tilgangerByFilm,  1,                  pServiceId
+  Language.tilgangerByFilm,  2,                  pFeideId
   """)

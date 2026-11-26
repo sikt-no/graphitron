@@ -381,6 +381,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_join_path_step_to_one", Arm.DERIVED);
         registrations.put("graphitron_join_path_step_to_one_rule", Arm.DERIVED);
         registrations.put("graphitron_join_path_step_parameter", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_parameter_pair", Arm.DERIVED);
         registrations.put("graphitron_join_path_stop", Arm.DERIVED);
         registrations.put("graphitron_join_path_claimed_rule", Arm.DERIVED);
         registrations.put("graphitron_join_path_step_rule", Arm.DERIVED);
@@ -681,6 +682,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_node_id_slot", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_parameter", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_parameter_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_node_id_slot_step_parameter", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_node_id_slot_step_parameter_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_projection", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_projection_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_member", Arm.DERIVED);

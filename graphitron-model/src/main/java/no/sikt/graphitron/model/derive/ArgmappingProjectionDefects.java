@@ -17,15 +17,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnsOf;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.nodeIdSpelling;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
-import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.not;
-import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The {@code @nodeId} key-projection rules for {@code argMapping}, projected from the store: an
@@ -67,16 +64,15 @@ import static org.jooq.impl.DSL.selectOne;
  * than a second question about nullability standing beside it. A {@code @routine} parameter's type
  * is the generated method's own and is boxed, so no routine binding can present one.
  *
- * <p>Two further arms are the generator's rather than the author's, which is why they are derived
- * here and not in SQL: a projection that resolves at a site whose emitter does not read it yet, and
- * one off a list-shaped node id, are both {@link Rejection.Deferred}. Whether an emitter exists is a
- * fact about this codebase and not about the schema. {@link #EMITTING_SITES} is the first of those
- * facts, held beside the switch that names the five sites so a value can neither be misspelled nor
- * forgotten; the second is the list shape at a child {@code @routine}, a coherent request naming the
- * list of a key column across the decoded ids that no routine call builds yet, where the
- * {@code @service} fetcher and the conditions class build it. Both shrink as emitters land rather than being deleted,
- * and a projection either arm covers fails the build saying so, which is the honest state: emitting
- * nothing, or emitting the raw base64, are the two outcomes they exist to prevent.
+ * <p>One further arm is the generator's rather than the author's, which is why it is derived here
+ * and not in SQL: a projection that resolves at a site whose emitter does not read it yet is
+ * {@link Rejection.Deferred}. Whether an emitter exists is a fact about this codebase and not about
+ * the schema, which {@link #EMITTING_SITES} holds beside the switch that names the five sites, so a
+ * value can neither be misspelled nor forgotten. It shrinks as emitters land rather than being
+ * deleted, and a projection it covers fails the build saying so, which is the honest state:
+ * emitting nothing, or emitting the raw base64, are the two outcomes it exists to prevent. A list of
+ * node ids at a {@code @routine}, root or a step of a child's path, is the store's deferral, a node
+ * id slot's {@code ROUTINE_NODE_ID_LIST_UNSUPPORTED}.
  *
  * <p>The message vocabulary is {@link NodeIdMessages}'.
  *
@@ -96,8 +92,7 @@ public final class ArgmappingProjectionDefects {
      * one {@link NodeIdMessages#keyColumnsOf} names on its behalf.
      */
     public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
-        Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION,
-            GRAPHQL_ROOT_OPERATION));
+        Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION));
 
     /**
      * The sites whose emitters read a resolved key projection: a routine IN parameter, reading its
@@ -331,20 +326,16 @@ public final class ArgmappingProjectionDefects {
      * The view's author arms, decoded, but the type mismatch where the occurrence build judges the
      * parameter against the shape the id decodes into, as {@code NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT}:
      * a {@code @service} parameter, a {@code @condition} parameter wherever the condition is written,
-     * and a root {@code @routine}'s, whose call the store fills. The view's comparison reads a list's
-     * erased class, so at those parameters it would also refuse the {@code List} a list of ids asks
-     * for. Reported here too it would be reported
-     * twice. A child routine's parameters are a path step's, which the build does not judge, so its
-     * mismatch stays here.
+     * and a {@code @routine}'s, a root call's or a routine step's of a child's path, each a node id
+     * slot. The view's comparison reads a list's erased class, so at those parameters it would also
+     * refuse the {@code List} a list of ids asks for. Reported here too it would be reported twice.
      */
     private static List<Defect> authorDefects(DSLContext dsl, String graphName) {
         var v = INTENT_ARGMAPPING_PROJECTION_DEFECT;
         return dsl.selectFrom(v)
             // These parameters' types are the occurrence build's to judge, against the decode shape.
             .where(v.GRAPH_NAME.eq(graphName), not(v.VERDICT.eq("KEY_COLUMN_TYPE_MISMATCH")
-                .and(v.DIRECTIVE_NAME.eq("service")
-                    .or(v.DIRECTIVE_NAME.eq("condition"))
-                    .or(atRootRoutine(v.GRAPH_NAME, v.DIRECTIVE_NAME, v.TYPE_NAME)))))
+                .and(v.DIRECTIVE_NAME.in("service", "condition", "routine"))))
             .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.COORDINATE, v.ORDINAL, v.POSITION)
             .fetch(row -> {
                 var site = Site.of(row.getDirectiveName(), row.getElementKind());
@@ -363,17 +354,12 @@ public final class ArgmappingProjectionDefects {
     }
 
     /**
-     * The projections that resolve but cannot be emitted, both reasons together. Keyed on the pair
-     * rather than on the projection's own grain, so one row per bound parameter however many key
-     * columns it projects: a distinct read over the finer grain would report a composite key twice
-     * for one entry.
-     *
-     * <p>Two deferrals, and they are here rather than in SQL for one reason: each is a fact about
-     * this codebase and not about the schema. A site whose emitter does not read a projection yet is
-     * {@link #EMITTING_SITES}' business, and a list-shaped node id at a child {@code @routine} is an
-     * emitter that does not exist for a request that is perfectly coherent,
-     * the author having named the list of one key column across the decoded ids. A view cannot see either. Both arms shrink as emitters land, which is
-     * what distinguishes them from the author defects the view states.
+     * The projections that resolve at a site whose emitter does not read them yet. Keyed on the
+     * pair rather than on the projection's own grain, so one row per bound parameter however many
+     * key columns it projects: a distinct read over the finer grain would report a composite key
+     * twice for one entry. Here rather than in SQL because whether an emitter reads a site is a fact
+     * about this codebase and not about the schema, {@link #EMITTING_SITES}' business; it shrinks
+     * as emitters land, which is what distinguishes it from the author defects the view states.
      */
     private static List<Defect> unemittableProjections(DSLContext dsl, String graphName) {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
@@ -381,29 +367,19 @@ public final class ArgmappingProjectionDefects {
                 p.TYPE_NAME, p.FIELD_NAME, p.POSITION, p.WRITTEN_PATH, p.NODE_TYPE_NAME,
                 p.LEAF_IS_LIST, p.TARGET_NAME, p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN)
             .from(p)
-            // A list of ids at a root @routine is the occurrence build's stored deferral.
-            .where(p.GRAPH_NAME.eq(graphName), not(p.LEAF_IS_LIST.isNotDistinctFrom(true)
-                .and(atRootRoutine(p.GRAPH_NAME, p.DIRECTIVE_NAME, p.TYPE_NAME))))
+            .where(p.GRAPH_NAME.eq(graphName))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.COORDINATE, p.ORDINAL, p.POSITION)
             .fetch()
             .stream()
-            .filter(row -> listDeferred(row.get(p.LEAF_IS_LIST), Site.of(row.get(p.DIRECTIVE_NAME),
-                    row.get(p.ELEMENT_KIND)))
-                || !EMITTING_SITES.contains(Site.of(row.get(p.DIRECTIVE_NAME),
-                    row.get(p.ELEMENT_KIND))))
+            .filter(row -> !EMITTING_SITES.contains(Site.of(row.get(p.DIRECTIVE_NAME),
+                row.get(p.ELEMENT_KIND))))
             .map(row -> {
                 var site = Site.of(row.get(p.DIRECTIVE_NAME), row.get(p.ELEMENT_KIND));
                 var useSite = site.useSite(row.get(p.COORDINATE), row.get(p.ORDINAL));
                 var entry = entry(site, useSite, row.get(p.TYPE_NAME),
                     row.get(p.FIELD_NAME), row.get(p.TARGET_NAME), row.get(p.WRITTEN_PATH));
-                // The list reason is reported ahead of the unwired-site one where both hold: it is
-                // the shape the author can act on, an unwired site being nothing they control.
-                String why = listDeferred(row.get(p.LEAF_IS_LIST), site)
-                    ? " opens a list of node ids, so it names the list of a key column of '"
-                      + row.get(p.NODE_TYPE_NAME)
-                      + "' across the decoded ids, which parameter binding does not emit yet"
-                    : " resolves a key column of '" + row.get(p.NODE_TYPE_NAME)
-                      + "', which no emitter reads at this site yet";
+                String why = " resolves a key column of '" + row.get(p.NODE_TYPE_NAME)
+                    + "', which no emitter reads at this site yet";
                 return new Defect(
                     row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
                     useSite, row.get(p.TARGET_NAME), row.get(p.WRITTEN_PATH), true,
@@ -413,28 +389,6 @@ public final class ArgmappingProjectionDefects {
             })
             .toList();
     }
-
-    /**
-     * Whether a projection off a list of node ids is deferred at {@code site}: at a {@code @routine}
-     * parameter, whose call takes one value. A {@code @service} fetcher and the conditions class
-     * decode each id of the list and read the column off each, at every {@code @condition} site.
-     */
-    private static boolean listDeferred(Boolean leafIsList, Site site) {
-        return Boolean.TRUE.equals(leafIsList) && site == Site.ROUTINE;
-    }
-
-    /**
-     * Whether a row's mapping is a root {@code @routine}'s: one written on a field of a root operation
-     * type, whose call the store fills and whose node-id parameters the occurrence build judges, a list
-     * of ids among them as {@code ROUTINE_NODE_ID_LIST_UNSUPPORTED}.
-     */
-    private static Condition atRootRoutine(Field<String> graphName, Field<String> directiveName,
-                                           Field<String> typeName) {
-        var r = GRAPHQL_ROOT_OPERATION;
-        return directiveName.eq("routine").and(exists(selectOne().from(r)
-            .where(r.GRAPH_NAME.eq(graphName), r.TYPE_NAME.eq(typeName))));
-    }
-
     /**
      * The message's leading clause: the directive, the entry as the author wrote it, and the use
      * site when that says more than the field coordinate the error already prefixes. A repeatable

@@ -320,7 +320,9 @@ resolutions and links built beside it are gone.
   source to target only. Its readers move with it: `graphitron_join_path_step_rule`,
   `graphitron_join_path_key_move_rule`, `graphitron_occurrence_producer_lift_rule` and
   `graphitron_occurrence_sort_key_hop_rule`, which reads `graphitron_path_element_key` for a sort key
-  path's written keys.
+  path's written keys. `Steps` writes the step family in Java, and
+  `graphitron_join_path_step_parameter_pair` with it, where the `@routine` application's ordinal is
+  known; whoever moves `Steps`' writes into rule views takes the pair too.
 * **Every field has a path, the written one or the one discovery implies** `open`. Inference is
   stored as path rows; what is left is the editor's omitted-`@reference` hint (`InlayHints`), which
   fills in from those rows rather than discovering for itself.
@@ -754,13 +756,14 @@ static method needs no holder.
   R1204's first blocker retired `intent_argmapping_projection_defect`'s `UNDECLARED_NODE_ID` arm, and its second moves the
   Mutation-root routine write off the view; the view and the author arms of `ArgmappingProjectionDefects` retire here,
   with the store counterparts still missing for them: `NODE_ID_TARGET_UNRESOLVED`'s "nothing to take the node from"
-  arm is `SERVICE`-only, so an untyped `@nodeId` at a routine or a condition has none; a keyless node type; the
-  typing of a child routine's parameters; the list deferral
-  (`ArgmappingProjectionDefects.unemittableProjections`), which since R1202 defers at a child routine alone, the
-  conditions class taking a list projection at every `@condition` site; and the other readers of `intent_resolved_node_key_projection`,
+  arm is `SERVICE`-only, so an untyped `@nodeId` at a routine or a condition has none; a keyless node type; and the other readers of `intent_resolved_node_key_projection`,
   the walk's Query-root and child routine launchers and `NodeIdDecodeCoverageFacts`. Since the conditions are emitted
   from the store, `EMITTING_SITES` holds every `Site`, so the unwired-site disjunct and its message branch are dead,
-  and go with the class. A composite id
+  and go with the class. A child routine's parameter is a node id slot of its own kind, through
+  `graphitron_join_path_step_parameter_pair`, so its key-column typing and its list deferral are the store's
+  `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT` and `ROUTINE_NODE_ID_LIST_UNSUPPORTED` as a root routine's are, and
+  `ArgmappingProjectionDefects` judges no `@routine`: the routine arm of `intent_argmapping_projection_defect` and of
+  `intent_resolved_node_key_projection`'s deferral read is left with no reader there. A composite id
   feeding two routine parameters is decoded twice in the store-fed routine write; one shared local is a later refinement.
   Still reported twice until then: a primitive `@condition` parameter (Java `primitiveParameters` and the store's
   `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`), and a bare composite or unknown key column at a routine (the intent view and
@@ -1263,17 +1266,8 @@ static method needs no holder.
   A root `@routine` is the producer call: its parameters are filled per occurrence in
   `graphitron_occurrence_call_parameter`, widened from service calls to any producer's call, and its
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
-  producer but a join step of the path; under `@splitQuery` the producer is the split's derived source
-  lookup. Then the routine decode, which writes only the spelling, goes.
-  * **A child `@routine` is a lateral step of the path, claimed by E** `open`, E's. The step and its parameters
-    are stated, `graphitron_join_path_step_parameter`, each naming the argument occurrence it reads,
-    but not the argMapping pair that binds it: `Steps.parameters` drops the pair's identity, so no
-    step parameter reaches its `graphitron_argmapping_landing` or the node-id key column the landing
-    projects. What is left is that link, `graphitron_join_path_step_parameter_pair`, the routine
-    step's fill → pair → landing → key column as a call fill's, and its two readers, the
-    child-routine arms of `ArgmappingProjectionDefects` (the key-column type mismatch at a child
-    routine, and the list deferral at a child `@routine`), which move into the store over it. The
-    editor's `argMapping` completion at `@routine` is its own node, off the critical path.
+  producer but a join step of the path; split, or as a child connection, the producer is a `SELECT` whose
+  path starts at the routine. Then the routine decode, which writes only the spelling, goes.
 * **A routine step's parameter splits by what binds it** `open`, off the critical path.
   `graphitron_join_path_step_parameter` carries a column (`from_*`) and an argument coordinate, one
   of them null by CHECK, two key shapes in one row: it splits into a column subtype and an argument

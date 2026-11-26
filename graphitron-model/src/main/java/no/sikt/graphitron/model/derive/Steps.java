@@ -40,6 +40,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_RULE;
@@ -955,6 +956,7 @@ public final class Steps {
     private static void parameters(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<RoutineStep> routines, Map<DefectKey, String> defects) {
         var rows = new ArrayList<Object[]>();
+        var pairs = new ArrayList<Object[]>();
         var bound = new LinkedHashMap<List<Object>, List<Parameter>>();
         var landed = landings(dsl, graph);
         var named = arguments(dsl, graph);
@@ -973,8 +975,10 @@ public final class Steps {
                 if (column == argument) {
                     continue;
                 }
+                Landing landing = column || !p.written() ? null
+                    : landed.get(List.of(step.need().coordinate(), p.ordinal(), p.name()));
                 String occurrence = column ? null : p.written()
-                    ? landed.get(List.of(step.need().coordinate(), p.ordinal(), p.name()))
+                    ? (landing == null ? null : landing.occurrence())
                     : named.get(List.of(step.need().coordinate(), p.name()));
                 if (!column && occurrence == null) {
                     continue;
@@ -987,6 +991,11 @@ public final class Steps {
                     occurrence, touchedAt,
                     t == null ? null : t.source(), t == null ? null : t.schema(),
                     t == null ? null : t.name(), column ? p.columnName() : null});
+                if (landing != null) {
+                    pairs.add(new Object[] {graph, step.need().coordinate(), step.need().targetType(),
+                        step.position(), p.position(), landing.pairCoordinate(), "routine", p.ordinal(),
+                        landing.owner(), landing.targetKind(), p.name(), touchedAt});
+                }
             }
         }
         var pp = GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
@@ -996,18 +1005,29 @@ public final class Steps {
                 pp.FROM_COLUMN, pp.ARGUMENT_COORDINATE, pp.TOUCHED_AT, pp.FROM_SOURCE_REF, pp.FROM_SCHEMA_REF,
                 pp.FROM_TABLE_REF, pp.FROM_COLUMN_REF),
             rows);
+        var pr = GRAPHITRON_JOIN_PATH_STEP_PARAMETER_PAIR;
+        upsert(dsl, pr, List.of(pr.GRAPH_NAME, pr.COORDINATE, pr.TARGET_TYPE, pr.POSITION,
+                pr.PARAMETER_POSITION),
+            List.of(pr.PAIR_COORDINATE, pr.DIRECTIVE_NAME, pr.ORDINAL, pr.OWNER, pr.TARGET_KIND,
+                pr.TARGET_NAME, pr.TOUCHED_AT),
+            pairs);
     }
+
+    /** Where one written {@code @routine} entry lands, and the pair it is, by the pair's own key. */
+    private record Landing(String occurrence, String pairCoordinate, String owner, String targetKind) {}
 
     /**
      * The argument or input-field occurrence each written {@code @routine} entry lands on, keyed by the
      * call's occurrence, the application's ordinal and the parameter it names.
      */
-    private static Map<List<Object>, String> landings(DSLContext dsl, String graph) {
+    private static Map<List<Object>, Landing> landings(DSLContext dsl, String graph) {
         var l = GRAPHITRON_ARGMAPPING_LANDING;
-        var out = new java.util.HashMap<List<Object>, String>();
-        dsl.select(l.CALL_COORDINATE, l.ORDINAL, l.TARGET_NAME, l.LANDING_COORDINATE).from(l)
+        var out = new java.util.HashMap<List<Object>, Landing>();
+        dsl.select(l.CALL_COORDINATE, l.ORDINAL, l.TARGET_NAME, l.LANDING_COORDINATE, l.COORDINATE,
+                l.OWNER, l.TARGET_KIND).from(l)
             .where(l.GRAPH_NAME.eq(graph), l.DIRECTIVE_NAME.eq("routine"), l.TARGET_KIND.eq("NAME"))
-            .forEach(r -> out.put(List.of(r.value1(), r.value2(), r.value3()), r.value4()));
+            .forEach(r -> out.put(List.of(r.value1(), r.value2(), r.value3()),
+                new Landing(r.value4(), r.value5(), r.value6(), r.value7())));
         return out;
     }
 
@@ -1161,7 +1181,8 @@ public final class Steps {
      * are {@link Paths}'s to sweep.
      */
     public static void sweep(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
-        for (Table<?> t : List.of(GRAPHITRON_JOIN_PATH_STEP_PARAMETER, GRAPHITRON_JOIN_PATH_STEP_COLUMN,
+        for (Table<?> t : List.of(GRAPHITRON_JOIN_PATH_STEP_PARAMETER_PAIR,
+                GRAPHITRON_JOIN_PATH_STEP_PARAMETER, GRAPHITRON_JOIN_PATH_STEP_COLUMN,
                 GRAPHITRON_JOIN_PATH_STEP_KEY, GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY, GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_METHOD, GRAPHITRON_JOIN_PATH_STEP_ROUTINE,

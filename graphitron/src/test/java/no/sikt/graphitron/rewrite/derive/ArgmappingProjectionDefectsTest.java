@@ -307,36 +307,6 @@ class ArgmappingProjectionDefectsTest {
             .isEmpty();
     }
 
-    /**
-     * A composite projection is one deferral per bound parameter, not one per key column of the
-     * type. The projection relation's grain is the key column, so a read that did not collapse it
-     * would report a two-column key twice for one entry. A list of ids at a child {@code @routine} is
-     * the deferral used, one column per decoded id being what no routine call builds yet.
-     */
-    @Test
-    void oneDeferralPerBoundParameterRatherThanPerKeyColumn() {
-        var violations = detect("""
-            type Inventory implements Node @table(name: "inventory")
-                    @node(keyColumns: ["inventory_id", "store_id"]) {
-                id: ID! @nodeId
-            }
-            type ActorFilm { filmId: Int @field(name: "FILM_ID") }
-            type Actor @table(name: "actor") {
-                films(units: [ID!] @nodeId(typeName: "Inventory")): [ActorFilm!]
-                    @routine(name: "films_for_actor",
-                             argMapping: "pActorId: units.inventory_id, pMinLength: units.store_id")
-                    @defaultOrder(fields: [{name: "film_id"}])
-            }
-            type Query { actors: [Actor], inventory: Inventory }
-            """);
-
-        assertThat(violations)
-            .as("two entries bound from one node id are two deferrals, not four")
-            .hasSize(2);
-        assertThat(violations).allSatisfy(v ->
-            assertThat(v.rejection()).isInstanceOf(Rejection.Deferred.class));
-    }
-
     /** An input-field {@code @condition} opening a {@code @nodeId} with its node type's key column. */
     private static final String INPUT_FIELD_CONDITION_SDL = """
         type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {

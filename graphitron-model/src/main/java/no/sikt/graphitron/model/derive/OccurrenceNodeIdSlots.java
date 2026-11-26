@@ -17,12 +17,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_COLUMN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_STEP_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_STEP_PARAMETER_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes {@code graphitron_occurrence_node_id_slot} and its three subtypes, where each node id lands
+ * Writes {@code graphitron_occurrence_node_id_slot} and its four subtypes, where each node id lands
  * in Java, from one rule per subtype, marked and swept.
  *
  * <p>A step of {@link OccurrenceBuilds}' stage, after its own built classes and member bindings, which
@@ -69,6 +71,28 @@ public final class OccurrenceNodeIdSlots {
             .set(pj.COORDINATE, excluded(pj.COORDINATE))
             .set(pj.KEY_POSITION, excluded(pj.KEY_POSITION))
             .set(pj.TOUCHED_AT, excluded(pj.TOUCHED_AT))
+            .execute();
+
+        var t = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_STEP_PARAMETER_RULE;
+        var st = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_STEP_PARAMETER;
+        writeSlots(dsl, dsl
+            .select(t.GRAPH_NAME, t.COORDINATE, t.SLOT, inline("STEP_PARAMETER"), t.LIST_DEPTH, t.ERASED_CLASS,
+                inline(null, t.ERASED_CLASS), inline(null, t.ERASED_CLASS), inline(null, t.ERASED_CLASS),
+                inline(null, t.ERASED_CLASS), val(touchedAt, st.TOUCHED_AT))
+            .from(t)
+            .where(t.GRAPH_NAME.eq(graph)));
+        dsl.insertInto(st)
+            .columns(st.GRAPH_NAME, st.STEP_COORDINATE, st.TARGET_TYPE, st.POSITION, st.PARAMETER_POSITION,
+                st.COORDINATE, st.KIND, st.TOUCHED_AT)
+            .select(dsl
+                .select(t.GRAPH_NAME, t.STEP_COORDINATE, t.TARGET_TYPE, t.POSITION, t.PARAMETER_POSITION,
+                    t.COORDINATE, inline("STEP_PARAMETER"), val(touchedAt, st.TOUCHED_AT))
+                .from(t)
+                .where(t.GRAPH_NAME.eq(graph)))
+            .onConflict(st.GRAPH_NAME, st.STEP_COORDINATE, st.TARGET_TYPE, st.POSITION, st.PARAMETER_POSITION)
+            .doUpdate()
+            .set(st.COORDINATE, excluded(st.COORDINATE))
+            .set(st.TOUCHED_AT, excluded(st.TOUCHED_AT))
             .execute();
 
         var m = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_MEMBER_RULE;
