@@ -183,6 +183,11 @@ class SupertypeSignatureGateTest {
         // stated before the pin that decides which call exists, so it cannot key into the call, and
         // the call keeps the kind its subtypes key on. Two grains, not one fact under two keys.
         Set.of("graphitron_occurrence_call", "graphitron_occurrence_call_candidate"),
+        // A routine step's argument parameter and a node fetcher's decoded argument, each naming one
+        // argument occurrence: the step parameter the argument a routine on a path is called with, the
+        // node producer the id it decodes. Two facts about two places that happen to point at an
+        // argument, the one shape such a pointer has; no supertype would say anything either does not.
+        Set.of("graphitron_join_path_step_parameter_argument", "graphitron_occurrence_producer_node"),
         // Two arms of one tenant slot supertype, each naming the binding its slot rests on by an
         // occurrence and a bound: the authored arm a tenant binding, the record arm a column binding.
         Set.of("graphitron_occurrence_tenant_slot_authored", "graphitron_occurrence_tenant_slot_record_column"),

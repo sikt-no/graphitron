@@ -40,6 +40,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
@@ -956,6 +958,8 @@ public final class Steps {
     private static void parameters(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<RoutineStep> routines, Map<DefectKey, String> defects) {
         var rows = new ArrayList<Object[]>();
+        var columns = new ArrayList<Object[]>();
+        var arguments = new ArrayList<Object[]>();
         var pairs = new ArrayList<Object[]>();
         var bound = new LinkedHashMap<List<Object>, List<Parameter>>();
         var landed = landings(dsl, graph);
@@ -983,14 +987,17 @@ public final class Steps {
                 if (!column && occurrence == null) {
                     continue;
                 }
-                var t = column ? p.column() : null;
                 rows.add(new Object[] {graph, step.need().coordinate(), step.need().targetType(),
-                    step.position(), p.position(), p.name(),
-                    t == null ? null : t.source(), t == null ? null : t.schema(),
-                    t == null ? null : t.name(), column ? p.columnName() : null,
-                    occurrence, touchedAt,
-                    t == null ? null : t.source(), t == null ? null : t.schema(),
-                    t == null ? null : t.name(), column ? p.columnName() : null});
+                    step.position(), p.position(), p.name(), column ? "COLUMN" : "ARGUMENT", touchedAt});
+                if (column) {
+                    var t = p.column();
+                    columns.add(new Object[] {graph, step.need().coordinate(), step.need().targetType(),
+                        step.position(), p.position(), "COLUMN", t.source(), t.schema(), t.name(),
+                        p.columnName(), touchedAt, t.source(), t.schema(), t.name(), p.columnName()});
+                } else {
+                    arguments.add(new Object[] {graph, step.need().coordinate(), step.need().targetType(),
+                        step.position(), p.position(), "ARGUMENT", occurrence, touchedAt});
+                }
                 if (landing != null) {
                     pairs.add(new Object[] {graph, step.need().coordinate(), step.need().targetType(),
                         step.position(), p.position(), landing.pairCoordinate(), "routine", p.ordinal(),
@@ -998,13 +1005,34 @@ public final class Steps {
                 }
             }
         }
+        // A parameter whose kind changed since the last reading leaves its old subtype row first, so
+        // the supertype's kind can move under the foreign key that pins it.
+        var pc = GRAPHITRON_JOIN_PATH_STEP_PARAMETER_COLUMN;
+        var pa = GRAPHITRON_JOIN_PATH_STEP_PARAMETER_ARGUMENT;
+        for (var a : arguments) {
+            dsl.deleteFrom(pc).where(pc.GRAPH_NAME.eq((String) a[0]), pc.COORDINATE.eq((String) a[1]),
+                pc.TARGET_TYPE.eq((String) a[2]), pc.POSITION.eq((Integer) a[3]),
+                pc.PARAMETER_POSITION.eq((Integer) a[4])).execute();
+        }
+        for (var c : columns) {
+            dsl.deleteFrom(pa).where(pa.GRAPH_NAME.eq((String) c[0]), pa.COORDINATE.eq((String) c[1]),
+                pa.TARGET_TYPE.eq((String) c[2]), pa.POSITION.eq((Integer) c[3]),
+                pa.PARAMETER_POSITION.eq((Integer) c[4])).execute();
+        }
         var pp = GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
         upsert(dsl, pp, List.of(pp.GRAPH_NAME, pp.COORDINATE, pp.TARGET_TYPE, pp.POSITION,
                 pp.PARAMETER_POSITION),
-            List.of(pp.PARAMETER_NAME, pp.FROM_SOURCE_NAME, pp.FROM_SCHEMA, pp.FROM_TABLE,
-                pp.FROM_COLUMN, pp.ARGUMENT_COORDINATE, pp.TOUCHED_AT, pp.FROM_SOURCE_REF, pp.FROM_SCHEMA_REF,
-                pp.FROM_TABLE_REF, pp.FROM_COLUMN_REF),
+            List.of(pp.PARAMETER_NAME, pp.KIND, pp.TOUCHED_AT),
             rows);
+        upsert(dsl, pc, List.of(pc.GRAPH_NAME, pc.COORDINATE, pc.TARGET_TYPE, pc.POSITION,
+                pc.PARAMETER_POSITION),
+            List.of(pc.KIND, pc.FROM_SOURCE_NAME, pc.FROM_SCHEMA, pc.FROM_TABLE, pc.FROM_COLUMN, pc.TOUCHED_AT,
+                pc.FROM_SOURCE_REF, pc.FROM_SCHEMA_REF, pc.FROM_TABLE_REF, pc.FROM_COLUMN_REF),
+            columns);
+        upsert(dsl, pa, List.of(pa.GRAPH_NAME, pa.COORDINATE, pa.TARGET_TYPE, pa.POSITION,
+                pa.PARAMETER_POSITION),
+            List.of(pa.KIND, pa.ARGUMENT_COORDINATE, pa.TOUCHED_AT),
+            arguments);
         var pr = GRAPHITRON_JOIN_PATH_STEP_PARAMETER_PAIR;
         upsert(dsl, pr, List.of(pr.GRAPH_NAME, pr.COORDINATE, pr.TARGET_TYPE, pr.POSITION,
                 pr.PARAMETER_POSITION),
@@ -1182,6 +1210,7 @@ public final class Steps {
      */
     public static void sweep(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_JOIN_PATH_STEP_PARAMETER_PAIR,
+                GRAPHITRON_JOIN_PATH_STEP_PARAMETER_COLUMN, GRAPHITRON_JOIN_PATH_STEP_PARAMETER_ARGUMENT,
                 GRAPHITRON_JOIN_PATH_STEP_PARAMETER, GRAPHITRON_JOIN_PATH_STEP_COLUMN,
                 GRAPHITRON_JOIN_PATH_STEP_KEY, GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY, GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY,

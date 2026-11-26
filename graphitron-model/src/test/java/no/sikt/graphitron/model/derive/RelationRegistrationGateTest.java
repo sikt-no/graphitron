@@ -381,6 +381,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_join_path_step_to_one", Arm.DERIVED);
         registrations.put("graphitron_join_path_step_to_one_rule", Arm.DERIVED);
         registrations.put("graphitron_join_path_step_parameter", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_parameter_argument", Arm.DERIVED);
+        registrations.put("graphitron_join_path_step_parameter_column", Arm.DERIVED);
         registrations.put("graphitron_join_path_step_parameter_pair", Arm.DERIVED);
         registrations.put("graphitron_join_path_stop", Arm.DERIVED);
         registrations.put("graphitron_join_path_claimed_rule", Arm.DERIVED);

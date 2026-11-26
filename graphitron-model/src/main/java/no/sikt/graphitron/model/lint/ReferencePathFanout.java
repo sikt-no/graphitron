@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -249,7 +249,7 @@ public final class ReferencePathFanout {
      */
     private static Map<Step, Set<String>> boundColumns(StoreHandle store) {
         var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
-        var p = GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
+        var p = GRAPHITRON_JOIN_PATH_STEP_PARAMETER_COLUMN;
         var graph = store.graphName();
         var bound = new HashMap<Step, Set<String>>();
         store.dsl().select(sc.COORDINATE, sc.TARGET_TYPE, sc.POSITION, sc.TO_COLUMN)
@@ -257,7 +257,7 @@ public final class ReferencePathFanout {
             .unionAll(select(sc.COORDINATE, sc.TARGET_TYPE, sc.POSITION.minus(1), sc.FROM_COLUMN)
                 .from(sc).where(sc.GRAPH_NAME.eq(graph), sc.POSITION.gt(0)))
             .unionAll(select(p.COORDINATE, p.TARGET_TYPE, p.POSITION.minus(1), p.FROM_COLUMN)
-                .from(p).where(p.GRAPH_NAME.eq(graph), p.POSITION.gt(0), p.FROM_COLUMN.isNotNull()))
+                .from(p).where(p.GRAPH_NAME.eq(graph), p.POSITION.gt(0)))
             .forEach(row -> bound.computeIfAbsent(new Step(row.value1(), row.value2(), row.value3()),
                 key -> new HashSet<>()).add(row.value4()));
         return bound;

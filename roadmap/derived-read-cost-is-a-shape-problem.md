@@ -1268,14 +1268,14 @@ static method needs no holder.
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
   producer but a join step of the path; split, or as a child connection, the producer is a `SELECT` whose
   path starts at the routine. Then the routine decode, which writes only the spelling, goes.
-* **A routine step's parameter splits by what binds it** `open`, off the critical path.
-  `graphitron_join_path_step_parameter` carries a column (`from_*`) and an argument coordinate, one
-  of them null by CHECK, two key shapes in one row: it splits into a column subtype and an argument
-  subtype (Alf, 2026-11-25, recorded in fact-model). The argument subtype's coordinate restates the
-  landing's `landing_coordinate`, and nothing holds the two equal, the step parameter and the landing
-  being of different grains ("unfortunate, the tables have different granularity", Alf); the call
-  fill's `landing_coordinate` has the same gap. The split states the argument subtype's coordinate
-  once, held to its landing by key.
+* **A routine step's argument coordinate is stated once** `open`, off the critical path.
+  `graphitron_join_path_step_parameter` splits into a column and an argument subtype (Alf,
+  2026-11-25, recorded in fact-model). The argument subtype's coordinate restates the landing's
+  `landing_coordinate` where a written pair binds it, and nothing holds the two equal, the step
+  parameter and the landing being of different grains ("unfortunate, the tables have different
+  granularity", Alf); the call fill's `landing_coordinate` has the same gap. How it is stated once is
+  with Alf: one remedy is the pair hanging off the argument subtype and carrying the coordinate, held
+  by key to the argument and to a widened unique key on the landing.
 * **The editor's claim-conflict reads take the stored defect** `open`, off the critical path. Two
   language-server readers decide a claim conflict themselves from `graphitron_producer_claim`:
   `FieldColumnTable` silences a field's column scope where two producer kinds stand but for the

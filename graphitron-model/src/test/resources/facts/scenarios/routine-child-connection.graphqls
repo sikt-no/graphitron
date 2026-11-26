@@ -75,9 +75,9 @@ extend schema @expectEquals(relation: "graphitron_join_path_step",
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_parameter",
     where: "coordinate = 'Actor.films'", rows: """
-  coordinate,       position, parameter_name, from_table, from_column, argument_coordinate
-  Actor.films,      0,        pActorId,       actor,      actor_id,
-  Actor.films,      0,        pMinLength,     ,           ,            Actor.films(minLength:)
+  coordinate,       position, parameter_name, kind
+  Actor.films,      0,        pActorId,       COLUMN
+  Actor.films,      0,        pMinLength,     ARGUMENT
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_filter_term",

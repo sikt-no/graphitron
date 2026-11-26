@@ -46,9 +46,17 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_routine", rows:
   """)
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_parameter", rows: """
-  coordinate,           position, parameter_name, from_table, from_column, argument_coordinate
-  Actor.films,          0,        pActorId,       actor,      actor_id,
-  Actor.films,          0,        pMinLength,     ,           ,            Actor.films(minLength:)
-  Film.castRecentFilms, 1,        pActorId,       film_actor, actor_id,
-  Film.castRecentFilms, 1,        pMinLength,     ,           ,            Film.castRecentFilms(minLength:)
+  coordinate,           position, parameter_name, kind
+  Actor.films,          0,        pActorId,       COLUMN
+  Actor.films,          0,        pMinLength,     ARGUMENT
+  Film.castRecentFilms, 1,        pActorId,       COLUMN
+  Film.castRecentFilms, 1,        pMinLength,     ARGUMENT
+  """)
+
+# A column binds a parameter from the table the step departs, a column subtype row; an argument binds
+# it as the argument subtype's row, which routine-argument-binding states.
+extend schema @expectEquals(relation: "graphitron_join_path_step_parameter_column", rows: """
+  coordinate,           position, parameter_position, from_table, from_column
+  Actor.films,          0,        0,                  actor,      actor_id
+  Film.castRecentFilms, 1,        0,                  film_actor, actor_id
   """)
