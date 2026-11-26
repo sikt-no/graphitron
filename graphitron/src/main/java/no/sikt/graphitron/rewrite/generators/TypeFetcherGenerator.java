@@ -1609,7 +1609,7 @@ public class TypeFetcherGenerator {
             OwnedScope.provider(outputPackage));
         var entry = no.sikt.graphitron.emit.FrameEmitter.render(frame,
             units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
-            rendered.body().returnType(), fetchers, bodyName,
+            rendered.body().returnType(), new no.sikt.graphitron.emit.FrameEmitter.Body.Call(fetchers, bodyName),
             frameRuntime(ctx, units), true, false,
             no.sikt.graphitron.emit.FrameConnections.of(frame, routineWrites.connectionFor(row), true,
                 Optional.empty(), routing(outputPackage), coordinate.toString()));

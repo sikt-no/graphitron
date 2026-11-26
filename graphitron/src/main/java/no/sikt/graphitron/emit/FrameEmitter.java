@@ -143,6 +143,29 @@ public final class FrameEmitter {
         record Refuse(ClassName exception, String message) implements NoTenant {}
     }
 
+    /**
+     * The method the frame runs its producer through, named by how the frame calls it: any class and
+     * method of that shape, whichever emitter wrote it.
+     */
+    public sealed interface Body {
+
+        /** Called {@code owner.method(env, dsl)} at a root and {@code (keys, env, dsl)} under an object. */
+        record Call(ClassName owner, String method) implements Body {
+            public Call {
+                Objects.requireNonNull(owner, "owner");
+                Objects.requireNonNull(method, "method");
+            }
+        }
+
+        /** Called {@code owner.method(dsl, env)}, the order a launcher takes its arguments in; a root's only. */
+        record LauncherCall(ClassName owner, String method) implements Body {
+            public LauncherCall {
+                Objects.requireNonNull(owner, "owner");
+                Objects.requireNonNull(method, "method");
+            }
+        }
+    }
+
     /** The local the routed tenant is folded into, and the one its key is built under. */
     private static final String TENANT_LOCAL = "_tenant";
     private static final String KEY_LOCAL = "_key";
@@ -153,12 +176,11 @@ public final class FrameEmitter {
      * @param methodName the fetcher's generated name
      * @param valueType  what the body answers for one occurrence: its value at a root, the value per
      *                   key under an object
-     * @param body       the method running the producer: {@code (env, dsl)} at a root,
-     *                   {@code (keys, env, dsl)} under an object
+     * @param body       the method running the producer, and how it is called
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime) {
-        return render(row, methodName, valueType, bodyClass, body, runtime, true);
+                                    Body body, Runtime runtime) {
+        return render(row, methodName, valueType, body, runtime, true);
     }
 
     /**
@@ -167,8 +189,8 @@ public final class FrameEmitter {
      * connection.
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext) {
-        return render(row, methodName, valueType, bodyClass, body, runtime, needsContext, false);
+                                    Body body, Runtime runtime, boolean needsContext) {
+        return render(row, methodName, valueType, body, runtime, needsContext, false);
     }
 
     /**
@@ -177,9 +199,9 @@ public final class FrameEmitter {
      * wrapping the value as the success.
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                    Body body, Runtime runtime, boolean needsContext,
                                     boolean bodyAnswersOutcome) {
-        return render(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome,
+        return render(row, methodName, valueType, body, runtime, needsContext, bodyAnswersOutcome,
             new Connection.Request());
     }
 
@@ -188,9 +210,9 @@ public final class FrameEmitter {
      * handing its key down to the subtree, and only a child frame inherits that key.
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                    Body body, Runtime runtime, boolean needsContext,
                                     boolean bodyAnswersOutcome, Connection connection) {
-        return render(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome,
+        return render(row, methodName, valueType, body, runtime, needsContext, bodyAnswersOutcome,
             connection, CodeBlock.of(""));
     }
 
@@ -201,7 +223,7 @@ public final class FrameEmitter {
      * body is. A root frame's body runs in its fetcher already and takes none.
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                    Body body, Runtime runtime, boolean needsContext,
                                     boolean bodyAnswersOutcome, Connection connection, CodeBlock beforeLoad) {
         if (row.root() && !beforeLoad.isEmpty()) {
             throw new IllegalArgumentException(row.coordinate() + ": only a child frame runs statements before it loads");
@@ -216,12 +238,12 @@ public final class FrameEmitter {
                 + " from its body");
         }
         return row.root()
-            ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome, connection)
-            : child(row, methodName, valueType, bodyClass, body, runtime, connection, beforeLoad);
+            ? root(row, methodName, valueType, body, runtime, needsContext, bodyAnswersOutcome, connection)
+            : child(row, methodName, valueType, body, runtime, connection, beforeLoad);
     }
 
     private static MethodSpec root(FrameQuery.Row row, String methodName, TypeName valueType,
-                                   ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                   Body body, Runtime runtime, boolean needsContext,
                                    boolean bodyAnswersOutcome, Connection connection) {
         var declared = declared(row, valueType, runtime);
         var held = bodyAnswersOutcome ? declared : valueType;
@@ -255,7 +277,11 @@ public final class FrameEmitter {
                 yield no.sikt.graphitron.render.ConnectionKeyHandDown.ofKey(KEY_LOCAL).builderTail();
             }
         };
-        method.addStatement("$T value = $T.$L(env, $L)", held, bodyClass, body, needsContext ? "dsl" : "null");
+        var dsl = needsContext ? "dsl" : "null";
+        method.addStatement("$T value = $L", held, switch (body) {
+            case Body.Call call -> CodeBlock.of("$T.$L(env, $L)", call.owner(), call.method(), dsl);
+            case Body.LauncherCall launcher -> CodeBlock.of("$T.$L($L, env)", launcher.owner(), launcher.method(), dsl);
+        });
         var answer = bodyAnswersOutcome
             ? CodeBlock.of("$T.<$T>newResult().data(value)$L.build()", RESULT, declared, handDown)
             : success(row, declared, CodeBlock.of("value"), runtime, handDown);
@@ -268,8 +294,12 @@ public final class FrameEmitter {
     }
 
     private static MethodSpec child(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime, Connection connection,
+                                    Body body, Runtime runtime, Connection connection,
                                     CodeBlock beforeLoad) {
+        if (!(body instanceof Body.Call call)) {
+            throw new IllegalArgumentException(row.coordinate() + ": a child frame calls its body with its keys,"
+                + " which " + body + " does not take");
+        }
         var parent = row.parent().orElseThrow();
         if (parent.key().isEmpty()) {
             throw new IllegalArgumentException(row.coordinate() + "'s parent, a row of "
@@ -293,7 +323,7 @@ public final class FrameEmitter {
             // The body may throw what the call throws, checked or not; the loader's function may
             // not, so a throw becomes the batch's failed future, which the error routing below reads.
             .beginControlFlow("try")
-            .addStatement("return $T.completedFuture($T.$L(keys, first, dsl))", FUTURE, bodyClass, body)
+            .addStatement("return $T.completedFuture($T.$L(keys, first, dsl))", FUTURE, call.owner(), call.method())
             .nextControlFlow("catch ($T thrown)", Exception.class)
             .addStatement("return $T.failedFuture(thrown)", FUTURE)
             .endControlFlow()

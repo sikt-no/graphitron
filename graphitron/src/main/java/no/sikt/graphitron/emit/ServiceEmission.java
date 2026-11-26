@@ -529,8 +529,8 @@ public final class ServiceEmission {
         var beforeLoad = frameKey.isPresent()
             ? FillEmitter.decodeChecks(fills.get(coordinate), runtime.fill())
             : CodeBlock.of("");
-        var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
-            framed, runtime.frame(),
+        var frame = FrameEmitter.render(frameRow, fieldName, valueType,
+            new FrameEmitter.Body.Call(runtime.fetchersClass(), framed), runtime.frame(),
             writesSuccess || needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
             validates, FrameConnections.of(frameRow, Optional.ofNullable(connections.get(coordinate)),
                 unkeyed.contains(coordinate), tenantType, runtime.routing(), fieldCoordinate), beforeLoad);

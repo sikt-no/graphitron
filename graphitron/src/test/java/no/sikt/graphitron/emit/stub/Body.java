@@ -25,6 +25,11 @@ public final class Body {
         return 42;
     }
 
+    /** {@link #count} as a launcher takes its arguments, the context first. */
+    public static Integer launched(DSLContext dsl, DataFetchingEnvironment env) {
+        return 43;
+    }
+
     public static Integer fail(DataFetchingEnvironment env, DSLContext dsl) {
         throw new IllegalStateException("body failed");
     }

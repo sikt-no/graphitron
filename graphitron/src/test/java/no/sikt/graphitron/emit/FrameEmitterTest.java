@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link FrameEmitter}'s fetchers, compiled and run: at a root the frame hands back what the body
@@ -76,14 +77,16 @@ class FrameEmitterTest {
         var throughAccessor = frame(keyed, "Query.filmKeySummaries.keyCensus");
         var underOutcome = frame(outcomes, "Query.filmRecordLookup.titleUppercase");
         var host = TypeSpec.classBuilder("Fetchers").addModifiers(Modifier.PUBLIC)
-            .addMethod(FrameEmitter.render(plain, "count", TypeName.get(Integer.class), BODY, "count", RUNTIME))
-            .addMethod(FrameEmitter.render(plain, "failing", TypeName.get(Integer.class), BODY, "fail", RUNTIME))
-            .addMethod(FrameEmitter.render(outcome, "lookup", TypeName.get(String.class), BODY, "lookup", RUNTIME))
-            .addMethod(FrameEmitter.render(outcome, "refused", TypeName.get(String.class), BODY, "refuse", RUNTIME))
-            .addMethod(FrameEmitter.render(child, "upper", TypeName.get(String.class), BODY, "upper", RUNTIME))
-            .addMethod(FrameEmitter.render(throughAccessor, "summaryUpper", TypeName.get(String.class), BODY, "upper",
+            .addMethod(FrameEmitter.render(plain, "count", TypeName.get(Integer.class), new FrameEmitter.Body.Call(BODY, "count"), RUNTIME))
+            .addMethod(FrameEmitter.render(plain, "launched", TypeName.get(Integer.class),
+                new FrameEmitter.Body.LauncherCall(BODY, "launched"), RUNTIME))
+            .addMethod(FrameEmitter.render(plain, "failing", TypeName.get(Integer.class), new FrameEmitter.Body.Call(BODY, "fail"), RUNTIME))
+            .addMethod(FrameEmitter.render(outcome, "lookup", TypeName.get(String.class), new FrameEmitter.Body.Call(BODY, "lookup"), RUNTIME))
+            .addMethod(FrameEmitter.render(outcome, "refused", TypeName.get(String.class), new FrameEmitter.Body.Call(BODY, "refuse"), RUNTIME))
+            .addMethod(FrameEmitter.render(child, "upper", TypeName.get(String.class), new FrameEmitter.Body.Call(BODY, "upper"), RUNTIME))
+            .addMethod(FrameEmitter.render(throughAccessor, "summaryUpper", TypeName.get(String.class), new FrameEmitter.Body.Call(BODY, "upper"),
                 RUNTIME))
-            .addMethod(FrameEmitter.render(underOutcome, "outcomeUpper", TypeName.get(String.class), BODY, "upper",
+            .addMethod(FrameEmitter.render(underOutcome, "outcomeUpper", TypeName.get(String.class), new FrameEmitter.Body.Call(BODY, "upper"),
                 RUNTIME))
             .build();
         var dir = java.nio.file.Files.createTempDirectory("frame");
@@ -121,6 +124,21 @@ class FrameEmitterTest {
     @Test
     void atARootTheFrameHandsBackWhatTheBodyAnswers() throws Exception {
         assertThat(call("count").getData()).isEqualTo(42);
+    }
+
+    @Test
+    void atARootALauncherShapedBodyIsCalledWithTheContextFirst() throws Exception {
+        assertThat(call("launched").getData()).isEqualTo(43);
+    }
+
+    @Test
+    void aChildFrameRefusesALauncherShapedBody() {
+        var child = frame(FACTS.read("scenarios/field-key-row", graph -> FrameQuery.read(graph.handle())),
+            "Film.titleUppercase");
+        assertThatThrownBy(() -> FrameEmitter.render(child, "upper",
+                TypeName.get(String.class), new FrameEmitter.Body.LauncherCall(BODY, "launched"), RUNTIME))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("calls its body with its keys");
     }
 
     @Test
