@@ -30,7 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * a dialect-only field assigned in {@code @BeforeAll} is {@code null} at that point too and is
  * caught, which is what keeps such fields in the initializer shape. Not seen: a connection held in
  * a field of another type (a {@code Connection}, a {@code DataSource}, a pool), or one reached
- * through a helper class. Those are closed by hand.
+ * through a helper class, which are closed by hand; and a context a test opens inline, which
+ * try-with-resources closes. That inline half of the rule is checked by review only.
  */
 @UnitTier
 class FixtureCloseEnforcementTest {
