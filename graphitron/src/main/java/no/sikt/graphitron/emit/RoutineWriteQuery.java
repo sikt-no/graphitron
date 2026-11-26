@@ -14,17 +14,17 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_LANDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -52,6 +52,7 @@ import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
+import static org.jooq.impl.DSL.when;
 
 /**
  * {@link RoutineWriteEmitter}'s query: every {@code @routine}-writing mutation coordinate whose
@@ -144,14 +145,16 @@ public final class RoutineWriteQuery {
      * spelling ({@code [Ljava.lang.Integer;} for an array). {@code pathNames} is where the value is
      * read from the request, the names from the argument down to the argument or input field the fill
      * lands on, and {@code lists} the positions on it whose value is a list; a parameter nothing
-     * fills has no names. {@code nodeId} says the landing is a node id, and {@code decode} how
+     * fills has no names. {@code nodeId} says the landing is a node id and {@code listToArray} that a
+     * list is copied into the array the parameter takes, each as the binding's stored extraction
+     * states it, and {@code decode} how
      * it is decoded into the one key column the parameter takes, where the store states a
      * {@code KEY_VALUE} shape at its slot. {@code component} is the component of a generated scalar
      * the fill's pair names past its landing, read through the pair's landing, and {@code scalar}
      * what the call decodes that scalar's value as.
      */
     public record Argument(String parameterName, String javaTypeName, List<String> pathNames, Set<Integer> lists,
-                           boolean nodeId, Optional<KeyValue> decode, Optional<String> component,
+                           boolean nodeId, boolean listToArray, Optional<KeyValue> decode, Optional<String> component,
                            Optional<GeneratedScalarQuery.Decode> scalar) {
         public Argument {
             Objects.requireNonNull(parameterName, "parameterName");
@@ -675,7 +678,8 @@ public final class RoutineWriteQuery {
      * {@code ROUTINE} fill the store states for it ({@code graphitron_occurrence_call_parameter}), the
      * path from the argument down to the fill's landing ({@code graphitron_occurrence_argument_step}),
      * and, where the landing is a node id, the slot's {@code KEY_VALUE} shape and the key column a
-     * pair projects into it. The fill is the store's, a pair's landing or the argument named as the
+     * pair projects into it, and how its value reaches it, the binding's stored extraction. The fill
+     * is the store's, a pair's landing or the argument named as the
      * parameter, so a path is never read off what the author wrote; a parameter with no fill has a
      * path of no names, which the build refuses before anything is emitted.
      *
@@ -683,8 +687,8 @@ public final class RoutineWriteQuery {
      * is a row and not an absence. The path is a correlated {@code MULTISET} on the landing's own key.
      * A node id at a routine parameter lands on one node table's key column or nowhere, so the shape
      * and the projection are at most one row per parameter, joined at the slot and the bound. A
-     * generated scalar's component is the fill's pair's landing's trailing name, at most one, read
-     * by a scalar subquery on the fill's key, and what the call decodes that scalar as is
+     * generated scalar's component is the binding's extraction's, and what the call decodes that
+     * scalar as is
      * {@link GeneratedScalarQuery#decodeAt} on the landing, a correlated {@code MULTISET} in the
      * same row, so a graph with generated scalars costs this statement rows, not statements.
      */
@@ -698,18 +702,10 @@ public final class RoutineWriteQuery {
         var pj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
         var kp = GRAPHITRON_OCCURRENCE_NODE_ID;
         var col = SQL_COLUMN;
-        var pp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
-        var al = GRAPHITRON_ARGMAPPING_LANDING;
+        var b = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        var e = GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
         var coordinates = admitted.stream().map(o -> o.typeName() + "." + o.fieldName()).toList();
         var scalar = GeneratedScalarQuery.decodeAt(c.GRAPH_NAME, c.LANDING_COORDINATE);
-        var component = field(select(al.TRAILING_NAME)
-            .from(pp)
-            .join(al).on(al.GRAPH_NAME.eq(pp.GRAPH_NAME), al.COORDINATE.eq(pp.PAIR_COORDINATE),
-                al.DIRECTIVE_NAME.eq(pp.DIRECTIVE_NAME), al.ORDINAL.eq(pp.ORDINAL), al.OWNER.eq(pp.OWNER),
-                al.TARGET_KIND.eq(pp.TARGET_KIND), al.TARGET_NAME.eq(pp.TARGET_NAME),
-                al.CALL_COORDINATE.eq(pp.COORDINATE), al.RECEIVES.eq("COMPONENT"))
-            .where(pp.GRAPH_NAME.eq(c.GRAPH_NAME), pp.COORDINATE.eq(c.COORDINATE), pp.CALL.eq(c.CALL),
-                pp.POSITION.eq(c.POSITION)));
         var path = multiset(select(st.NAME, st.IS_LIST)
                 .from(st)
                 .where(st.GRAPH_NAME.eq(c.GRAPH_NAME), st.COORDINATE.eq(c.LANDING_COORDINATE))
@@ -718,12 +714,17 @@ public final class RoutineWriteQuery {
         var byKey = new LinkedHashMap<String, List<Argument>>();
         store.dsl()
             .select(pr.COORDINATE, p.POSITION, p.JOOQ_NAME, p.BINDING_TYPE, path, sp.COORDINATE,
-                sh.DECODE_SHAPE, sh.BOUND, col.JOOQ_NAME, component, scalar)
+                sh.DECODE_SHAPE, sh.BOUND, col.JOOQ_NAME,
+                when(e.EXTRACTION.eq("SCALAR_COMPONENT"), e.COMPONENT), scalar, e.EXTRACTION)
             .from(pr)
             .join(p).on(p.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME), p.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA),
                 p.ROUTINE_NAME.eq(pr.ROUTINE_NAME))
             .leftJoin(c).on(c.GRAPH_NAME.eq(pr.GRAPH_NAME), c.COORDINATE.eq(pr.COORDINATE),
                 c.CALL_KIND.eq("ROUTINE"), c.POSITION.eq(p.POSITION), c.FILL.eq("ARGUMENT"))
+            // How the value reaches the parameter, as the store states it for the binding.
+            .leftJoin(b).on(b.GRAPH_NAME.eq(c.GRAPH_NAME), b.CALL_COORDINATE.eq(c.COORDINATE),
+                b.CALL.eq(c.CALL), b.POSITION.eq(c.POSITION))
+            .leftJoin(e).on(e.GRAPH_NAME.eq(b.GRAPH_NAME), e.COORDINATE.eq(b.COORDINATE), e.BOUND.eq(b.BOUND))
             .leftJoin(sp).on(sp.GRAPH_NAME.eq(c.GRAPH_NAME), sp.CALL_COORDINATE.eq(c.COORDINATE),
                 sp.CALL.eq(c.CALL), sp.POSITION.eq(c.POSITION))
             .leftJoin(sh).on(sh.GRAPH_NAME.eq(sp.GRAPH_NAME), sh.COORDINATE.eq(sp.COORDINATE),
@@ -754,7 +755,7 @@ public final class RoutineWriteQuery {
                     : Optional.of(new KeyValue(r.value6(), r.value8(), r.value9()));
                 Optional<String> named = Optional.ofNullable(r.value10());
                 arguments.add(new Argument(r.value3(), r.value4(), steps.stream().map(Step::name).toList(),
-                    lists, r.value6() != null, decode, named,
+                    lists, "NODE_ID_RECORD".equals(r.value12()), "LIST_TO_ARRAY".equals(r.value12()), decode, named,
                     named.flatMap(n -> r.value11())));
             });
         return byKey;

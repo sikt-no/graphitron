@@ -14,30 +14,29 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_LANDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static org.jooq.impl.DSL.coalesce;
-import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectCount;
-import static org.jooq.impl.DSL.selectOne;
+import static org.jooq.impl.DSL.when;
 
 /**
  * The fill emitter's query: for every service call, what fills each of its method's parameters, in
  * position order, with what the fill names. An argument fill carries where it lands, as the names
  * from the argument down to the input field taken, what kind of type the value there is, and
- * whether it is a node id: the three things that decide whether the wire value is passed as it is
- * or has to be built into the parameter's type first.
+ * whether it is a node id or a generated scalar's component, read off
+ * {@code graphitron_occurrence_binding_extraction}, which states once how a value reaches its
+ * parameter.
  *
  * <p>A call some position of which nothing fills is still read, marked incomplete, so a caller can
  * say which call it cannot emit rather than emit one with a parameter missing.
@@ -48,9 +47,9 @@ public final class FillQuery {
 
     /**
      * Where an argument fill lands: the path of names from the argument, the positions on it whose
-     * value is a list, and what is there. Where the fill's pair names a component of a generated
-     * scalar past the landing, {@code component} is that component, read through the pair's
-     * landing, and {@code decode} what the call decodes the scalar's value as.
+     * value is a list, and what is there. Where the value reaches the parameter as a component of a
+     * generated scalar, {@code component} is that component, as the binding's extraction names it,
+     * and {@code decode} what the call decodes the scalar's value as.
      */
     public record Landing(List<String> path, Set<Integer> lists, String typeKind, boolean nodeId,
                           Optional<String> component, Optional<GeneratedScalarQuery.Decode> decode) {
@@ -100,7 +99,7 @@ public final class FillQuery {
 
     private record Raw(int position, String parameterName, String parameterType, String erasedClass,
                        String fill, String contextKey, String sessionMember, String landingCoordinate,
-                       String typeKind, boolean nodeId, String component) {}
+                       String typeKind, Boolean nodeId, String component) {}
 
     /** Where a landing lies under its argument: the names from the argument down, and which are lists. */
     private record LandingPath(List<String> names, Set<Integer> lists) {}
@@ -172,31 +171,23 @@ public final class FillQuery {
         var la = GRAPHITRON_ARGUMENT;
         var lf = GRAPHITRON_FIELD;
         var lt = GRAPHITRON_TYPE;
-        var n = GRAPHITRON_OCCURRENCE_NODE_ID;
-        var pp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
-        var al = GRAPHITRON_ARGMAPPING_LANDING;
+        var b = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        var e = GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
         var graph = store.graphName();
         var paths = landingPaths(store);
         var decodes = GeneratedScalarQuery.decodes(store);
-        // The component of a generated scalar the fill's pair names past its landing, if it names one.
-        var component = field(select(al.TRAILING_NAME)
-            .from(pp)
-            .join(al).on(al.GRAPH_NAME.eq(pp.GRAPH_NAME), al.COORDINATE.eq(pp.PAIR_COORDINATE),
-                al.DIRECTIVE_NAME.eq(pp.DIRECTIVE_NAME), al.ORDINAL.eq(pp.ORDINAL), al.OWNER.eq(pp.OWNER),
-                al.TARGET_KIND.eq(pp.TARGET_KIND), al.TARGET_NAME.eq(pp.TARGET_NAME),
-                al.CALL_COORDINATE.eq(pp.COORDINATE), al.RECEIVES.eq("COMPONENT"))
-            .where(pp.GRAPH_NAME.eq(c.GRAPH_NAME), pp.COORDINATE.eq(c.COORDINATE), pp.CALL.eq(c.CALL),
-                pp.POSITION.eq(c.POSITION)));
         var fills = multiset(
             select(c.POSITION, c.PARAMETER_NAME, p.PARAMETER_TYPE, p.ERASED_CLASS, c.FILL,
                 c.CONTEXT_KEY, c.SESSION_MEMBER, c.LANDING_COORDINATE, lt.KIND,
-                field(exists(selectOne().from(n)
-                    .where(n.GRAPH_NAME.eq(c.GRAPH_NAME), n.COORDINATE.eq(c.LANDING_COORDINATE)))),
-                component)
+                field(e.EXTRACTION.eq("NODE_ID_RECORD")), when(e.EXTRACTION.eq("SCALAR_COMPONENT"), e.COMPONENT))
                 .from(c)
                 .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
                     p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR),
                     p.POSITION.eq(c.POSITION))
+                // How the value reaches the parameter, as the store states it for the binding.
+                .leftJoin(b).on(b.GRAPH_NAME.eq(c.GRAPH_NAME), b.CALL_COORDINATE.eq(c.COORDINATE),
+                    b.CALL.eq(c.CALL), b.POSITION.eq(c.POSITION))
+                .leftJoin(e).on(e.GRAPH_NAME.eq(b.GRAPH_NAME), e.COORDINATE.eq(b.COORDINATE), e.BOUND.eq(b.BOUND))
                 // What the landing is: an argument's or an input field's declared type, and its kind.
                 .leftJoin(lo).on(lo.GRAPH_NAME.eq(c.GRAPH_NAME), lo.COORDINATE.eq(c.LANDING_COORDINATE))
                 .leftJoin(la).on(la.GRAPH_NAME.eq(lo.GRAPH_NAME), la.COORDINATE.eq(lo.ELEMENT_COORDINATE))
@@ -222,7 +213,7 @@ public final class FillQuery {
                     raw.sessionMember(),
                     Optional.ofNullable(raw.landingCoordinate()).map(landing -> new Landing(
                         paths.get(landing).names(), paths.get(landing).lists(), raw.typeKind(),
-                        raw.nodeId(), Optional.ofNullable(raw.component()),
+                        Boolean.TRUE.equals(raw.nodeId()), Optional.ofNullable(raw.component()),
                         Optional.ofNullable(raw.component()).map(named -> decodes.get(landing))))))
                     .toList(),
                 rec.value3().size() == rec.value4()));

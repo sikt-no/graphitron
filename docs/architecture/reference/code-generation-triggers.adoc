@@ -295,8 +295,9 @@ rather than working it out again from the call's kind.
 
 How a value the client sends reaches the parameter it binds is decided once: "How clients value
 reach parameters should be worked out once." (Alf, 2026-11-26). Whether the value is passed as it
-arrives, decoded from a node id into a key column, or decoded from a generated scalar into one of its
-components, and how it is converted where it is, is a fact the store states per parameter binding,
+arrives, decoded from a node id into its record, taken whole or as one column the path names, or
+decoded from a generated scalar into one of its components, and how it is converted where it is, is
+a fact the store states per parameter binding, `graphitron_occurrence_binding_extraction`,
 and every reader of a call's parameters takes it from there, a `@service`'s fill, a routine write's
 argument and a root `@routine`'s alike, rather than each working it out again from the flags of the
 binding.

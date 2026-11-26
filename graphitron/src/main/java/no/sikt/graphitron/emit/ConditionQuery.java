@@ -16,6 +16,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
@@ -58,6 +60,7 @@ import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.when;
 import static org.jooq.impl.DSL.countDistinct;
 
 /**
@@ -185,7 +188,8 @@ public final class ConditionQuery {
 
     /**
      * What fills one parameter of a {@code @condition}'s method: its position, its declared type and how
-     * a value is coerced into it, the fill, and for an {@code ARGUMENT} the occurrence it takes, that
+     * a value is coerced into it, an argument's as {@code graphitron_occurrence_binding_extraction}
+     * states it, the fill, and for an {@code ARGUMENT} the occurrence it takes, that
      * occurrence's path of names from its argument, its type's kind and whether it is a node id; for a
      * {@code CONTEXT_KEY} the key, for a {@code SESSION_MEMBER} the member; the class the parameter
      * delivers once its containers are peeled off, as the census states it; whether the occurrence
@@ -418,7 +422,6 @@ public final class ConditionQuery {
         var la = GRAPHITRON_ARGUMENT.as("la");
         var lf = GRAPHITRON_FIELD.as("lf");
         var lty = GRAPHITRON_TYPE.as("lty");
-        var ln = GRAPHITRON_OCCURRENCE_NODE_ID.as("ln");
         // A node id's landing at the parameter, per node table: the shape the store states at the
         // parameter's slot, and the key column a pair projects into it where one does.
         var nsp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER.as("nsp");
@@ -444,11 +447,18 @@ public final class ConditionQuery {
                     nsp.CALL.eq(cp.CALL), nsp.POSITION.eq(cp.POSITION))
                 .orderBy(nsh.BOUND))
             .convertFrom(r -> r.map(Records.mapping(NodeIdShape::new)));
+        var bp = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER.as("bp");
+        var be = GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION.as("be");
         var fills = multiset(
-            select(mp.POSITION, mp.PARAMETER_TYPE, mp.EXTRACTION, coalesce(cp.FILL, inline("UNFILLED")),
+            select(mp.POSITION, mp.PARAMETER_TYPE,
+                    // An argument's as the binding's extraction states it; a context key's or a session
+                    // member's, which no client sends, as the parameter's declared type decides.
+                    when(be.EXTRACTION.isNull(), mp.EXTRACTION)
+                        .when(be.EXTRACTION.eq("ENUM_CONSTANT"), inline("ENUM_VALUE_OF"))
+                        .otherwise(inline("DIRECT")),
+                    coalesce(cp.FILL, inline("UNFILLED")),
                     cp.LANDING_COORDINATE, lty.KIND,
-                    field(exists(selectOne().from(ln).where(ln.GRAPH_NAME.eq(cp.GRAPH_NAME),
-                        ln.COORDINATE.eq(cp.LANDING_COORDINATE)))), cp.CONTEXT_KEY, cp.SESSION_MEMBER,
+                    field(coalesce(be.EXTRACTION, inline("")).eq("NODE_ID_RECORD")), cp.CONTEXT_KEY, cp.SESSION_MEMBER,
                     coalesce(mp.ELEMENT_CLASS, mp.ERASED_CLASS),
                     field(exists(selectOne().from(GRAPHITRON_OCCURRENCE_LIST_ELEMENT)
                         .where(GRAPHITRON_OCCURRENCE_LIST_ELEMENT.GRAPH_NAME.eq(cp.GRAPH_NAME),
@@ -457,6 +467,10 @@ public final class ConditionQuery {
                 .from(mp)
                 .leftJoin(cp).on(cp.GRAPH_NAME.eq(cc.GRAPH_NAME), cp.COORDINATE.eq(cc.COORDINATE), cp.CALL.eq(cc.CALL),
                     cp.POSITION.eq(mp.POSITION))
+                // How an argument's value reaches the parameter, as the store states it for the binding.
+                .leftJoin(bp).on(bp.GRAPH_NAME.eq(cp.GRAPH_NAME), bp.CALL_COORDINATE.eq(cp.COORDINATE),
+                    bp.CALL.eq(cp.CALL), bp.POSITION.eq(cp.POSITION))
+                .leftJoin(be).on(be.GRAPH_NAME.eq(bp.GRAPH_NAME), be.COORDINATE.eq(bp.COORDINATE), be.BOUND.eq(bp.BOUND))
                 .leftJoin(lo).on(lo.GRAPH_NAME.eq(cp.GRAPH_NAME), lo.COORDINATE.eq(cp.LANDING_COORDINATE))
                 .leftJoin(la).on(la.GRAPH_NAME.eq(lo.GRAPH_NAME), la.COORDINATE.eq(lo.ELEMENT_COORDINATE))
                 .leftJoin(lf).on(lf.GRAPH_NAME.eq(lo.GRAPH_NAME), lf.COORDINATE.eq(lo.ELEMENT_COORDINATE))

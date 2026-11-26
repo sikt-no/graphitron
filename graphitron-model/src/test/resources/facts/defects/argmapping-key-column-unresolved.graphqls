@@ -63,3 +63,6 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot_proj
   Query.languagesByPrimitive(ref:), 1,        public.language, 0
   """)
 
+# A named column the parameter cannot take reaches it no way, so the binding states no extraction.
+extend schema @assertEmpty(relation: "graphitron_occurrence_binding_extraction",
+    where: "coordinate IN ('Query.languagesByPrimitive(ref:)', 'Query.languagesByOne(ids:)')")

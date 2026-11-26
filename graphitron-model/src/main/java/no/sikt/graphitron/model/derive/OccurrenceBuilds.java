@@ -40,7 +40,8 @@ public final class OccurrenceBuilds {
 
     /**
      * The stage: the conditions' built classes and member bindings, then where each node id lands and
-     * the shape it lands in, each swept, then the defects judging them.
+     * the shape it lands in, then how each binding's value reaches its parameter, each swept, then the
+     * defects judging them.
      */
     public static void derive(DSLContext dsl, String graph, LocalDateTime readAt) {
         write(dsl, graph, readAt, CONDITION);
@@ -49,6 +50,8 @@ public final class OccurrenceBuilds {
         OccurrenceNodeIdSlots.sweep(dsl, graph, readAt);
         OccurrenceNodeIdShapes.write(dsl, graph, readAt);
         OccurrenceNodeIdShapes.sweep(dsl, graph, readAt);
+        OccurrenceBindingExtractions.write(dsl, graph, readAt);
+        OccurrenceBindingExtractions.sweep(dsl, graph, readAt);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.BUILDS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.MEMBER_FILLS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.PARAMETER_BUILDS);

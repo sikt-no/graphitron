@@ -106,3 +106,11 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_parameter_pair"
   Language.tilgangerByFilm,  1,                  pServiceId
   Language.tilgangerByFilm,  2,                  pFeideId
   """)
+
+# A list of ids at a routine parameter, deferred, reaches it no way yet; the one-value near miss
+# reaches it as the named column of the decoded record.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_extraction",
+    where: "coordinate IN ('Mutation.rentFilmsByIds(customerIds:)', 'Mutation.rentFilmByCustomer(customerId:)')", rows: """
+  coordinate,                               extraction,     component
+  Mutation.rentFilmByCustomer(customerId:), NODE_ID_RECORD, customer_id
+  """)

@@ -230,7 +230,7 @@ public final class RoutineWriteEmitter {
             return List.of(FillEmitter.argument(ClassName.get(Object.class), local + "Wire", path),
                 CodeBlock.of("$T $L = $L($LWire)", type, local, helper, local));
         }
-        if (type instanceof ArrayTypeName array) {
+        if (argument.listToArray() && type instanceof ArrayTypeName array) {
             var elements = ParameterizedTypeName.get(LIST, array.componentType());
             return List.of(FillEmitter.argument(elements, local + "Elements", path),
                 CodeBlock.of("$T $L = $LElements == null ? null : $LElements.toArray(new $T[0])",

@@ -81,3 +81,12 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order",
   Mutation.rentFilmsInOrder,      public,      rent_films_in_order
   Query.rentals,                  public,      rental
   """)
+
+# How each value reaches the routine's parameter: the list of inventory ids copied into the INTEGER[]
+# the function takes, the customer id as it arrives.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_extraction",
+    where: "coordinate LIKE 'Mutation.rentFilmsInOrder(%'", rows: """
+  coordinate,                               extraction
+  Mutation.rentFilmsInOrder(customerId:),   AS_SENT
+  Mutation.rentFilmsInOrder(inventoryIds:), LIST_TO_ARRAY
+  """)

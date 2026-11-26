@@ -102,3 +102,14 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape",
   coordinate,                         bound,       decode_shape
   Query.filmRecordByPick(pick.film:), public.film, OWN_RECORD
   """)
+
+# How each value reaches its parameter: a whole id into the node's record, a named column off the
+# decoded record, and a plain argument as sent, which a node id never is. A pair naming no column at a
+# parameter of one value reaches it no way, so it has no extraction.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_extraction",
+    where: "coordinate IN ('Query.filmRecordByPick(pick.film:)', 'Query.filmsByPicked(pick.film:)', 'Mutation.rentFilmBare(customerId:)', 'Mutation.rentFilmBare(inventoryId:)', 'Mutation.rentFilmNamed(customerId:)')", rows: """
+  coordinate,                           extraction,     component
+  Mutation.rentFilmBare(inventoryId:),  AS_SENT,
+  Mutation.rentFilmNamed(customerId:),  NODE_ID_RECORD, customer_id
+  Query.filmRecordByPick(pick.film:),   NODE_ID_RECORD,
+  """)

@@ -17833,6 +17833,100 @@ COMMENT ON COLUMN graphitron_occurrence_producer_routine.table_schema IS 'the ro
 COMMENT ON COLUMN graphitron_occurrence_producer_routine.routine_name IS 'the routine';
 COMMENT ON COLUMN graphitron_occurrence_producer_routine.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- How the value an argument or input field supplies reaches the call parameter it binds, decided once
+-- for every reader of a call's parameters: one generated scalar's component where the binding's pair
+-- names one past it; a node id decoded into its record, the parameter taking the key column the pair
+-- names past the id or the record or a tuple of the key whole, as graphitron_occurrence_node_id_shape
+-- states at the slot, and never the id as sent (Alf, 2026-11-26);
+-- an input object built into the class graphitron_occurrence_built_class states; a list copied into
+-- the array a routine's parameter takes; a value as the constant of its name where the parameter
+-- is a Java enum; and as it arrives otherwise. In that order, the first that holds.
+CREATE VIEW graphitron_occurrence_binding_extraction_rule
+  (graph_name, coordinate, bound, extraction, component) AS
+SELECT b.graph_name, b.coordinate, b.bound,
+       CASE WHEN al.trailing_name IS NOT NULL THEN 'SCALAR_COMPONENT'
+            WHEN ns.coordinate IS NOT NULL THEN 'NODE_ID_RECORD'
+            WHEN it.type_kind = 'INPUT_OBJECT'
+             AND EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                          WHERE bc.graph_name = b.graph_name AND bc.coordinate = b.coordinate) THEN 'BUILT'
+            WHEN sp.binding_type LIKE '[%' THEN 'LIST_TO_ARRAY'
+            WHEN mp.extraction = 'ENUM_VALUE_OF' THEN 'ENUM_CONSTANT'
+            ELSE 'AS_SENT' END,
+       COALESCE(al.trailing_name, kn.column_name)
+  FROM graphitron_occurrence_binding_parameter b
+  LEFT JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = b.graph_name AND it.coordinate = b.coordinate
+  LEFT JOIN graphitron_occurrence_call_parameter_pair pp
+    ON pp.graph_name = b.graph_name AND pp.coordinate = b.call_coordinate AND pp.call = b.call
+   AND pp.position = b.position
+  LEFT JOIN graphitron_argmapping_landing al
+    ON al.graph_name = pp.graph_name AND al.coordinate = pp.pair_coordinate
+   AND al.directive_name = pp.directive_name AND al.ordinal = pp.ordinal AND al.owner = pp.owner
+   AND al.target_kind = pp.target_kind AND al.target_name = pp.target_name
+   AND al.call_coordinate = pp.coordinate AND al.receives = 'COMPONENT'
+  -- The @nodeId slot the parameter is, and the key column its pair names past the id.
+  LEFT JOIN graphitron_occurrence_node_id_slot_parameter ns
+    ON ns.graph_name = b.graph_name AND ns.call_coordinate = b.call_coordinate AND ns.call = b.call
+   AND ns.position = b.position
+  LEFT JOIN graphitron_argmapping_landing_key_column lk
+    ON lk.graph_name = pp.graph_name AND lk.coordinate = pp.pair_coordinate
+   AND lk.directive_name = pp.directive_name AND lk.ordinal = pp.ordinal AND lk.owner = pp.owner
+   AND lk.target_kind = pp.target_kind AND lk.target_name = pp.target_name
+   AND lk.call_coordinate = pp.coordinate AND lk.landing_coordinate = ns.coordinate
+  LEFT JOIN graphitron_occurrence_node_id kn
+    ON kn.graph_name = lk.graph_name AND kn.coordinate = lk.landing_coordinate AND kn.bound = lk.bound
+   AND kn.position = lk.position
+  LEFT JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = b.graph_name AND cm.coordinate = b.call_coordinate AND cm.call = b.call
+  LEFT JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
+   AND mp.position = b.position
+  LEFT JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = b.graph_name AND pr.coordinate = b.call_coordinate AND b.call_kind = 'ROUTINE'
+  LEFT JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name AND sp.position = b.position
+ -- A node id reaches its parameter only where a decode shape fits the slot: the named column's value
+ -- where the pair names one, else the record or a tuple of the key taken whole. One no shape fits
+ -- has no row, and its refusal is the build defect rule's, which runs after this in the stage.
+ WHERE ns.coordinate IS NULL OR al.trailing_name IS NOT NULL
+    OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape sh
+                WHERE sh.graph_name = ns.graph_name AND sh.coordinate = ns.coordinate AND sh.slot = ns.slot
+                  AND (sh.decode_shape = 'KEY_VALUE') = (kn.column_name IS NOT NULL));
+COMMENT ON VIEW graphitron_occurrence_binding_extraction_rule IS 'One row the binding extraction rule computes, in the shape graphitron_occurrence_binding_extraction stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-builds stage inserts this view''s rows for one graph into graphitron_occurrence_binding_extraction, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_extraction_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_extraction.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_extraction_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_extraction.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_extraction_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_binding_extraction.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_extraction_rule.extraction IS 'the extraction of a row of this rule, which the stage writes into graphitron_occurrence_binding_extraction.extraction';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_extraction_rule.component IS 'the component of a row of this rule, which the stage writes into graphitron_occurrence_binding_extraction.component';
+
+-- Beside the binding rather than on it: graphitron_occurrence_binding_parameter is written by
+-- occurrence-producers and occurrence-bindings, and whether a node id lands decoded, and what an input
+-- object is built into, are stated only by occurrence-builds, so the fact lives where all its inputs
+-- are upstream, one writer stating it whole.
+CREATE TABLE graphitron_occurrence_binding_extraction (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  bound      VARCHAR   NOT NULL,
+  extraction VARCHAR   NOT NULL,
+  component  VARCHAR,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- The binding it says the extraction of, so the fact goes with it.
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding_parameter (graph_name, coordinate, bound) ON DELETE CASCADE,
+  CHECK (extraction IN ('AS_SENT', 'ENUM_CONSTANT', 'NODE_ID_RECORD', 'SCALAR_COMPONENT', 'LIST_TO_ARRAY', 'BUILT')),
+  CHECK (extraction = 'NODE_ID_RECORD' OR (component IS NOT NULL) = (extraction = 'SCALAR_COMPONENT'))
+);
+COMMENT ON TABLE graphitron_occurrence_binding_extraction IS 'How the value an argument or input field supplies reaches the call parameter it binds: one row per occurrence and parameter it binds. For example Query.filmsByService(ids:) reaches its ids parameter as it arrives, AS_SENT, pCustomerId: customerId.customer_id is a NODE_ID_RECORD taking the decoded record''s customer_id, and pStart: input.sti.startType a SCALAR_COMPONENT, the startType component of the generated scalar input.sti.';
+COMMENT ON COLUMN graphitron_occurrence_binding_extraction.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_binding_extraction.coordinate IS 'the argument or input-field occurrence binding the parameter';
+COMMENT ON COLUMN graphitron_occurrence_binding_extraction.bound IS 'the parameter, spelled as graphitron_occurrence_binding_parameter spells it';
+COMMENT ON COLUMN graphitron_occurrence_binding_extraction.extraction IS 'how the value reaches the parameter: SCALAR_COMPONENT, one component of a generated scalar decoded once per call; NODE_ID_RECORD, a node id decoded into its record, the parameter taking the key column component names, or the record or a tuple of its key whole where component is null, as graphitron_occurrence_node_id_shape states at the slot; BUILT, an input object built into its class; LIST_TO_ARRAY, a list copied into the array a routine parameter takes; ENUM_CONSTANT, an enum value as the Java enum''s constant of its name; AS_SENT, the value as it arrives, which a node id never is: an argument wanting the id as sent declares no @nodeId';
+COMMENT ON COLUMN graphitron_occurrence_binding_extraction.component IS 'the component of the generated scalar the parameter takes, always at SCALAR_COMPONENT; at NODE_ID_RECORD the key column of the decoded record the pair names past the id, null where the record or a tuple of its key is taken whole; null otherwise';
+COMMENT ON COLUMN graphitron_occurrence_binding_extraction.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- The slot parameter subtype's rule, after the routine producer it reads for a routine's parameters.
 CREATE VIEW graphitron_occurrence_node_id_slot_parameter_rule
   (graph_name, coordinate, call_coordinate, call, position, slot, list_depth, erased_class,
@@ -33891,6 +33985,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-builds', 'graphitron_occurrence_binding_member'),
   ('occurrence-builds', 'graphitron_occurrence_built_class'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_shape'),
+  ('occurrence-builds', 'graphitron_occurrence_binding_extraction'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_member'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_parameter'),
@@ -34213,6 +34308,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-builds', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_member_rule'),
   ('occurrence-builds', 'graphitron_occurrence_built_class', 'graphitron_occurrence_built_class_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_shape', 'graphitron_occurrence_node_id_shape_rule'),
+  ('occurrence-builds', 'graphitron_occurrence_binding_extraction', 'graphitron_occurrence_binding_extraction_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot', 'graphitron_occurrence_node_id_slot_member_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot', 'graphitron_occurrence_node_id_slot_parameter_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot', 'graphitron_occurrence_node_id_slot_record_rule'),
@@ -35971,6 +36067,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_column_conversion_rule', 'graph-occurrence-binding', 'graphitron',
    'One row the occurrence column conversion rule computes, in the shape graphitron_occurrence_column_conversion stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_column_conversion, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_binding_extraction', 'graph-occurrence-binding', 'graphitron',
+   'How the value an argument or input field supplies reaches the call parameter it binds: one row per occurrence and parameter it binds.',
+   'For example Query.filmsByService(ids:) reaches its ids parameter as it arrives, AS_SENT, pCustomerId: customerId.customer_id is a NODE_ID_RECORD taking the decoded record''s customer_id, and pStart: input.sti.startType a SCALAR_COMPONENT, the startType component of the generated scalar input.sti.',
+   'Worked out once, ruled 2026-11-26, and read by every reader of a call''s parameters, a service''s fill, a condition''s, a routine write''s argument and a root routine''s, none deriving it from the binding''s flags. Stored beside graphitron_occurrence_binding_parameter rather than on it: that relation is written by occurrence-producers and occurrence-bindings, and whether a node id lands decoded and what an input object is built into are stated only by occurrence-builds, which writes this whole, every input upstream.'),
+  ('graphitron_occurrence_binding_extraction_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the binding extraction rule computes, in the shape graphitron_occurrence_binding_extraction stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-builds stage inserts this view''s rows for one graph into graphitron_occurrence_binding_extraction, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_parameter_written', 'graph-occurrence-call-parameter-fill', 'graphitron',
    'A fill an author wrote for one parameter of one candidate method of one service call: a $session pair, an argument path a pair lands, or a context key.',

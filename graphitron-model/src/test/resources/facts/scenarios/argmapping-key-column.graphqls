@@ -153,3 +153,11 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", r
   Query.filmsByPickedList(pick.films:), public.film, KEY_VALUE
   Query.filmsByKeyList(ids:),       public.film, KEY_VALUE
   """)
+
+# A node id reaches the parameter it binds decoded into its record, the parameter taking the key
+# column the pair names past it.
+extend schema @assertContains(relation: "graphitron_occurrence_binding_extraction", rows: """
+  coordinate,                              extraction,     component
+  Mutation.rentFilmProjected(customerId:), NODE_ID_RECORD, customer_id
+  Query.filmsByIdList(ids:),               NODE_ID_RECORD, film_id
+  """)

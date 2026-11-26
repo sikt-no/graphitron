@@ -138,3 +138,11 @@ extend schema @assertContains(relation: "graphitron_argmapping_landing", rows: "
   Mutation.endorseAlongInput, pStart, Mutation.endorseAlongInput(input.t:), name, COMPONENT
   Mutation.endorseAlongInput, pEnd,   Mutation.endorseAlongInput(input.inner.p:), endType, COMPONENT
   """)
+
+# A generated scalar's component reaches the parameter its pair names past the scalar, the component
+# named; a plain argument as it arrives.
+extend schema @assertContains(relation: "graphitron_occurrence_binding_extraction", rows: """
+  coordinate,                   extraction,       component
+  Mutation.endorseAlong(film:), AS_SENT,
+  Mutation.endorseAlong(path:), SCALAR_COMPONENT, endType
+  """)
