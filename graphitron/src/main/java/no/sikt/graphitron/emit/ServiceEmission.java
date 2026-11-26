@@ -31,8 +31,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 
 /**
@@ -190,7 +188,7 @@ public final class ServiceEmission {
             DiscriminatedQuery.read(store, targets),
             toldApart(store),
             ConnectionQuery.read(store),
-            tenantType(store),
+            ConnectionQuery.tenantType(store),
             unkeyed(store),
             ProjectionSessionQuery.read(store));
     }
@@ -213,18 +211,6 @@ public final class ServiceEmission {
             .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"),
                 accepting ? p.START.eq("ROOT") : org.jooq.impl.DSL.noCondition())
             .fetch(p.COORDINATE));
-    }
-
-    /** The tenant column's Java type, where the graph's tenant columns agree on one. */
-    private static Optional<String> tenantType(StoreHandle store) {
-        var tc = GRAPHITRON_TENANT_COLUMN;
-        var c = SQL_COLUMN;
-        var types = store.dsl().selectDistinct(c.BINDING_TYPE).from(tc)
-            .join(c).on(c.SOURCE_NAME.eq(tc.SOURCE_NAME), c.TABLE_SCHEMA.eq(tc.TABLE_SCHEMA),
-                c.TABLE_NAME.eq(tc.TABLE_NAME), c.COLUMN_NAME.eq(tc.COLUMN_NAME))
-            .where(tc.GRAPH_NAME.eq(store.graphName()))
-            .fetch(c.BINDING_TYPE);
-        return types.size() == 1 ? Optional.of(types.getFirst()) : Optional.empty();
     }
 
     /** The fields the store states a service producer occurrence of, by their declared coordinate. */

@@ -37,8 +37,9 @@ import static org.jooq.impl.DSL.selectOne;
  * key, in key order. The parent's table is the declaring type's and not the occurrence's source: a
  * service under an object reads off its own result, and its parent is what it was reached from.
  *
- * <p>Service producers, and routine producers at a root: a routine write's fetcher is a frame
- * around the body {@link RoutineWriteEmitter} renders. Under an object whose declaring type binds
+ * <p>Service producers, and routine, select and lookup producers at a root: a routine write's
+ * fetcher is a frame around the body {@link RoutineWriteEmitter} renders, and a root read's around its
+ * launcher. Under an object whose declaring type binds
  * no table the parent holds an object, and the key is its fill's: the records of the table the
  * call's source parameter collects, read off the parent where it is such a record, or off what the
  * one member of its class returning one hands back. A producer with no fill has no frame here.
@@ -176,7 +177,7 @@ public final class FrameQuery {
                 t.TABLE_NAME.eq(coalesce(tt.TABLE_NAME, kr.KEY_TABLE)))
             .leftJoin(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
             .where(p.GRAPH_NAME.eq(store.graphName()),
-                p.KIND.eq("SERVICE").or(p.KIND.eq("ROUTINE").and(p.START.eq("ROOT"))),
+                p.KIND.eq("SERVICE").or(p.START.eq("ROOT").and(p.KIND.in("ROUTINE", "SELECT", "LOOKUP"))),
                 p.START.eq("ROOT").or(t.TABLE_NAME.isNotNull()))
             .orderBy(p.COORDINATE)
             .fetch(rec -> new Row(rec.value1(),

@@ -70,7 +70,8 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
         Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
         Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
-        Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables) {
+        Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
+        Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames) {
 
     /** The relation over {@code rows}, indexed on the coordinate key it is declared to have. */
     public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
@@ -99,8 +100,21 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
             Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables) {
+        this(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables, Map.of());
+    }
+
+    /**
+     * The relation over {@code rows}, with the root order specs, node fetchers and multi-table roots the
+     * store states, and the root reads it routes, whose fetcher is the frame around the launcher.
+     */
+    public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
+            Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames) {
         this(CoordinateIndex.of(rows, LauncherCommand::coordinate, "launcher"), carrierDsl, connections,
-            argumentOrders, nodeFetchers, multiTables);
+            argumentOrders, nodeFetchers, multiTables, rootFrames);
     }
 
     public LauncherRelation {
@@ -110,6 +124,7 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         argumentOrders = Map.copyOf(argumentOrders);
         nodeFetchers = Map.copyOf(nodeFetchers);
         multiTables = Map.copyOf(multiTables);
+        rootFrames = Map.copyOf(rootFrames);
         var byMethod = new LinkedHashMap<UnitMethodRef, LauncherCommand>();
         for (var row : index.rows()) {
             var existing = byMethod.putIfAbsent(row.unit(), row);
@@ -155,6 +170,11 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
     public Optional<no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetcherFor(String parentTypeName,
             String fieldName) {
         return Optional.ofNullable(nodeFetchers.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
+    }
+
+    /** The frame the root read at this coordinate runs in, where the store routes it. */
+    public Optional<no.sikt.graphitron.emit.RootFrame> rootFrameFor(String parentTypeName, String fieldName) {
+        return Optional.ofNullable(rootFrames.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
     }
 
     /** The root over several tables the store states at this coordinate, if it states one. */

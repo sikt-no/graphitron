@@ -20,6 +20,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMP
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_FILTERING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
@@ -120,6 +122,18 @@ public final class ConnectionQuery {
             .stream()
             .collect(Collectors.groupingBy(rec -> rec.value1(),
                 Collectors.mapping(rec -> Outcome.valueOf(rec.value2()), Collectors.toUnmodifiableSet()))));
+    }
+
+    /** The tenant column's Java type, where the graph's tenant columns agree on one. */
+    public static Optional<String> tenantType(StoreHandle store) {
+        var tc = GRAPHITRON_TENANT_COLUMN;
+        var c = SQL_COLUMN;
+        var types = store.dsl().selectDistinct(c.BINDING_TYPE).from(tc)
+            .join(c).on(c.SOURCE_NAME.eq(tc.SOURCE_NAME), c.TABLE_SCHEMA.eq(tc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(tc.TABLE_NAME), c.COLUMN_NAME.eq(tc.COLUMN_NAME))
+            .where(tc.GRAPH_NAME.eq(store.graphName()))
+            .fetch(c.BINDING_TYPE);
+        return types.size() == 1 ? Optional.of(types.getFirst()) : Optional.empty();
     }
 
     /** The graph's producers' connections, by the producer's occurrence. */

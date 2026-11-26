@@ -797,7 +797,8 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (root launcher dispatch): root coordinate '"
                             + qtf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow, outputPackage));
+                    builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow,
+                        launchers.rootFrameFor(qtf.parentTypeName(), qtf.name()), outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(launcherRow, launchers.carrierDsl(), ctx.connections(), CodeBlock.of(""),
                             TenantDslEmitter.fanOutNarrowing(ctx, launcherRow, outputPackage),
@@ -874,7 +875,8 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (root launcher dispatch): interface root coordinate '"
                             + f.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildQueryTableFetcher(ctx, f, interfaceRow, outputPackage));
+                    builder.addMethod(buildQueryTableFetcher(ctx, f, interfaceRow,
+                        launchers.rootFrameFor(f.parentTypeName(), f.name()), outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(interfaceRow, launchers.carrierDsl(), ctx.connections(), ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
@@ -1335,9 +1337,20 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.OutputField field,
-            no.sikt.graphitron.command.LauncherCommand row, String outputPackage) {
+            no.sikt.graphitron.command.LauncherCommand row,
+            Optional<no.sikt.graphitron.emit.RootFrame> rootFrame, String outputPackage) {
         var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row, ctx.connections());
         var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
+        // A root read the store routes runs in the frame around its launcher, on the connection the
+        // store states, rather than on the walk's tenant binding.
+        if (rootFrame.isPresent()) {
+            var framed = rootFrame.get();
+            return no.sikt.graphitron.emit.FrameEmitter.render(framed.frame(), field.name(), valueType,
+                new no.sikt.graphitron.emit.FrameEmitter.Body.LauncherCall(launcherClass, row.unit().methodName()),
+                frameRuntime(ctx, new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)), true, false,
+                no.sikt.graphitron.emit.FrameConnections.of(framed.frame(), Optional.of(framed.connection()), false,
+                    framed.tenantType(), routing(outputPackage), field.parentTypeName() + "." + field.name()));
+        }
 
         var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

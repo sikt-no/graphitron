@@ -36,6 +36,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_SIGNATURE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
@@ -68,6 +69,7 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.notExists;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -100,8 +102,16 @@ public final class RootQuery {
         JOINED_DETAIL,
         /** It builds a connection the store states no order for, which paging needs. */
         NO_ORDER,
-        /** A table it reads carries the tenant column: its read scope is a tenant's, or across both. */
+        /**
+         * A table it reads carries the tenant column and no one route reaches it: its read scope is
+         * across a tenant's tables and global ones, or it reads over several tables a tenant's is among.
+         */
         TENANTED,
+        /**
+         * It reads a tenant's rows marked {@code @tenantFanOut}, every tenant the request may see, a
+         * route the store does not state yet: it has no stored connection.
+         */
+        TENANT_FAN_OUT,
         /** It is read through a {@code @pivot}. */
         PIVOT,
         /** A key of its order is not a column of its table. */
@@ -146,12 +156,13 @@ public final class RootQuery {
      * client picks its order by, {@code null} where it picks none, and for a connection the page it
      * serves where the client asks for none, {@code null} for a list or a record. A lookup's list
      * follows its keys rather than an order; a list with a choice reads the default order where the
-     * client picks none.
+     * client picks none. {@code routed} is whether it reads a tenant's tables on the connection the
+     * store routes by the tenant its arguments name.
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
                           List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated,
-                          List<Facet> facets)
+                          List<Facet> facets, boolean routed)
             implements Result {
         public Emitted {
             facets = List.copyOf(facets);
@@ -436,6 +447,7 @@ public final class RootQuery {
         var cn = GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
         // A read whose tables include a tenant's, as the bindings state its scope.
         var rsc = GRAPHITRON_OCCURRENCE_READ_SCOPE;
+        var oc = GRAPHITRON_OCCURRENCE_CONNECTION;
         var da = GRAPHITRON_DIRECTIVE_APPLICATION;
         var od = GRAPHITRON_OCCURRENCE_ORDER;
         var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
@@ -455,8 +467,8 @@ public final class RootQuery {
                 source, schema, name,
                 field(exists(selectOne().from(x).where(x.GRAPH_NAME.eq(p.GRAPH_NAME), x.COORDINATE.eq(p.COORDINATE)))),
                 cn.FACETED,
-                field(exists(selectOne().from(rsc).where(rsc.GRAPH_NAME.eq(p.GRAPH_NAME),
-                    rsc.COORDINATE.eq(p.COORDINATE), rsc.SCOPE.in("TENANT", "ACROSS")))),
+                field(select(rsc.SCOPE).from(rsc).where(rsc.GRAPH_NAME.eq(p.GRAPH_NAME),
+                    rsc.COORDINATE.eq(p.COORDINATE))),
                 field(exists(selectOne().from(da).where(da.GRAPH_NAME.eq(f.GRAPH_NAME), da.COORDINATE.eq(f.COORDINATE),
                     da.DIRECTIVE_NAME.eq("pivot")))),
                 field(exists(selectOne().from(od).where(od.GRAPH_NAME.eq(p.GRAPH_NAME), od.COORDINATE.eq(p.COORDINATE),
@@ -481,7 +493,9 @@ public final class RootQuery {
                     tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME), tt.TABLE_SOURCE_NAME.eq(r.TABLE_SOURCE_NAME),
                     tt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA), tt.TABLE_NAME.eq(r.TABLE_NAME)))),
                 ge.ITEM_TYPE_NAME, cc.DEFAULT_FIRST_VALUE,
-                field(exists(selectOne().from(pn).where(pn.GRAPH_NAME.eq(p.GRAPH_NAME), pn.COORDINATE.eq(p.COORDINATE)))))
+                field(exists(selectOne().from(pn).where(pn.GRAPH_NAME.eq(p.GRAPH_NAME), pn.COORDINATE.eq(p.COORDINATE)))),
+                field(select(oc.OUTCOME).from(oc).where(oc.GRAPH_NAME.eq(p.GRAPH_NAME),
+                    oc.COORDINATE.eq(p.COORDINATE))))
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
@@ -531,7 +545,10 @@ public final class RootQuery {
                 || !(connection || "RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
                 reason = Reason.NOT_ONE_TABLE;
             }
-            else if (Boolean.TRUE.equals(row.value12())) reason = Reason.TENANTED;
+            // A read across a tenant's tables and global ones is held back; a tenant's read the store
+            // states no connection for is a fan-out, the one such read it lets through unrefused.
+            else if ("ACROSS".equals(row.value12())) reason = Reason.TENANTED;
+            else if ("TENANT".equals(row.value12()) && row.value20() == null) reason = Reason.TENANT_FAN_OUT;
             else if (Boolean.TRUE.equals(row.value13())) reason = Reason.PIVOT;
             else if ("LOOKUP".equals(at.kind())) reason = lookups.getOrDefault(at.coordinate(), new Keys(List.of(),
                 Reason.NOT_ONE_TABLE)).reason();
@@ -542,6 +559,12 @@ public final class RootQuery {
             if (reason != null) {
                 out.put(at.coordinate(), new NotYet(at.coordinate(), reason));
                 continue;
+            }
+            boolean routed = "TENANT".equals(row.value12());
+            if (routed && !"ROUTED".equals(row.value20())) {
+                throw new IllegalStateException("Graphitron generator bug (root read scope): the store states "
+                    + at.coordinate() + " reads a tenant's tables on a connection " + row.value20()
+                    + ", which only a routed one may be");
             }
             var table = tableRef(store, at.source(), at.schema(), at.table());
             var faceted = Boolean.TRUE.equals(row.value11()) ? facets.get(at.coordinate()) : List.<Facet>of();
@@ -557,7 +580,7 @@ public final class RootQuery {
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
                 signatures.get(List.of(at.coordinate(), at.schema() + "." + at.table())),
                 lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()), pageSize,
-                told == null ? null : told.discriminated(), faceted));
+                told == null ? null : told.discriminated(), faceted, routed));
         }
         return out;
     }
