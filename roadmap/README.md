@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | Spec | 2026-10-29 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R1209` | Execution tests hold a PostgreSQL connection per class until the test JVM exits | In Review | 2026-11-26 <sub>created 2026-11-25</sub> | [plan](execution-test-connection-leak.md) |
 | `R1210` | A federation key declared resolvable: false may select a field read through a reference | Spec | 2026-11-26 | [plan](non-resolvable-key-selects-any-field.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
@@ -836,7 +835,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### testing
 
 - `R944` [**The read-cost gate fails on how loaded the machine is, which has held trunk CI red and the docs site undeployed since 2026-09-09**](read-cost-budget-floor-is-a-machine-fact.md) — Backlog, testing
-- `R1209` [**Execution tests hold a PostgreSQL connection per class until the test JVM exits**](execution-test-connection-leak.md) — In Review, bug
 - `R892` [**A pipeline test pins a generated fetcher body with code strings**](generated-body-code-string-pins-in-single-record-payload-test.md) — Backlog, hygiene
 - `R707` [**JooqRecordServiceParamPipelineTest asserts on generated helper body strings**](jooq-record-param-pipeline-body-string-assertions.md) — Backlog, tech-debt
 - `R809` [**LspTraceTest cases share the trace seams static state and fail each other**](trace-static-state-leaks-between-cases.md) — Backlog, bug
