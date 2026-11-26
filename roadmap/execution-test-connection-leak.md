@@ -1,13 +1,13 @@
 ---
 id: R1209
 title: "Execution tests hold a PostgreSQL connection per class until the test JVM exits"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: testing
 depends-on: []
 created: 2026-11-25
-last-updated: 2026-11-25
+last-updated: 2026-11-26
 ---
 
 # Execution tests hold a PostgreSQL connection per class until the test JVM exits

@@ -18,9 +18,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R1209` | Execution tests hold a PostgreSQL connection per class until the test JVM exits | Spec | 2026-11-25 | [plan](execution-test-connection-leak.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | Spec | 2026-10-29 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
+| `R1209` | Execution tests hold a PostgreSQL connection per class until the test JVM exits | Ready | 2026-11-26 <sub>created 2026-11-25</sub> | [plan](execution-test-connection-leak.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R1205` | An unrouted @nodeId argument under a field-level @condition(override: true) is refused, though the override suppresses the predicate a route would serve | Spec | 2026-11-25 <sub>created 2026-11-23</sub> | [plan](unrouted-nodeid-under-field-level-override-refused.md) |
@@ -832,7 +832,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### testing
 
 - `R944` [**The read-cost gate fails on how loaded the machine is, which has held trunk CI red and the docs site undeployed since 2026-09-09**](read-cost-budget-floor-is-a-machine-fact.md) — Backlog, testing
-- `R1209` [**Execution tests hold a PostgreSQL connection per class until the test JVM exits**](execution-test-connection-leak.md) — Spec, bug
+- `R1209` [**Execution tests hold a PostgreSQL connection per class until the test JVM exits**](execution-test-connection-leak.md) — Ready, bug
 - `R892` [**A pipeline test pins a generated fetcher body with code strings**](generated-body-code-string-pins-in-single-record-payload-test.md) — Backlog, hygiene
 - `R707` [**JooqRecordServiceParamPipelineTest asserts on generated helper body strings**](jooq-record-param-pipeline-body-string-assertions.md) — Backlog, tech-debt
 - `R809` [**LspTraceTest cases share the trace seams static state and fail each other**](trace-static-state-leaks-between-cases.md) — Backlog, bug
