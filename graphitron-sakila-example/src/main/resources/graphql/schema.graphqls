@@ -432,6 +432,16 @@ type Query {
             argMapping: "pActorId: actorId, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
+    # The same chain with a filter on its hop out of the routine result: only the films described as
+    # comedies are read.
+    recentComedyFilmsForActor(actorId: Int!, minLength: Int!): [Film!]!
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: actorId, pMinLength: minLength"
+        )
+        @reference(path: [{table: "film", condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "filmIsComedy"}}])
     # The same chain with the hop left unwritten: the routine ends the path and Film is a @table
     # type, so the step from the routine's result to film is inferred, keyed by name as the written
     # {table: "film"} is.

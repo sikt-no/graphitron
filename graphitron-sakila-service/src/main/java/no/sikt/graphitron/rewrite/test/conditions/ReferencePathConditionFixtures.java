@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmEndorsement;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmsForActor;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Rental;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterParent;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterTarget;
@@ -93,6 +94,15 @@ public final class ReferencePathConditionFixtures {
      */
     public static Condition customerIsActive(Rental rental, Customer customer) {
         return customer.ACTIVEBOOL.isTrue();
+    }
+
+    /**
+     * Hop-filter fixture: the {@code condition:} half of a {@code {table:, condition:}} hop out of
+     * {@code films_for_actor}'s result to {@code film}, keeping only the films described as comedies.
+     * The name-matched key still joins the hop; this narrows it.
+     */
+    public static Condition filmIsComedy(FilmsForActor films, Film film) {
+        return film.DESCRIPTION.contains("Comedy");
     }
 
     /**

@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>{@code Actor.films}: correlated single-node child (inline multiset, mixed column/argument binding)</li>
  *   <li>{@code Query.recentFilmsForActor}: root routine-then-hops</li>
+ *   <li>{@code Query.recentComedyFilmsForActor}: the same with a condition on its hop</li>
  *   <li>{@code Actor.recentFilms}: child routine-then-hops (lateral head, name-matched hop out)</li>
  *   <li>{@code Film.castFilms}: hops-then-routine (actor_id is a column of the junction the path stands on)</li>
  *   <li>{@code Film.castRecentFilms}: the sandwich (hops in, CROSS JOIN LATERAL, name-matched hop back out)</li>
@@ -177,6 +178,23 @@ class RoutineFieldExecutionTest {
             .containsExactly(1, 3);
         assertThat(films).extracting(f -> f.get("description"))
             .containsExactly("A Epic Drama", "A Quirky Comedy");
+    }
+
+    @Test
+    void aFilteredHopOutOfTheRoutineResultNarrowsTheRows() {
+        // The same chain with a condition on its hop: of PENELOPE(1)'s films 1 and 3, only film 3
+        // is described as a comedy, so the hop's filter keeps it alone. A filter dropped from the
+        // hop would read both.
+        var data = execute("""
+            { recentComedyFilmsForActor(actorId: 1, minLength: 50) {
+                filmId
+                description
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("recentComedyFilmsForActor");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(3);
+        assertThat(films).extracting(f -> f.get("description")).containsExactly("A Quirky Comedy");
     }
 
     @Test
