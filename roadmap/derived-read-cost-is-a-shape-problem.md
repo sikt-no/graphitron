@@ -2298,6 +2298,15 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
   `TaggedInputsPipelineTest` (1); in `graphitron-sakila-example`, `CapturedGenerator` (1), where the
   guard's scope reaches it. One whose subject is the store's own lifetime, `GraphitronStoreTest`
   perhaps, goes on the guard's exemption list with that reason instead.
+* **A store's fixed cost is its parsed views** `open`. An empty booted store holds about 60 MB live,
+  most of it H2's parse tokens and their byte arrays for the schema's 334 views and rules
+  (`PopulationHeapProbe` at 0 documents, R1131 step 21), and every store pays it: each of the test
+  population's 18, each test thread's, and in production each dev loop's and language server's.
+  Measured (R1131 step 21): the views are 40 of the 60 MB, 20 MB with every view dropped; the cost
+  is the parsed view trees H2 keeps, about 30 bytes a character of view text, spread over the 315
+  views with no one dominating. No H2 setting is a lever, and an upstream change dropping a view
+  query's token list is worth about 7 MB. So the levers are less view text, R876's simplification,
+  and fewer stores; the measure for a change is the probe's view text in characters.
 
 ## User documentation (first-client check): paths
 
