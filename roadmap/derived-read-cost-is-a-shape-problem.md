@@ -1055,7 +1055,7 @@ static method needs no holder.
     rendered from the store; both move onto the store's rows here. Until then the generated
     compiles guard the signatures, and the edges, which drive only the incremental compile, are
     trusted: a wrong one shows as a missed recompile in a dev loop, never in a clean build.
-* **A root's tenant is the input binding its table's tenant column, stated per producer** `open`, E's, off the critical path. A root's tenant is the argument or input field binding its table's
+* **A root's tenant is the input binding its table's tenant column, stated per producer, claimed by E** `open`, E's. It blocks the TENANTED root flip (A, 2026-11-26). A root's tenant is the argument or input field binding its table's
   tenant column (Alf, 2026-11-15), so the store derives it, for a root query as for a root
   service, and an author names `$tenant` only where nothing binds it: a plain value a service
   hands its method as a parameter binds no column, so a service still names that one. The tenant
