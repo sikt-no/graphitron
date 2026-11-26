@@ -46,7 +46,7 @@ class ServiceEmissionConnectionTest {
         new ValidationEmitter.Runtime(generated("Outcome"), generated("ConstraintViolations"),
             env -> CodeBlock.of("validator($L)", env), generated("OwnedConnections")),
         generated("Fetchers"), generated("SelectionOccurrences"), type -> ClassName.get(PACKAGE + ".types", type),
-        new ServiceEmission.Routing(generated("OwnedConnections"), generated("ConnectionKey"),
+        new FrameConnections.Routing(generated("OwnedConnections"), generated("ConnectionKey"),
             generated("ClientException"), generated("NodeIdEncoder")));
 
     private static Optional<ServiceEmission.Emitted> emit(String document, String typeName, String fieldName) {

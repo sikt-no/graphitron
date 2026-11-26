@@ -60,7 +60,7 @@ public final class ServiceEmission {
      */
     public record Runtime(FrameEmitter.Runtime frame, FillEmitter.Runtime fill, ValidationEmitter.Runtime validation,
                           ClassName fetchersClass, ClassName selectionOccurrences,
-                          Function<String, ClassName> projectionClass, Routing routing) {
+                          Function<String, ClassName> projectionClass, FrameConnections.Routing routing) {
 
         public Runtime {
             Objects.requireNonNull(routing, "routing");
@@ -70,21 +70,6 @@ public final class ServiceEmission {
             Objects.requireNonNull(fetchersClass, "fetchersClass");
             Objects.requireNonNull(selectionOccurrences, "selectionOccurrences");
             Objects.requireNonNull(projectionClass, "projectionClass");
-        }
-    }
-
-    /**
-     * The generated classes a routed fetcher calls into: the connection carrier, the key it is acquired
-     * and handed down by, the client error a call naming no tenant is refused with, and the node id
-     * encoder a tenant inside an id is decoded by. Named only where the store states a routed call.
-     */
-    public record Routing(ClassName ownedConnections, ClassName connectionKey, ClassName clientException,
-                          ClassName nodeIdEncoder) {
-        public Routing {
-            Objects.requireNonNull(ownedConnections, "ownedConnections");
-            Objects.requireNonNull(connectionKey, "connectionKey");
-            Objects.requireNonNull(clientException, "clientException");
-            Objects.requireNonNull(nodeIdEncoder, "nodeIdEncoder");
         }
     }
 
@@ -547,7 +532,8 @@ public final class ServiceEmission {
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
             framed, runtime.frame(),
             writesSuccess || needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
-            validates, connection(coordinate, fieldCoordinate, runtime), beforeLoad);
+            validates, FrameConnections.of(frameRow, Optional.ofNullable(connections.get(coordinate)),
+                unkeyed.contains(coordinate), tenantType, runtime.routing(), fieldCoordinate), beforeLoad);
         if (outbox.isPresent() && outbox.get().writesFailure()) {
             // Registered first thing, before the frame acquires a connection, so a failure to
             // acquire or mount is covered too.
@@ -694,101 +680,6 @@ public final class ServiceEmission {
             return answer;
         }
         return p.rawType().simpleName().equals("Map") ? p.typeArguments().get(1) : p.typeArguments().getFirst();
-    }
-
-    /**
-     * The connection {@code coordinate}'s frame runs on, as the store states it: the request's own where
-     * the store states none by design ({@link #unkeyed(StoreHandle)}), as in a graph whose connection
-     * key has no part, else the routed, inherited or unscoped key; an accepting graph's child services
-     * inherit the key the vouched entity hands down. A service with no stated connection anywhere else is one the store
-     * refuses, and is never run on the request's own connection instead: generation fails. An outcome
-     * the store gains later fails to compile here rather than falling into a known arm.
-     */
-    private FrameEmitter.Connection connection(String coordinate, String fieldCoordinate, Runtime runtime) {
-        var row = connections.get(coordinate);
-        if (row == null) {
-            if (!unkeyed.contains(coordinate)) {
-                throw new IllegalStateException("Graphitron generator bug: @service " + fieldCoordinate
-                    + " has no stored connection in a graph whose connection key has a part, so nothing"
-                    + " says which connection it runs on; the store refuses such a service, so reaching"
-                    + " it is a generator bug");
-            }
-            return new FrameEmitter.Connection.Request();
-        }
-        var routing = runtime.routing();
-        return switch (row.outcome()) {
-            case INHERIT -> new FrameEmitter.Connection.Inherited(routing.ownedConnections());
-            case UNSCOPED -> new FrameEmitter.Connection.Unscoped(routing.ownedConnections(), routing.connectionKey());
-            case ROUTED -> new FrameEmitter.Connection.Routed(
-                ClassName.bestGuess(tenantType.orElseThrow(() -> new IllegalStateException(coordinate
-                    + " is routed, but the graph's tenant columns agree on no one type, which the store refuses"))),
-                routing.ownedConnections(), routing.connectionKey(),
-                row.slots().stream().map(slot -> slotRead(slot, routing)).toList(),
-                noTenant(row, fieldCoordinate, routing));
-        };
-    }
-
-    /** What a routed call whose values name no tenant gets, as its tenant part states it. */
-    private static FrameEmitter.NoTenant noTenant(ConnectionQuery.Row row, String fieldCoordinate, Routing routing) {
-        return switch (row.whenEmpty().orElseThrow(() -> new IllegalStateException(row.coordinate()
-            + " is routed with no tenant part"))) {
-            case UNREACHABLE -> new FrameEmitter.NoTenant.Unreachable();
-            case EMPTY -> new FrameEmitter.NoTenant.Empty(emptyValue(row));
-            case REFUSE -> new FrameEmitter.NoTenant.Refuse(routing.clientException(),
-                noTenantMessage(fieldCoordinate, row.slots().stream()
-                    .map(slot -> slot.names().getFirst()).distinct().toList()));
-        };
-    }
-
-    /**
-     * The client-facing refusal for a call whose lists name no tenant:
-     * {@code Mutation.rateFilms names no tenant: its tenant is read from the elements of 'in', which
-     * is empty.}
-     */
-    private static String noTenantMessage(String coordinate, List<String> arguments) {
-        var quoted = arguments.stream().map(a -> "'" + a + "'").toList();
-        String names = quoted.size() == 1
-            ? quoted.getFirst()
-            : String.join(", ", quoted.subList(0, quoted.size() - 1)) + " and " + quoted.getLast();
-        return coordinate + " names no tenant: its tenant is read from the elements of " + names
-            + (quoted.size() == 1 ? ", which is empty." : ", which are empty.");
-    }
-
-    /** The producer's empty answer, as the store states it: an empty list, set or result. */
-    private static CodeBlock emptyValue(ConnectionQuery.Row row) {
-        var empty = row.empty().orElseThrow(() -> new IllegalStateException(row.coordinate()
-            + " answers an empty call empty, but its producer states no empty answer"));
-        return switch (empty.kind()) {
-            case LIST -> CodeBlock.of("$T.of()", List.class);
-            case SET -> CodeBlock.of("$T.of()", Set.class);
-            case RESULT -> CodeBlock.of("$T.using($T.DEFAULT).newResult($T.$L)",
-                ClassName.get("org.jooq.impl", "DSL"), ClassName.get("org.jooq", "SQLDialect"),
-                ClassName.bestGuess(empty.tablesClass().orElseThrow()), empty.tableField().orElseThrow());
-        };
-    }
-
-    /**
-     * How one value the tenant is read from is read: the argument, and where it lies under an input
-     * object, the path below it, read over every element of a list it crosses; and where it is a node
-     * id, the tenant column's value out of each id, decoded strictly: an id that is not one of the
-     * node's is the client error a {@code @nodeId} argument raises, never a value naming no tenant.
-     * A value that is no id at all, absent or not a string, names none.
-     */
-    private static CodeBlock slotRead(ConnectionQuery.Slot slot, Routing routing) {
-        var names = slot.names();
-        var read = names.size() == 1
-            ? CodeBlock.of("env.getArgument($S)", names.getFirst())
-            : CodeBlock.of("$T.tenantSlot(env.getArgument($S), $L)", routing.ownedConnections(), names.getFirst(),
-                CodeBlock.join(names.subList(1, names.size()).stream().map(n -> CodeBlock.of("$S", n)).toList(),
-                    ", "));
-        if (slot.node().isEmpty()) {
-            return read;
-        }
-        // An expression, since the read sits inside the fold's own statement.
-        var decode = NodeIdHelperNames.decodeOrThrow(slot.node().get().typeName());
-        return CodeBlock.of("$T.mapTenantLeaves($L, id -> id instanceof $T s ? $T.$L(s).value$L() : null)",
-            routing.ownedConnections(), read, String.class, routing.nodeIdEncoder(), decode,
-            slot.keyPosition().orElseThrow() + 1);
     }
 
     /**

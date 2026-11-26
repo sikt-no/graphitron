@@ -16,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -89,6 +90,14 @@ public final class FrameQuery {
         }
     }
 
+    /**
+     * How the frame calls its body and what connection it can run it on, whatever produces it: a
+     * service call, on any connection the store states; a routine write, on the request's own or the
+     * key with an empty tenant part; a read, a statement or a routine called as one, on the request's
+     * own, the empty tenant part or the routed key.
+     */
+    public enum BodyKind { SERVICE, ROUTINE_WRITE, READ }
+
     /** The outcome a producer's errors are claimed into: its type, and the field they arrive at. */
     public record Outcome(String typeName, String errorsFieldName) {
         public Outcome {
@@ -98,7 +107,8 @@ public final class FrameQuery {
     }
 
     /**
-     * One frame: the producing occurrence, the type declaring its field, its outcome if any, and
+     * One frame: the producing occurrence, how its body is called, the type declaring its field, its
+     * outcome if any, and
      * under an object the parent's table it takes its key off; at a root there is none. A parent row
      * is a row of the table the declaring type binds, which its projection selects; otherwise the
      * parent holds an object the key is read off. {@code parentOutcome} says the declaring type is a
@@ -106,11 +116,12 @@ public final class FrameQuery {
      * {@code nonNullList} that the field is a non-null list, which answers the empty list where the
      * outcome holds no value.
      */
-    public record Row(String coordinate, String declaringType, Optional<Outcome> outcome,
+    public record Row(String coordinate, BodyKind bodyKind, String declaringType, Optional<Outcome> outcome,
                       Optional<ParentTable> parent, Optional<Accessor> accessor, boolean parentRow,
                       boolean parentOutcome, boolean nonNullList) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
+            Objects.requireNonNull(bodyKind, "bodyKind");
             Objects.requireNonNull(declaringType, "declaringType");
             Objects.requireNonNull(outcome, "outcome");
             Objects.requireNonNull(parent, "parent");
@@ -134,6 +145,10 @@ public final class FrameQuery {
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
         var pc = GRAPHITRON_PRODUCER_OUTCOME.as("pc");
+        var ro = GRAPHQL_ROOT_OPERATION;
+        // A routine on the mutation root writes; one anywhere else at a root is read as a statement is.
+        var mutation = field(exists(selectOne().from(ro)
+            .where(ro.GRAPH_NAME.eq(f.GRAPH_NAME), ro.TYPE_NAME.eq(f.TYPE_NAME), ro.OPERATION.eq("MUTATION"))));
         // The declaring type is a producer's outcome: the parent is the outcome holding the value.
         var parentOutcome = field(exists(selectOne().from(pc)
             .where(pc.GRAPH_NAME.eq(f.GRAPH_NAME), pc.OUTCOME_TYPE_NAME.eq(f.TYPE_NAME))));
@@ -142,7 +157,7 @@ public final class FrameQuery {
                 t.TABLE_NAME, s.TABLES_CLASS_FQN, t.JOOQ_NAME,
                 key(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME),
                 ka.SLOT_CLASS_NAME, ka.SLOT_METHOD_NAME, t.RECORD_CLASS_FQN, tt.TYPE_NAME,
-                parentOutcome, field(f.NON_NULL.eq(true).and(f.IS_LIST.eq(true))))
+                parentOutcome, field(f.NON_NULL.eq(true).and(f.IS_LIST.eq(true))), p.KIND, mutation)
             .from(p)
             .join(o).on(o.GRAPH_NAME.eq(p.GRAPH_NAME), o.COORDINATE.eq(p.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
@@ -164,7 +179,10 @@ public final class FrameQuery {
                 p.KIND.eq("SERVICE").or(p.KIND.eq("ROUTINE").and(p.START.eq("ROOT"))),
                 p.START.eq("ROOT").or(t.TABLE_NAME.isNotNull()))
             .orderBy(p.COORDINATE)
-            .fetch(rec -> new Row(rec.value1(), rec.value2(),
+            .fetch(rec -> new Row(rec.value1(),
+                "SERVICE".equals(rec.value16()) ? BodyKind.SERVICE
+                    : Boolean.TRUE.equals(rec.value17()) ? BodyKind.ROUTINE_WRITE : BodyKind.READ,
+                rec.value2(),
                 Optional.ofNullable(rec.value4()).map(type -> new Outcome(type, rec.value5())),
                 "ROOT".equals(rec.value3())
                     ? Optional.empty()

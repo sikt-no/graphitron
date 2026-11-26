@@ -1611,34 +1611,25 @@ public class TypeFetcherGenerator {
             units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
             rendered.body().returnType(), fetchers, bodyName,
             frameRuntime(ctx, units), true, false,
-            routineWriteConnection(routineWrites.connectionFor(row), coordinate, outputPackage));
+            no.sikt.graphitron.emit.FrameConnections.of(frame, routineWrites.connectionFor(row), true,
+                Optional.empty(), routing(outputPackage), coordinate.toString()));
         builder.addMethod(entry);
         builder.addMethod(rendered.body());
         rendered.helpers().forEach(builder::addMethod);
     }
 
     /**
-     * The connection a routine write's frame runs on, as the store states it: the request's own where
-     * it states none, as in a graph with no tenant column, and else the key with an empty tenant part,
-     * the default source. A routine write mints no tenant slot, so the store routes none, and a root
-     * inherits no key; either is drift, refused rather than run on a guessed connection.
+     * The generated classes a routed fetcher calls into, which the store's connection names: which
+     * calls are routed is the store's to say, so a graph with no tenant column states no connection and
+     * names none of them.
      */
-    private static no.sikt.graphitron.emit.FrameEmitter.Connection routineWriteConnection(
-            Optional<no.sikt.graphitron.emit.ConnectionQuery.Row> row, graphql.schema.FieldCoordinates coordinate,
-            String outputPackage) {
-        if (row.isEmpty()) {
-            return new no.sikt.graphitron.emit.FrameEmitter.Connection.Request();
-        }
-        return switch (row.get().outcome()) {
-            case UNSCOPED -> new no.sikt.graphitron.emit.FrameEmitter.Connection.Unscoped(
-                TenantDslEmitter.ownedConnectionsClass(outputPackage),
-                no.sikt.graphitron.emit.ConnectionKeyShape.className(outputPackage));
-            case ROUTED, INHERIT -> throw new IllegalStateException(
-                "Graphitron generator bug (routine-write connection): the store states "
-                + row.get().outcome() + " for the routine write " + coordinate + ", which mints no"
-                + " tenant slot and inherits no key; it runs on the request's connection or the"
-                + " default source");
-        };
+    private static no.sikt.graphitron.emit.FrameConnections.Routing routing(String outputPackage) {
+        return new no.sikt.graphitron.emit.FrameConnections.Routing(
+            TenantDslEmitter.ownedConnectionsClass(outputPackage),
+            no.sikt.graphitron.emit.ConnectionKeyShape.className(outputPackage),
+            ClassName.get(outputPackage + ".schema",
+                no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME),
+            no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage));
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {
@@ -1709,13 +1700,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator.pathsClass(outputPackage)
                 .enclosingClassName(),
             env -> CodeBlock.of("$L.getValidator($L)", ctx.graphitronContextCall(), env), ownedConnections);
-        // The generated classes a routed call names; which calls are routed is the store's to say, so a
-        // graph with no tenant column states no connection and names none of them.
-        var routing = new no.sikt.graphitron.emit.ServiceEmission.Routing(ownedConnections,
-            no.sikt.graphitron.emit.ConnectionKeyShape.className(outputPackage),
-            ClassName.get(outputPackage + ".schema",
-                no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME),
-            no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage));
+        var routing = routing(outputPackage);
         return new no.sikt.graphitron.emit.ServiceEmission.Runtime(frame, fill, validation,
             className(units.fetchers(ctx.parentTypeName())),
             no.sikt.graphitron.render.ProjectionCall.selectionOccurrencesClass(outputPackage),
