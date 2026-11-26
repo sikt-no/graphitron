@@ -22588,6 +22588,73 @@ node_id_member (graph_name, source_name, source_line, source_column, code, membe
      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
                       WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate AND d.slot = s.slot
                         AND d.bound = n.bound)
+),
+-- A call parameter a single node's id lands on that the id reaches no way: a parameter binding on the
+-- slot with no graphitron_occurrence_binding_extraction row, which occurrence-builds writes and sweeps
+-- before this rule runs. Which way it fails is the code, chosen from the stored facts beside it: a key
+-- column the pair names whose value the parameter cannot take; a pair naming no column at a parameter
+-- of one value; a place not in the id's shape; a tuple of the key's degree typed otherwise; any other
+-- class, a whole key landing only on its record or a tuple of it. A named column that is no key
+-- column is ARGMAPPING_KEY_COLUMN_UNRESOLVED's, and a list at a routine is deferred, below.
+call_absent (graph_name, element_coordinate, call_coordinate, call_kind, call, code, detail) AS (
+  SELECT sp.graph_name, o.element_coordinate, cp.coordinate, cp.call_kind, cp.call,
+         CASE WHEN pj.position IS NOT NULL THEN 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT'
+              WHEN l.receives = 'WHOLE' AND s.slot_shape <> 'MISMATCH' AND tc.class_name IS NULL
+              THEN 'NODE_ID_COLUMN_UNNAMED'
+              WHEN s.slot_shape = 'MISMATCH' THEN 'NODE_ID_SLOT_SHAPE_MISMATCH'
+              WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_node_id x
+                            WHERE x.graph_name = k.graph_name AND x.coordinate = k.coordinate
+                              AND x.bound = k.bound AND x.position = tc.degree - 1)
+               AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id x
+                                WHERE x.graph_name = k.graph_name AND x.coordinate = k.coordinate
+                                  AND x.bound = k.bound AND x.position >= tc.degree)
+              THEN 'NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT'
+              ELSE 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT' END,
+         CASE WHEN pj.position IS NOT NULL
+              THEN 'key column ' || c.column_name || ' is ' || c.binding_type
+                   || ', and the parameter it binds to is declared ' || COALESCE(s.declared_type, s.erased_class)
+                   || ': Declare it '
+                   || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
+                           ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END
+              ELSE cp.parameter_name END
+    FROM graphitron_occurrence_node_id_slot_parameter sp
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+    JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+    JOIN graphitron_occurrence_binding_parameter b
+      ON b.graph_name = sp.graph_name AND b.call_coordinate = sp.call_coordinate AND b.call = sp.call
+     AND b.position = sp.position
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    -- A single node's id, binding one table; a container's is judged as a container.
+    JOIN graphitron_occurrence_node_id k
+      ON k.graph_name = s.graph_name AND k.coordinate = s.coordinate AND k.position = 0
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
+                      WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
+                        AND k2.bound <> k.bound)
+    LEFT JOIN graphitron_occurrence_call_parameter_pair pp
+      ON pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate AND pp.call = cp.call
+     AND pp.position = cp.position
+    LEFT JOIN graphitron_argmapping_landing l
+      ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
+     AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
+     AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name AND l.call_coordinate = pp.coordinate
+     AND l.landing_coordinate = s.coordinate
+    LEFT JOIN graphitron_occurrence_node_id_slot_projection pj
+      ON pj.graph_name = sp.graph_name AND pj.call_coordinate = sp.call_coordinate AND pj.call = sp.call
+     AND pj.position = sp.position
+    LEFT JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = pj.graph_name AND n.coordinate = pj.coordinate AND n.bound = pj.bound
+     AND n.position = pj.key_position
+    LEFT JOIN sql_column c
+      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+     AND c.table_name = n.table_name AND c.column_name = n.column_name
+    LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_extraction e
+                      WHERE e.graph_name = b.graph_name AND e.coordinate = b.coordinate AND e.bound = b.bound)
+     AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
+     AND (l.receives IS DISTINCT FROM 'COLUMN' OR pj.position IS NOT NULL)
 )
 -- The class an input object is built into, where nothing says how to make one: no public
 -- constructor the code census can call, or a class no entry of the graph declares. At the argument or
@@ -22602,19 +22669,17 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT b.constructible
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
--- A single node's decoded id handed whole to a @service or @condition parameter or a bean member that
--- cannot take it, at the @nodeId: a place whose shape is not the id's, or a landing no decode shape fits, which
--- graphitron_occurrence_node_id_shape decides. Which it is follows the key: a jOOQ tuple of the
--- key's degree whose type arguments disagree with it, or any other class, a whole key landing only
--- on its record or a tuple of it. The parameter or member is the detail, the least where uses
--- differ.
+-- A single node's decoded id handed whole to a place that cannot take it, at the @nodeId: a bean
+-- member no decode shape fits, judged here, or a call parameter call_absent judges. Which it is
+-- follows the key: a place whose shape is not the id's, a jOOQ tuple of the key's degree whose type
+-- arguments disagree with it, or any other class, a whole key landing only on its record or a tuple
+-- of it. The parameter or member is the detail, the least where uses differ.
 -- An id written without @nodeId, inferred, is reported at the argument or input field it is.
 SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
        COALESCE(da.source_column, el.source_column), v.code,
        MIN(v.place_name), 'occurrence-builds'
   FROM (SELECT s.graph_name, o.element_coordinate,
-               COALESCE(cp.parameter_name, SUBSTRING(sm.bound, POSITION('#', sm.bound) + 1))
-                 AS place_name,
+               SUBSTRING(sm.bound, POSITION('#', sm.bound) + 1) AS place_name,
                CASE WHEN s.slot_shape = 'MISMATCH' THEN 'NODE_ID_SLOT_SHAPE_MISMATCH'
                     WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
                                   WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
@@ -22629,12 +22694,7 @@ SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
                     ELSE 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT' END AS code
           FROM graphitron_occurrence_node_id_slot s
           JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
-          LEFT JOIN graphitron_occurrence_node_id_slot_parameter sp
-            ON sp.graph_name = s.graph_name AND sp.coordinate = s.coordinate AND sp.slot = s.slot
-          LEFT JOIN graphitron_occurrence_call_parameter cp
-            ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
-           AND cp.position = sp.position
-          LEFT JOIN graphitron_occurrence_node_id_slot_member sm
+          JOIN graphitron_occurrence_node_id_slot_member sm
             ON sm.graph_name = s.graph_name AND sm.coordinate = s.coordinate AND sm.bound = s.slot
           -- A single node's id, binding one table; a container's is judged as a container.
           JOIN graphitron_occurrence_node_id k
@@ -22643,30 +22703,14 @@ SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
                             WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
                               AND k2.bound <> k.bound)
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
-         -- A member of a built class, or a @service's or @condition's parameter taking the whole key: the
-         -- one named for the argument, which no written pair fills, or one a pair fills without projecting a key
-         -- column, an argument's or, along an argMapping path, an input field's, where the parameter is a
-         -- tuple or not in the id's shape; any other is NODE_ID_COLUMN_UNNAMED's, above. A root @routine's
-         -- parameter named for the argument, which no pair fills, takes the whole key too, where a
-         -- database function takes one value. A list at a routine is deferred, below.
-         WHERE (s.kind = 'MEMBER'
-                OR o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND cp.call_kind IN ('SERVICE', 'CONDITION')
-           AND CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
-                                  WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
-                                    AND pp.call = cp.call AND pp.position = cp.position)
-                    THEN (tc.class_name IS NOT NULL OR s.slot_shape = 'MISMATCH')
-                     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_projection pj
-                                      WHERE pj.graph_name = sp.graph_name
-                                        AND pj.call_coordinate = sp.call_coordinate
-                                        AND pj.call = sp.call AND pj.position = sp.position)
-                    ELSE cp.parameter_name = o.name END
-                OR o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND cp.call_kind = 'ROUTINE'
-           AND s.list_depth = 0
-           AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
-                            WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
-                              AND pp.call = cp.call AND pp.position = cp.position))
-           AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim_container k
-                            WHERE k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate)) v
+         -- A member of a built class taking the whole key; a call parameter is call_absent's.
+         WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim_container k
+                            WHERE k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate)
+        UNION ALL
+        SELECT graph_name, element_coordinate, detail, code
+          FROM call_absent
+         WHERE code IN ('NODE_ID_SLOT_SHAPE_MISMATCH', 'NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT',
+                        'NODE_ID_KEY_ARITY_EXCEEDS_SLOT')) v
   LEFT JOIN graphitron_directive_application da
     ON da.graph_name = v.graph_name AND da.coordinate = v.element_coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
@@ -22776,58 +22820,34 @@ SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.c
        CAST(NULL AS VARCHAR), 'occurrence-builds'
   FROM node_id_member m
 UNION ALL
--- A @service's or a @condition's method, or a root @routine, whose parameter a pair projects a node
--- id's key column into, where no decode shape fits: the parameter is not of the column's type, or not
--- a List of it for a list of ids. Under some occurrence of the call, at the reference, or at the
--- @routine application, which names no method: once per site, the parameters being
--- graphitron_occurrence_node_id_slot_projection's under it. A routine step's parameter is the second
--- arm of the bracket, one family kept as one so the union stays balanced. A list at a routine is
--- deferred, below.
+-- The written pair's refusals at a node id, under some occurrence of the call, at the reference, or at
+-- the @routine application, which names no method, once per site and code: a call parameter's as
+-- call_absent chooses them, a key column the parameter cannot take or a pair naming no column; a
+-- routine step's, the second and third arms, as their own slot states them; and a $tenant pair's. One
+-- family kept as one so the union stays balanced.
 SELECT kt.graph_name, kt.source_name, kt.source_line, kt.source_column, kt.code, kt.detail, kt.stage
   FROM (
-  SELECT pj.graph_name AS graph_name, COALESCE(site.source_name, ra.source_name) AS source_name,
+  SELECT ca.graph_name AS graph_name, COALESCE(site.source_name, ra.source_name) AS source_name,
          COALESCE(site.source_line, ra.source_line) AS source_line,
          COALESCE(site.source_column, ra.source_column) AS source_column,
-         'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT' AS code,
-         MIN('key column ' || c.column_name || ' is ' || c.binding_type
-             || ', and the parameter it binds to is declared ' || COALESCE(s.declared_type, s.erased_class)
-             || ': Declare it '
-             || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
-                     ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END) AS detail, 'occurrence-builds' AS stage
-    FROM graphitron_occurrence_node_id_slot_projection pj
-    JOIN graphitron_occurrence_node_id_slot_parameter sp
-      ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call
-     AND sp.position = pj.position
-    JOIN graphitron_occurrence_node_id_slot s
-      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
-    JOIN graphitron_occurrence_call_parameter cp
-      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
-     AND cp.position = sp.position
-    JOIN graphitron_occurrence_node_id n
-      ON n.graph_name = pj.graph_name AND n.coordinate = pj.coordinate AND n.bound = pj.bound
-     AND n.position = pj.key_position
-    JOIN sql_column c
-      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
-     AND c.table_name = n.table_name AND c.column_name = n.column_name
-    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
+         ca.code AS code, MIN(ca.detail) AS detail, 'occurrence-builds' AS stage
+    FROM call_absent ca
+    JOIN graphitron_occurrence co ON co.graph_name = ca.graph_name AND co.coordinate = ca.call_coordinate
     LEFT JOIN graphitron_code_reference site
-      ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
-     AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
-          OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
+      ON site.graph_name = co.graph_name AND site.coordinate = co.element_coordinate
+     AND ((ca.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
+          OR (ca.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
     -- A routine's call, at the application it came from.
     LEFT JOIN graphitron_occurrence_call oc
-      ON cp.call_kind = 'ROUTINE' AND oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate
-     AND oc.call = cp.call
+      ON ca.call_kind = 'ROUTINE' AND oc.graph_name = ca.graph_name AND oc.coordinate = ca.call_coordinate
+     AND oc.call = ca.call
     LEFT JOIN graphitron_directive_application ra
       ON ra.graph_name = oc.graph_name AND ra.coordinate = oc.application_coordinate
      AND ra.directive_name = oc.application_directive AND ra.ordinal = oc.application_ordinal
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
-                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
-                        AND d.slot = s.slot AND d.bound = pj.bound)
+   WHERE ca.code IN ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'NODE_ID_COLUMN_UNNAMED')
      AND COALESCE(site.source_line, ra.source_line) IS NOT NULL
-     AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
-   GROUP BY pj.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
-            COALESCE(site.source_column, ra.source_column)
+   GROUP BY ca.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
+            COALESCE(site.source_column, ra.source_column), ca.code
   UNION ALL
   -- A routine step's parameter a pair projects a node id's key column into, where the catalog's type
   -- for the parameter is not the column's, at the @routine application the pair is written in: as a
@@ -22863,53 +22883,6 @@ SELECT kt.graph_name, kt.source_name, kt.source_line, kt.source_column, kt.code,
                       WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
                         AND d.slot = s.slot AND d.bound = lk.bound)
    GROUP BY ss.graph_name, ra.source_name, ra.source_line, ra.source_column
-  UNION ALL
-  -- A pair whose path names no key column past a single node's id, at a parameter no decode shape
-  -- fits and no tuple class is: a key column is one the path names, and nothing infers one. At the
-  -- reference or the @routine application, as the disagreement above; the parameter is the detail,
-  -- the least where several are. A tuple of the key's degree is the whole-key refusal's below, and a
-  -- list at a routine is deferred, below.
-  SELECT sp.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
-         COALESCE(site.source_column, ra.source_column), 'NODE_ID_COLUMN_UNNAMED', MIN(cp.parameter_name),
-         'occurrence-builds'
-    FROM graphitron_occurrence_node_id_slot_parameter sp
-    JOIN graphitron_occurrence_node_id_slot s
-      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
-    JOIN graphitron_occurrence_call_parameter cp
-      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
-     AND cp.position = sp.position
-    JOIN graphitron_occurrence_call_parameter_pair pp
-      ON pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate AND pp.call = cp.call
-     AND pp.position = cp.position
-    JOIN graphitron_argmapping_landing l
-      ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
-     AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
-     AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name AND l.call_coordinate = pp.coordinate
-     AND l.landing_coordinate = s.coordinate AND l.receives = 'WHOLE'
-    LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
-    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
-    LEFT JOIN graphitron_code_reference site
-      ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
-     AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
-          OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
-    LEFT JOIN graphitron_occurrence_call oc
-      ON cp.call_kind = 'ROUTINE' AND oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate
-     AND oc.call = cp.call
-    LEFT JOIN graphitron_directive_application ra
-      ON ra.graph_name = oc.graph_name AND ra.coordinate = oc.application_coordinate
-     AND ra.directive_name = oc.application_directive AND ra.ordinal = oc.application_ordinal
-   WHERE s.slot_shape <> 'MISMATCH' AND tc.class_name IS NULL
-     AND COALESCE(site.source_line, ra.source_line) IS NOT NULL
-     AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
-                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate AND d.slot = s.slot)
-     -- One node's id: several node types' is a container, judged as one.
-     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence io
-                       JOIN graphitron_binding_claim_container k
-                         ON k.graph_name = io.graph_name AND k.coordinate = io.element_coordinate
-                      WHERE io.graph_name = s.graph_name AND io.coordinate = s.coordinate)
-   GROUP BY sp.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
-            COALESCE(site.source_column, ra.source_column)
   UNION ALL
   -- The same at a routine step's parameter, at the @routine application the pair is written in.
   SELECT ss.graph_name, ra.source_name, ra.source_line, ra.source_column, 'NODE_ID_COLUMN_UNNAMED',

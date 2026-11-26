@@ -52,6 +52,8 @@ public final class OccurrenceBuilds {
         OccurrenceNodeIdShapes.sweep(dsl, graph, readAt);
         OccurrenceBindingExtractions.write(dsl, graph, readAt);
         OccurrenceBindingExtractions.sweep(dsl, graph, readAt);
+        // The build defect rule refuses a node id's call parameter by its missing extraction, so the
+        // extraction is written and swept first: a row an older reading left would hide the refusal.
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.BUILDS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.MEMBER_FILLS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.PARAMETER_BUILDS);

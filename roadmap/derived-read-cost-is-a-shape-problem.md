@@ -1260,6 +1260,11 @@ static method needs no holder.
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
   producer but a join step of the path; split, or as a child connection, the producer is a `SELECT` whose
   path starts at the routine. Then the routine decode, which writes only the spelling, goes.
+  How a client's value reaches each call parameter is `graphitron_occurrence_binding_extraction`, and a
+  node id's call parameter it states no way of reaching is refused by that absence, the code chosen by
+  a `CASE` over stored facts. The tuple arm of that `CASE` re-derives the key's degree with two `EXISTS`
+  probes; if more such probes gather there, the key's degree is stored once upstream at the node id's
+  own grain instead (architect, 2026-11-26).
 * **A routine step's argument coordinate is stated once** `open`, off the critical path.
   `graphitron_join_path_step_parameter` splits into a column and an argument subtype (Alf,
   2026-11-25, recorded in fact-model). The argument subtype's coordinate restates the landing's
