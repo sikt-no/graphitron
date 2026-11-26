@@ -25600,6 +25600,46 @@ COMMENT ON COLUMN graphitron_occurrence_binding_table.table_schema IS 'the table
 COMMENT ON COLUMN graphitron_occurrence_binding_table.table_name IS 'the table';
 COMMENT ON COLUMN graphitron_occurrence_binding_table.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+CREATE TABLE graphitron_occurrence_read_scope (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  scope      VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (scope IN ('TENANT', 'GLOBAL', 'ACROSS'))
+);
+COMMENT ON TABLE graphitron_occurrence_read_scope IS 'The scope of the tables a root read reads, in a graph with a tenant column: one row per root SELECT or LOOKUP, TENANT where every table it binds is a tenant''s, GLOBAL where none is, ACROSS where both are. For example Query.films over film is TENANT under the tenant column film_id, Query.languages over language GLOBAL, and Query.search over a union of Film and Language ACROSS.';
+COMMENT ON COLUMN graphitron_occurrence_read_scope.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_read_scope.coordinate IS 'the root read''s occurrence; with the graph, the grain';
+COMMENT ON COLUMN graphitron_occurrence_read_scope.scope IS 'TENANT, every table the read binds a tenant''s; GLOBAL, none, a read binding no table among them; ACROSS, both, which no one connection serves';
+COMMENT ON COLUMN graphitron_occurrence_read_scope.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_read_scope_rule (graph_name, coordinate, scope) AS
+-- Each root read of a graph with a tenant column, by the tables it binds: its own, its participants',
+-- a discriminated read's joined detail tables among them, or the type a connection carries.
+SELECT p.graph_name, p.coordinate,
+       CASE WHEN NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
+                               JOIN graphitron_tenant_column tc
+                                 ON tc.graph_name = bt.graph_name AND tc.source_name = bt.table_source_name
+                                AND tc.table_schema = bt.table_schema AND tc.table_name = bt.table_name
+                              WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate)
+              THEN 'GLOBAL'
+            WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
+                          WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column tc
+                                             WHERE tc.graph_name = bt.graph_name
+                                               AND tc.source_name = bt.table_source_name
+                                               AND tc.table_schema = bt.table_schema
+                                               AND tc.table_name = bt.table_name))
+              THEN 'ACROSS'
+            ELSE 'TENANT' END
+  FROM graphitron_occurrence_producer p
+ WHERE p.start = 'ROOT' AND p.kind IN ('SELECT', 'LOOKUP')
+   AND EXISTS (SELECT 1 FROM store_graph_tenant_column t WHERE t.graph_name = p.graph_name);
+COMMENT ON VIEW graphitron_occurrence_read_scope_rule IS 'One row the read scope rule computes, in the shape graphitron_occurrence_read_scope stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_read_scope, which is the name every reader spells.';
+
 -- What a service answers to a call that names nothing, where it is an empty value the generated code
 -- can build without a connection.
 CREATE TABLE graphitron_occurrence_producer_empty (
@@ -25738,27 +25778,10 @@ deciding (graph_name, producer_coordinate, slot, kind, coordinate, guaranteed, p
 fact (graph_name, coordinate, kind, result_scope, bound, several_types, guaranteed,
       per_element, own_argument, has_empty) AS (
   SELECT r.graph_name, r.coordinate, r.kind,
-         -- The tables the producer's rows are read from: a read's every table it binds, a tenant's
-         -- where each is, global where none is, and across both where they disagree, a read no one
-         -- route reaches; a call's the table its records are re-read from, none, one a tenant's
-         -- database holds, or one the default source holds.
-         CASE WHEN r.kind IN ('SELECT', 'LOOKUP')
-                THEN CASE WHEN NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
-                                             JOIN graphitron_tenant_column btc
-                                               ON btc.graph_name = bt.graph_name
-                                              AND btc.source_name = bt.table_source_name
-                                              AND btc.table_schema = bt.table_schema
-                                              AND btc.table_name = bt.table_name
-                                            WHERE bt.graph_name = r.graph_name AND bt.coordinate = r.coordinate)
-                            THEN 'GLOBAL'
-                          WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
-                                        WHERE bt.graph_name = r.graph_name AND bt.coordinate = r.coordinate
-                                          AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column btc
-                                                           WHERE btc.graph_name = bt.graph_name
-                                                             AND btc.source_name = bt.table_source_name
-                                                             AND btc.table_schema = bt.table_schema
-                                                             AND btc.table_name = bt.table_name))
-                            THEN 'ACROSS' ELSE 'TENANT' END
+         -- The tables the producer's rows are read from: a read's scope as the bindings state it,
+         -- across both a read no one route reaches; a call's the table its records are re-read from,
+         -- none, one a tenant's database holds, or one the default source holds.
+         CASE WHEN r.kind IN ('SELECT', 'LOOKUP') THEN rsc.scope
               WHEN pr.table_name IS NULL THEN 'NONE'
               WHEN rtc.table_name IS NOT NULL THEN 'TENANT' ELSE 'GLOBAL' END,
          -- Handed a connection: a parameter of its call filled with the jOOQ context or the session,
@@ -25796,6 +25819,8 @@ fact (graph_name, coordinate, kind, result_scope, bound, several_types, guarante
     LEFT JOIN graphitron_tenant_column rtc
       ON rtc.graph_name = pr.graph_name AND rtc.source_name = pr.table_source_name
      AND rtc.table_schema = pr.table_schema AND rtc.table_name = pr.table_name
+    LEFT JOIN graphitron_occurrence_read_scope rsc
+      ON rsc.graph_name = r.graph_name AND rsc.coordinate = r.coordinate
 ),
 verdict (graph_name, coordinate, outcome, guaranteed, own_argument, has_empty) AS (
   SELECT graph_name, coordinate,
@@ -25907,19 +25932,9 @@ CREATE VIEW graphitron_occurrence_route_entry_defect_rule
 -- routes by the id it decodes, and a read marked @tenantFanOut, which reads every tenant the request
 -- may see, have no stored route yet and draw nothing here.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN p.kind IN ('SELECT', 'LOOKUP')
-             AND EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
-                           JOIN graphitron_tenant_column btc
-                             ON btc.graph_name = bt.graph_name AND btc.source_name = bt.table_source_name
-                            AND btc.table_schema = bt.table_schema AND btc.table_name = bt.table_name
-                          WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate)
-             AND EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table bt
-                          WHERE bt.graph_name = p.graph_name AND bt.coordinate = p.coordinate
-                            AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column btc
-                                             WHERE btc.graph_name = bt.graph_name
-                                               AND btc.source_name = bt.table_source_name
-                                               AND btc.table_schema = bt.table_schema
-                                               AND btc.table_name = bt.table_name))
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_read_scope rsc
+                          WHERE rsc.graph_name = p.graph_name AND rsc.coordinate = p.coordinate
+                            AND rsc.scope = 'ACROSS')
             THEN 'TENANT_READ_ACROSS_SCOPES'
             WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot s
                            JOIN graphitron_occurrence_node_id n
@@ -33862,6 +33877,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_occurrence_expression'),
   ('occurrence-bindings', 'graphitron_occurrence_node_id'),
   ('occurrence-bindings', 'graphitron_occurrence_binding_table'),
+  ('occurrence-bindings', 'graphitron_occurrence_read_scope'),
   ('occurrence-bindings', 'graphitron_occurrence_row_input'),
   ('occurrence-bindings', 'graphitron_occurrence_filter_term'),
   ('occurrence-bindings', 'graphitron_field_cross_column'),
@@ -34094,6 +34110,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-bindings', 'graphitron_entry_defect_key_column', 'graphitron_entry_defect_key_column_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_table_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_read_scope', 'graphitron_occurrence_read_scope_rule'),
   ('occurrence-bindings', 'graphitron_occurrence_filter_term', 'graphitron_occurrence_filter_term_rule'),
   ('occurrence-bindings', 'graphitron_field_cross_column', 'graphitron_field_cross_column_rule'),
   ('occurrence-bindings', 'graphitron_interface_shared_field', 'graphitron_interface_shared_field_rule'),
@@ -37141,6 +37158,14 @@ INSERT INTO meta_relation VALUES
    'One table a COLUMN_UNRESOLVED filter defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example Query.filmsBy(bogus:) looks for bogus in film, and the occurrence-tenants stage writes a row naming film under its defect; Query.occupants(username:) over Customer | Staff a row naming customer, the participant lacking it.',
    'The filter arms of the stage''s COLUMN_UNRESOLVED restated row for row, so the defect and the table it was looked for in agree; the table is the fact, and ranking its columns against the spelling is the diagnostic view''s, so the build, the editor and the MCP server offer the same names.'),
+  ('graphitron_occurrence_read_scope', 'graph-occurrence', 'graphitron',
+   'The scope of the tables a root read reads, in a graph with a tenant column: one row per root SELECT or LOOKUP, TENANT where every table it binds is a tenant''s, GLOBAL where none is, ACROSS where both are.',
+   'For example Query.films over film is TENANT under the tenant column film_id, Query.languages over language GLOBAL, and Query.search over a union of Film and Language ACROSS.',
+   'Stated once, beside the table bindings it is read off, rather than worked out again by the connection rule, the route defect rule and the root query gate: a fact more than one rule builds on is stored by the stage that owns it. A joined detail table of a discriminated read counts, being read in the same statement.'),
+  ('graphitron_occurrence_read_scope_rule', 'graph-occurrence', 'graphitron',
+   'One row the read scope rule computes, in the shape graphitron_occurrence_read_scope stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_read_scope, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_occurrence_producer_empty', 'graph-occurrence', 'graphitron',
    'The empty answer a producer has for a call given nothing: one row per service or root lookup occurrence whose result is a collection the generated code can build empty.',
    'For example Mutation.rateFilms, returning [Film!]! over film, answers an empty list, as Query.filmsByKey, a lookup keyed by its own list of film ids, does, and a service returning a single Film has no row.',

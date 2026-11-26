@@ -53,6 +53,8 @@ public final class OccurrenceBindings {
         OccurrenceExpressions.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
         OccurrenceFilterTerms.sweep(dsl, graph, touchedAt);
+        // The scope of each root read, off the table bindings this reading alone now holds.
+        OccurrenceReadScopes.derive(dsl, graph, touchedAt);
         // What each condition method takes, once the conditions and their fills hold this reading's
         // rows alone.
         OccurrenceConditionSignatures.derive(dsl, graph, touchedAt);

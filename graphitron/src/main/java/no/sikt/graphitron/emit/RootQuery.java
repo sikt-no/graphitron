@@ -46,6 +46,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_CON
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READ_SCOPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
@@ -54,7 +55,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_MET
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -100,7 +100,7 @@ public final class RootQuery {
         JOINED_DETAIL,
         /** It builds a connection the store states no order for, which paging needs. */
         NO_ORDER,
-        /** Its table carries the tenant column. */
+        /** A table it reads carries the tenant column: its read scope is a tenant's, or across both. */
         TENANTED,
         /** It is read through a {@code @pivot}. */
         PIVOT,
@@ -434,7 +434,8 @@ public final class RootQuery {
         var tt = GRAPHITRON_TABLETYPE;
         var x = GRAPHITRON_OCCURRENCE_PARTICIPANT;
         var cn = GRAPHITRON_OCCURRENCE_PRODUCER_CONNECTION;
-        var tc = GRAPHITRON_TENANT_COLUMN;
+        // A read whose tables include a tenant's, as the bindings state its scope.
+        var rsc = GRAPHITRON_OCCURRENCE_READ_SCOPE;
         var da = GRAPHITRON_DIRECTIVE_APPLICATION;
         var od = GRAPHITRON_OCCURRENCE_ORDER;
         var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
@@ -454,8 +455,8 @@ public final class RootQuery {
                 source, schema, name,
                 field(exists(selectOne().from(x).where(x.GRAPH_NAME.eq(p.GRAPH_NAME), x.COORDINATE.eq(p.COORDINATE)))),
                 cn.FACETED,
-                field(exists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(p.GRAPH_NAME), tc.SOURCE_NAME.eq(source),
-                    tc.TABLE_SCHEMA.eq(schema), tc.TABLE_NAME.eq(name)))),
+                field(exists(selectOne().from(rsc).where(rsc.GRAPH_NAME.eq(p.GRAPH_NAME),
+                    rsc.COORDINATE.eq(p.COORDINATE), rsc.SCOPE.in("TENANT", "ACROSS")))),
                 field(exists(selectOne().from(da).where(da.GRAPH_NAME.eq(f.GRAPH_NAME), da.COORDINATE.eq(f.COORDINATE),
                     da.DIRECTIVE_NAME.eq("pivot")))),
                 field(exists(selectOne().from(od).where(od.GRAPH_NAME.eq(p.GRAPH_NAME), od.COORDINATE.eq(p.COORDINATE),
@@ -587,14 +588,14 @@ public final class RootQuery {
         if (store.dsl().fetchExists(sk, sk.GRAPH_NAME.eq(graph), sk.COORDINATE.eq(coordinate), sk.KIND.ne("COLUMN"))) {
             return new NotYet(coordinate, Reason.SORT_KEY_NOT_A_COLUMN);
         }
-        var tc = GRAPHITRON_TENANT_COLUMN;
+        var rsc = GRAPHITRON_OCCURRENCE_READ_SCOPE;
+        if (store.dsl().fetchExists(rsc, rsc.GRAPH_NAME.eq(graph), rsc.COORDINATE.eq(coordinate),
+                rsc.SCOPE.in("TENANT", "ACROSS"))) {
+            return new NotYet(coordinate, Reason.TENANTED);
+        }
         var branches = new ArrayList<Branch>();
         var byBound = new LinkedHashMap<String, Branch>();
         for (var participant : participants) {
-            if (store.dsl().fetchExists(tc, tc.GRAPH_NAME.eq(graph), tc.SOURCE_NAME.eq(participant.value2()),
-                    tc.TABLE_SCHEMA.eq(participant.value3()), tc.TABLE_NAME.eq(participant.value4()))) {
-                return new NotYet(coordinate, Reason.TENANTED);
-            }
             var table = tableRef(store, participant.value2(), participant.value3(), participant.value4());
             if (table == null) {
                 return new NotYet(coordinate, Reason.NOT_ONE_TABLE);
