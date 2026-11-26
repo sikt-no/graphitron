@@ -62,7 +62,7 @@ class RejectionResidueDrainageTest {
         "ErrorChannelWalkerError.NonNullableSuccessProjectionField",
         "ErrorChannelWalkerError.NonNullableErrorsField",
         "WireCoercionError.Assignability", "WireCoercionError.EnumConstantDivergence",
-        "WireCoercionError.NodeIdDecodedType", "WireCoercionError.ConditionBeanAtInputField",
+        "WireCoercionError.ConditionBeanAtInputField",
         "WireCoercionError.ConditionJooqRecordCarrier",
         "PivotError.NonNullSlot", "PivotError.NonScalarSlot", "PivotError.DivergentSlotType",
         "PivotError.VocabularyNotTextEnum", "PivotError.SlotMissingFromVocabulary",

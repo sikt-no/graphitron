@@ -425,12 +425,6 @@ class RejectionSeverityCoverageTest {
                 "com.example.jooq.enums.MpaaRating", List.of("PG_13"), List.of("G", "PG", "R"),
                 "input-bean field 'rating' of method 'createFilm'");
         }
-        if (permit == no.sikt.graphitron.model.diagnostics.WireCoercionError.NodeIdDecodedType.class) {
-            return new no.sikt.graphitron.model.diagnostics.WireCoercionError.NodeIdDecodedType(
-                "Language", "java.lang.Integer", "java.lang.String",
-                "@nodeId argument 'languageId' on field 'films': parameter 'languageId' of"
-                    + " condition method 'byLanguage'");
-        }
         if (permit == no.sikt.graphitron.model.diagnostics.WireCoercionError.ConditionBeanAtInputField.class) {
             return new no.sikt.graphitron.model.diagnostics.WireCoercionError.ConditionBeanAtInputField(
                 "FilmWrap", "inner", "com.example.FilmFilter",
