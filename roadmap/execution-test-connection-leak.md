@@ -1,7 +1,7 @@
 ---
 id: R1209
 title: "Execution tests hold a PostgreSQL connection per class until the test JVM exits"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: testing
