@@ -189,8 +189,8 @@ class SupertypeSignatureGateTest {
         // argument, the one shape such a pointer has; no supertype would say anything either does not.
         Set.of("graphitron_join_path_step_parameter_argument", "graphitron_occurrence_producer_node"),
         // Two arms of one tenant slot supertype, each naming the binding its slot rests on by an
-        // occurrence and a bound: the authored arm a tenant binding, the record arm a column binding.
-        Set.of("graphitron_occurrence_tenant_slot_authored", "graphitron_occurrence_tenant_slot_record_column"),
+        // occurrence and a bound: the authored arm a tenant binding, the column arm a column binding.
+        Set.of("graphitron_occurrence_tenant_slot_authored", "graphitron_occurrence_tenant_slot_column"),
         // How a join path's step joins, by which key it rode: a written foreign key and an inferred
         // one, and a table's own primary key ridden as a self-join and one matched by name from a
         // function's derived table. Siblings by decision, not a supertype owed: which relation holds

@@ -117,12 +117,15 @@ final class Pins {
      * cannot tell the arms apart: its pins carry what the rule reads to choose the arm. A producer's
      * connection is inherited for one of two reasons, a tenant column the parent row names or a
      * voucher the entity it sits below was read on, and the occurrence alone says neither, so a
-     * connection's pin adds the graph's basis as the connection rule reads it.
+     * connection's pin adds the graph's basis as the connection rule reads it. The rule's branch is
+     * the producer's start, a root's or a child's, so a child on a table-bound type, at depth 0 as a
+     * root is, pins as a child.
      */
     private static final Map<String, String> ARM_SHAPES = Map.of(
         "GRAPHITRON_OCCURRENCE_CONNECTION", """
             SELECT DISTINCT CONCAT_WS('|', k.kind, COALESCE(p.kind, '-'),
-                                      CASE WHEN k.depth = 0 THEN 'ROOT' ELSE 'NESTED' END,
+                                      CASE WHEN p.start = 'ROOT' THEN 'ROOT' WHEN k.depth = 0 THEN 'CHILD'
+                                           ELSE 'NESTED' END,
                                       CASE WHEN EXISTS (SELECT 1 FROM store_graph_tenant_column t
                                                          WHERE t.graph_name = k.graph_name) THEN 'TENANT'
                                            WHEN EXISTS (SELECT 1 FROM graphitron_accept_vouched_for av

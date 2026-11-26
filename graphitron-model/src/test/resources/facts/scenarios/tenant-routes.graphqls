@@ -1,6 +1,9 @@
-# Which connection each root @service call and routine write runs on under the tenant column film_id.
-# A required value names the tenant, so a call cannot come without one. A list argument names it per
-# element, and a call given an empty list answers the field's own empty list without a connection.
+# Which connection each root @service call, root read and routine write runs on under the tenant column
+# film_id. A required value names the tenant, so a call cannot come without one, whether a $tenant pair
+# names it or a root read's predicate binds film_id, on its own table or on one its @reference reaches. A
+# list argument names it per element, and a call given an empty list, a service's or a lookup's keyed by
+# it, answers the field's own empty list without a connection. A root read of language, which no tenant
+# column scopes, runs on the key with an empty tenant part.
 # A child service under film rows runs
 # on the key its parent handed down; one under language rows, which no tenant column scopes, on the key
 # with an empty tenant part. A routine write re-reading rental rows, which no tenant column scopes,
@@ -24,6 +27,8 @@ type Language @table(name: "language") {
 
 type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
+type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+
 # Backed by the HandedFilm record the service returns, whose film() hands over a FilmRecord.
 type HandedFilm {
   name: String
@@ -31,7 +36,10 @@ type HandedFilm {
 }
 
 type Query {
-  films: [Film!]!
+  films(filmId: Int! @field(name: "film_id")): [Film!]!
+  filmsByKey(filmId: [Int!]! @field(name: "film_id") @lookupKey): [Film]!
+  inventoriesOfFilm(filmId: Int! @field(name: "film_id")
+    @reference(path: [{key: "inventory_film_id_fkey"}])): [Inventory!]!
   languages: [Language!]!
   filmByPair(id: Int!, org: Int!): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
@@ -51,6 +59,10 @@ type Mutation {
 
 extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
   coordinate,                outcome
+  Query.films,               ROUTED
+  Query.filmsByKey,          ROUTED
+  Query.inventoriesOfFilm,   ROUTED
+  Query.languages,           UNSCOPED
   Query.filmByPair,          ROUTED
   Query.filmsByIds,          ROUTED
   Query.handedFilm,          UNSCOPED
@@ -62,13 +74,17 @@ extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: 
 
 # A routed connection's key has a tenant part, and what a call naming no tenant gets is the part's.
 extend schema @expectEquals(relation: "graphitron_occurrence_connection_part", rows: """
-  coordinate,       part,   when_empty
-  Query.filmByPair, TENANT, UNREACHABLE
-  Query.filmsByIds, TENANT, EMPTY
+  coordinate,              part,   when_empty
+  Query.films,             TENANT, UNREACHABLE
+  Query.filmsByKey,        TENANT, EMPTY
+  Query.inventoriesOfFilm, TENANT, UNREACHABLE
+  Query.filmByPair,        TENANT, UNREACHABLE
+  Query.filmsByIds,        TENANT, EMPTY
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_empty",
     where: "coordinate LIKE 'Query.film%'", rows: """
   coordinate,       empty
+  Query.filmsByKey, LIST
   Query.filmsByIds, LIST
   """)

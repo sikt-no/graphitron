@@ -21,8 +21,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_AUTHORED_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_NODE_ID_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_NODE_ID_KEY_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_COLUMN_RULE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.exists;
@@ -54,8 +54,8 @@ public final class OccurrenceTenants {
         bindings(dsl, graph, touchedAt);
         slots(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_TENANT_SLOT_AUTHORED_RULE,
             GRAPHITRON_OCCURRENCE_TENANT_SLOT_AUTHORED, List.of());
-        slots(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN_RULE,
-            GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN, List.of("BOUND"));
+        slots(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_TENANT_SLOT_COLUMN_RULE,
+            GRAPHITRON_OCCURRENCE_TENANT_SLOT_COLUMN, List.of("BOUND"));
         slots(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_TENANT_SLOT_NODE_ID_KEY_RULE,
             GRAPHITRON_OCCURRENCE_TENANT_SLOT_NODE_ID_KEY, List.of("BOUND", "KEY_POSITION:POSITION"));
         var s = GRAPHITRON_OCCURRENCE_TENANT_SLOT;
