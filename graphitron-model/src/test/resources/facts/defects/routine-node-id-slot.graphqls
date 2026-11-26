@@ -12,13 +12,16 @@
 # projects. Language.tilgangerByFilm projects film_id, an Integer, into the function's String
 # pFeideId, refused at the @routine; Language.filmsByActorRefs hands a list of Actor ids to
 # films_for_actor's one-value pActorId, deferred at the @nodeId; Language.filmsByActorRef projects
-# actor_id into the Integer pActorId and is the near miss.
+# actor_id into the Integer pActorId and is the near miss. Language.filmsByUnits binds two parameters
+# from one list of Inventory ids, whose key is two columns: one deferral at the @nodeId, the least
+# parameter its detail, not one per key column or per parameter, though each parameter is a slot.
 
 interface Node { id: ID! }
 
 type Film implements Node @table(name: "film") @node { id: ID! }
 type Customer implements Node @table(name: "customer") @node { id: ID! }
 type Actor implements Node @table(name: "actor") @node { id: ID! }
+type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id", "store_id"]) { id: ID! }
 type ActorFilm { filmId: Int @field(name: "film_id") }
 type Tilgang { organisasjonskode: Int }
 
@@ -28,6 +31,9 @@ type Language @table(name: "language") {
     @defaultOrder(fields: [{name: "film_id"}])
   filmsByActorRefs(actorRefs: [ID!]! @nodeId(typeName: "Actor"), minLength: Int!): [ActorFilm!]
     @routine(name: "films_for_actor", argMapping: "pActorId: actorRefs, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsByUnits(units: [ID!] @nodeId(typeName: "Inventory")): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: units.inventory_id, pMinLength: units.store_id")
     @defaultOrder(fields: [{name: "film_id"}])
   tilgangerByFilm(film: ID! @nodeId(typeName: "Film"), env: String!, serviceId: String!): [Tilgang!]
     @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
@@ -58,6 +64,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   """, rows: """
   coordinate,                            code,                                 detail
   Language.filmsByActorRefs(actorRefs:), ROUTINE_NODE_ID_LIST_UNSUPPORTED,     pActorId
+  Language.filmsByUnits(units:),         ROUTINE_NODE_ID_LIST_UNSUPPORTED,     pActorId
   Language.tilgangerByFilm,              NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.lang.String: Declare it Integer"
   Mutation.noteByFilm,                   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.lang.String: Declare it Integer"
   Mutation.rentFilmsByIds(customerIds:), ROUTINE_NODE_ID_LIST_UNSUPPORTED,     pCustomerId
@@ -69,6 +76,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows
   coordinate,                               kind,           list_depth, slot_shape, landing_class
   Language.filmsByActorRef(actorRef:),      STEP_PARAMETER, 0,          SINGLE,     java.lang.Integer
   Language.filmsByActorRefs(actorRefs:),    STEP_PARAMETER, 1,          MISMATCH,   java.lang.Integer
+  Language.filmsByUnits(units:),            STEP_PARAMETER, 1,          MISMATCH,   java.lang.Integer
+  Language.filmsByUnits(units:),            STEP_PARAMETER, 1,          MISMATCH,   java.lang.Integer
   Language.tilgangerByFilm(film:),          STEP_PARAMETER, 0,          SINGLE,     java.lang.String
   Mutation.noteByFilm(owner:),              PARAMETER, 0,          SINGLE,     java.lang.String
   Mutation.rentFilmsByIds(customerIds:),    PARAMETER, 1,          MISMATCH,   java.lang.Integer
@@ -90,6 +99,8 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_parameter_pair"
   Language.filmsByActorRef,  1,                  pMinLength
   Language.filmsByActorRefs, 0,                  pActorId
   Language.filmsByActorRefs, 1,                  pMinLength
+  Language.filmsByUnits,     0,                  pActorId
+  Language.filmsByUnits,     1,                  pMinLength
   Language.tilgangerByFilm,  0,                  pEnv
   Language.tilgangerByFilm,  1,                  pServiceId
   Language.tilgangerByFilm,  2,                  pFeideId
