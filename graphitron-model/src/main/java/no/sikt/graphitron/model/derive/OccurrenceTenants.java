@@ -131,16 +131,16 @@ public final class OccurrenceTenants {
         Field<String> ruleCoordinate = rule.field("COORDINATE", String.class);
         var presence = Presence.of(ruleGraph, ruleCoordinate);
         dsl.insertInto(s)
-            .columns(s.GRAPH_NAME, s.CALL_COORDINATE, s.CALL, s.SLOT, s.KIND, s.COORDINATE, s.KEY_POSITION,
+            .columns(s.GRAPH_NAME, s.PRODUCER_COORDINATE, s.SLOT, s.KIND, s.COORDINATE, s.KEY_POSITION,
                 s.GUARANTEED, s.PER_ELEMENT, s.OWN_ARGUMENT, s.TOUCHED_AT)
-            .select(dsl.select(ruleGraph, rule.field("CALL_COORDINATE", String.class),
-                    rule.field("CALL", String.class), rule.field("SLOT", String.class),
+            .select(dsl.select(ruleGraph, rule.field("PRODUCER_COORDINATE", String.class),
+                    rule.field("SLOT", String.class),
                     rule.field("KIND", String.class), ruleCoordinate,
                     rule.field("KEY_POSITION", Integer.class), presence.guaranteed(), presence.perElement(),
                     presence.ownArgument(), val(touchedAt, s.TOUCHED_AT))
                 .from(rule)
                 .where(ruleGraph.eq(graph)))
-            .onConflict(s.GRAPH_NAME, s.CALL_COORDINATE, s.CALL, s.SLOT)
+            .onConflict(s.GRAPH_NAME, s.PRODUCER_COORDINATE, s.SLOT)
             .doUpdate()
             .set(s.KIND, excluded(s.KIND))
             .set(s.COORDINATE, excluded(s.COORDINATE))
@@ -152,7 +152,7 @@ public final class OccurrenceTenants {
             .execute();
         var columns = new java.util.ArrayList<Field<?>>();
         var selected = new java.util.ArrayList<Field<?>>();
-        for (String name : List.of("GRAPH_NAME", "CALL_COORDINATE", "CALL", "SLOT", "KIND", "COORDINATE")) {
+        for (String name : List.of("GRAPH_NAME", "PRODUCER_COORDINATE", "SLOT", "KIND", "COORDINATE")) {
             columns.add(subtype.field(name));
             selected.add(rule.field(name));
         }
@@ -166,13 +166,13 @@ public final class OccurrenceTenants {
         columns.add(touched);
         selected.add(val(touchedAt, touched));
         var updates = new java.util.LinkedHashMap<Field<?>, Field<?>>();
-        for (Field<?> column : columns.subList(4, columns.size())) {
+        // Every column past the key (graph, producer, slot) is updated on conflict.
+        for (Field<?> column : columns.subList(3, columns.size())) {
             updates.put(column, excluded(column));
         }
         dsl.insertInto(subtype).columns(columns)
             .select(dsl.select(selected).from(rule).where(ruleGraph.eq(graph)))
-            .onConflict(subtype.field("GRAPH_NAME"), subtype.field("CALL_COORDINATE"), subtype.field("CALL"),
-                subtype.field("SLOT"))
+            .onConflict(subtype.field("GRAPH_NAME"), subtype.field("PRODUCER_COORDINATE"), subtype.field("SLOT"))
             .doUpdate()
             .set(updates)
             .execute();

@@ -149,7 +149,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_binding_tenant", 
 # defect.
 extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot",
     where: "coordinate LIKE '%(thing:)' OR coordinate LIKE '%occupant:)'", rows: """
-  call_coordinate,             kind,        coordinate,                          key_position
+  producer_coordinate,             kind,        coordinate,                          key_position
   Query.thingInBean,           NODE_ID_KEY, Query.thingInBean(in.occupant:),     0
   Query.thingInBean,           NODE_ID_KEY, Query.thingInBean(in.occupant:),     1
   Query.filmMarkedBesideThing, NODE_ID_KEY, Query.filmMarkedBesideThing(thing:), 0

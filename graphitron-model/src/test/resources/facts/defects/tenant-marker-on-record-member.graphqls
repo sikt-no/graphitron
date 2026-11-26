@@ -37,7 +37,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
 # Each call reads its tenant from the record's film_id field, which routes it; a marked one also from
 # the marker.
 extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows: """
-  call_coordinate,    kind,          coordinate
+  producer_coordinate,    kind,          coordinate
   Query.modifyMarked, AUTHORED,      Query.modifyMarked(in.filmId:)
   Query.modifyMarked, RECORD_COLUMN, Query.modifyMarked(in.filmId:)
   Query.modifyPaired, AUTHORED,      Query.modifyPaired(in.filmId:)

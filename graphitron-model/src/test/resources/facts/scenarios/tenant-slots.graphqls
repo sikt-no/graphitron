@@ -58,7 +58,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding_tenant", ro
 
 # Every value each call's tenant is read from, and how.
 extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows: """
-  call_coordinate,    kind,          coordinate,                     key_position, guaranteed, per_element, own_argument
+  producer_coordinate,    kind,          coordinate,                     key_position, guaranteed, per_element, own_argument
   Query.filmByPair,   AUTHORED,      Query.filmByPair(org:),         ,             TRUE,       FALSE,       TRUE
   Query.filmMarked,   AUTHORED,      Query.filmMarked(id:),          ,             TRUE,       FALSE,       TRUE
   Query.markedFilms,  AUTHORED,      Query.markedFilms(ids:),        ,             FALSE,      TRUE,        TRUE

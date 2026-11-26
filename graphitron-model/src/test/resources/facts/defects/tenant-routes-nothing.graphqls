@@ -25,7 +25,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows: """
-  call_coordinate,       kind,     coordinate
+  producer_coordinate,       kind,     coordinate
   Query.languagesPaired, AUTHORED, Query.languagesPaired(org:)
   Query.filmMarked,      AUTHORED, Query.filmMarked(id:)
   """)

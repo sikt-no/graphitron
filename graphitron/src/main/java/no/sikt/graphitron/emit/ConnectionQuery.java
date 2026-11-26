@@ -167,7 +167,7 @@ public final class ConnectionQuery {
             .where(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.TYPE_NAME.eq(nodeType)));
         var slots = multiset(select(names, s.KEY_POSITION, typeId, tablesClass, tableField, keyColumns)
                 .from(s)
-                .where(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.CALL_COORDINATE.eq(c.COORDINATE), s.CALL.eq("producer"))
+                .where(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.PRODUCER_COORDINATE.eq(c.COORDINATE))
                 .orderBy(s.SLOT))
             .convertFrom(rs2 -> rs2.map(Records.mapping(RawSlot::new)));
         return store.dsl()
