@@ -40,12 +40,8 @@ class ArgmappingProjectionRejectionPipelineTest {
 
     /**
      * The silence this family closes. Before the detection, this schema compiled and shipped the
-     * base64 wire id to {@code rent_film}'s parameter; now it fails the build naming the count and
-     * the columns the author has to choose between.
-     *
-     * <p>Two key columns, because one is no longer a rejection at all: a one-column key is inferred
-     * and the projection resolves, which is the case below. A gate about failing the build has to
-     * stand on a schema that still fails it.
+     * base64 wire id to {@code rent_film}'s parameter; now it fails the build at the pair, which
+     * names no key column of the id.
      */
     @Test
     void aBareNodeIdBindingFailsTheBuild(@TempDir Path tmp) throws IOException {
@@ -68,27 +64,16 @@ class ArgmappingProjectionRejectionPipelineTest {
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
                 .as("the detection's violation reaches the build's verdict")
-                .anyMatch(m -> m.contains("whose key is 2 columns")
-                    && m.contains("open it with one of them: inventory_id, store_id")));
+                .anyMatch(m -> m.contains("[NODE_ID_COLUMN_UNNAMED]")));
     }
 
     /**
-     * The same shape against a one-column key builds clean, and this is the half of the arity rule
-     * only this tier can state. The tiers below say the relation resolves and the detection reports
-     * nothing; neither says the build then completes.
-     *
-     * <p>Two gates had to agree for this to be true, and the second is why the case is here rather
-     * than beside the detection. The walk's own routine leaf-type gate compares graphql-java's
-     * coercion output for the SDL leaf against the parameter's declared Java type, and an
-     * {@code ID!} bound to an {@code Integer} parameter is exactly what it rejects. It now stands
-     * aside on a {@code @nodeId} leaf, that value being decoded before the parameter sees it, so the
-     * comparison was between two things that never meet. The authored spelling escaped that gate
-     * only because a path descending past a scalar resolves no leaf type, which is an accident of
-     * path shape rather than a rule, and the bare spelling has no such accident to rely on.
+     * The same shape against a one-column key fails the same way: a key column is one the path
+     * names, and nothing infers the only one there is.
      */
     @Test
-    void aBareNodeIdAgainstAOneColumnKeyBuildsClean(@TempDir Path tmp) throws IOException {
-        assertThatCode(() -> validate(tmp, """
+    void aBareNodeIdAgainstAOneColumnKeyFailsTheBuild(@TempDir Path tmp) throws IOException {
+        assertThatThrownBy(() -> validate(tmp, """
             interface Node { id: ID! }
             type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
                 id: ID! @nodeId
@@ -103,15 +88,18 @@ class ArgmappingProjectionRejectionPipelineTest {
                     @reference(path: [{table: "rental"}])
             }
             """))
-            .as("the sole key column is inferred, so there is nothing for the build to refuse")
-            .doesNotThrowAnyException();
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("the sole key column is not inferred")
+                .anyMatch(m -> m.contains("[NODE_ID_COLUMN_UNNAMED]")));
     }
 
     /**
-     * The gate that stood aside above still rejects where no decode is in play. An {@code ID!} bound
-     * to an {@code Integer} routine parameter with no {@code @nodeId} on it is the coercion failure
-     * that gate exists for, and its message offers the decode as one of the remedies. Without this
-     * case the stand-aside would be indistinguishable from removing the gate.
+     * The walk's routine leaf-type gate, which stands aside on a {@code @nodeId} leaf, that value being
+     * decoded before the parameter sees it, still rejects where no decode is in play. An {@code ID!}
+     * bound to an {@code Integer} routine parameter with no {@code @nodeId} on it is the coercion
+     * failure that gate exists for, and its message offers the decode as one of the remedies.
      */
     @Test
     void anIdBoundToAnIntegerParameterWithNoDecodeStillFailsTheBuild(@TempDir Path tmp)
@@ -328,42 +316,6 @@ class ArgmappingProjectionRejectionPipelineTest {
                     && m.contains("key column first_name is java.lang.String, and the parameter it"
                         + " binds to is declared java.lang.Integer"))
                 .noneMatch(m -> m.contains("which jOOQ binds as String")));
-    }
-
-    /**
-     * The same mismatch reached without the author naming the column, which is what makes lifting the
-     * bare rejection at arity 1 safe rather than lenient. The entry spells no key column, the sole
-     * one is inferred, and the type gate on it still fails the build. Without this case the arity
-     * rule would read as trading a rejection for silence.
-     *
-     * <p>The stored refusal names the inferred column rather than quoting a segment the author never
-     * wrote, as the named case's does.
-     */
-    @Test
-    void anInferredKeyColumnTheParameterCannotTakeFailsTheBuild(@TempDir Path tmp)
-            throws IOException {
-        assertThatThrownBy(() -> validate(tmp, """
-            interface Node { id: ID! }
-            type Customer implements Node @table(name: "customer") @node(keyColumns: ["first_name"]) {
-                id: ID! @nodeId
-            }
-            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-            type Query { rental: Rental, customer: Customer }
-            input RentFilmInput { customerRef: ID! @nodeId(typeName: "Customer"), customerId: Int! }
-            type Mutation {
-                rentFilm(input: RentFilmInput!): [Rental!]!
-                    @routine(name: "rent_film", argMapping: "pInventoryId: input.customerRef, pCustomerId: input.customerId")
-                    @reference(path: [{table: "rental"}])
-            }
-            """))
-            .isInstanceOf(ValidationFailedException.class)
-            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
-                .extracting(ValidationError::message)
-                .as("the inferred column is named, once")
-                .anyMatch(m -> m.contains("[NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT]")
-                    && m.contains("key column first_name is java.lang.String, and the parameter it"
-                        + " binds to is declared java.lang.Integer"))
-                .noneMatch(m -> m.contains("jOOQ binds as")));
     }
 
     /**

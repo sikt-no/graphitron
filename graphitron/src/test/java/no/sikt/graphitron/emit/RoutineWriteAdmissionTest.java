@@ -52,14 +52,14 @@ class RoutineWriteAdmissionTest {
     }
 
     /**
-     * A routine write's arguments are the store's fills: a node id stopped on at a routine parameter
-     * is decoded into the node's key and its one column taken, as {@code scenarios/argmapping-key-column}
+     * A routine write's arguments are the store's fills: a node id whose key column the pair names is
+     * decoded into the node's record and that column taken, as {@code scenarios/argmapping-key-column}
      * states the slot's {@code KEY_VALUE} shape, and a plain value beside it is read as it arrives.
      */
     @Test
     void aNodeIdArgumentIsFilledWithItsKeyColumn() {
         var arguments = FACTS.read("scenarios/argmapping-key-column",
-            graph -> RoutineWriteQuery.read(graph.handle()).rowFor("Mutation", "rentFilmBare")
+            graph -> RoutineWriteQuery.read(graph.handle()).rowFor("Mutation", "rentFilmProjected")
                 .orElseThrow().call().arguments());
         assertThat(arguments)
             .extracting(RoutineWriteQuery.Argument::parameterName, RoutineWriteQuery.Argument::pathNames,
@@ -67,7 +67,7 @@ class RoutineWriteAdmissionTest {
             .containsExactly(
                 tuple("pInventoryId", List.of("inventoryId"), false, java.util.Optional.empty()),
                 tuple("pCustomerId", List.of("customerId"), true, java.util.Optional.of(
-                    new RoutineWriteQuery.KeyValue("Mutation.rentFilmBare(customerId:)", "public.customer",
+                    new RoutineWriteQuery.KeyValue("Mutation.rentFilmProjected(customerId:)", "public.customer",
                         "CUSTOMER_ID"))));
     }
 

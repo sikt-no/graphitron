@@ -237,20 +237,20 @@ Which columns are openable comes from the node type, not from the routine: whate
 xref:node.adoc[`@node(keyColumns:)`] declares, or the table's key metadata where it does not. Matching
 is case-insensitive, so the SQL spelling and the generated spelling are one answer.
 
-Where the node type's key is a single column you may leave the leaf closed:
-`pOrganisasjonskode: input.organisasjonId` names that column, there being no other it could name, and
-the parameter receives it exactly as the spelled-out form does. That holds wherever the `@nodeId`
-sits, an argument of the field (`pOrganisasjonskode: organisasjonId`) as much as an input field below
-one. Naming the column is then a matter of saying out loud what the build would infer, which is worth
-doing where the reader benefits.
+The leaf is opened with the column even where the node type's key is a single column:
+`pOrganisasjonskode: input.organisasjonId` names no column, and the build does not infer the one it
+could mean. That holds wherever the `@nodeId` sits, an argument of the field
+(`pOrganisasjonskode: organisasjonId.organisasjonskode`) as much as an input field below one, and at a
+child field's routine as at a root's.
 
 Four things are build errors rather than surprises at runtime, and one is not supported yet:
 
-* *Binding a `@nodeId` whose key is more than one column without saying which.* One binding carries
-  one value, and nothing in `pOrganisasjonskode: input.organisasjonId` says which of the two it is.
-  The build stops, states the count, and lists the columns you could have named. It says the same
-  where the node type resolves no key columns at all, the remedy there being
-  xref:node.adoc[`@node(keyColumns:)`] on that type.
+* *Binding a `@nodeId` without saying which key column.* One binding carries one value, and nothing
+  in `pOrganisasjonskode: input.organisasjonId` says which column it is, though the key has one. The
+  build stops at the `@routine` naming the parameter (`NODE_ID_COLUMN_UNNAMED`). Add the column after
+  the id. A column the node type's key does not have is a build error listing the ones it does; where
+  the node type resolves no key columns at all the remedy is xref:node.adoc[`@node(keyColumns:)`] on
+  that type.
 * *`@nodeId` without `typeName:` at this position.* A bare `@nodeId` infers its target from the
   containing table, and a routine parameter has no containing table, so there is nothing to infer
   from. Name the type.
@@ -262,8 +262,8 @@ Four things are build errors rather than surprises at runtime, and one is not su
   backstop.
 * *A `@nodeId` argument a parameter takes by name, with no `argMapping` entry.* A parameter named
   like the argument would receive the whole decoded key, and a routine parameter holds one value, so
-  the build refuses it (`NODE_ID_KEY_ARITY_EXCEEDS_SLOT`). Write the entry, `pCustomerId: customerId`,
-  and the key column is projected as above.
+  the build refuses it (`NODE_ID_KEY_ARITY_EXCEEDS_SLOT`). Write the entry naming the column,
+  `pCustomerId: customerId.customer_id`, and the key column is projected as above.
 * *A list of node ids* bound to a routine parameter is not decoded into an array of a key column yet
   (`ROUTINE_NODE_ID_LIST_UNSUPPORTED`).
 
@@ -391,7 +391,7 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 * On a root field composing a chain (`Query` and `Mutation` alike), `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. A root routine's parameters bind from GraphQL arguments only, no table standing there to read a column of.
 * `argMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is an entry that binds the parameter to nothing (see <<parameter-binding,Where a parameter takes its value>>): a name that is no argument lists the field's arguments, and points at `$source.<column>` where the name is a column; a `$source` column the table lacks lists that table's columns. A dot-path whose later segment names nothing the value at that depth opens into is a build error listing the candidates. A column has no path form, since it has no nested fields.
 * An `argMapping` path must land on a scalar or enum leaf, or on a key column projected out of a node id (see <<node-id-key-projection>>). Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's, and so must a key column projected out of a node id: a mismatch there is a build error naming both types, resolvable only where the routine's call surface was captured. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
-* A `@nodeId`-carrying leaf's `@nodeId` must name `typeName:` explicitly, a routine parameter having no containing table to infer the node type from. Whether the leaf must be opened with a key column follows from the node type's key: one column is inferred and the leaf may stay closed, and more than one is a build error stating the count and listing the columns, one binding carrying one value. The parameter receives a key column's own value either way, never the encoded id. Naming a column the node type does not resolve is a build error suggesting the near miss, naming one whose Java type the parameter cannot take is a build error stating both types, and opening an `ID` that carries no `@nodeId` at all is a build error too: what a dot opens is a node id, and an `ID` that is not one has nothing to open, so the editor reports the path at the `argMapping` as `GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED`. A node id naming an interface or a union has a key per member, so opening one is a build error for now, naming each member's key columns. Exactly one segment may follow a node id, a node id opening into one key column, and opening a *list* of node ids is reported as deferred: it names the list of that key column across the decoded ids, which routine parameter binding does not emit yet. A `@service` or xref:condition.adoc[`@condition`] parameter does take it, as a `List` of the column; see xref:nodeId.adoc#key-column-projection[Projecting one key column].
+* A `@nodeId`-carrying leaf's `@nodeId` must name `typeName:` explicitly, a routine parameter having no containing table to infer the node type from. The leaf must be opened with the key column the parameter takes, whatever the node type's key, one column included: a path ending on the id names no column, and is a build error, `GRAPHITRON_NODE_ID_COLUMN_UNNAMED`. The parameter receives the key column's own value, never the encoded id. Naming a column the node type does not resolve is a build error suggesting the near miss, naming one whose Java type the parameter cannot take is a build error stating both types, and opening an `ID` that carries no `@nodeId` at all is a build error too: what a dot opens is a node id, and an `ID` that is not one has nothing to open, so the editor reports the path at the `argMapping` as `GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED`. A node id naming an interface or a union has a key per member, so opening one is a build error for now, naming each member's key columns. Exactly one segment may follow a node id, a node id opening into one key column, and opening a *list* of node ids is reported as deferred: it names the list of that key column across the decoded ids, which routine parameter binding does not emit yet. A `@service` or xref:condition.adoc[`@condition`] parameter does take it, as a `List` of the column; see xref:nodeId.adoc#key-column-projection[Projecting one key column].
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.
 * `@orderBy`, `@condition` and `@asConnection` compose normally on a routine-backed *read* (see <<read-surface,The read surface>>). `@lookupKey` composition is reported as deferred. On a `Mutation` field, `@orderBy` and `@condition` are reported as deferred (the write's result shape has no filter or order surface to compose onto) and a Connection return is rejected.
 * A routine child connection none of whose parameters is bound to a column of the parent row (`$source.<column>` in `argMapping`) is refused as `NO_KEY_FROM_PARENT`, unless the path steps through a table before the routine: the connection is batched across parents, and the batch is keyed by what the routine reads off each parent.

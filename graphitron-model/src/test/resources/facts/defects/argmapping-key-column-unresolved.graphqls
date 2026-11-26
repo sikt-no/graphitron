@@ -1,14 +1,12 @@
-# A written argMapping path projecting a key column out of a node id must reach one column of one
-# node, and the parameter taking it must be of that column's type. filmActorsPicked descends onto a
-# FilmActor id, whose key has two columns, naming neither; filmsByNope names a column the film key
-# does not have; filmsByEither projects out of a union's id, one key per member, which is refused for
-# now: each is refused where the pair is written, the key columns it could have meant named under
+# A written argMapping path projecting a key column out of a node id must name one column of one
+# node, and the parameter taking it must be of that column's type. filmsByNope names a column the film
+# key does not have; filmsByEither projects out of a union's id, one key per member, which is refused
+# for now: each is refused where the pair is written, the key columns it could have meant named under
 # the defect. languagesByPrimitive takes language_id in an int, a type the column is not, refused at
 # the condition with the parameter named under it; so are languagesByOne, taking the language_id of a
 # list of ids in one Integer where it is a List<Integer>, and FilmKeyAsString.film, an input-field
-# @condition taking film_id in a String. A routine parameter takes one value, so
-# rentFilmByPair, stopping on a FilmActor id at a @routine, is refused as filmActorsPicked is; the
-# one-column Customer id stopped on the same way lands, as scenarios/argmapping-key-column states.
+# @condition taking film_id in a String. A path naming no column at all is
+# defects/node-id-column-unnamed's.
 
 interface Node { id: ID! }
 
@@ -18,10 +16,6 @@ type Language implements Node @table(name: "language") @node { id: ID! }
 
 union FilmOrActor = Film | FilmActor
 
-type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-
-input FilmActorPick { filmActor: ID @nodeId(typeName: "FilmActor") }
-
 input FilmKeyAsString {
   film: ID @nodeId(typeName: "Film") @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -29,9 +23,6 @@ input FilmKeyAsString {
 }
 
 type Query {
-  filmActorsPicked(pick: FilmActorPick): [Film!]! @condition(condition: {
-      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-      method: "filmIdKeyEquals", argMapping: "filmId: pick.filmActor"}, override: true)
   filmsByNope(id: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmIdKeyEquals", argMapping: "filmId: id.nope"}, override: true)
@@ -47,18 +38,10 @@ type Query {
   filmsByKeyAsString(filter: FilmKeyAsString): [Film!]!
 }
 
-type Mutation {
-  rentFilmByPair(inventoryId: Int!, pair: ID! @nodeId(typeName: "FilmActor")): [Rental!]!
-    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: pair")
-    @reference(path: [{table: "rental"}])
-}
-
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                                 coordinate
-  ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Query.filmActorsPicked
   ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Query.filmsByNope
   ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Query.filmsByEither
-  ARGMAPPING_KEY_COLUMN_UNRESOLVED,     Mutation.rentFilmByPair
   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, Query.languagesByPrimitive
   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, Query.languagesByOne
   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, FilmKeyAsString.film
@@ -67,14 +50,10 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
 # The key columns each unresolved projection could have meant.
 extend schema @expectEquals(relation: "graphitron_entry_defect_key_column", rows: """
   landing_coordinate,                     bound,             position
-  Query.filmActorsPicked(pick.filmActor:), public.film_actor, 0
-  Query.filmActorsPicked(pick.filmActor:), public.film_actor, 1
   Query.filmsByEither(ref:),              public.film,       0
   Query.filmsByEither(ref:),              public.film_actor, 0
   Query.filmsByEither(ref:),              public.film_actor, 1
   Query.filmsByNope(id:),                 public.film,       0
-  Mutation.rentFilmByPair(pair:),         public.film_actor, 0
-  Mutation.rentFilmByPair(pair:),         public.film_actor, 1
   """)
 
 # A pair projecting one key column lands the id on its parameter, and states which column the

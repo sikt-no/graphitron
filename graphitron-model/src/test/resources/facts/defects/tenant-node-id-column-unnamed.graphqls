@@ -1,0 +1,36 @@
+# A $tenant pair reads its value as the tenant column's, so a path ending on a node id names the key
+# column it reads, as a parameter's does: Query.filmByTenantId names none past the Film id and is
+# NODE_ID_COLUMN_UNNAMED at the pair; Query.filmByTenantKey names film_id, the near miss, read at the
+# key's first position. Query.filmByUnnamedPair binds the same id to a @service parameter of one
+# value naming no column either, refused the same way at the @service, its parameter the detail.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! }
+
+input FilmPick { film: ID! @nodeId(typeName: "Film") }
+
+type Query {
+  filmByTenantId(pick: FilmPick!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.NodeIdDestinationService",
+      method: "modify", argMapping: "in: pick.film, $tenant: pick.film"})
+  filmByUnnamedPair(pick: FilmPick!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.NodeIdDestinationService",
+      method: "find", argMapping: "id: pick.film"})
+  filmByTenantKey(pick: FilmPick!): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.NodeIdDestinationService",
+      method: "modify", argMapping: "in: pick.film, $tenant: pick.film.film_id"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'NODE_ID_COLUMN_UNNAMED'", rows: """
+  coordinate,           code,                   detail
+  Query.filmByTenantId,    NODE_ID_COLUMN_UNNAMED, $tenant
+  Query.filmByUnnamedPair, NODE_ID_COLUMN_UNNAMED, id
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_tenant",
+    where: "call_coordinate = 'Query.filmByTenantKey'", rows: """
+  coordinate,                         call_coordinate,       call,     origin,     key_position
+  Query.filmByTenantKey(pick.film:), Query.filmByTenantKey, producer, ARGMAPPING, 0
+  """)

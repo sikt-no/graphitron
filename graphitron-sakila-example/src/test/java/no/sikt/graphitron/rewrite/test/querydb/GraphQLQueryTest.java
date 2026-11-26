@@ -5738,6 +5738,16 @@ class GraphQLQueryTest {
         assertThat(films).extracting(f -> f.get("filmId")).containsExactly(2, 4, 5);
     }
 
+    @Test
+    void queryServiceRecord_filmRecordByPickedId_aDescendedNodeIdLandsWholeInTheRecord() {
+        // `in: pick.film` descends onto a film id and names no key column, so the id is handed over
+        // whole and decoded into the FilmRecord the method takes, not projected to film_id.
+        Map<String, Object> data = execute(
+            "{ filmRecordByPickedId(pick: {film: \"%s\"}) }"
+                .formatted(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 7)));
+        assertThat(data).containsEntry("filmRecordByPickedId", "7");
+    }
+
     // ===== TableInterfaceType =====
 
     @Test
@@ -7804,59 +7814,9 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void rentFilmPayloadInferred_aClosedLeafReachesTheRoutineAsAKey() {
-        // The inferred arm of the same projection, end to end. The argMapping stops on the node id
-        // and Customer's key is one column, so the build resolves customer_id without the author
-        // spelling it, and the request must land exactly where the spelled-out sibling above lands.
-        //
-        // Only the execution tier can say that. Both spellings resolve in the store and both emit
-        // compile-clean code, but the emitter used to take the node id to sit one segment short of the
-        // path's end whatever the store said, so this shape decoded env.getArgument("input") — the
-        // whole input object — which the decode helper's wire-shape guard turns into a null record and
-        // the next line into an NPE on every request, whatever id the client sent.
-        int countBefore = rentalCount(2, 3);
-        Integer rentalId = null;
-        try {
-            var rawResult = executeRaw("""
-                mutation {
-                    rentFilmPayloadInferred(input: { inventoryId: 2, customerId: "%s" }) {
-                        rental { rentalId inventoryId customerId }
-                        errors { __typename }
-                    }
-                }
-                """.formatted(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3)));
-            assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
-            Map<String, Object> data = rawResult.getData();
-            assertThat(data).extractingByKey("rentFilmPayloadInferred", as(MAP))
-                .containsEntry("errors", null);
-            var rental = (Map<String, Object>) ((Map<String, Object>) data.get("rentFilmPayloadInferred")).get("rental");
-            assertThat(rental)
-                .as("the inferred column reached the database as a key, not as the base64 node id")
-                .containsEntry("inventoryId", 2)
-                .containsEntry("customerId", 3);
-            rentalId = (Integer) rental.get("rentalId");
-            assertThat(rentalId).isNotNull();
-
-            assertThat(rentalCount(2, 3))
-                .as("rentFilmPayloadInferred committed exactly one rental row")
-                .isEqualTo(countBefore + 1);
-        } finally {
-            if (rentalId != null) {
-                dsl.deleteFrom(org.jooq.impl.DSL.table("rental"))
-                    .where(org.jooq.impl.DSL.field("rental_id").eq(rentalId))
-                    .execute();
-            }
-        }
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void rentFilmPayloadBareNodeId_aBareBindingReachesTheRoutineAsAKey() {
-        // The same closed form with the node id at the field's own argument, so the binding is a
-        // single segment. This is the shape that used to ship the wire value: the emitter declined
-        // every one-segment path before consulting the relation, so the base64 string was read off the
-        // request and handed to a parameter typed for the column, which is the undecoded-wire-value
-        // escape the projection family exists to close.
+    void rentFilmPayloadArgumentNodeId_anArgumentsKeyColumnReachesTheRoutine() {
+        // The same projection with the node id at the field's own argument, so the binding opens the
+        // id with no descent before it.
         //
         // A pass here is the decode and not merely the call arriving: p_customer_id is an integer
         // parameter, so a base64 string reaching it fails the call rather than writing a wrong number.
@@ -7865,7 +7825,7 @@ class GraphQLQueryTest {
         try {
             var rawResult = executeRaw("""
                 mutation {
-                    rentFilmPayloadBareNodeId(inventoryId: 2, customerId: "%s") {
+                    rentFilmPayloadArgumentNodeId(inventoryId: 2, customerId: "%s") {
                         rental { rentalId inventoryId customerId }
                         errors { __typename }
                     }
@@ -7873,18 +7833,18 @@ class GraphQLQueryTest {
                 """.formatted(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3)));
             assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
             Map<String, Object> data = rawResult.getData();
-            assertThat(data).extractingByKey("rentFilmPayloadBareNodeId", as(MAP))
+            assertThat(data).extractingByKey("rentFilmPayloadArgumentNodeId", as(MAP))
                 .containsEntry("errors", null);
-            var rental = (Map<String, Object>) ((Map<String, Object>) data.get("rentFilmPayloadBareNodeId")).get("rental");
+            var rental = (Map<String, Object>) ((Map<String, Object>) data.get("rentFilmPayloadArgumentNodeId")).get("rental");
             assertThat(rental)
-                .as("the bare binding's key reached the database, not the base64 node id")
+                .as("the projected key reached the database, not the base64 node id")
                 .containsEntry("inventoryId", 2)
                 .containsEntry("customerId", 3);
             rentalId = (Integer) rental.get("rentalId");
             assertThat(rentalId).isNotNull();
 
             assertThat(rentalCount(2, 3))
-                .as("rentFilmPayloadBareNodeId committed exactly one rental row")
+                .as("rentFilmPayloadArgumentNodeId committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
         } finally {
             if (rentalId != null) {

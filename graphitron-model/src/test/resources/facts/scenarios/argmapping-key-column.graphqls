@@ -1,13 +1,13 @@
-# Which key column a parameter takes out of a node id. A path naming a column past the @nodeId slot it
-# opens, or descending through an input object onto a @nodeId input field, projects one key column,
-# named where it is written and else the node's one-column key. filmsByNamed names film_id past its
-# slot; filmsByPicked descends through pick onto film, whose node has one key column. A routine
-# parameter takes one value, so a pair stopping on a node id at a @routine projects one key column
-# too: rentFilmBare's customerId is a Customer id, whose key is customer_id alone. The projection is a
-# fact of the argMapping landing, and each fill a pair wrote states it. Off a list of ids a projection
-# is the list of that column across the decoded ids, at every @condition site: filmsByIdList names
-# film_id past a list of Film ids at the field, filmsByPickedList descends onto one, filmsByKeyList
-# names it at the argument, and FilmKeysFilter.films at an input field, each parameter a List<Integer>.
+# Which key column a parameter takes out of a node id: the one the path names past the @nodeId slot
+# it opens, whether the slot is the argument's or an input field an input object leads onto. Nothing
+# infers one, though the node's key has one column. filmsByNamed names film_id past its slot;
+# filmsByPicked descends through pick onto film and names film_id past it. A routine parameter takes
+# one value the same way: rentFilmProjected names customer_id past its Customer id. The projection is
+# a fact of the argMapping landing, and each fill a pair wrote states it. Off a list of ids a
+# projection is the list of that column across the decoded ids, at every @condition site:
+# filmsByIdList names film_id past a list of Film ids at the field, filmsByPickedList past one an
+# input object leads onto, filmsByKeyList at the argument, and FilmKeysFilter.films at an input
+# field, each parameter a List<Integer>.
 
 interface Node { id: ID! }
 
@@ -38,22 +38,22 @@ type Query {
       method: "filmIdKeyEquals", argMapping: "filmId: id.film_id"}, override: true)
   filmsByPicked(pick: FilmPick): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-      method: "filmIdKeyEquals", argMapping: "filmId: pick.film"}, override: true)
+      method: "filmIdKeyEquals", argMapping: "filmId: pick.film.film_id"}, override: true)
   filmsByKeys(filter: FilmKeysFilter): [Film!]!
   filmsByIdList(ids: [ID!] @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
       method: "filmKeysIn", argMapping: "filmIds: ids.film_id"}, override: true)
   filmsByPickedList(pick: FilmListPick): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
-      method: "filmKeysIn", argMapping: "filmIds: pick.films"}, override: true)
+      method: "filmKeysIn", argMapping: "filmIds: pick.films.film_id"}, override: true)
   filmsByKeyList(ids: [ID!] @nodeId(typeName: "Film") @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
       method: "filmKeysIn", argMapping: "filmIds: ids.film_id"}, override: true)): [Film!]!
 }
 
 type Mutation {
-  rentFilmBare(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
-    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+  rentFilmProjected(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId.customer_id")
     @reference(path: [{table: "rental"}])
 }
 
@@ -62,10 +62,10 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing",
     where: "directive_name = 'condition'", rows: """
   call_coordinate,     landing_coordinate,              trailing_name, descends, receives
   Query.filmsByNamed,  Query.filmsByNamed(id:),         film_id,       FALSE,    COLUMN
-  Query.filmsByPicked, Query.filmsByPicked(pick.film:), ,              TRUE,     COLUMN
+  Query.filmsByPicked, Query.filmsByPicked(pick.film:), film_id,       TRUE,     COLUMN
   Query.filmsByKeys(filter.films:), Query.filmsByKeys(filter.films:), film_id, FALSE, COLUMN
   Query.filmsByIdList, Query.filmsByIdList(ids:),       film_id,       FALSE,    COLUMN
-  Query.filmsByPickedList, Query.filmsByPickedList(pick.films:), ,     TRUE,     COLUMN
+  Query.filmsByPickedList, Query.filmsByPickedList(pick.films:), film_id, TRUE, COLUMN
   Query.filmsByKeyList(ids:), Query.filmsByKeyList(ids:), film_id,  FALSE,    COLUMN
   """)
 
@@ -93,38 +93,38 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair
   Query.filmsByKeyList(ids:), condition:public.film, 1, filmIds
   """)
 
-# A pair stopping on the node id at a routine parameter takes one key column, as a descent does at
-# another call; the plain inventoryId beside it takes its value.
+# A pair naming a key column past the node id at a routine parameter takes that column; the plain
+# inventoryId beside it takes its value.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing",
     where: "directive_name = 'routine'", rows: """
   target_name,  landing_coordinate,                  trailing_name, descends, receives
-  pInventoryId, Mutation.rentFilmBare(inventoryId:), ,              FALSE,    COLUMN
-  pCustomerId,  Mutation.rentFilmBare(customerId:),  ,              FALSE,    COLUMN
+  pInventoryId, Mutation.rentFilmProjected(inventoryId:), ,              FALSE,    WHOLE
+  pCustomerId,  Mutation.rentFilmProjected(customerId:),  customer_id,    FALSE,    COLUMN
   """)
 
-# Customer's one key column, inferred where nothing past the id names one.
+# Customer's key column, as the path names it.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column",
     where: "directive_name = 'routine'", rows: """
   target_name, landing_coordinate,                 bound,           position
-  pCustomerId, Mutation.rentFilmBare(customerId:), public.customer, 0
+  pCustomerId, Mutation.rentFilmProjected(customerId:), public.customer, 0
   """)
 
 # The routine parameter is the id's slot, at the binding type the catalog states, and takes the
 # projected column's value.
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", rows: """
   coordinate,                         kind,      list_depth, slot_shape, landing_class
-  Mutation.rentFilmBare(customerId:), PARAMETER, 0,          SINGLE,     java.lang.Integer
+  Mutation.rentFilmProjected(customerId:), PARAMETER, 0,          SINGLE,     java.lang.Integer
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot_projection",
-    where: "call_coordinate = 'Mutation.rentFilmBare'", rows: """
+    where: "call_coordinate = 'Mutation.rentFilmProjected'", rows: """
   call,     position, coordinate,                         bound,           key_position
-  producer, 1,        Mutation.rentFilmBare(customerId:), public.customer, 0
+  producer, 1,        Mutation.rentFilmProjected(customerId:), public.customer, 0
   """)
 
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
   coordinate,                         bound,           decode_shape
-  Mutation.rentFilmBare(customerId:), public.customer, KEY_VALUE
+  Mutation.rentFilmProjected(customerId:), public.customer, KEY_VALUE
   """)
 
 # A list of ids opened with its key column, or descended onto, lands on a slot one list deep, and its

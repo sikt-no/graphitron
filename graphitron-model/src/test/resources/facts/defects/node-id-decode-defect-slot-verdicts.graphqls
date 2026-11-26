@@ -1,10 +1,11 @@
 # A @nodeId argument whose decoded value reaches a Java parameter by name, judged at that parameter:
 # the whole key lands only on the node's own record or a tuple of its key, so it is refused at any
 # other class, on a tuple typed otherwise than the key, or on the slot's shape, and otherwise carried
-# out. One key column is taken by projecting it with argMapping. A root @routine's parameter is
-# judged the same way, at the binding type the catalog states: one taken by the argument's name gets
-# the whole key and holds one value, refused, where a pair naming the same argument projects the key
-# column. Each verdict sits beside the shapes
+# out. One key column is taken by naming it past the id with argMapping, and a pair ending on the id
+# naming none, where the parameter is no record or tuple, is refused at the reference as
+# NODE_ID_COLUMN_UNNAMED. A root @routine's parameter is judged the same way, at the binding type the
+# catalog states: one taken by the argument's name gets the whole key and holds one value, refused,
+# where a pair naming the column projects it. Each verdict sits beside the shapes
 # that resolve, since the relation is the population the decode does not claim and an absence there
 # is a resolution.
 
@@ -38,7 +39,7 @@ input FilmRecordAssignmentInput { film: ID @nodeId(typeName: "Film") }
 "A film-actor id built into the same FilmRecord member: another table's record, which holds no film-actor key."
 input FilmActorIntoFilmRecordInput { film: ID @nodeId(typeName: "FilmActor") }
 
-"A composite id an argMapping path hands whole to a parameter, judged there as an argument's is; a one-column id is the column a path projects instead."
+"A composite id an argMapping path ends on, naming no column of it."
 input GreetingByPathInput { userId: ID @nodeId(typeName: "FilmActor") }
 
 # A one-column key, language_id, which a film reaches by its language key.
@@ -68,12 +69,14 @@ type Query {
   # ... and so is an id: ID written without @nodeId, a node id all the same, at the argument itself ...
   filmImplicit(id: ID): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
-  # ... and so is a pair handing the whole id to a parameter, at the column's type or another ...
+  # ... and so is a pair ending on the id, naming no column, at the column's type or another,
+  # though as NODE_ID_COLUMN_UNNAMED at the reference, which defects/tenant-node-id-column-unnamed
+  # pins at a @service ...
   filmByPair(ids: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ids"})
   greetingsByPair(ids: ID @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: ids"})
-  # ... and so is a path reaching an input field's id, at the input field.
+  # ... and a path reaching an input field's id the same way.
   greetingsByPath(by: GreetingByPathInput): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: by.userId"})
   # ... which a pair projecting the column into the parameter takes as the column's value.
@@ -166,9 +169,9 @@ type Mutation {
   rentFilmByName(pInventoryId: Int!, pCustomerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
     @routine(name: "rent_film")
     @reference(path: [{table: "rental"}])
-  # A pair naming the same argument projects Customer's one key column into it instead.
+  # A pair naming Customer's key column past the same argument projects it into the parameter instead.
   rentFilmByPair(pInventoryId: Int!, pCustomerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
-    @routine(name: "rent_film", argMapping: "pCustomerId: pCustomerId")
+    @routine(name: "rent_film", argMapping: "pCustomerId: pCustomerId.customer_id")
     @reference(path: [{table: "rental"}])
 }
 
@@ -184,11 +187,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.filmRecordAsPairing(in:), NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       in
   Query.film(id:),                NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   Query.filmImplicit(id:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
-  Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   FilmSurveyNoteInput.note,       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       note
   FilmActorIntoFilmRecordInput.film, NODE_ID_KEY_ARITY_EXCEEDS_SLOT,    film
-  Query.greetingsByPair(ids:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
-  GreetingByPathInput.userId,     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.filmsByIds(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Query.greetings(userId:),       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.pairings(userId:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId

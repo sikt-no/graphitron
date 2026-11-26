@@ -79,13 +79,11 @@ input RentFilmInput {
 }
 
 # The key-column projection fixture: customerId arrives as a Customer node id rather than as the
-# integer key it encodes, and argMapping opens it with the node type's own key column. Two spellings
-# reach that column and both are consumed here. rentFilmPayloadProjected names it past the node id;
-# rentFilmPayloadInferred stops on the node id and lets Customer's one-column key name itself, there
-# being nothing else such a binding could mean. Either way the fetcher decodes the id once into a
-# CustomerRecord and reads customer_id off it, and p_customer_id never sees the base64 string.
-# rentFilmPayloadBareNodeId is the same closed form spelled at the field's own argument rather than
-# inside this input, so the three of them are three spellings of one rule.
+# integer key it encodes, and argMapping opens it with the node type's own key column, named past the
+# node id though the key has only the one. The fetcher decodes the id once into a CustomerRecord and
+# reads customer_id off it, and p_customer_id never sees the base64 string.
+# rentFilmPayloadArgumentNodeId spells the same at the field's own argument rather than inside this
+# input.
 input RentFilmProjectedInput {
     inventoryId: Int!
     customerId:  ID! @nodeId(typeName: "Customer")
@@ -517,7 +515,7 @@ type Query {
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
             method: "filmsOfLanguages",
-            argMapping: "languageIds: pick.languageIds"
+            argMapping: "languageIds: pick.languageIds.language_id"
         }, override: true)
         @defaultOrder(primaryKey: true)
     filmsOfLanguageIdsFilter(filter: LanguageIdsFilter): [Film!]! @defaultOrder(primaryKey: true)
@@ -1075,6 +1073,14 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmsByNestedListPath",
             argMapping: "filmIdGroups: input.groups.items.id"
+        })
+    # A path descending onto a node id that names no key column hands it over whole, so the service
+    # parameter typed as the node's record takes the decoded film, its one key column not inferred.
+    filmRecordByPickedId(pick: FilmNodePick!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.NodeIdDestinationService",
+            method: "modify",
+            argMapping: "in: pick.film"
         })
     # plan-service-root-fetchers.md: @service root fetcher with scalar return.
     filmCount: Int!
@@ -3332,7 +3338,7 @@ type InvCondMember implements FilmCondRef @table(name: "inventory") {
 
 # The node type the optional-@nodeId filters open: a second type over `actor`, node-backed while
 # the plain Actor below is not, so an opaque id can be encoded for it without making Actor itself a
-# node. actor's key is one column, so a binding that stops on the node id infers it.
+# node.
 type ActorNode implements Node @table(name: "actor") @node {
     id:        ID!     @nodeId
     firstName: String! @field(name: "FIRST_NAME")
@@ -4519,6 +4525,11 @@ input FilmOneOfFilter @oneOf {
 # expression `filmIds: input.ids` walks from the `input` GraphQL argument into the `ids`
 # field; the service signature stays GraphQL-input-shape-agnostic
 # (List<Integer> filmIds, not the wrapper map).
+# A film id inside an input object, which filmRecordByPickedId descends onto.
+input FilmNodePick {
+    film: ID! @nodeId(typeName: "Film")
+}
+
 input FilmsByPathInput {
     ids: [Int!]!
 }
@@ -5631,9 +5642,9 @@ type PostEmailPayload {
     email: Email
 }
 
-# Two node ids feeding one routine call, one opened with the key column it encodes and one left
-# closed for the build to infer. Film and Customer keys are both integers, so a binding that read
-# either id at the other's slot would hand the routine the wrong key without a type error.
+# Two node ids feeding one routine call, each opened with the key column it encodes. Film and
+# Customer keys are both integers, so a binding that read either id at the other's slot would hand
+# the routine the wrong key without a type error.
 input RentFilmCopyInput {
     filmId:     ID! @nodeId(typeName: "Film")
     customerId: ID! @nodeId(typeName: "Customer")
@@ -5708,23 +5719,13 @@ type Mutation {
             argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId.customer_id"
         )
 
-    # The same write with the column left unspelled: the path stops on the node id, and Customer's
-    # key is one column, so there is nothing else the binding could mean and the build resolves
-    # customer_id without the author naming it. The parameter gets the key exactly as the spelled-out
-    # sibling above does, which is the promise the manual makes for the closed form.
-    rentFilmPayloadInferred(input: RentFilmProjectedInput!): RentFilmPayload
+    # The projection with the node id at the field's own argument rather than inside an input
+    # object, so the binding has no descent to compose: the routine parameter receives the key column
+    # the path names.
+    rentFilmPayloadArgumentNodeId(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): RentFilmPayload
         @routine(
             name: "rent_film"
-            argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId"
-        )
-
-    # The closed form with the node id at the field's own argument rather than inside an input
-    # object, so the binding has one segment and no descent to compose. The same resolution applies:
-    # a one-column key names itself, and the routine parameter receives the key.
-    rentFilmPayloadBareNodeId(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): RentFilmPayload
-        @routine(
-            name: "rent_film"
-            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId.customer_id"
         )
 
     # The routine carrier's RLS outcome: create_secure_note is SECURITY DEFINER, so the write
@@ -5808,12 +5809,12 @@ type Mutation {
             argMapping: "pMailboxId: mailboxId, pMessageNo: messageNo, pSubject: subject"
         )
 
-    # An authored and an inferred node-id projection at one coordinate: filmId spells the column it
-    # opens, customerId leaves it to Customer's one-column key. Each parameter must get its own key.
+    # Two node-id projections at one coordinate, each naming the column it opens. Each parameter must
+    # get its own key.
     rentFilmCopy(input: RentFilmCopyInput!): [Rental!]!
         @routine(
             name: "rent_film_copy"
-            argMapping: "pFilmId: input.filmId.film_id, pCustomerId: input.customerId"
+            argMapping: "pFilmId: input.filmId.film_id, pCustomerId: input.customerId.customer_id"
         )
         @reference(path: [{table: "rental"}])
 

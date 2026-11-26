@@ -5,7 +5,8 @@
 # a list of Customer ids to rent_film's one-value pCustomerId, which the routine write does not decode
 # into an array yet. rentFilmByCustomer projects customer_id into the Integer pCustomerId and is
 # refused for nothing, the near miss. A routine parameter taking a node id by the argument's name,
-# with no pair, is the whole-key refusal defects/node-id-decode-defect-slot-verdicts pins.
+# with no pair, is the whole-key refusal defects/node-id-decode-defect-slot-verdicts pins, and a pair
+# naming no key column is defects/node-id-column-unnamed's.
 #
 # A child @routine's parameter is a step of the field's path, judged on the same slot: the written
 # pair that binds it (graphitron_join_path_step_parameter_pair) leads to the key column its landing
@@ -27,17 +28,17 @@ type Tilgang { organisasjonskode: Int }
 
 type Language @table(name: "language") {
   filmsByActorRef(actorRef: ID! @nodeId(typeName: "Actor"), minLength: Int!): [ActorFilm!]
-    @routine(name: "films_for_actor", argMapping: "pActorId: actorRef, pMinLength: minLength")
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorRef.actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
   filmsByActorRefs(actorRefs: [ID!]! @nodeId(typeName: "Actor"), minLength: Int!): [ActorFilm!]
-    @routine(name: "films_for_actor", argMapping: "pActorId: actorRefs, pMinLength: minLength")
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorRefs.actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
   filmsByUnits(units: [ID!] @nodeId(typeName: "Inventory")): [ActorFilm!]
     @routine(name: "films_for_actor", argMapping: "pActorId: units.inventory_id, pMinLength: units.store_id")
     @defaultOrder(fields: [{name: "film_id"}])
   tilgangerByFilm(film: ID! @nodeId(typeName: "Film"), env: String!, serviceId: String!): [Tilgang!]
     @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: film")
+             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: film.film_id")
     @defaultOrder(fields: [{name: "organisasjonskode"}])
 }
 type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
@@ -47,13 +48,13 @@ type Query { rental: Rental, languages: [Language!]! }
 
 type Mutation {
   noteByFilm(owner: ID! @nodeId(typeName: "Film"), note: String!): [SecureNote!]!
-    @routine(name: "create_secure_note", argMapping: "pOwner: owner, pNote: note")
+    @routine(name: "create_secure_note", argMapping: "pOwner: owner.film_id, pNote: note")
     @reference(path: [{table: "secure_note"}])
   rentFilmsByIds(inventoryId: Int!, customerIds: [ID!]! @nodeId(typeName: "Customer")): [Rental!]!
-    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerIds")
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerIds.customer_id")
     @reference(path: [{table: "rental"}])
   rentFilmByCustomer(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
-    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId.customer_id")
     @reference(path: [{table: "rental"}])
 }
 

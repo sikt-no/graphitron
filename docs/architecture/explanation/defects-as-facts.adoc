@@ -224,7 +224,10 @@ parameter (Alf, 2026-11-13). An `@outbox` payload key carries what the API's cli
 ending on a node id there hands over the encoded id whole, through an input object or not and
 whatever the key, and a list of them an array; only a key column named past the id projects, decoded,
 as at a parameter. The key column rule and `ARGMAPPING_KEY_COLUMN_UNRESOLVED` read the fact, so
-neither judges a payload key's id against a parameter's arity.
+neither judges a payload key's id against a parameter's arity. A key column is one the path names,
+at a root or a child, for a key of one column too: a path ending on the id hands it over whole,
+wherever it stops, and where the parameter takes neither the node's record nor a tuple of its key it is
+`NODE_ID_COLUMN_UNNAMED`, the written pair's, reported where the pair is written (Alf, 2026-11-26).
 
 [#adding-a-defect]
 == Adding a defect

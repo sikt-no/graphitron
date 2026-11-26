@@ -5413,7 +5413,7 @@ COMMENT ON COLUMN graphitron_argmapping_landing.call_coordinate IS 'the occurren
 COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argument or input-field occurrence the path names; what it is, its column, table or node identity, is that occurrence''s own binding, not restated here';
 COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: what the value at the landing opens into. Past a node id, whose element claims NODE_ID, a key column of it, which the landing''s binding resolves and judges; past a generated scalar, one of the components its kind decodes a value into, as graphitron_generated_scalar_component lists them. A name past anything else, or past a generated scalar naming none of its components, lands nowhere';
 COMMENT ON COLUMN graphitron_argmapping_landing.descends IS 'whether the path goes past the slot it opens, an argument of a field-level call or the argument or input field the directive is written on, rather than stopping on it';
-COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what the landing hands over: COMPONENT, the one component of a generated scalar''s decoded value that trailing_name names; for a node id COLUMN, one key column, where the path names one past the id, where it is a @routine''s, a database function taking one value per parameter, or where it descends onto the id at another call''s parameter; WHOLE otherwise, the value as it arrives, for a node id the decoded key at a @service or @condition parameter the path stops on and the encoded id at an @outbox payload key, whose clients see the id as the API does';
+COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what the landing hands over: COMPONENT, the one component of a generated scalar''s decoded value that trailing_name names; for a node id COLUMN, the one key column the path names past the id; WHOLE otherwise, the value as it arrives, for a node id the whole key wherever the path stops on it or descends onto it, the encoded id at an @outbox payload key, whose clients see the id as the API does';
 COMMENT ON COLUMN graphitron_argmapping_landing.repeats_own_name IS 'whether the path began with the call''s own name, as an argument-level or input-field-level argMapping was once required to: a spelling that still resolves';
 COMMENT ON COLUMN graphitron_argmapping_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 CREATE INDEX graphitron_argmapping_landing_landing_ix
@@ -10549,16 +10549,10 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.targe
             ELSE lo.coordinate <> co.coordinate END,
        -- What the landing hands over. A component named past a generated scalar is that component,
        -- first, since a name past anything is otherwise a key column. A key column named past a node
-       -- id is that column, and only a node id has another name past it here. A payload key
-       -- otherwise takes the id whole, as the API's clients see it, and a routine parameter one key
-       -- column, a database function taking one value per parameter; any other call parameter
-       -- reached by descending onto it takes a key column, one stopping on its slot the whole key.
+       -- id is that column, and only a node id has another name past it here. A path naming nothing
+       -- past the id hands it over whole, wherever it stops: a key column is one the path names.
        CASE WHEN gc.component IS NOT NULL THEN 'COMPONENT'
             WHEN s.consumed < s.segments THEN 'COLUMN'
-            WHEN s.directive_name = 'outbox' THEN 'WHOLE'
-            WHEN s.directive_name = 'routine' THEN 'COLUMN'
-            WHEN CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
-                      ELSE lo.coordinate <> co.coordinate END THEN 'COLUMN'
             ELSE 'WHOLE' END
   FROM graphitron_argmapping_step s
   JOIN graphitron_occurrence co ON co.graph_name = s.graph_name AND co.coordinate = s.call_coordinate
@@ -15006,45 +15000,25 @@ COMMENT ON COLUMN graphitron_occurrence_node_id_carried.column_name IS 'the depa
 COMMENT ON COLUMN graphitron_occurrence_node_id_carried.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 
--- The key column a written argMapping path projects out of a node id: a path descending onto a
--- @nodeId slot, or naming a column past it, hands the parameter one key column, named where it is
--- written and else the node's one column; one stopping on the slot hands it the whole decoded key.
+-- The key column a written argMapping path projects out of a node id: the one it names past the id.
 CREATE VIEW graphitron_argmapping_landing_key_column_rule
   (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
    landing_coordinate, bound, position) AS
-WITH projected (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
-                landing_coordinate, trailing_name, bound, position, table_source_name, table_schema,
-                table_name, column_name) AS (
-  -- A projecting landing on a node id of one node binding: one of several, an interface's or a
-  -- union's, is refused for now.
-  SELECT l.graph_name, l.coordinate, l.directive_name, l.ordinal, l.owner, l.target_kind, l.target_name,
-         l.call_coordinate, l.landing_coordinate, l.trailing_name, n.bound, n.position,
-         n.table_source_name, n.table_schema, n.table_name, n.column_name
-    FROM graphitron_argmapping_landing l
-    JOIN graphitron_occurrence_node_id n
-      ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
-   WHERE l.receives = 'COLUMN'
-     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id m
-                      WHERE m.graph_name = n.graph_name AND m.coordinate = n.coordinate
-                        AND m.bound <> n.bound)
-)
--- The key column the written name reaches on the node's table.
-SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.target_kind, p.target_name,
-       p.call_coordinate, p.landing_coordinate, p.bound, p.position
-  FROM projected p
+-- A projecting landing on a node id of one node binding: one of several, an interface's or a union's,
+-- is refused for now. The key column the written name reaches on the node's table.
+SELECT l.graph_name, l.coordinate, l.directive_name, l.ordinal, l.owner, l.target_kind, l.target_name,
+       l.call_coordinate, l.landing_coordinate, n.bound, n.position
+  FROM graphitron_argmapping_landing l
+  JOIN graphitron_occurrence_node_id n
+    ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
   JOIN sql_column_spelling sp
-    ON sp.source_name = p.table_source_name AND sp.table_schema = p.table_schema
-   AND sp.table_name = p.table_name AND sp.column_name = p.column_name
-   AND sp.spelling_upper = UPPER(p.trailing_name)
-UNION ALL
--- Named nothing: the node's one key column.
-SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.target_kind, p.target_name,
-       p.call_coordinate, p.landing_coordinate, p.bound, p.position
-  FROM projected p
- WHERE p.trailing_name IS NULL
+    ON sp.source_name = n.table_source_name AND sp.table_schema = n.table_schema
+   AND sp.table_name = n.table_name AND sp.column_name = n.column_name
+   AND sp.spelling_upper = UPPER(l.trailing_name)
+ WHERE l.receives = 'COLUMN'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id m
-                    WHERE m.graph_name = p.graph_name AND m.coordinate = p.landing_coordinate
-                      AND m.bound = p.bound AND m.position <> p.position);
+                    WHERE m.graph_name = n.graph_name AND m.coordinate = n.coordinate
+                      AND m.bound <> n.bound);
 COMMENT ON VIEW graphitron_argmapping_landing_key_column_rule IS 'One row the landing key column rule computes, in the shape graphitron_argmapping_landing_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_argmapping_landing_key_column, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.graph_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.coordinate';
@@ -22534,95 +22508,6 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT b.constructible
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
--- A @service's or a @condition's method, or a root @routine, whose parameter a pair projects a node
--- id's key column into, where no decode shape fits: the parameter is not of the column's type, or not
--- a List of it for a list of ids. Under some occurrence of the call, at the reference, or at the
--- @routine application, which names no method: once per site, the parameters being
--- graphitron_occurrence_node_id_slot_projection's under it. A routine step's parameter is the second
--- arm of the bracket, one family kept as one so the union stays balanced. A list at a routine is
--- deferred, below.
-SELECT kt.graph_name, kt.source_name, kt.source_line, kt.source_column, kt.code, kt.detail, kt.stage
-  FROM (
-  SELECT pj.graph_name AS graph_name, COALESCE(site.source_name, ra.source_name) AS source_name,
-         COALESCE(site.source_line, ra.source_line) AS source_line,
-         COALESCE(site.source_column, ra.source_column) AS source_column,
-         'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT' AS code,
-         MIN('key column ' || c.column_name || ' is ' || c.binding_type
-             || ', and the parameter it binds to is declared ' || COALESCE(s.declared_type, s.erased_class)
-             || ': Declare it '
-             || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
-                     ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END) AS detail, 'occurrence-builds' AS stage
-    FROM graphitron_occurrence_node_id_slot_projection pj
-    JOIN graphitron_occurrence_node_id_slot_parameter sp
-      ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call
-     AND sp.position = pj.position
-    JOIN graphitron_occurrence_node_id_slot s
-      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
-    JOIN graphitron_occurrence_call_parameter cp
-      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
-     AND cp.position = sp.position
-    JOIN graphitron_occurrence_node_id n
-      ON n.graph_name = pj.graph_name AND n.coordinate = pj.coordinate AND n.bound = pj.bound
-     AND n.position = pj.key_position
-    JOIN sql_column c
-      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
-     AND c.table_name = n.table_name AND c.column_name = n.column_name
-    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
-    LEFT JOIN graphitron_code_reference site
-      ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
-     AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
-          OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
-    -- A routine's call, at the application it came from.
-    LEFT JOIN graphitron_occurrence_call oc
-      ON cp.call_kind = 'ROUTINE' AND oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate
-     AND oc.call = cp.call
-    LEFT JOIN graphitron_directive_application ra
-      ON ra.graph_name = oc.graph_name AND ra.coordinate = oc.application_coordinate
-     AND ra.directive_name = oc.application_directive AND ra.ordinal = oc.application_ordinal
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
-                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
-                        AND d.slot = s.slot AND d.bound = pj.bound)
-     AND COALESCE(site.source_line, ra.source_line) IS NOT NULL
-     AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
-   GROUP BY pj.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
-            COALESCE(site.source_column, ra.source_column)
-  UNION ALL
-  -- A routine step's parameter a pair projects a node id's key column into, where the catalog's type
-  -- for the parameter is not the column's, at the @routine application the pair is written in: as a
-  -- root routine's, the key column the pair's landing states. A list at a routine is deferred, below.
-  SELECT ss.graph_name, ra.source_name, ra.source_line, ra.source_column,
-         'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
-         MIN('key column ' || c.column_name || ' is ' || c.binding_type
-             || ', and the parameter it binds to is declared ' || s.erased_class
-             || ': Declare it ' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '')), 'occurrence-builds'
-    FROM graphitron_occurrence_node_id_slot_step_parameter ss
-    JOIN graphitron_occurrence_node_id_slot s
-      ON s.graph_name = ss.graph_name AND s.coordinate = ss.coordinate AND s.slot = ss.slot
-    JOIN graphitron_join_path_step_parameter_pair spp
-      ON spp.graph_name = ss.graph_name AND spp.coordinate = ss.step_coordinate
-     AND spp.target_type = ss.target_type AND spp.position = ss.position
-     AND spp.parameter_position = ss.parameter_position
-    JOIN graphitron_argmapping_landing_key_column lk
-      ON lk.graph_name = spp.graph_name AND lk.coordinate = spp.pair_coordinate
-     AND lk.directive_name = spp.directive_name AND lk.ordinal = spp.ordinal AND lk.owner = spp.owner
-     AND lk.target_kind = spp.target_kind AND lk.target_name = spp.target_name
-     AND lk.call_coordinate = spp.coordinate
-    JOIN graphitron_occurrence_node_id n
-      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate AND n.bound = lk.bound
-     AND n.position = lk.position
-    JOIN sql_column c
-      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
-     AND c.table_name = n.table_name AND c.column_name = n.column_name
-    JOIN graphitron_directive_application ra
-      ON ra.graph_name = spp.graph_name AND ra.coordinate = spp.pair_coordinate
-     AND ra.directive_name = spp.directive_name AND ra.ordinal = spp.ordinal
-   WHERE s.list_depth = 0 AND ra.source_line IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
-                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
-                        AND d.slot = s.slot AND d.bound = lk.bound)
-   GROUP BY ss.graph_name, ra.source_name, ra.source_line, ra.source_column
-       ) kt
-UNION ALL
 -- A single node's decoded id handed whole to a @service or @condition parameter or a bean member that
 -- cannot take it, at the @nodeId: a place whose shape is not the id's, or a landing no decode shape fits, which
 -- graphitron_occurrence_node_id_shape decides. Which it is follows the key: a jOOQ tuple of the
@@ -22666,16 +22551,17 @@ SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
          -- A member of a built class, or a @service's or @condition's parameter taking the whole key: the
          -- one named for the argument, which no written pair fills, or one a pair fills without projecting a key
-         -- column, an argument's or, along an argMapping path, an input field's. A root @routine's
+         -- column, an argument's or, along an argMapping path, an input field's, where the parameter is a
+         -- tuple or not in the id's shape; any other is NODE_ID_COLUMN_UNNAMED's, above. A root @routine's
          -- parameter named for the argument, which no pair fills, takes the whole key too, where a
-         -- database function takes one value; a pair there always projects a key column, and one
-         -- naming none is ARGMAPPING_KEY_COLUMN_UNRESOLVED's. A list at a routine is deferred, below.
+         -- database function takes one value. A list at a routine is deferred, below.
          WHERE (s.kind = 'MEMBER'
                 OR o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND cp.call_kind IN ('SERVICE', 'CONDITION')
            AND CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
                                   WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
                                     AND pp.call = cp.call AND pp.position = cp.position)
-                    THEN NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_projection pj
+                    THEN (tc.class_name IS NOT NULL OR s.slot_shape = 'MISMATCH')
+                     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_projection pj
                                       WHERE pj.graph_name = sp.graph_name
                                         AND pj.call_coordinate = sp.call_coordinate
                                         AND pj.call = sp.call AND pj.position = sp.position)
@@ -22794,7 +22680,186 @@ UNION ALL
 -- are graphitron_entry_defect_member's.
 SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
        CAST(NULL AS VARCHAR), 'occurrence-builds'
-  FROM node_id_member m;
+  FROM node_id_member m
+UNION ALL
+-- A @service's or a @condition's method, or a root @routine, whose parameter a pair projects a node
+-- id's key column into, where no decode shape fits: the parameter is not of the column's type, or not
+-- a List of it for a list of ids. Under some occurrence of the call, at the reference, or at the
+-- @routine application, which names no method: once per site, the parameters being
+-- graphitron_occurrence_node_id_slot_projection's under it. A routine step's parameter is the second
+-- arm of the bracket, one family kept as one so the union stays balanced. A list at a routine is
+-- deferred, below.
+SELECT kt.graph_name, kt.source_name, kt.source_line, kt.source_column, kt.code, kt.detail, kt.stage
+  FROM (
+  SELECT pj.graph_name AS graph_name, COALESCE(site.source_name, ra.source_name) AS source_name,
+         COALESCE(site.source_line, ra.source_line) AS source_line,
+         COALESCE(site.source_column, ra.source_column) AS source_column,
+         'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT' AS code,
+         MIN('key column ' || c.column_name || ' is ' || c.binding_type
+             || ', and the parameter it binds to is declared ' || COALESCE(s.declared_type, s.erased_class)
+             || ': Declare it '
+             || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
+                     ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END) AS detail, 'occurrence-builds' AS stage
+    FROM graphitron_occurrence_node_id_slot_projection pj
+    JOIN graphitron_occurrence_node_id_slot_parameter sp
+      ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call
+     AND sp.position = pj.position
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+    JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+    JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = pj.graph_name AND n.coordinate = pj.coordinate AND n.bound = pj.bound
+     AND n.position = pj.key_position
+    JOIN sql_column c
+      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+     AND c.table_name = n.table_name AND c.column_name = n.column_name
+    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
+    LEFT JOIN graphitron_code_reference site
+      ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
+     AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
+          OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
+    -- A routine's call, at the application it came from.
+    LEFT JOIN graphitron_occurrence_call oc
+      ON cp.call_kind = 'ROUTINE' AND oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate
+     AND oc.call = cp.call
+    LEFT JOIN graphitron_directive_application ra
+      ON ra.graph_name = oc.graph_name AND ra.coordinate = oc.application_coordinate
+     AND ra.directive_name = oc.application_directive AND ra.ordinal = oc.application_ordinal
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
+                        AND d.slot = s.slot AND d.bound = pj.bound)
+     AND COALESCE(site.source_line, ra.source_line) IS NOT NULL
+     AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
+   GROUP BY pj.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
+            COALESCE(site.source_column, ra.source_column)
+  UNION ALL
+  -- A routine step's parameter a pair projects a node id's key column into, where the catalog's type
+  -- for the parameter is not the column's, at the @routine application the pair is written in: as a
+  -- root routine's, the key column the pair's landing states. A list at a routine is deferred, below.
+  SELECT ss.graph_name, ra.source_name, ra.source_line, ra.source_column,
+         'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
+         MIN('key column ' || c.column_name || ' is ' || c.binding_type
+             || ', and the parameter it binds to is declared ' || s.erased_class
+             || ': Declare it ' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '')), 'occurrence-builds'
+    FROM graphitron_occurrence_node_id_slot_step_parameter ss
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = ss.graph_name AND s.coordinate = ss.coordinate AND s.slot = ss.slot
+    JOIN graphitron_join_path_step_parameter_pair spp
+      ON spp.graph_name = ss.graph_name AND spp.coordinate = ss.step_coordinate
+     AND spp.target_type = ss.target_type AND spp.position = ss.position
+     AND spp.parameter_position = ss.parameter_position
+    JOIN graphitron_argmapping_landing_key_column lk
+      ON lk.graph_name = spp.graph_name AND lk.coordinate = spp.pair_coordinate
+     AND lk.directive_name = spp.directive_name AND lk.ordinal = spp.ordinal AND lk.owner = spp.owner
+     AND lk.target_kind = spp.target_kind AND lk.target_name = spp.target_name
+     AND lk.call_coordinate = spp.coordinate
+    JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate AND n.bound = lk.bound
+     AND n.position = lk.position
+    JOIN sql_column c
+      ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+     AND c.table_name = n.table_name AND c.column_name = n.column_name
+    JOIN graphitron_directive_application ra
+      ON ra.graph_name = spp.graph_name AND ra.coordinate = spp.pair_coordinate
+     AND ra.directive_name = spp.directive_name AND ra.ordinal = spp.ordinal
+   WHERE s.list_depth = 0 AND ra.source_line IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
+                        AND d.slot = s.slot AND d.bound = lk.bound)
+   GROUP BY ss.graph_name, ra.source_name, ra.source_line, ra.source_column
+  UNION ALL
+  -- A pair whose path names no key column past a single node's id, at a parameter no decode shape
+  -- fits and no tuple class is: a key column is one the path names, and nothing infers one. At the
+  -- reference or the @routine application, as the disagreement above; the parameter is the detail,
+  -- the least where several are. A tuple of the key's degree is the whole-key refusal's below, and a
+  -- list at a routine is deferred, below.
+  SELECT sp.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
+         COALESCE(site.source_column, ra.source_column), 'NODE_ID_COLUMN_UNNAMED', MIN(cp.parameter_name),
+         'occurrence-builds'
+    FROM graphitron_occurrence_node_id_slot_parameter sp
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+    JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+    JOIN graphitron_occurrence_call_parameter_pair pp
+      ON pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate AND pp.call = cp.call
+     AND pp.position = cp.position
+    JOIN graphitron_argmapping_landing l
+      ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
+     AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
+     AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name AND l.call_coordinate = pp.coordinate
+     AND l.landing_coordinate = s.coordinate AND l.receives = 'WHOLE'
+    LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
+    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
+    LEFT JOIN graphitron_code_reference site
+      ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
+     AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
+          OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
+    LEFT JOIN graphitron_occurrence_call oc
+      ON cp.call_kind = 'ROUTINE' AND oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate
+     AND oc.call = cp.call
+    LEFT JOIN graphitron_directive_application ra
+      ON ra.graph_name = oc.graph_name AND ra.coordinate = oc.application_coordinate
+     AND ra.directive_name = oc.application_directive AND ra.ordinal = oc.application_ordinal
+   WHERE s.slot_shape <> 'MISMATCH' AND tc.class_name IS NULL
+     AND COALESCE(site.source_line, ra.source_line) IS NOT NULL
+     AND NOT (cp.call_kind = 'ROUTINE' AND s.list_depth > 0)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate AND d.slot = s.slot)
+     -- One node's id: several node types' is a container, judged as one.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence io
+                       JOIN graphitron_binding_claim_container k
+                         ON k.graph_name = io.graph_name AND k.coordinate = io.element_coordinate
+                      WHERE io.graph_name = s.graph_name AND io.coordinate = s.coordinate)
+   GROUP BY sp.graph_name, COALESCE(site.source_name, ra.source_name), COALESCE(site.source_line, ra.source_line),
+            COALESCE(site.source_column, ra.source_column)
+  UNION ALL
+  -- The same at a routine step's parameter, at the @routine application the pair is written in.
+  SELECT ss.graph_name, ra.source_name, ra.source_line, ra.source_column, 'NODE_ID_COLUMN_UNNAMED',
+         MIN(jp.parameter_name), 'occurrence-builds'
+    FROM graphitron_occurrence_node_id_slot_step_parameter ss
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = ss.graph_name AND s.coordinate = ss.coordinate AND s.slot = ss.slot
+    JOIN graphitron_join_path_step_parameter jp
+      ON jp.graph_name = ss.graph_name AND jp.coordinate = ss.step_coordinate AND jp.target_type = ss.target_type
+     AND jp.position = ss.position AND jp.parameter_position = ss.parameter_position
+    JOIN graphitron_join_path_step_parameter_pair spp
+      ON spp.graph_name = ss.graph_name AND spp.coordinate = ss.step_coordinate
+     AND spp.target_type = ss.target_type AND spp.position = ss.position
+     AND spp.parameter_position = ss.parameter_position
+    JOIN graphitron_argmapping_landing l
+      ON l.graph_name = spp.graph_name AND l.coordinate = spp.pair_coordinate
+     AND l.directive_name = spp.directive_name AND l.ordinal = spp.ordinal AND l.owner = spp.owner
+     AND l.target_kind = spp.target_kind AND l.target_name = spp.target_name
+     AND l.call_coordinate = spp.coordinate AND l.landing_coordinate = s.coordinate AND l.receives = 'WHOLE'
+    JOIN graphitron_directive_application ra
+      ON ra.graph_name = spp.graph_name AND ra.coordinate = spp.pair_coordinate
+     AND ra.directive_name = spp.directive_name AND ra.ordinal = spp.ordinal
+   WHERE s.list_depth = 0 AND ra.source_line IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate AND d.slot = s.slot)
+     -- One node's id: several node types' is a container, judged as one.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence io
+                       JOIN graphitron_binding_claim_container k
+                         ON k.graph_name = io.graph_name AND k.coordinate = io.element_coordinate
+                      WHERE io.graph_name = s.graph_name AND io.coordinate = s.coordinate)
+   GROUP BY ss.graph_name, ra.source_name, ra.source_line, ra.source_column
+  UNION ALL
+  -- The same at a $tenant pair, whose value is read as the tenant column's: at the pair.
+  SELECT DISTINCT l.graph_name, pr.source_name, pr.source_line, pr.source_column, 'NODE_ID_COLUMN_UNNAMED',
+         '$tenant', 'occurrence-builds'
+    FROM graphitron_argmapping_landing l
+    JOIN graphitron_argmapping_pair pr
+      ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
+     AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
+     AND pr.target_kind = l.target_kind AND pr.target_name = l.target_name
+   WHERE l.target_kind = 'TENANT' AND l.receives = 'WHOLE'
+     AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                  WHERE n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate)
+       ) kt;
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, a class an input object is built into that has no constructor graphitron can call giving one BUILT_CLASS_UNBUILDABLE row at the input object.';
 
 CREATE VIEW graphitron_occurrence_member_fill_entry_defect_rule
@@ -35614,7 +35679,9 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
    'The key column an argMapping path projects out of a @nodeId''s node has a jOOQ type that is not the type of the parameter of the @service or @condition method, or the @routine, it goes to: declare the parameter with the column''s own type, boxed, or project a key column the routine parameter takes.'),
   ('ARGMAPPING_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_KEY_COLUMN_UNRESOLVED',
-   'An argMapping path past a @nodeId, or stopping on one at a @routine parameter, which takes one value, reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name a key column after the id, or end the path on the id: a @service or @condition parameter then takes the whole decoded key, an @outbox payload key the id as clients see it.'),
+   'An argMapping path names a key column past a @nodeId that reaches no one key column of its node: the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name a key column of the node after the id, or end the path on the id: a @service or @condition parameter then takes the whole decoded key, an @outbox payload key the id as clients see it.'),
+  ('NODE_ID_COLUMN_UNNAMED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_COLUMN_UNNAMED',
+   'An argMapping path ends on a @nodeId, naming no key column of it, at a parameter that takes neither the node''s record nor a tuple of its key, or at a $tenant pair, read as the tenant column, and a key column is one the path names: add the column after the id, as filter.actorRef.actor_id. A node id is never handed on as sent; to pass the id as the client sent it, drop @nodeId from the argument.'),
   ('NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINER_NOT_AT_A_SLOT',
    'A @nodeId(typeName:) names an interface or union, which an id decodes per member only into a @service parameter, and here the value reaches none: name one node type, or move the polymorphic id to the @service input.'),
   ('NODE_ID_SINGLE_TABLE_CONTAINER', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SINGLE_TABLE_CONTAINER',

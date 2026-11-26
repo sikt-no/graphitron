@@ -161,7 +161,7 @@ type Query {
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
             method: "filmsOfLanguages",
-            argMapping: "languageIds: pick.languageIds"
+            argMapping: "languageIds: pick.languageIds.language_id"
         }, override: true)
         @defaultOrder(primaryKey: true)
 }

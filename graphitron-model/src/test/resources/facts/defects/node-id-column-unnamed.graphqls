@@ -1,0 +1,104 @@
+# A parameter takes one key column of a node id only where the argMapping path names it past the id,
+# and nothing infers one, though the node's key has one column (Alf, 2026-11-26). A path ending on the
+# id hands it over whole, and a parameter of one value cannot take a whole key: the pair is refused
+# where it is written, the parameter its detail. Query.filmsByPicked descends through pick onto a Film
+# id, a key of one column, at a @condition taking an Integer; Query.filmActorsPicked onto a FilmActor
+# id, a key of two. A @routine parameter takes one value: Mutation.rentFilmBare stops on a Customer id,
+# Mutation.rentFilmByPair on a FilmActor id, and Language.filmsByActorRef, a child's routine, on an
+# Actor id at its step. Query.filmsByPickedNamed, Mutation.rentFilmNamed and Language.filmsByActorNamed
+# name the column past the same ids, the near misses. So is Query.filmRecordByPick, descending onto the
+# Film id at a @service parameter typed as the node's record: the whole id lands in it, which the store
+# refused while it inferred film_id there.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node { id: ID! }
+type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+type Customer implements Node @table(name: "customer") @node { id: ID! }
+type Actor implements Node @table(name: "actor") @node { id: ID! }
+type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+type ActorFilm { filmId: Int @field(name: "film_id") }
+
+input FilmPick { film: ID @nodeId(typeName: "Film") }
+input FilmActorPick { filmActor: ID @nodeId(typeName: "FilmActor") }
+
+type Language @table(name: "language") {
+  filmsByActorRef(actorRef: ID! @nodeId(typeName: "Actor"), minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorRef, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsByActorNamed(actorRef: ID! @nodeId(typeName: "Actor"), minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorRef.actor_id, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+type Query {
+  languages: [Language!]!
+  filmsByPicked(pick: FilmPick): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: pick.film"}, override: true)
+  filmActorsPicked(pick: FilmActorPick): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: pick.filmActor"}, override: true)
+  filmsByPickedNamed(pick: FilmPick): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: pick.film.film_id"}, override: true)
+  filmRecordByPick(pick: FilmPick): String @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.NodeIdDestinationService",
+      method: "modify", argMapping: "in: pick.film"})
+}
+
+type Mutation {
+  rentFilmBare(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+  rentFilmByPair(inventoryId: Int!, pair: ID! @nodeId(typeName: "FilmActor")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: pair")
+    @reference(path: [{table: "rental"}])
+  rentFilmNamed(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): [Rental!]!
+    @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId.customer_id")
+    @reference(path: [{table: "rental"}])
+}
+
+# Each refusal, at the reference or the @routine; no other code judges these pairs, and the near misses
+# draw none.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('NODE_ID_COLUMN_UNNAMED', 'ARGMAPPING_KEY_COLUMN_UNRESOLVED', 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT',
+           'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
+  """, rows: """
+  coordinate,               code,                   detail
+  Language.filmsByActorRef, NODE_ID_COLUMN_UNNAMED, pActorId
+  Mutation.rentFilmBare,    NODE_ID_COLUMN_UNNAMED, pCustomerId
+  Mutation.rentFilmByPair,  NODE_ID_COLUMN_UNNAMED, pCustomerId
+  Query.filmActorsPicked,   NODE_ID_COLUMN_UNNAMED, filmId
+  Query.filmsByPicked,      NODE_ID_COLUMN_UNNAMED, filmId
+  """)
+
+# A path naming nothing past the id hands it over whole, wherever it stops; one naming a column hands
+# over that column. A child's routine step lands the same way, under the occurrence reading it, and
+# is shown by its defect above.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing",
+    where: "target_name IN ('filmId', 'pCustomerId', 'in')", rows: """
+  call_coordinate,          landing_coordinate,                                 trailing_name, receives
+  Mutation.rentFilmBare,    Mutation.rentFilmBare(customerId:),                 ,              WHOLE
+  Mutation.rentFilmByPair,  Mutation.rentFilmByPair(pair:),                     ,              WHOLE
+  Mutation.rentFilmNamed,   Mutation.rentFilmNamed(customerId:),                customer_id,   COLUMN
+  Query.filmActorsPicked,   Query.filmActorsPicked(pick.filmActor:),            ,              WHOLE
+  Query.filmRecordByPick,   Query.filmRecordByPick(pick.film:),                 ,              WHOLE
+  Query.filmsByPicked,      Query.filmsByPicked(pick.film:),                    ,              WHOLE
+  Query.filmsByPickedNamed, Query.filmsByPickedNamed(pick.film:),               film_id,       COLUMN
+  """)
+
+# Only a named column is a key column the landing takes.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column",
+    where: "directive_name <> 'routine' OR target_name = 'pCustomerId'", rows: """
+  call_coordinate,            landing_coordinate,                    bound,           position
+  Mutation.rentFilmNamed,     Mutation.rentFilmNamed(customerId:),   public.customer, 0
+  Query.filmsByPickedNamed,   Query.filmsByPickedNamed(pick.film:),  public.film,     0
+  """)
+
+# The whole id the record takes: the film's own record.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape",
+    where: "coordinate = 'Query.filmRecordByPick(pick.film:)'", rows: """
+  coordinate,                         bound,       decode_shape
+  Query.filmRecordByPick(pick.film:), public.film, OWN_RECORD
+  """)
