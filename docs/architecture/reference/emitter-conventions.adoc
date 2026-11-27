@@ -262,3 +262,20 @@ metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
 
 `OrderByResult` (pairing `List<SortField<?>>` with `List<Field<?>>`) is the carrier these operate
 over.
+
+=== Typed ordering
+
+Every order is typed from its keys to its seek: "Option A should cover everything" (Alf,
+2026-11-27). Each written order, a sort enum value's or a field's default, is one generated method
+over the table it reads, handing back its sort fields typed by the keys' own types, and every
+reader of the order calls it: a root's chosen order and its fixed one, a connection's page and a
+list read inside its parent's query. A root's chosen order is one arm per sort enum value, each
+calling its order's method, and the page step decodes the cursor into fields of those same types and
+seeks with jOOQ's typed `seek`, so the compiler checks the cursor against the order. A connection
+over several tables orders the same way: each participant's order method projects its keys into
+typed slot columns, and the outer query orders and seeks over those slots, typed by the same key
+types; the store already refuses participants whose order keys differ in count or, at a position,
+in SQL or bound Java type (`ORDER_POSITIONS_DISAGREE`). No untyped ordering path remains once the
+walk's renderers are gone. A list of orders the client composes at run time is refused rather than
+typed (Alf, 2026-11-27: the list form of `@orderBy` is a bug, not a feature). The cursor's bytes
+are untouched by any of this: they stay the public contract the manual states.
