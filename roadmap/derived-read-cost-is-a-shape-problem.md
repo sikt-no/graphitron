@@ -88,6 +88,7 @@ The walk's read path is gone
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
+    ├── An order is one emitted method, called by the root's helper and by a child's query, claimed by C
     ├── A sort key's table element infers its key at the element
     └── What an occurrence takes is a binding, claimed by C
 ```
@@ -942,6 +943,35 @@ static method needs no holder.
     own node's decoded through `NodeIdDecodeEmitter` from the projection query's own read, one
     carried back from another table's node read from `graphitron_occurrence_node_id_carried`;
     closes before the flip.
+  * **An order is one emitted method, called by the root's helper and by a child's query, claimed by C** `blocked`,
+    on "The root query fetchers are emitted from the store, claimed by C". Each `@order` and
+    `@defaultOrder` the store states becomes one generated `public static` method over its target table,
+    hosted on a per-table `<Table>Orders` unit, returning its sort fields and the cursor fields that read
+    the same values back as one typed result, so an order's fields, path joins, collation, null
+    placement, direction and key tiebreak are written once; a root's `@orderBy` helper arms, its fixed
+    order, its connection page and a child's multiset or correlated subquery call it rather than each
+    rendering the keys again (Alf, 2026-11-27: "strictly better", ahead of the facets and multi-table
+    pieces, so they call it from the start). A spike settled the seams (`spike/order-method`, 14 cases
+    against PostgreSQL, not for trunk). jOOQ renders a foreign key path on an aliased table as its own
+    join, `LEFT` where the key is nullable, in a root's SELECT, inside a child's multiset and in a
+    correlated scalar subquery, across two hops, a self-join, and at the end of another table's path, a
+    generated `FilmPath` being a `Film`. jOOQ 3.20's `seek` reads the method's sort fields directly,
+    `NULLS LAST`, a `NULL` cursor value, collation and mixed directions included, in the same query's
+    `WHERE`, so a root needs no derived table and no seek predicate of its own. A direction the request
+    chooses is a `SortOrder` parameter and an author's fixed directions the overload without one;
+    overloads by the generated table class make a call on the wrong table fail to compile. The method
+    owns the keys; the root owns its FROM, condition, page size, the cursor's encoding (values in sort
+    order, so no `__sk_<n>` alias or key numbering) and the seek; the child owns its alias, its
+    correlation and its multiset or subquery. A path that is no foreign key is tried first as a
+    synthetic path: a generated `<Table>Path` takes a table and a `ForeignKey`, and one built over the
+    written column pairs, or onto a routine's result table, gives the same join and the same method as
+    a real key; where that does not hold, the method takes the joined table as an overload argument,
+    the scalar subquery costing a probe per sorted row at a root. It retires the second and third
+    renderings of a key: `OrderKeys`' sort terms and path value, `ProjectionEmitter.sortTerms` and its
+    key `pathColumn`, `OrderByHelperEmitter`'s per-arm terms and the derived keys' numbering, and with
+    the walk's units `SortKeyFragments`, `OrderByFragments` and the emitted `<field>SortKey<n>` methods.
+    FS main writes no `path:` order (0 of 52 `@order` and 77 `@defaultOrder`), so the synthetic path
+    serves sakila and later schemas, not a migration.
   * **A sort key's table element infers its key at the element** `open`. A sort key's `path:`
     element written `{table: ...}` names a table and leaves the foreign key to infer; the walk accepts
     one with no condition, so it still generates at the flip. Today only the join path step rules
