@@ -311,6 +311,13 @@ wants a key component then it must identify that component with an extra path el
 `pActorId: filter.actorRef`, a node id bound to a parameter that takes one column's value, names no
 column and is refused, as it is at a `String` or `Object` parameter.
 
+Whether a value fits the parameter or member it binds is judged once, the same way for every kind of
+call: "it's the same logic and we want the same behavior" (Alf, 2026-11-27). The store states it per
+place in `graphitron_occurrence_value_slot`, and a `@condition`'s parameter and the members of the
+class it builds are refused where a `@service`'s would be: a list into a place taking one value, one
+value into a place taking many, or a value that arrives as no class the place takes. A `@condition`'s
+`Object` parameter takes a value whole, a list too, as a `@service`'s does.
+
 '''
 
 == Producer

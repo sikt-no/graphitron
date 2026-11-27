@@ -16362,7 +16362,7 @@ CREATE TABLE graphitron_occurrence_value_slot (
   fits          BOOLEAN GENERATED ALWAYS AS (
                   arrival_kind IS NOT NULL
                   AND (takes_many = arrives_many
-                       OR stated_by = 'SERVICE' AND arrival_kind = 'UNTYPED'
+                       OR stated_by IN ('SERVICE', 'CONDITION') AND arrival_kind = 'UNTYPED'
                           AND element_class = 'java.lang.Object' AND NOT takes_many)),
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, slot),
@@ -16384,8 +16384,8 @@ COMMENT ON COLUMN graphitron_occurrence_value_slot.stated_by IS 'the kind of cal
 COMMENT ON COLUMN graphitron_occurrence_value_slot.element_class IS 'the class one value lands as: the parameter''s once its containers or array are peeled off';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.takes_many IS 'whether the place takes many of that class, a collection or an array';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.arrives_many IS 'whether the value arrives as many: for a parameter, filled once per call, the occurrence''s path reading through a list; for a member, filled once per instance built, a list of the objects above building each in turn, its own input field being one';
-COMMENT ON COLUMN graphitron_occurrence_value_slot.arrival_kind IS 'which arrival answers the class, as graphitron_type_arrival states it: EXACT, the class itself; UNTYPED, java.lang.Object or java.util.Map taking the value whole, or a service''s Object taking a component; ANY_NON_JDK, a class outside java. an enum is taken as by its constant or an input object built into; COMPONENT, the class of the generated scalar''s component the pair names. NULL where none does';
-COMMENT ON COLUMN graphitron_occurrence_value_slot.fits IS 'whether the value fits: an arrival answers, and the place takes many exactly where the value arrives as many, or it is a service''s parameter or member taking one Object, which takes a value whole, a list too. Generated, so nothing writes it. A CONDITION row''s verdict is not yet the @condition''s judgment: which values a condition parameter takes is unruled, and nothing reads it';
+COMMENT ON COLUMN graphitron_occurrence_value_slot.arrival_kind IS 'which arrival answers the class, as graphitron_type_arrival states it: EXACT, the class itself; UNTYPED, java.lang.Object or java.util.Map taking the value whole, or a service''s or a @condition''s Object taking a component; ANY_NON_JDK, a class outside java. an enum is taken as by its constant or an input object built into; COMPONENT, the class of the generated scalar''s component the pair names. NULL where none does';
+COMMENT ON COLUMN graphitron_occurrence_value_slot.fits IS 'whether the value fits: an arrival answers, and the place takes many exactly where the value arrives as many, or it is a service''s or a @condition''s parameter or member taking one Object, which takes a value whole, a list too. Generated, so nothing writes it';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_occurrence_value_slot_parameter (
@@ -16573,21 +16573,6 @@ SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'condition' AND pr.owner = 'condition'
                       AND pr.target_name = p.parameter_name AND pr.target_kind = 'NAME')
-UNION ALL
--- A parameter taking one Java enum, filled from an enum argument or input field that is a list: one
--- constant stands for no list of names.
-SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
-       'PARAMETER_MISMATCH'
-  FROM graphitron_occurrence_call_parameter cp
-  JOIN graphitron_occurrence_call_method cm
-    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
-  JOIN code_method_parameter mp
-    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
-   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
-  JOIN graphitron_occurrence_input_type it
-    ON it.graph_name = cp.graph_name AND it.coordinate = cp.landing_coordinate
- WHERE cp.call_kind = 'CONDITION' AND cp.fill = 'ARGUMENT' AND mp.extraction = 'ENUM_VALUE_OF'
-   AND it.type_kind = 'ENUM' AND it.is_list
 UNION ALL
 -- A parameter whose declared type is a member of a parameterised class, Outer<A>.Inner, which the
 -- condition's local cannot be spelled as yet.
@@ -17984,8 +17969,8 @@ SELECT a.graph_name, a.coordinate, a.slot, a.kind, a.stated_by, a.call_coordinat
                           WHERE st.graph_name = a.graph_name AND st.coordinate = a.coordinate AND st.is_list) END,
        CASE WHEN a.component_class IS NOT NULL
             THEN CASE WHEN a.element_class = a.component_class THEN 'COMPONENT'
-                      -- A service's Object takes the component whole.
-                      WHEN a.stated_by = 'SERVICE' AND a.element_class = 'java.lang.Object' THEN 'UNTYPED' END
+                      -- A service's or a condition's Object takes the component whole.
+                      WHEN a.stated_by IN ('SERVICE', 'CONDITION') AND a.element_class = 'java.lang.Object' THEN 'UNTYPED' END
             WHEN EXISTS (SELECT 1 FROM graphitron_type_arrival ar
                           WHERE ar.graph_name = a.graph_name AND ar.type_name = a.type_name
                             AND ar.arrival_kind = 'EXACT' AND ar.arrival_class = a.element_class) THEN 'EXACT'
@@ -23316,11 +23301,11 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE d.graph_name = o2.graph_name AND d.coordinate = o2.element_coordinate)
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
--- An input field filling a member of the class a service's call builds that what the field delivers
--- does not fit, as graphitron_occurrence_value_slot states it, at the field: a list where the member
--- takes one value or one where it takes many, or a value that does not arrive as the member's class.
--- A node id is the node id rules' to judge, a scalar of no known class and an array member no one's.
--- The detail is the member.
+-- An input field filling a member of the class a service's or a @condition's call builds that what
+-- the field delivers does not fit, as graphitron_occurrence_value_slot states it, at the field: a list
+-- where the member takes one value or one where it takes many, or a value that does not arrive as the
+-- member's class. A node id is the node id rules' to judge, a scalar of no known class and an array
+-- member no one's. The detail is the member.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'PARAMETER_MISMATCH', vm.bound, 'occurrence-builds'
   FROM graphitron_occurrence_value_slot_member vm
@@ -23329,7 +23314,35 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND vs.kind = vm.kind AND vs.stated_by = vm.stated_by
   JOIN graphitron_occurrence o ON o.graph_name = vm.graph_name AND o.coordinate = vm.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE vm.stated_by = 'SERVICE' AND NOT vs.fits
+ WHERE vm.stated_by IN ('SERVICE', 'CONDITION') AND NOT vs.fits
+UNION ALL
+-- A parameter of a @condition's call an argument fills that what the argument delivers does not fit,
+-- as graphitron_occurrence_value_slot states it, judged as a service's parameter is: at the reference
+-- the @condition names its method by, once per written directive, the detail the first such
+-- parameter. Its rows are written here, after the condition calls' fills, so the arm is here rather
+-- than in the condition parameter defect rule at occurrence-bindings.
+SELECT da.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+       COALESCE(r.source_column, da.source_column), 'PARAMETER_MISMATCH', MIN(cp.parameter_name),
+       'occurrence-builds'
+  FROM graphitron_occurrence_value_slot_parameter vp
+  JOIN graphitron_occurrence_value_slot vs
+    ON vs.graph_name = vp.graph_name AND vs.coordinate = vp.coordinate AND vs.slot = vp.slot
+   AND vs.kind = vp.kind AND vs.stated_by = vp.stated_by
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = vp.graph_name AND cp.coordinate = vp.call_coordinate AND cp.call = vp.call
+   AND cp.position = vp.position AND cp.landing_coordinate = vp.coordinate
+  JOIN graphitron_occurrence_call oc
+    ON oc.graph_name = cp.graph_name AND oc.coordinate = cp.coordinate AND oc.call = cp.call
+  JOIN graphitron_directive_application da
+    ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
+   AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
+  LEFT JOIN graphitron_code_reference r
+    ON r.graph_name = oc.graph_name AND r.coordinate = oc.application_coordinate
+   AND r.directive_name = oc.application_directive AND r.ordinal = oc.application_ordinal
+   AND r.owner = oc.application_directive AND r.method_descriptor IS NOT NULL
+ WHERE vp.stated_by = 'CONDITION' AND NOT vs.fits AND COALESCE(r.source_name, da.source_name) IS NOT NULL
+ GROUP BY da.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+          COALESCE(r.source_column, da.source_column)
 UNION ALL
 -- An input object reached again inside itself under a class a @condition's parameter builds, or as a
 -- row input under a field's rows, at the input field that reaches it again: the occurrences stop

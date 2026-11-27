@@ -7,8 +7,9 @@ import org.jooq.impl.DSL;
 
 /**
  * Condition methods whose parameter shapes the store judges before a condition is emitted: one Java
- * enum, which a list of the enum's values cannot fill, and a member of a parameterised class, which
- * the generated condition cannot declare a local of yet. Never called.
+ * enum, which a list of the enum's values cannot fill, a String, which an Int does not arrive as, an
+ * Object, which takes a value whole, and a member of a parameterised class, which the generated
+ * condition cannot declare a local of yet. Never called.
  */
 public final class ConditionParameterShapeFixtures {
 
@@ -23,6 +24,16 @@ public final class ConditionParameterShapeFixtures {
     /** Films of one rating. */
     public static Condition ratedAs(Film film, MpaaRating rating) {
         return rating == null ? DSL.noCondition() : film.RATING.eq(rating);
+    }
+
+    /** Films of one title. */
+    public static Condition titled(Film film, String title) {
+        return title == null ? DSL.noCondition() : film.TITLE.eq(title);
+    }
+
+    /** Films matching whatever is handed over, taken whole. */
+    public static Condition matchingAny(Film film, Object values) {
+        return DSL.noCondition();
     }
 
     /** A parameter typed as a parameterised class's member. */

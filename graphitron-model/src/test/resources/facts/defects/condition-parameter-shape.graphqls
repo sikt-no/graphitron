@@ -1,8 +1,12 @@
 # A @condition's parameter the generated condition cannot hand its value to, at the condition's method
-# reference, naming the parameter. ratedAs takes one Java enum: filmsByRatings fills it from a list of
-# ratings, one constant standing for no list, so it is PARAMETER_MISMATCH, where filmsByRating's one
-# rating fills it and draws nothing. byHeldMember's parameter is a member of a parameterised class,
-# Holder<String>.Inner, which the condition cannot declare a local of yet: PARAMETER_TYPE_UNSPELLED.
+# reference, naming the parameter. A value that does not fit its parameter is judged by the fit, as a
+# @service's is: ratedAs takes one Java enum, and filmsByRatings fills it from a list of ratings, one
+# constant standing for no list; titled takes a String, and filmsByLength fills it with an Int. Each is
+# PARAMETER_MISMATCH. The near misses draw nothing: filmsByRating's one rating, filmsByTitle's String,
+# and filmsMatchingAny's list of Int, which matchingAny's Object takes whole. byHeldMember's parameter
+# is a member of a parameterised class, Holder<String>.Inner, which the condition cannot declare a
+# local of yet: PARAMETER_TYPE_UNSPELLED. filmsByHeld's String is no Holder<String>.Inner either, so
+# the fit refuses it too.
 
 enum MpaaRating { G PG PG_13 R NC_17 }
 
@@ -15,6 +19,15 @@ type Query {
   filmsByRating(rating: MpaaRating): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
       method: "ratedAs"}, override: true)
+  filmsByLength(title: Int): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
+      method: "titled"}, override: true)
+  filmsByTitle(title: String): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
+      method: "titled"}, override: true)
+  filmsMatchingAny(values: [Int!]): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
+      method: "matchingAny"}, override: true)
   filmsByHeld(held: String): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ConditionParameterShapeFixtures",
       method: "byHeldMember"}, override: true)
@@ -22,9 +35,28 @@ type Query {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_parameter_rule",
     where: "code IN ('PARAMETER_MISMATCH', 'PARAMETER_TYPE_UNSPELLED')", rows: """
-  code,                     coordinate,           parameter_name
-  PARAMETER_MISMATCH,       Query.filmsByRatings, rating
-  PARAMETER_TYPE_UNSPELLED, Query.filmsByHeld,    held
+  code,                     coordinate,        parameter_name
+  PARAMETER_TYPE_UNSPELLED, Query.filmsByHeld, held
+  """)
+
+# The misfits, each at its condition's method reference, and nothing at the near misses.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'PARAMETER_MISMATCH'", rows: """
+  code,               coordinate
+  PARAMETER_MISMATCH, Query.filmsByRatings
+  PARAMETER_MISMATCH, Query.filmsByLength
+  PARAMETER_MISMATCH, Query.filmsByHeld
+  """)
+
+# Whether each value fits where it lands, which each mismatch above reads.
+extend schema @expectEquals(relation: "graphitron_occurrence_value_slot",
+    where: "coordinate IN ('Query.filmsByRatings(rating:)', 'Query.filmsByRating(rating:)', 'Query.filmsByLength(title:)', 'Query.filmsByTitle(title:)', 'Query.filmsMatchingAny(values:)')", rows: """
+  coordinate,                       stated_by, element_class,    takes_many, arrives_many, arrival_kind, fits
+  Query.filmsByRatings(rating:),    CONDITION, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, FALSE, TRUE,  ANY_NON_JDK, FALSE
+  Query.filmsByRating(rating:),     CONDITION, no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, FALSE, FALSE, ANY_NON_JDK, TRUE
+  Query.filmsByLength(title:),      CONDITION, java.lang.String, FALSE,      FALSE,        ,             FALSE
+  Query.filmsByTitle(title:),       CONDITION, java.lang.String, FALSE,      FALSE,        EXACT,        TRUE
+  Query.filmsMatchingAny(values:),  CONDITION, java.lang.Object, FALSE,      TRUE,         UNTYPED,      TRUE
   """)
 
 # filmsByRating's one rating reaches ratedAs's Java enum parameter as the constant of its name.
