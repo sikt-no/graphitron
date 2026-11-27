@@ -2079,6 +2079,30 @@ The call order already follows it; what is left is a gate that holds it and the 
 * **The pipeline overview describes a dependency's row** `open`. The `store_` bookkeeping sentence
   names `store_graph_dependency` and what each kind of entry lets a capture skip.
 
+### Each gatherer commits its own consistent boundary; no transaction spans gatherers `open`
+
+A capture is no longer all-or-nothing across gatherers: each gatherer's family is consistent on its
+own commit, and a later gatherer's failure leaves the earlier ones' facts in place (Alf, 2026-11-27,
+`fact-model.adoc` § Ownership). Today one transaction spans the pass, so a gatherer cannot analyse
+what it wrote before the next plans, and every row the gatherers share is held until the last one
+commits. That second cost is what made parallel captures in one store fail on `store_source`; the
+read-before-write fix there is the symptom's, and this branch is the structure behind it. What it
+unblocks: statistics per gatherer, an `ANALYZE` after each over what it wrote; shared source rows
+held no longer than one gatherer's write; parallel captures in one store; and so the test
+population's move to fewer stores (R1131 step 22).
+
+* **What a failed gatherer leaves is stated** `open`. A gatherer that fails rolls back its own
+  boundary and the earlier gatherers' facts stay; what a reader may conclude from a store whose last
+  capture stopped partway, and how the next capture resumes from it, is written down first.
+* **The warm dev loop and the sweeps read a store mid-capture** `open`. Each states what it sees
+  between two gatherers' commits, and whether it waits on `store_graph_progress` or reads what is there.
+* **Each gatherer runs in its own transaction** `blocked`, on "What a failed gatherer leaves is stated" and "The warm dev loop and the sweeps read a store mid-capture". `ModelCapture`
+  opens one boundary per gatherer, the derivation exception becoming the normal shape, and analyses
+  the tables each wrote before the next plans.
+* **Parallel captures share one store** `blocked`, on "Each gatherer runs in its own transaction" and "`sql_name_matched_key_column` is gone". `ParallelCaptureSpike`'s
+  full and mixed arms run with no failure and the rows of a store per combination, including two
+  cold captures finding one shared source row missing at once, which read-before-write still races.
+
 ### The store knows whether an artifact can go stale `open`
 
 Reading a jar is safe for a release and dangerous for a snapshot, and Maven settles which. The
