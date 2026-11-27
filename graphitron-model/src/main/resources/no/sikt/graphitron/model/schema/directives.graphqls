@@ -437,7 +437,7 @@ directive @order(
 
 """
 Field sort specification for @order and @defaultOrder directives. An entry sets
-exactly one of `name` and `method`; `path` is only valid beside `name`.
+`name`, optionally with `path`. `method` is refused.
 """
 input FieldSort {
   """
@@ -453,12 +453,13 @@ input FieldSort {
   """
   path: [ReferenceElement!]
   """
-  A static method that returns the sort key, with `@externalField`'s calling
-  convention: it takes the field's jOOQ table and returns a `Field<X>`. Use it
-  when the key is derived from many related rows. `method` is required inside
-  the reference, and `argMapping` is not supported.
+  Refused, SORT_KEY_METHOD: a sort key is a column graphitron reads, and a
+  method would compute it in Java, out of sight of the schema and the catalog.
+  Put the value in a view or a jOOQ computed column and name it with `name`.
+  Kept so that a schema writing it reaches that guidance rather than a bare
+  validation error.
   """
-  method: ExternalCodeReference
+  method: ExternalCodeReference @deprecated(reason: "Refused: put the value in a view or a jOOQ computed column and name it with name:")
   """Collation to apply (e.g., "xdanish_ai"). Database-specific."""
   collate: String
   """

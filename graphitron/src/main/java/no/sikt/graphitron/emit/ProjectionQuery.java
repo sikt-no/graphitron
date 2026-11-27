@@ -104,8 +104,8 @@ public final class ProjectionQuery {
 
     /**
      * One key an order sorts by, in its order's sequence: the column it reads where it reads one, null
-     * for a key computed by a method or a path that does not resolve, what it reads as the store kinds
-     * it, {@code COLUMN}, {@code PATH} or {@code METHOD}, with whether its value can be null, the key's
+     * for a path that does not resolve, what it reads as the store kinds it, {@code COLUMN} or
+     * {@code PATH}, with whether its value can be null, the key's
      * direction and its collation, null where none is written, and the hops a {@code PATH} key reads
      * its column through, from the list's row, empty for any other.
      */

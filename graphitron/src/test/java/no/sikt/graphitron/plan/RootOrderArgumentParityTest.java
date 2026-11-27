@@ -59,17 +59,16 @@ class RootOrderArgumentParityTest {
         type Film @table(name: "film") { title: String }
         enum FilmKeySort {
             ORIGINAL_LANGUAGE @order(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
-            LATEST_STOCK @order(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
             TITLE @order(fields: [{name: "title"}])
-            LANGUAGE_THEN_STOCK @order(fields: [{name: "name", path: [{key: "film_language_id_fkey"}]},
-                {method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC}])
+            LANGUAGE_THEN_TITLE @order(fields: [{name: "name", path: [{key: "film_language_id_fkey"}]},
+                {name: "title", direction: DESC}])
         }
         input FilmKeyOrderBy { field: FilmKeySort!  direction: SortDirection }
         type Query {
             filmsByKeys(order: FilmKeyOrderBy @orderBy): [Film!]!
                 @defaultOrder(fields: [{name: "name", path: [{key: "film_language_id_fkey"}]}])
             filmsByKeysPage(order: FilmKeyOrderBy @orderBy): [Film!]! @asConnection
-                @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}, {name: "title"}])
+                @defaultOrder(fields: [{name: "name", path: [{key: "film_language_id_fkey"}]}, {name: "title"}])
             filmsByPath: [Film!]! @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
             filmsByPathPage: [Film!]! @asConnection
                 @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}, {name: "title"}])
@@ -77,7 +76,7 @@ class RootOrderArgumentParityTest {
         """;
 
     /**
-     * A key down a path or computed by a method states the same identity, path, direction and place in its
+     * A key down a path states the same identity, path, direction and place in its
      * order as the walk's, which is what keeps a cursor, a JSON array of values by position, reading the same
      * value after the store renders the root. The number a derived key is aliased by is each emitter's
      * own, and no cursor carries it, so it is not compared.

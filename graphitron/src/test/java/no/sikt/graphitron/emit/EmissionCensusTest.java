@@ -323,7 +323,7 @@ class EmissionCensusTest {
                 "Film.inlineBundle.language", "Film.inlineBundle.languageFiltered", "Film.original.language",
                 "Film.sameRow", "Film.sameRowNested.row", "Film.spoken.language", "FilmActor.actor",
                 "FilmSameRow.film", "FilmSameRow.language", "HostLabelsWithFilms.languageFilms",
-                "Language.filmsInlineByLatestStock", "Language.filmsInlineByOriginalLanguage",
+                "Language.filmsInlineByOriginalLanguage",
                 "Language.filmsInlineByOriginalLanguageDesc", "PivotNestingHost.labelsComputedRow",
                 "PivotNestingHost.labelsWithFilms", "PivotNestingHost.languageNames",
                 "PivotNestingHost.origin.language", "Store.customers"))
@@ -395,7 +395,6 @@ class EmissionCensusTest {
                 "Query.films", "Query.filmsByBridgedActorFirstName", "Query.filmsByCastNames",
                 "Query.filmsByEffectiveNullability", "Query.filmsByJunctionActorId",
                 "Query.filmsByLanguagePairs", "Query.filmsByLanguages", "Query.filmsByLanguagesList",
-                "Query.filmsByLatestStock",
                 "Query.filmsByNodeIdArg", "Query.filmsByNodeIdArgWithLookupKey",
                 "Query.filmsByNodeIdArgWithTitleFilter", "Query.filmsByNullableNodeIds", "Query.filmsByOneOf",
                 "Query.filmsByOptionalLanguage", "Query.filmsByOptionalLanguages",

@@ -600,20 +600,6 @@ class DiagnosticsTest {
     }
 
     @Test
-    void defaultOrderMethodNamingAMissingMethodProducesError() {
-        var file = file("""
-            type Query {
-                x: Int @defaultOrder(fields: [{method: {className: "%s", method: "missing"}}])
-            }
-            """.formatted(FIELDS));
-
-        var diags = compute(file, withClasses);
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("missing").contains("FilmFields");
-    }
-
-    @Test
     void emptyArgumentValueProducesNoError() {
         // Mid-edit state: cursor sits in an empty quoted value. We
         // suggest completions but do not yelp at the empty string.

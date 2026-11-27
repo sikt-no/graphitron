@@ -1,7 +1,7 @@
 # What a list is ordered by, stated at its occurrence: the default a @defaultOrder writes, by a
 # table's primary key, an index or named elements, or the primary key a list with none falls back
 # to; and each choice an @orderBy argument offers, one per value of its sort enum. Each key is a
-# column of the list's table, a method computing one, or a column read through a path, in order,
+# column of the list's table or a column read through a path, in order,
 # with its direction and collation. Beside them what identifies a row of each table-bound type: its
 # table's primary key, a node key standing in where the table has none, or a unique key.
 
@@ -14,10 +14,10 @@ type Actor implements Node @table(name: "actor") @node {
 type Language @table(name: "language") {
     name: String
 
-    # A method key, then a column, each in its own direction.
+    # Two columns, each in its own direction.
     films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [
-            {method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC},
+            {name: "title", direction: DESC},
             {name: "film_id"}
         ])
 }
@@ -110,7 +110,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key", rows: ""
   Query.actorsOrdered, ActorSort.BY_INDEX, 0, COLUMN, ASC, 
   Query.actorsOrdered, ActorSort.LAST_NAME, 0, COLUMN, DESC, 
   Query.actorsOrdered, Query.actorsOrdered, 0, COLUMN, ASC, 
-  Language.films, Language.films, 0, METHOD, DESC, 
+  Language.films, Language.films, 0, COLUMN, DESC, 
   Language.films, Language.films, 1, COLUMN, ASC, 
   Query.films, Query.films, 0, COLUMN, ASC, 
   Query.holders, Query.holders, 0, COLUMN, ASC, 
@@ -129,6 +129,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", r
   Query.actorsOrdered, ActorSort.BY_INDEX, 0, last_name
   Query.actorsOrdered, ActorSort.LAST_NAME, 0, last_name
   Query.actorsOrdered, Query.actorsOrdered, 0, actor_id
+  Language.films, Language.films, 0, title
   Language.films, Language.films, 1, film_id
   Query.films, Query.films, 0, film_id
   Query.holders, Query.holders, 0, holder_id
@@ -151,8 +152,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_identifying_key_c
   """)
 
 # The row-key columns completing an order that lists no identifying key, after its written keys in
-# the last one's direction, a client's choice as the default: a path key or a method key counts for
-# nothing.
+# the last one's direction, a client's choice as the default: a path key counts for nothing.
 extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_completion", rows: """
   coordinate,         choice,             position, direction, column_name
   Film.actors,        Film.actors,        0,        ASC,       actor_id
@@ -172,11 +172,6 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
   """, rows: """
   constraint_table, constraint_name
   film,             film_original_language_id_fkey
-  """)
-
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_method", rows: """
-  coordinate, choice, position, application_coordinate, directive_name, ordinal, owner
-  Language.films, Language.films, 0, Language.films, defaultOrder, 0, fields.0
   """)
 
 # The index each INDEX order sorts by, matched once; the keys above read its columns from here.

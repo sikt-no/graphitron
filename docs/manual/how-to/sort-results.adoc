@@ -114,7 +114,7 @@ For an index to serve such an order: `ASC NULLS LAST` is what a plain b-tree ind
 [#sort-by-a-related-value]
 == Sort by a value on another table
 
-A `FieldSort` entry normally names a column of the field's own table. Two more forms sort by a value that lives elsewhere, without copying it into that table: `path:` for a column on a related table, and `method:` for a key you derive in Java. Both work in `@defaultOrder` and in `@order` enum values, on lists and connections, and graphitron keeps owning the direction, the cursor and keyset paging.
+A `FieldSort` entry normally names a column of the field's own table. `path:` sorts by a column on a related table instead, without copying it into that table, and a value no to-one path reaches is a column of a view or a jOOQ computed column, named with `name:`. Both work in `@defaultOrder` and in `@order` enum values, on lists and connections, and graphitron keeps owning the direction, the cursor and keyset paging.
 
 === A column on a to-one related table: `path:`
 
@@ -136,44 +136,31 @@ A film with no original language sorts on `NULL`, which sorts last in both direc
 
 Every hop must be *to-one*: each row reaches at most one related row, so each row has exactly one sort key. The build checks this against the jOOQ catalog: a hop is to-one when the columns it joins on cover the primary key or a unique key of the table it reaches. A child-to-parent foreign key passes, and so does a one-to-one extension whose foreign key is itself unique, even when that key admits `NULL`. A hop that can reach several rows fails the build, naming the hop and the direction it fans out in, because ordering by one of many related rows would pick an arbitrary one. There is no opt-out.
 
-A hop may not carry a `condition:`, and every hop names a `key:` or a `table:`; there is no inferred or empty path, so a column name never silently changes table. `method:` is the form for any rule about which related row counts.
+A hop may not carry a `condition:`, and every hop names a `key:` or a `table:`; there is no inferred or empty path, so a column name never silently changes table. A rule about which related row counts belongs in a view or a jOOQ computed column (see <<a-value-you-compute>>).
 
-=== A key you derive: `method:`
+[#a-value-you-compute]
+=== A value you compute: a view or a computed column
 
-When the value has to come from several related rows (the latest of a film's copies, the current one of a record's names), supply the sort key through `method:`, a static method with xref:../reference/directives/externalField.adoc[`@externalField`]'s calling convention: it takes the field's jOOQ table, receives the alias the generated query uses, and returns a `Field<X>` that is that row's sort key.
+When the value has to come from several related rows (the latest of a film's copies, the current one of a record's names), or from a related row picked by a condition (a name in one language), state it in the database or the jOOQ model and sort by it with `name:`: a column of a view the field's type is bound to, or a jOOQ computed column on the field's table. The rule for which related row counts then lives once, where the schema, the catalog and every tool reading them can see it, and the same column can be selected as a field. FS-plattform's opptak sorts this way, by computed columns such as `EFFEKTIVT_STUDIENAVN` and the `*_SORTERING` columns.
 
 [source,graphql]
 ----
 type Query {
     filmsByLatestStock(first: Int, last: Int, after: String, before: String): FilmsConnection!
-        @defaultOrder(fields: [{
-            method: {className: "com.example.FilmSortKeys", method: "latestStockStore"},
-            direction: DESC
-        }])
+        @defaultOrder(fields: [{name: "latest_stock_store", direction: DESC}])
 }
 ----
 
-[source,java]
-----
-public static Field<Integer> latestStockStore(Film film) {
-    var stock = INVENTORY.as("latest_stock");
-    return DSL.field(DSL.select(stock.STORE_ID).from(stock)
-        .where(stock.FILM_ID.eq(film.FILM_ID))
-        .orderBy(stock.INVENTORY_ID.desc())
-        .limit(1));
-}
-----
+A view with a unique key on the parent's id plus a jOOQ synthetic foreign key to it makes the hop to-one instead, and `path:` then reads the value from there.
 
-The rule for which related row counts lives once, in the method, and the same method can back an `@externalField` when the value should also be selectable. `method` is required inside the reference, since there is no field name to default it from, and `argMapping:` is not supported. The build cannot see inside the method: if it returns more than one row per parent, the database rejects the query at runtime, as it does any scalar subquery that does.
-
-If you would rather keep the rule in the database, a view with a unique key on the parent's id plus a jOOQ synthetic foreign key to it makes the hop to-one, and `path:` then serves the same case with no Java code.
+`FieldSort.method:` used to compute a sort key in Java. It is refused (`SORT_KEY_METHOD`): put the value in a view or a jOOQ computed column and name it with `name:`. The ruling (Alf, 2026-11-27): "We drop it. Refuse now together with the list refusal." and, with FS-plattform's one use in front of him, "We refuse it. This is a bad feature."
 
 === How they combine
 
-* An entry sets exactly one of `name:` and `method:`; `path:` is only valid beside `name:`. `method:` with `path:` fails the build, since the method already receives the field's table.
-* On a connection or a list, only the field's own columns count toward identifying a row. A related-table column never does, even when it is that table's primary key, because many rows can share one related row; a `method:` key never does either. An order made only of such entries therefore always has the key appended, even when a related column is named like one of the field's own key columns (see <<stable-cursors-and-tie-breakers>>).
-* Neither form is available on a multi-table interface or union, or over a table-valued function result.
-* A to-one `path:` key is an indexed key lookup per row, evaluated for the sort; a `method:` key costs what its query costs.
+* An entry sets `name:`, and `path:` is only valid beside it; an entry naming `method:` fails the build (`SORT_KEY_METHOD`).
+* On a connection or a list, only the field's own columns count toward identifying a row. A related-table column never does, even when it is that table's primary key, because many rows can share one related row. An order made only of such entries therefore always has the key appended, even when a related column is named like one of the field's own key columns (see <<stable-cursors-and-tie-breakers>>).
+* `path:` is not available on a multi-table interface or union, or over a table-valued function result.
+* A to-one `path:` key is an indexed key lookup per row, evaluated for the sort; a computed column costs what its expression costs.
 
 == Collation pitfalls
 
@@ -237,7 +224,7 @@ For single-table polymorphism, ordering is unchanged from the non-polymorphic ca
 * Connection orders that do not identify a row get the table's key appended, which is part of the cursor. Changing a table's primary key invalidates outstanding cursors on its connections.
 * `index:` requires jOOQ index generation. With it disabled, the lookup yields no columns and the directive fails to resolve.
 * `fields[].name` resolves against the field's return-type `@table`, not the parent's, or against the table its `path:` lands on. Case-sensitive against the jOOQ-generated identifiers.
-* A `path:` follows to-one hops only, and carries no `condition:`; a key derived from many related rows goes through `method:` (see <<sort-by-a-related-value>>).
+* A `path:` follows to-one hops only, and carries no `condition:`; a key derived from many related rows, or picked by a condition, is a column of a view or a jOOQ computed column named with `name:` (see <<a-value-you-compute>>).
 * `collate:` is unvalidated at build time; misspellings surface as runtime database errors.
 
 == See also

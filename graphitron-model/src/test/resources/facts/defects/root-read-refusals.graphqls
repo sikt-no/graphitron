@@ -7,8 +7,8 @@
 #
 # A root list over a union whose participants are on tables of their own orders each participant by
 # its own keys in shared slots, one column of its table each. Query.castByUpdate sorts by last_update,
-# a column of film and of actor, the near miss; Query.castByStore sorts by a method, which has no
-# slot: SORT_KEY_ACROSS_PARTICIPANTS, at the fields element, naming METHOD.
+# a column of film and of actor, the near miss; Query.castByLanguage sorts by a column read down a
+# path, which has no slot: SORT_KEY_ACROSS_PARTICIPANTS, at the fields element, naming PATH.
 #
 # A lookup narrows one table's rows by columns of it. Query.filmsByKey looks films up by film_id, the
 # near miss; Query.castByKey returns the union, whose participants are on two tables, and
@@ -16,11 +16,6 @@
 # the type returned. Query.contentByKey looks up the interface a discriminator tells apart on content,
 # which is not generated yet: LOOKUP_DISCRIMINATED_UNSUPPORTED. Query.content reads the same interface
 # with no lookup, the near miss.
-#
-# A sort key's method names its class and its method and maps no arguments. Query.filmsByStore names
-# both, the near miss; Query.filmsByNoMethod names no method, Query.filmsByNoClass no class, and
-# Query.filmsByMappedMethod writes an argMapping: each names no one key, ORDER_FIELD_SHAPE at the
-# fields element.
 #
 # A participant on a detail table of its own is joined onto the interface's table by its first field
 # whose path is one step from the detail table to the shared one. Under Query.subjects, Person reads
@@ -104,23 +99,14 @@ type Query {
     @pivot(on: "lang_code", value: "title_txt")
 
   castByUpdate: [Cast!]! @defaultOrder(fields: [{name: "last_update"}])
-  castByStore: [Cast!]!
-    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
+  castByLanguage: [Cast!]!
+    @defaultOrder(fields: [{name: "name", path: [{key: "film_language_id_fkey"}]}])
 
   filmsByKey(film_id: [Int!] @lookupKey @field(name: "film_id")): [Film!]!
   castByKey(film_id: [Int!] @lookupKey @field(name: "film_id")): [Cast!]!
   summariesByKey(film_id: [Int!] @lookupKey @field(name: "film_id")): [Summary!]!
   content: [Content!]!
   contentByKey(contentId: [Int!] @lookupKey @field(name: "content_id")): [Content!]!
-
-  filmsByStore: [Film!]!
-    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
-  filmsByNoMethod: [Film!]!
-    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys"}}])
-  filmsByNoClass: [Film!]!
-    @defaultOrder(fields: [{method: {method: "latestStockStore"}}])
-  filmsByMappedMethod: [Film!]!
-    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore", argMapping: "x: y"}}])
 
   subjects: [Subject!]!
   parties: [Party!]!
@@ -129,18 +115,15 @@ type Query {
 # Each refusal at its site, by coordinate; the near misses draw none of them.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code IN ('PIVOT_AT_ROOT', 'SORT_KEY_ACROSS_PARTICIPANTS', 'LOOKUP_KEY_ON_UNBOUND_TYPE',
-    'LOOKUP_DISCRIMINATED_UNSUPPORTED', 'ORDER_FIELD_SHAPE', 'PARTICIPANT_DETAIL_UNJOINED',
+    'LOOKUP_DISCRIMINATED_UNSUPPORTED', 'PARTICIPANT_DETAIL_UNJOINED',
     'PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED')
   """, rows: """
   coordinate,                code,                                   detail
   AppAccount,                PARTICIPANT_DETAIL_UNJOINED,            jti_subject
   Individual,                PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED, id
   Query.castByKey,           LOOKUP_KEY_ON_UNBOUND_TYPE,             Cast
-  Query.castByStore,         SORT_KEY_ACROSS_PARTICIPANTS,           METHOD
+  Query.castByLanguage,      SORT_KEY_ACROSS_PARTICIPANTS,           PATH
   Query.contentByKey,        LOOKUP_DISCRIMINATED_UNSUPPORTED,       Content
-  Query.filmsByMappedMethod, ORDER_FIELD_SHAPE,
-  Query.filmsByNoClass,      ORDER_FIELD_SHAPE,
-  Query.filmsByNoMethod,     ORDER_FIELD_SHAPE,
   Query.summariesByKey,      LOOKUP_KEY_ON_UNBOUND_TYPE,             Summary
   Query.translations,        PIVOT_AT_ROOT,                          Query.translations
   """)

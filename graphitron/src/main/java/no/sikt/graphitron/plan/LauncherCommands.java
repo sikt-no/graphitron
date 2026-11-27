@@ -442,7 +442,7 @@ public final class LauncherCommands {
 
     /**
      * An order's keys as a fixed order, ascending throughout where every key is: a column of the list's
-     * own table, or a key down a path or computed by a method, numbered by {@code ordinal} as the
+     * own table, or a key down a path, numbered by {@code ordinal} as the
      * walk's resolver numbers a field's keys, since the emitted method a path key calls and the alias
      * its cursor reads are named by it.
      */
@@ -456,10 +456,6 @@ public final class LauncherCommands {
                     case no.sikt.graphitron.emit.RootQuery.Derived.Path path -> new OrderBySpec.SortKeyEntry(
                         new OrderBySpec.SortKey.Path(path.hops().stream().map(LauncherCommands::hopOf).toList(),
                             key.column()), key.collation(), direction, ordinal[0]++);
-                    case no.sikt.graphitron.emit.RootQuery.Derived.Method method -> new OrderBySpec.SortKeyEntry(
-                        new OrderBySpec.SortKey.Method(new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
-                            method.className(), method.methodName(), null, List.of(), List.of())),
-                        key.collation(), direction, ordinal[0]++);
                 };
             })
             .toList();

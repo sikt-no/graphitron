@@ -1,3 +1,3 @@
-A `fields` element writes neither or both of `name` and `method`, or a `path` beside a `method`, or a `method` missing its `className` or its `method`, or writing an `argMapping`. A sort key has no field name to default the method from, and its method takes the field's table and nothing else.
+A `fields` element writes neither or both of `name` and `method`, so it names no one key. One writing a `method` alone is `SORT_KEY_METHOD`.
 
 include::_ordering.adoc[]

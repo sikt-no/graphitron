@@ -48,9 +48,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EntryLegalityTest {
 
     /**
-     * {@code FieldSort.name} is optional, because an element may sort by a {@code method:}
-     * instead, so an element naming no column is a {@code FieldSort} and is transcribed with a
-     * {@code NULL} name. Its reference is a row of the code-reference relation like any other.
+     * {@code FieldSort.name} is optional, because an element may write a {@code method:} instead,
+     * so an element naming no column is a {@code FieldSort} and is transcribed with a {@code NULL}
+     * name. The method is refused, {@code SORT_KEY_METHOD}, and transcribed all the same, its
+     * reference a written code reference like any other, so the refusal has something to point at.
      */
     @Test
     @DisplayName("an order element naming a method instead of a column is transcribed with no name")

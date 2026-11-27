@@ -20,14 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Orders by a value the film's own table does not hold, paged end to end. A {@code path:} key is
  * the name of the film's original language (a nullable FK to {@code language}): English for film 5,
  * Italian for films 2 and 3, Japanese for film 1, none for film 4, which sorts on {@code NULL} and so
- * last in both directions. A {@code method:} key is the store of the film's latest stocked copy,
- * derived from the to-many {@code inventory}: store 1 for films 1 to 3, none for films 4 and 5. In
- * both, ties are broken by the {@code film_id} a connection appends, and every walk below, forward
- * and backward over two-row pages, returns each seeded film exactly once, at every site the order
- * renders at: a root connection, an {@code @orderBy} helper, a
+ * last in both directions. Ties are broken by the {@code film_id} a connection appends, and every
+ * walk below, forward and backward over two-row pages, returns each seeded film exactly once, at
+ * every site the order renders at: a root connection, an {@code @orderBy} helper, a
  * {@code @splitQuery} child connection, an inline child list and a plain list root.
  *
- * <p>A third key sorts squad members by their squad's {@code member_id}, a related column named
+ * <p>A second key sorts squad members by their squad's {@code member_id}, a related column named
  * like {@code squad_member}'s own key, through an {@code @orderBy} argument: members 1 and 2 tie
  * on it, as do 3 to 5, so the walk returns every member only if the order is completed with the
  * member's own key rather than taking the same-named sort key for it.
@@ -48,12 +46,6 @@ class SortKeyOrderExecutionTest {
 
     /** The same key descending with the appended film_id flipped; the film with no language stays last. */
     private static final List<Integer> ORIGINAL_DESC = List.of(1, 3, 2, 5, 4);
-
-    /** By latest stocked store, then film_id, both descending: the store-1 tie, then the unstocked films. */
-    private static final List<Integer> STOCK_DESC = List.of(3, 2, 1, 5, 4);
-
-    /** The same key ascending: the store-1 tie, then the unstocked films, each by film_id. */
-    private static final List<Integer> STOCK_ASC = List.of(1, 2, 3, 4, 5);
 
     private static final List<Integer> SEEDED_FILM_IDS = List.of(1, 2, 3, 4, 5);
 
@@ -191,42 +183,6 @@ class SortKeyOrderExecutionTest {
             .get("languageBySingleKey");
         var films = (List<Map<String, Object>>) language.get("filmsInlineByOriginalLanguage");
         assertThat(seeded(filmIdsOf(films))).containsExactlyElementsOf(ORIGINAL_ASC);
-    }
-
-    // ===== method: =====
-
-    @Test
-    void methodKey_rootConnection_forwardAndBackward() {
-        Function<String, String> query = page -> "{ filmsByLatestStock(" + page + ") " + SELECTION + " }";
-        assertWalks(query, data -> (Map<String, Object>) data.get("filmsByLatestStock"), STOCK_DESC);
-    }
-
-    @Test
-    void methodKey_orderByArgument_inBothRuntimeDirections() {
-        Function<String, Function<String, String>> query = direction -> page ->
-            "{ filmsByLanguages(order: {field: LATEST_STOCK, direction: " + direction + "}, " + page + ") "
-                + SELECTION + " }";
-        Function<Map<String, Object>, Map<String, Object>> connection =
-            data -> (Map<String, Object>) data.get("filmsByLanguages");
-        assertWalks(query.apply("ASC"), connection, STOCK_ASC);
-        assertWalks(query.apply("DESC"), connection, STOCK_DESC);
-    }
-
-    @Test
-    void methodKey_splitQueryChildConnection_forwardAndBackward() {
-        Function<String, String> query = page -> "{ languageBySingleKey(language_id: 1) { filmsByLatestStock("
-            + page + ") " + SELECTION + " } }";
-        assertWalks(query, data -> (Map<String, Object>)
-            ((Map<String, Object>) data.get("languageBySingleKey")).get("filmsByLatestStock"), STOCK_DESC);
-    }
-
-    @Test
-    void methodKey_inlineChildList_ordersInTheSubselect() {
-        var language = (Map<String, Object>) execute(
-            "{ languageBySingleKey(language_id: 1) { filmsInlineByLatestStock { filmId } } }")
-            .get("languageBySingleKey");
-        var films = (List<Map<String, Object>>) language.get("filmsInlineByLatestStock");
-        assertThat(seeded(filmIdsOf(films))).containsExactlyElementsOf(STOCK_DESC);
     }
 
     // ===== a sort key named like the row key =====

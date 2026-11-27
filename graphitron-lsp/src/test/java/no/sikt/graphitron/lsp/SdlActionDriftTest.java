@@ -41,7 +41,11 @@ class SdlActionDriftTest {
             // convention uniform. No migration action is registered: its removal is offered by
             // the redundant-record advisory's build-side fix, and a deprecation without an
             // action is fine.
-            new SchemaCoordinate.Directive("record")
+            new SchemaCoordinate.Directive("record"),
+            // A sort field's method: is refused; the marker stays so a schema writing it reaches
+            // the refusal's guidance. No action: the value moves to a view or a computed column,
+            // which no edit of the schema alone can do.
+            new SchemaCoordinate.InputField("FieldSort", "method")
         );
     }
 

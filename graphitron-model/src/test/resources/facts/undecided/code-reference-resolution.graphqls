@@ -34,17 +34,12 @@ type Film @table(name: "film") {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"})
 }
 
-# A FieldSort.method is called as exactly one method too, so naming the two overloads draws the
-# defect, as naming a method the class lacks does; a condition a FieldSort.path element names is an element's condition, which takes an
-# overload set, and draws nothing here, the agreeingOnBoth pair notwithstanding.
+# A condition a FieldSort.path element names is an element's condition, which takes an overload
+# set, and draws nothing here, the agreeingOnBoth pair notwithstanding.
 type Language @table(name: "language") {
   name: String
-  filmsByTopRated: [Film!]!
-    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "topRated"}}])
   filmsByPathCondition: [Film!]!
     @defaultOrder(fields: [{name: "title", path: [{table: "language", condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures", method: "agreeingOnBoth"}}]}])
-  filmsByMissingMethod: [Film!]!
-    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "noSuchMethod"}}])
 }
 
 # A class reference names no method, so it is a row naming none, and neither resolved nor a defect.
@@ -76,9 +71,7 @@ extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
   Film.missing,                  externalField,  reference,       ROOT,             no.sikt.graphitron.rewrite.test.extensions.FilmExtensions,                 missing
   Film.overloaded,               condition,      condition,       ROOT,             no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures,    occupantTypedNamePrefix
   Film.topRated,                 service,        service,         ROOT,             no.sikt.graphitron.rewrite.test.services.FilmService,                      topRated
-  Language.filmsByTopRated,      defaultOrder,   fields.0,        ORDER_FIELD,      no.sikt.graphitron.rewrite.test.services.FilmService,                      topRated
   Language.filmsByPathCondition, defaultOrder,   fields.0.path.0, ORDER_FIELD_PATH, no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures, agreeingOnBoth
-  Language.filmsByMissingMethod, defaultOrder,   fields.0,        ORDER_FIELD,      no.sikt.graphitron.rewrite.test.services.FilmService,                      noSuchMethod
   Rating,                        enum,           enumReference,   ROOT,             no.example.RatingEnum,
   """)
 
@@ -88,13 +81,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   CODE_REFERENCE_CLASS_NOT_READ,   City,      unread,     no.example.Absent
   CODE_REFERENCE_METHOD_NOT_FOUND, Film,      missing,    no.sikt.graphitron.rewrite.test.extensions.FilmExtensions.missing
   CODE_REFERENCE_METHOD_AMBIGUOUS, Film,      topRated,   no.sikt.graphitron.rewrite.test.services.FilmService.topRated
-  CODE_REFERENCE_METHOD_AMBIGUOUS, Language,  filmsByTopRated, no.sikt.graphitron.rewrite.test.services.FilmService.topRated
-  CODE_REFERENCE_METHOD_NOT_FOUND, Language,  filmsByMissingMethod, no.sikt.graphitron.rewrite.test.services.FilmService.noSuchMethod
   NO_ROUTE_TO_TARGET,              Film,      overloaded,      public.film to public.city
-  ROUTE_AMBIGUOUS,                 Language,  filmsByTopRated, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
   ROUTE_AMBIGUOUS,                 Language,  filmsByPathCondition, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
   SORT_KEY_PATH_CONDITION,         Language,  filmsByPathCondition,
-  ROUTE_AMBIGUOUS,                 Language,  filmsByMissingMethod, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """

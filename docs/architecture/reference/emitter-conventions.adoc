@@ -209,8 +209,7 @@ column's jOOQ `DataType` is already known, so cursor round-tripping goes through
 metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
 
 - *Who writes an element*: `ColumnValues.writtenByDatabase(field.getDataType())`, the one place
-  it is decided, read at runtime off the column's `DataType` so a `method:` sort key is answered
-  like a column. Java writes and reads a column whose Java reading is exact: the forms Graphitron 9
+  it is decided, read at runtime off the column's `DataType`. Java writes and reads a column whose Java reading is exact: the forms Graphitron 9
   issued (numeric, boolean, date, timestamp, timestamp with time zone) and the types whose Java
   value and text are the database's (character, uuid, enum). The database writes and reads every
   other column, one with no SQL type among them, so a type nobody listed is carried exactly rather

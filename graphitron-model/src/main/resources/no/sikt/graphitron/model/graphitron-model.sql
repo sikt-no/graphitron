@@ -2523,7 +2523,6 @@ SELECT v.graph_name, el.coordinate, da.name, gd.ordinal,
          || COALESCE('.path.' || CAST(m.path_index AS VARCHAR), ''),
        CASE WHEN m.argument_index IS NULL THEN 'ROOT'
             WHEN m.argument_name = 'path' THEN 'PATH_ELEMENT'
-            WHEN m.argument_name = 'fields' AND m.path_index IS NULL THEN 'ORDER_FIELD'
             WHEN m.argument_name = 'fields' THEN 'ORDER_FIELD_PATH'
             WHEN m.argument_name = 'routes' THEN 'ROUTE_PATH' END,
        en.entry_kind, v.source_name, v.source_line, v.source_column
@@ -2553,7 +2552,10 @@ SELECT v.graph_name, el.coordinate, da.name, gd.ordinal,
   JOIN graphql_directive_application gd
     ON gd.graph_name = da.graph_name AND gd.source_name = da.source_name
    AND gd.source_line = da.source_line AND gd.source_column = da.source_column
-   AND gd.directive_name = da.name;
+   AND gd.directive_name = da.name
+ -- A method a fields element of an ordering names is refused, SORT_KEY_METHOD, so a mapping written
+ -- on it sits nowhere anything reads.
+ WHERE m.argument_index IS NULL OR m.argument_name <> 'fields' OR m.path_index IS NOT NULL;
 COMMENT ON VIEW graphitron_argmapping_site_rule IS 'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_argmapping_site_rule.graph_name IS 'the graph_name of a row of this rule, which the anchor writes into graphitron_argmapping_site.graph_name';
 -- COMMENT ON COLUMN graphitron_argmapping_site_rule.coordinate IS 'the coordinate of a row of this rule, which the anchor writes into graphitron_argmapping_site.coordinate';
@@ -2588,7 +2590,7 @@ CREATE TABLE graphitron_argmapping_site (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  CHECK (kind IN ('ROOT', 'PATH_ELEMENT', 'ORDER_FIELD', 'ORDER_FIELD_PATH', 'ROUTE_PATH'))
+  CHECK (kind IN ('ROOT', 'PATH_ELEMENT', 'ORDER_FIELD_PATH', 'ROUTE_PATH'))
 );
 -- A @routine's mapping is found from the application it is written on.
 CREATE INDEX graphitron_argmapping_site_application_ix
@@ -2626,7 +2628,6 @@ SELECT w.graph_name, w.source_name, w.source_line, w.source_column,
          || COALESCE('.path.' || CAST(w.path_index AS VARCHAR), ''),
        CASE WHEN w.argument_index IS NULL THEN 'ROOT'
             WHEN w.argument_name = 'path' THEN 'PATH_ELEMENT'
-            WHEN w.argument_name = 'fields' AND w.path_index IS NULL THEN 'ORDER_FIELD'
             WHEN w.argument_name = 'fields' THEN 'ORDER_FIELD_PATH'
             WHEN w.argument_name = 'routes' THEN 'ROUTE_PATH' END
   FROM (
@@ -2657,7 +2658,10 @@ SELECT w.graph_name, w.source_name, w.source_line, w.source_column,
     ON app.graph_name = da.graph_name AND app.source_name = da.source_name
    AND app.source_line = da.source_line AND app.source_column = da.source_column
   LEFT JOIN graphql_element_field ef
-    ON ef.graph_name = el.graph_name AND ef.coordinate = el.coordinate;
+    ON ef.graph_name = el.graph_name AND ef.coordinate = el.coordinate
+ -- A method a fields element of an ordering names is refused, SORT_KEY_METHOD, so it is no reference
+ -- anything resolves.
+ WHERE w.argument_index IS NULL OR w.argument_name <> 'fields' OR w.path_index IS NOT NULL;
 COMMENT ON VIEW graphitron_code_reference_site IS 'Where one written Java code reference sits: the directive that wrote it, the element it is on, and the method it names once that site''s default applies. For example isEnglish: Boolean @externalField(reference: {className: "no.example.FilmExtensions"}) sits at Film.isEnglish under externalField and names isEnglish.';
 -- COMMENT ON COLUMN graphitron_code_reference_site.graph_name IS 'the owning graph''s partition, carried from the written reference';
 -- COMMENT ON COLUMN graphitron_code_reference_site.source_name IS 'the file the reference was written in, the first of the four columns that are the written reference''s key';
@@ -2670,8 +2674,8 @@ COMMENT ON VIEW graphitron_code_reference_site IS 'Where one written Java code r
 -- COMMENT ON COLUMN graphitron_code_reference_site.class_name IS 'the class the reference names, as written';
 -- COMMENT ON COLUMN graphitron_code_reference_site.method_name IS 'the method the reference names: as written, or the field''s own name where an @externalField wrote none, which is the one default any site applies. NULL where the reference names a class only, as @enum does';
 -- COMMENT ON COLUMN graphitron_code_reference_site.ordinal IS 'the application''s ordinal, graphql_directive_application''s, which with the coordinate and the directive names the application';
--- COMMENT ON COLUMN graphitron_code_reference_site.owner IS 'the names the reference was written under in its application, spelled: service for a root reference, path.0 for a path element''s condition, fields.1 for an @order field''s method, fields.1.path.0 for a condition in that field''s path';
--- COMMENT ON COLUMN graphitron_code_reference_site.kind IS 'which of those the reference is: ROOT, PATH_ELEMENT, ORDER_FIELD, ORDER_FIELD_PATH, or ROUTE_PATH under the removed @multitableReference';
+-- COMMENT ON COLUMN graphitron_code_reference_site.owner IS 'the names the reference was written under in its application, spelled: service for a root reference, path.0 for a path element''s condition, fields.1.path.0 for a condition in an @order field''s path';
+-- COMMENT ON COLUMN graphitron_code_reference_site.kind IS 'which of those the reference is: ROOT, PATH_ELEMENT, ORDER_FIELD_PATH, or ROUTE_PATH under the removed @multitableReference';
 
 CREATE TABLE graphitron_ast_connection_entry (
   graph_name    VARCHAR NOT NULL,
@@ -3078,7 +3082,7 @@ COMMENT ON COLUMN graphitron_ast_order_field_entry.touched_at IS 'when the readi
 COMMENT ON COLUMN graphitron_ast_order_field_entry.application_line IS 'source line of the application the element was written in, a reference into graphitron_ast_order_entry with the file and the column beside it, so the element''s application is a column rather than a walk up the value tree';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.application_column IS 'source column of the same';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.position IS 'the element''s index in the fields list, numbered from zero, a lone object written without brackets being the list of that one at 0; unique within the application, which is the order the keys sort by';
-COMMENT ON COLUMN graphitron_ast_order_field_entry.shape IS 'which key the element names, decided here so no reader judges the fields written: COLUMN, a name alone; PATH, a name with a path, read through the hops the path writes; METHOD, a method alone naming its class and its method and mapping no arguments, whose class and method are the code reference''s decode; MALFORMED, anything else, neither or both of name and method, a path beside a method, or a method missing its class or its method or writing an argMapping. An explicit null is no value written';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.shape IS 'which key the element names, decided here so no reader judges the fields written: COLUMN, a name alone; PATH, a name with a path, read through the hops the path writes; METHOD, a method without a name, in any form, captured so it can be refused, SORT_KEY_METHOD, and stating no key; MALFORMED, anything else, neither or both of name and method. An explicit null is no value written';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.name_ref IS 'the element''s name field decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.collate IS 'the element''s collate field on the same terms. A database-specific collation name, resolving against nothing here';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.direction IS 'the element''s direction field as the enum token the author wrote, or NULL where they wrote none';
@@ -8216,7 +8220,7 @@ CREATE TABLE graphitron_code_reference (
   CHECK ((method_source_name IS NULL) = (method_descriptor IS NULL)),
   CHECK ((method_class_name IS NULL) = (method_descriptor IS NULL)),
   CHECK ((method_name IS NULL) = (method_descriptor IS NULL)),
-  CHECK (kind IN ('ROOT', 'PATH_ELEMENT', 'ORDER_FIELD', 'ORDER_FIELD_PATH', 'ROUTE_PATH'))
+  CHECK (kind IN ('ROOT', 'PATH_ELEMENT', 'ORDER_FIELD_PATH', 'ROUTE_PATH'))
 );
 -- Where it was written locates a row and keys nothing: a reader holding a written reference's position finds its reference by it, while
 -- the row is named by its application, so an edit moving two rows past each other moves both in one
@@ -8227,8 +8231,8 @@ COMMENT ON COLUMN graphitron_code_reference.graph_name IS 'the owning graph''s p
 COMMENT ON COLUMN graphitron_code_reference.coordinate IS 'the element the application writing the reference is on: a type, a field, an argument or an input field';
 COMMENT ON COLUMN graphitron_code_reference.directive_name IS 'the directive whose application wrote the reference';
 COMMENT ON COLUMN graphitron_code_reference.ordinal IS 'the application''s ordinal, with the coordinate and the directive naming the application in graphql_directive_application';
-COMMENT ON COLUMN graphitron_code_reference.owner IS 'the names the reference was written under in its application, spelled, completing the key: service for a root reference, path.0 for a path element''s condition, fields.1 for an @order field''s method, fields.1.path.0 for a condition in that field''s path. Names and ordinals and no position, so editing the file above it changes no row';
-COMMENT ON COLUMN graphitron_code_reference.kind IS 'which owner the reference has: ROOT on the application itself, PATH_ELEMENT on a path element, ORDER_FIELD on an @order field, ORDER_FIELD_PATH on an element of that field''s path, ROUTE_PATH under the removed @multitableReference';
+COMMENT ON COLUMN graphitron_code_reference.owner IS 'the names the reference was written under in its application, spelled, completing the key: service for a root reference, path.0 for a path element''s condition, fields.1.path.0 for a condition in an @order field''s path. Names and ordinals and no position, so editing the file above it changes no row';
+COMMENT ON COLUMN graphitron_code_reference.kind IS 'which owner the reference has: ROOT on the application itself, PATH_ELEMENT on a path element, ORDER_FIELD_PATH on an element of an @order field''s path, ROUTE_PATH under the removed @multitableReference';
 COMMENT ON COLUMN graphitron_code_reference.source_name IS 'the file the reference was written in; with the line and the column, where a defect about it points, and the reference''s key in graphitron_ast_code_reference_entry. An attribute and not the key';
 COMMENT ON COLUMN graphitron_code_reference.source_line IS 'source line of the node the reference was written as';
 COMMENT ON COLUMN graphitron_code_reference.source_column IS 'source column of the same';
@@ -9011,8 +9015,8 @@ COMMENT ON VIEW graphitron_call_context_key_entry_defect_pair_rule IS 'One row t
 -- the directive cannot call as it calls the methods it names. An @externalField's must be one
 -- code_external_field_method admits: static, taking one jOOQ table and returning an org.jooq.Field.
 -- Reported at the reference, the first clause it fails in the detail. And what an ordering's decode
--- says wrong, the first stage holding it, beside the order field methods it resolves: an application
--- writing other than one surface, and a fields element of no legal shape.
+-- says wrong, the first stage holding it: an application writing other than one surface, a fields
+-- element of no legal shape, and one naming a method, which is refused.
 CREATE TABLE code_contract_slot (
   class_name    VARCHAR NOT NULL,
   slot_name     VARCHAR NOT NULL,
@@ -9380,10 +9384,14 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'ORDER_F
                     WHERE fe.graph_name = oe.graph_name AND fe.source_name = oe.source_name
                       AND fe.application_line = oe.source_line AND fe.application_column = oe.source_column)
 UNION ALL
-SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'ORDER_FIELD_SHAPE',
+-- A fields element of no legal shape, and one naming a method, which is refused: a value a sort needs
+-- computed is a column of a view or a jOOQ computed column, named with name:. One arm, the two told
+-- apart by the shape the decode decided.
+SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
+       CASE WHEN fe.shape = 'METHOD' THEN 'SORT_KEY_METHOD' ELSE 'ORDER_FIELD_SHAPE' END,
        CAST(NULL AS VARCHAR), 'code-references'
   FROM graphitron_ast_order_field_entry fe
- WHERE fe.shape = 'MALFORMED'
+ WHERE fe.shape IN ('MALFORMED', 'METHOD')
 UNION ALL
 -- A code reference that resolves to no one method, at the position it was written: exactly the
 -- references naming a method that graphitron_code_reference resolves to none, told apart by what the
@@ -9391,13 +9399,12 @@ UNION ALL
 -- method; exclusive by construction, a single match being the resolution's method. One arm for every site,
 -- the reference being one fact wherever it is written.
 --
--- More than one method is a defect only where the generator calls exactly one: @service,
--- @externalField and a FieldSort.method under @order or @defaultOrder. A @condition, and a
--- condition a path element names, take an overload set, whose rules are their own codes. Under
--- @order and @defaultOrder a reference is a FieldSort.method or a FieldSort.path[].condition, told
--- apart by the object field it is written at. Counted on the class the graph resolves the name to,
--- as the resolution reads it, so a name two entries declare is the first entry's class and a
--- method only a later entry's copy declares is not found.
+-- More than one method is a defect only where the generator calls exactly one: @service and
+-- @externalField. A @condition, and a condition a path element names, take an overload set, whose
+-- rules are their own codes; under @order and @defaultOrder that is a FieldSort.path[].condition.
+-- Counted on the class the graph resolves the name to, as the resolution reads it, so a name two
+-- entries declare is the first entry's class and a method only a later entry's copy declares is not
+-- found.
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
        CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
             WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
@@ -9414,11 +9421,7 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
                (SELECT COUNT(DISTINCT m.descriptor) FROM code_graph_class k
                   JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
                  WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name
-                   AND m.method_name = c.named_method) AS descriptors,
-               (SELECT v.object_field_name FROM graphql_ast_value_entry v
-                 WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
-                   AND v.source_line = c.source_line
-                   AND v.source_column = c.source_column) AS written_at
+                   AND m.method_name = c.named_method) AS descriptors
           FROM graphitron_code_reference c
          WHERE c.named_method IS NOT NULL AND c.method_descriptor IS NULL
            -- A graph whose classpath was never read has told the store nothing about any class, so
@@ -9428,9 +9431,7 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
                          JOIN code_class k ON k.source_name = g.source_name
                         WHERE g.graph_name = c.graph_name)) s
  WHERE s.classes = 0 OR s.methods = 0
-    OR (s.descriptors > 1
-        AND (s.directive_name IN ('service', 'externalField')
-             OR (s.directive_name IN ('order', 'defaultOrder') AND s.written_at = 'method')))
+    OR (s.descriptors > 1 AND s.directive_name IN ('service', 'externalField'))
 UNION ALL
 -- A @condition whose overloads disagree in shape, at the reference. The declarations of one name are
 -- one condition where they differ only in their jOOQ table parameters, the generated call being the
@@ -27392,7 +27393,7 @@ COMMENT ON TABLE graphitron_occurrence_order IS 'One order a table-bound list or
 COMMENT ON COLUMN graphitron_occurrence_order.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_order.coordinate IS 'the list or connection field occurrence, inline, split or at the root alike';
 COMMENT ON COLUMN graphitron_occurrence_order.bound IS 'the table the field reads, as its TABLE binding spells it, which the order''s names resolve against, but for a routine behind a plural identifying mutation, graphitron_occurrence_input_order''s WRITE_SHAPE, whose names resolve against the routine''s function table; one per participant table where the field reads several';
-COMMENT ON COLUMN graphitron_occurrence_order.choice IS 'the coordinate the order is stated at, completing the key: the field''s own declared coordinate for its default, written or not, and the enum value''s for a choice. The coordinate the written application sits on wherever one is written, so a sort key''s method reference is keyed by it';
+COMMENT ON COLUMN graphitron_occurrence_order.choice IS 'the coordinate the order is stated at, completing the key: the field''s own declared coordinate for its default, written or not, and the enum value''s for a choice. The coordinate the written application sits on wherever one is written';
 COMMENT ON COLUMN graphitron_occurrence_order.kind IS 'DEFAULT, the order the field is read in when the client asks for none, or CHOICE, one the client selects through the @orderBy argument';
 COMMENT ON COLUMN graphitron_occurrence_order.surface IS 'what the order sorts by: PRIMARY_KEY, the table''s primary key, primaryKey: true written; INDEX, a database index''s columns; FIELDS, the elements written; IMPLICIT_PRIMARY_KEY, the primary key a list with no @defaultOrder falls back to, which no author wrote. An application writing none or several states no order here, and ORDER_SURFACES refuses it';
 COMMENT ON COLUMN graphitron_occurrence_order.direction IS 'the direction a @defaultOrder application writes for the whole order, which each fields element''s own overrides; null where none is written, on an @order or @index choice, which declares no such argument, and on the implicit primary key, each read ascending';
@@ -27471,9 +27472,9 @@ COMMENT ON COLUMN graphitron_occurrence_order_index.touched_at IS 'the reading t
 
 -- The keys each order sorts by, in order, off the orders stored above: a primary key's columns or an
 -- index's in their own order, each in the application's direction; and the elements written, each by
--- the shape the decode decided, a column, a method or a column read through a path. What a key reads
--- is its subtype's: a COLUMN key whose name reaches no column, or a METHOD key whose reference
--- resolves to none, has no subtype row and is refused. An element of no legal shape states no key. A
+-- the shape the decode decided, a column or a column read through a path. What a key reads is its
+-- subtype's: a COLUMN key whose name reaches no column has no subtype row and is refused. An element
+-- of no legal shape, or naming a method, which is refused, states no key. A
 -- plural routine write's order is read on the function's result, which has no primary key, so a
 -- primaryKey: true there states no key and ORDER_PRIMARY_KEY_MISSING refuses it.
 CREATE VIEW graphitron_occurrence_sort_key_rule
@@ -27501,7 +27502,8 @@ SELECT r.graph_name, r.coordinate, r.bound, r.choice, ic.position, 'COLUMN',
     ON ic.source_name = oi.index_source_name AND ic.table_schema = oi.index_schema
    AND ic.table_name = oi.index_table AND ic.index_name = oi.index_name
 UNION ALL
--- The elements written, each by the shape the decode decided, in its own direction or the order's.
+-- The elements written naming a column, each by the shape the decode decided, in its own direction
+-- or the order's.
 SELECT r.graph_name, r.coordinate, r.bound, r.choice, fe.position, fe.shape,
        COALESCE(fe.direction, r.direction, 'ASC'), fe.collate
   FROM graphitron_occurrence_order r
@@ -27511,7 +27513,7 @@ SELECT r.graph_name, r.coordinate, r.bound, r.choice, fe.position, fe.shape,
   JOIN graphitron_ast_order_field_entry fe
     ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
    AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
- WHERE r.surface = 'FIELDS' AND fe.shape <> 'MALFORMED';
+ WHERE r.surface = 'FIELDS' AND fe.shape IN ('COLUMN', 'PATH');
 COMMENT ON VIEW graphitron_occurrence_sort_key_rule IS 'One row the sort key rule computes, in the shape graphitron_occurrence_sort_key stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_sort_key_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_sort_key_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key.coordinate';
@@ -27537,17 +27539,17 @@ CREATE TABLE graphitron_occurrence_sort_key (
   UNIQUE (graph_name, coordinate, bound, choice, position, kind),
   FOREIGN KEY (graph_name, coordinate, bound, choice)
     REFERENCES graphitron_occurrence_order (graph_name, coordinate, bound, choice) ON DELETE CASCADE,
-  CHECK (kind IN ('COLUMN', 'METHOD', 'PATH')),
+  CHECK (kind IN ('COLUMN', 'PATH')),
   CHECK (direction IN ('ASC', 'DESC')),
   CHECK (position >= 0)
 );
-COMMENT ON TABLE graphitron_occurrence_sort_key IS 'One key an order sorts by: one row per order of a field occurrence and position in it, the supertype of the column and the method a key reads. For example Query.films ordered by its default sorts by film_id ascending at position 0, a COLUMN key.';
+COMMENT ON TABLE graphitron_occurrence_sort_key IS 'One key an order sorts by: one row per order of a field occurrence and position in it, the supertype of the column a key reads, on its own table or through a path. For example Query.films ordered by its default sorts by film_id ascending at position 0, a COLUMN key.';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.coordinate IS 'the list or connection field occurrence';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.bound IS 'the table the field reads';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.choice IS 'the order, as graphitron_occurrence_order keys it';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.position IS 'the key''s place in the order, numbered from zero: the column''s in a primary key or an index, the element''s index in a written fields list. Keys sort by it ascending; a written element that states no key leaves a gap, and is refused';
-COMMENT ON COLUMN graphitron_occurrence_sort_key.kind IS 'what the key reads: COLUMN, a column of the table, and PATH, a column read through to-one hops, graphitron_occurrence_sort_key_hop, landing on the table its subtype graphitron_occurrence_sort_key_landing names, each naming its column in graphitron_occurrence_sort_key_column; METHOD, a method computing the key from the table, its subtype graphitron_occurrence_sort_key_method';
+COMMENT ON COLUMN graphitron_occurrence_sort_key.kind IS 'what the key reads: COLUMN, a column of the table, and PATH, a column read through to-one hops, graphitron_occurrence_sort_key_hop, landing on the table its subtype graphitron_occurrence_sort_key_landing names, each naming its column in graphitron_occurrence_sort_key_column';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.direction IS 'ASC or DESC, resolved: the element''s own direction, else the application''s, else ascending. A runtime choice''s direction field applies on top of it at run time';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.collation IS 'the collation the element names, as written, null where none is; a database-specific name resolving against nothing here';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
@@ -28014,7 +28016,7 @@ COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.touched_at IS 'th
 
 -- The row key's columns an order does not list, completing it so it identifies a row: the default, and
 -- each choice the client picks. An order whose own-table columns list an identifying key in full is complete as written, a key read down
--- a path or computed by a method counting for nothing. The columns follow the written keys in the row
+-- a path counting for nothing. The columns follow the written keys in the row
 -- key's order and the direction of the last written key, so a uniform order stays uniform. A plural
 -- routine write's order is the routine's result's, which the table the field reads has no key of, so
 -- it is completed by nothing.
@@ -28104,72 +28106,6 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.table_schema IS 'the
 COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.table_name IS 'the table';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.column_name IS 'the column, as the catalog spells it';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
-CREATE VIEW graphitron_occurrence_sort_key_method_rule
-  (graph_name, coordinate, bound, choice, position, kind, application_coordinate, directive_name, ordinal,
-   owner) AS
-SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, cr.coordinate, cr.directive_name,
-       cr.ordinal, cr.owner
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
-  LEFT JOIN graphitron_directive_application ra
-    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
-   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_code_reference cr
-    ON cr.graph_name = r.graph_name AND cr.coordinate = r.application_coordinate
-   AND cr.directive_name = r.application_directive AND cr.ordinal = r.application_ordinal
-   AND cr.owner = 'fields.' || CAST(k.position AS VARCHAR) AND cr.kind = 'ORDER_FIELD'
-   AND cr.method_descriptor IS NOT NULL
- WHERE k.kind = 'METHOD';
-COMMENT ON VIEW graphitron_occurrence_sort_key_method_rule IS 'One row the sort key method rule computes, in the shape graphitron_occurrence_sort_key_method stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_method, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.bound';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.choice IS 'the choice of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.choice';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.position';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.kind';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.application_coordinate IS 'the application_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.application_coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.directive_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.ordinal';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_method_rule.owner IS 'the owner of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_method.owner';
-
-CREATE TABLE graphitron_occurrence_sort_key_method (
-  graph_name         VARCHAR   NOT NULL,
-  coordinate         VARCHAR   NOT NULL,
-  bound              VARCHAR   NOT NULL,
-  choice             VARCHAR   NOT NULL,
-  position           INT       NOT NULL,
-  kind               VARCHAR   NOT NULL,
-  application_coordinate VARCHAR NOT NULL,
-  directive_name     VARCHAR   NOT NULL,
-  ordinal            INT       NOT NULL,
-  owner              VARCHAR   NOT NULL,
-  touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, bound, choice, position),
-  FOREIGN KEY (graph_name, coordinate, bound, choice, position, kind)
-    REFERENCES graphitron_occurrence_sort_key (graph_name, coordinate, bound, choice, position, kind)
-    ON DELETE CASCADE,
-  -- The reference the element writes, resolved, which names the method: so the sort key and the
-  -- code reference cannot name two methods, and the key goes when the reference stops resolving.
-  FOREIGN KEY (graph_name, application_coordinate, directive_name, ordinal, owner)
-    REFERENCES graphitron_code_reference (graph_name, coordinate, directive_name, ordinal, owner)
-    ON DELETE CASCADE,
-  CHECK (kind = 'METHOD')
-);
-COMMENT ON TABLE graphitron_occurrence_sort_key_method IS 'The method a METHOD sort key calls with the table to compute its key: one row per such key. For example an element written method: {className: "FilmSortKeys", method: "latestStockStore"} calls FilmSortKeys.latestStockStore with public.film.';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.coordinate IS 'the list or connection field occurrence';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.bound IS 'the table the field reads, which the method is called with';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.choice IS 'the order, as graphitron_occurrence_order keys it';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.position IS 'the key''s place in the order, completing the key';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.kind IS 'always METHOD, pinned so the foreign key holds the row to a key of that kind';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.application_coordinate IS 'the coordinate of the application the element is written in, the order''s, at which its code reference is keyed';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.directive_name IS 'the directive the element is written in, defaultOrder or order, with the choice, the ordinal and the owner a graphitron_code_reference key: the reference whose method_* columns name the method, read there and never copied';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.ordinal IS 'the application''s ordinal at the choice''s coordinate, always zero, the directive not being repeatable';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.owner IS 'where in the application the reference is written, fields. and the element''s index, as graphitron_code_reference spells it';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_method.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 
 -- What an ordering cannot state: a primary key a table does not have, a plural routine write's
@@ -28408,8 +28344,8 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
 COMMENT ON VIEW graphitron_occurrence_read_order_entry_defect_rule IS 'One row the read order defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-orderings inserts this view''s rows for one graph into graphitron_entry_defect, a list whose rows are read with no order stated for a table they are on giving one LIST_ORDER_UNDETERMINED row at that table.';
 
 -- What a sort key's path cannot state: an element writing a condition, a hop reaching many rows, a key
--- not touching the table the path stands on, and a column the landing table lacks; and a path or a
--- method on a root read over several tables, which has no slot for either. Raised by the
+-- not touching the table the path stands on, and a column the landing table lacks; and a path on a
+-- root read over several tables, which has no slot for it. Raised by the
 -- occurrence-orderings stage beside its order rule rather than as arms of it, H2 holding a parsed copy
 -- of a union at every level of its nesting.
 CREATE VIEW graphitron_occurrence_sort_key_path_entry_defect_rule
@@ -28525,12 +28461,12 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
                       AND sp.table_name = l.to_table AND sp.spelling_upper = UPPER(fe.name_ref)
                       AND sp.reach = 1)
 UNION ALL
--- A key reading no column of the list's own table, through a path or by a method, on a root read
+-- A key reading no column of the list's own table, through a path, on a root read
 -- over several tables its participants are told apart by, at the fields element writing it: the
 -- read folds each participant's order into shared slots, one column of that participant's table
 -- each, and such a key has no slot. A read whose participants a discriminator tells apart is one
 -- table's, and a lookup over several tables is LOOKUP_KEY_ON_UNBOUND_TYPE's. The detail is what the
--- key reads, PATH or METHOD.
+-- key reads, PATH.
 SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'SORT_KEY_ACROSS_PARTICIPANTS',
        MIN(k.kind), 'occurrence-orderings'
   FROM graphitron_occurrence_order r
@@ -31515,12 +31451,12 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_order r
                     WHERE r.graph_name = io.graph_name AND r.coordinate = io.coordinate AND r.kind = 'DEFAULT')
 UNION ALL
--- A fields element with a method: or a path: in the default order of a plural identifying mutation
--- behind a routine returning a table, at the field: the order is the routine's result's, read by its
--- own columns, and such an element names none of them. The detail is the element's name, or method:
--- where it writes none.
+-- A fields element with a path: in the default order of a plural identifying mutation behind a
+-- routine returning a table, at the field: the order is the routine's result's, read by its own
+-- columns, and such an element names none of them. The detail is the element's name. One naming a
+-- method is SORT_KEY_METHOD's.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN', COALESCE(fe.name_ref, 'method:'), 'occurrence-depth-defects'
+       'ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN', fe.name_ref, 'occurrence-depth-defects'
   FROM graphitron_occurrence_order r
   -- The order reads a function's result, which only a plural routine write's does.
   JOIN sql_table ft
@@ -31534,7 +31470,7 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
   JOIN graphitron_occurrence o ON o.graph_name = r.graph_name AND o.coordinate = r.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE r.kind = 'DEFAULT' AND r.surface = 'FIELDS' AND fe.shape IN ('METHOD', 'PATH');
+ WHERE r.kind = 'DEFAULT' AND r.surface = 'FIELDS' AND fe.shape = 'PATH';
 COMMENT ON VIEW graphitron_occurrence_routine_write_entry_defect_rule IS 'One row the routine write defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a Mutation @routine whose record field is lifted along no path out of the function''s result giving one ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED row at the field.';
 
 CREATE VIEW graphitron_occurrence_source_rule (graph_name, coordinate, kind, rule) AS
@@ -33149,7 +33085,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-orderings', 'graphitron_occurrence_order_index'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_column'),
-  ('occurrence-orderings', 'graphitron_occurrence_sort_key_method'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_hop'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_landing'),
   ('occurrence-orderings', 'graphitron_occurrence_identifying_key_column'),
@@ -33517,7 +33452,6 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-orderings', 'graphitron_occurrence_order_index', 'graphitron_occurrence_order_index_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key', 'graphitron_occurrence_sort_key_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_column', 'graphitron_occurrence_sort_key_column_rule'),
-  ('occurrence-orderings', 'graphitron_occurrence_sort_key_method', 'graphitron_occurrence_sort_key_method_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_hop', 'graphitron_occurrence_sort_key_hop_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_landing', 'graphitron_occurrence_sort_key_landing_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_identifying_key_column', 'graphitron_occurrence_identifying_key_column_rule'),
@@ -34635,15 +34569,17 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ORDER_FIELDS_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELDS_EMPTY',
    'A @defaultOrder or @order sorts by fields and names none, so the read it orders states no order: name at least one field, or write index or primaryKey: true instead.'),
   ('SORT_KEY_PATH_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_PATH_CONDITION',
-   'An element of a sort key''s path carries a condition; an ordering path follows key joins only, and the rule for which related row counts belongs in a method that returns the sort key.'),
+   'An element of a sort key''s path carries a condition; an ordering path follows key joins only: state which related row counts in a view or a jOOQ computed column on the list''s table and name it with name:.'),
   ('SORT_KEY_PATH_TO_MANY', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_PATH_TO_MANY',
-   'A hop of a sort key''s path reaches many rows of the table it lands on, and an ordering path may only follow to-one hops: supply a value derived from many rows through method, or make the hop to-one with a view that has a unique key on the parent''s id and a jOOQ synthetic foreign key to it.'),
+   'A hop of a sort key''s path reaches many rows of the table it lands on, and an ordering path may only follow to-one hops: supply a value derived from many rows as a column of a view or a jOOQ computed column and name it with name:, or make the hop to-one with a view that has a unique key on the parent''s id and a jOOQ synthetic foreign key to it.'),
   ('SORT_KEY_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_SORT_KEY_ACROSS_PARTICIPANTS',
-   'An ordering of a query-root field over a union or an interface whose participants are on tables of their own sorts by a path or a method, and the read folds each participant''s order into shared slots, one column of its own table each, which such a key has no slot in: sort by columns of the participants'' own tables.'),
+   'An ordering of a query-root field over a union or an interface whose participants are on tables of their own sorts by a path, and the read folds each participant''s order into shared slots, one column of its own table each, which such a key has no slot in: sort by columns of the participants'' own tables.'),
   ('SORT_KEY_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_PATH_UNRESOLVED',
    'A key named in a sort key''s path does not touch the table the path stands on at that hop, the list''s own at the first, so the path does not continue: name a key joining the two tables.'),
   ('SORT_KEY_COLUMN_OFF_PATH', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_COLUMN_OFF_PATH',
    'A sort key''s name is not a column of the table its path lands on, named in the detail: name a column of that table.'),
+  ('SORT_KEY_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_METHOD',
+   'A fields element of an ordering names a method, which computes the key in Java where the database cannot see it, so it is refused: put the value in a view or a jOOQ computed column and name it with name:.'),
   ('ORDER_SURFACES', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_SURFACES',
    'A @defaultOrder or @order writes other than exactly one of index, primaryKey: true and fields, so it does not say what to sort by: write one.'),
   ('ORDER_PRIMARY_KEY_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_PRIMARY_KEY_MISSING',
@@ -34653,7 +34589,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ORDER_INPUT_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_INPUT_SHAPE',
    'An @orderBy argument''s type is not an input object with exactly one field typed as an enum whose values carry @order or @index and exactly one other enum field, the direction, so it offers the client no order to pick: give the input type one of each, told apart by type rather than name.'),
   ('ORDER_FIELD_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELD_SHAPE',
-   'A fields element of an ordering writes neither or both of name and method, a path beside a method, or a method missing its className or its method or writing an argMapping, so it names no one key: write a name, optionally with a path, or a method naming its class and its method, which takes the field''s table and nothing else.'),
+   'A fields element of an ordering writes neither or both of name and method, so it names no one key: write a name, optionally with a path.'),
   ('ORDER_VALUE_UNORDERED', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_VALUE_UNORDERED',
    'A value of the enum an @orderBy argument picks its order by carries neither @order nor @index, so a client choosing it asks for an order that says nothing: give it @order.'),
   ('ORDER_INPUT_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_INPUT_LIST',
@@ -34687,7 +34623,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ROUTINE_WRITE_PATH_FANS_OUT', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_PATH_FANS_OUT',
    'A routine write handing back one record reads it along a path with a step that reaches many rows, so one written row could answer as several: return a list, or read the record along a path whose every step reaches one row.'),
   ('ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN',
-   'A plural routine write''s @defaultOrder orders the routine''s result by its own columns, and a fields: element with a method: or a path: names no column of it: name a column the routine returns.'),
+   'A plural routine write''s @defaultOrder orders the routine''s result by its own columns, and a fields: element with a path: names no column of it: name a column the routine returns.'),
   ('ROUTINE_WRITE_PLURAL_UNORDERED', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_WRITE_PLURAL_UNORDERED',
    'A mutation taking a list argument and answering one item per element is a plural identifying field, owing its answer in the order of its input, and the routine behind it returns a table, whose rows have no order of their own: give the routine''s result an order with @defaultOrder(fields:) naming the columns of its result that keep the input''s order, or change the field''s shape.'),
   ('OUTCOME_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTCOME_IN_A_LIST',
@@ -34893,7 +34829,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('CODE_REFERENCE_METHOD_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_NOT_FOUND',
    'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.'),
   ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
-   'A code reference where the generator calls exactly one method, a @service, an @externalField or a FieldSort.method, names a method the classpath declares as several overloads, and nothing says which of them is meant.'),
+   'A code reference where the generator calls exactly one method, a @service or an @externalField, names a method the classpath declares as several overloads, and nothing says which of them is meant.'),
   ('CODE_REFERENCE_METHOD_UNFIT', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_UNFIT',
    'A code reference names a method the directive cannot call: an @externalField''s method must be static, take exactly one jOOQ table and return an org.jooq.Field.'),
   ('EXTERNAL_FIELD_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_EXTERNAL_FIELD_PATH_UNSUPPORTED',
@@ -36180,7 +36116,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_code_reference', 'graph-code-reference', 'graphitron',
    'One written Java code reference, where it sits and what it names, with the one method it resolves to where the graph''s classpath answers with exactly one.',
    'For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws a row naming no method.',
-   'The written reference met with the classpath, once for every site, as a reference into code_method rather than as the two strings again. Every written reference is a row, so a rule judging references reads this table rather than climbing the transcription again: the @externalField default is applied once, here. The method is a nullable copy of a code_method key, set where exactly one method answers; a reference naming nothing, a class only or two overloads carries none, and graphitron_entry_defect says which way it failed. Resolved against every public method rather than a directive''s admission arm, because a method a site may not name is a different fault from one that does not exist. Written by the code-references stage, which runs after the classpath is read.'),
+   'The written reference met with the classpath, once for every site, as a reference into code_method rather than as the two strings again. Every written reference is a row, but a method a fields element of an ordering names, which is refused as SORT_KEY_METHOD, so a rule judging references reads this table rather than climbing the transcription again: the @externalField default is applied once, here. The method is a nullable copy of a code_method key, set where exactly one method answers; a reference naming nothing, a class only or two overloads carries none, and graphitron_entry_defect says which way it failed. Resolved against every public method rather than a directive''s admission arm, because a method a site may not name is a different fault from one that does not exist. Written by the code-references stage, which runs after the classpath is read.'),
   ('graphitron_argmapping_pair', 'graph-argmapping-pair', 'graphitron',
    'One pair of a written argMapping, named by its mapping and the parameter it binds: one row per mapping and parameter.',
    'For example input.ids on @service at Query.filmsByPath is the pair (Query.filmsByPath, service, 0, service, ids).',
@@ -36662,9 +36598,9 @@ INSERT INTO meta_relation VALUES
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_order, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_sort_key', 'occurrence-sort-key', 'graphitron',
-   'One key an order sorts by: one row per order of a field occurrence and position in it, the supertype of the column and the method a key reads.',
+   'One key an order sorts by: one row per order of a field occurrence and position in it, the supertype of the column a key reads, on its own table or through a path.',
    'For example Query.films ordered by its default sorts by film_id ascending at position 0, a COLUMN key.',
-   'The keys in order with their resolved direction and the collation written, the supertype of what a key reads, as a join path step is of its kinds: a column, a method, or a column read through a path whose steps no relation resolves yet, which has no subtype until one does. Written by the occurrence-orderings stage after the orders, marked and swept; a key whose kind changed takes its subtype with it. Read by the inline child''s multiset once "A child read inline is emitted from the store" lands, and with it the $project flip; the root fetchers read it when they flip.'),
+   'The keys in order with their resolved direction and the collation written, the supertype of what a key reads, as a join path step is of its kinds: a column, or a column read through a path whose steps no relation resolves yet, which has no subtype until one does. Written by the occurrence-orderings stage after the orders, marked and swept; a key whose kind changed takes its subtype with it. Read by the inline child''s multiset once "A child read inline is emitted from the store" lands, and with it the $project flip; the root fetchers read it when they flip.'),
   ('graphitron_occurrence_sort_key_rule', 'occurrence-sort-key', 'graphitron',
    'One row the sort key rule computes, in the shape graphitron_occurrence_sort_key stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key, which is the name every reader spells.',
@@ -36696,7 +36632,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_sort_key_landing', 'occurrence-sort-key', 'graphitron',
    'The table a PATH sort key''s whole path lands on: one row per such key whose every element is a to-one hop and none carries a condition.',
    'For example Store.films ordered by the name of each film''s original language lands on public.language.',
-   'The PATH subtype of a sort key, as the method is the METHOD one''s: whether a path is whole is decided once, here, where the column the name spells and the refusal of a name the landing table lacks both read it. Written by the occurrence-orderings stage after the hops and before the columns.'),
+   'The PATH subtype of a sort key: whether a path is whole is decided once, here, where the column the name spells and the refusal of a name the landing table lacks both read it. Written by the occurrence-orderings stage after the hops and before the columns.'),
   ('graphitron_occurrence_sort_key_landing_rule', 'occurrence-sort-key', 'graphitron',
    'One row the sort key landing rule computes, in the shape graphitron_occurrence_sort_key_landing stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_landing, which is the name every reader spells.',
@@ -36708,14 +36644,6 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_sort_key_column_rule', 'occurrence-sort-key', 'graphitron',
    'One row the sort key column rule computes, in the shape graphitron_occurrence_sort_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_column, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
-  ('graphitron_occurrence_sort_key_method', 'occurrence-sort-key', 'graphitron',
-   'The method a METHOD sort key calls with the table to compute its key: one row per such key.',
-   'For example an element written method: {className: "FilmSortKeys", method: "latestStockStore"} calls FilmSortKeys.latestStockStore with public.film.',
-   'The METHOD subtype of a sort key: the method graphitron_code_reference resolves the element''s reference to, keyed by the application the order is stated at and the element''s index, so the code reference stays the one resolution. Written by the occurrence-orderings stage after the keys. Read by the inline child''s multiset once "A child read inline is emitted from the store" lands, and with it the $project flip; the root fetchers read it when they flip.'),
-  ('graphitron_occurrence_sort_key_method_rule', 'occurrence-sort-key', 'graphitron',
-   'One row the sort key method rule computes, in the shape graphitron_occurrence_sort_key_method stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_method, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_node_id_carried', 'occurrence-node-id-key', 'graphitron',
    'The column a node id''s key position is carried back to on the table its path departs: one row per node id occurrence, node table and key position whose one foreign-key step pairs it.',

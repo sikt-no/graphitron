@@ -3,6 +3,6 @@
 # arguments are the authored declaration's alone: none of what only the specification grants.
 
 directive @oneOf on INPUT_OBJECT
-directive @deprecated(reason: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION
+directive @deprecated(reason: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 directive @include(if: Boolean) on FIELD
 input FilmOneOfFilter @oneOf { filmId: Int title: String }

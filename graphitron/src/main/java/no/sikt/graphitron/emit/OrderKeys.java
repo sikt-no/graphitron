@@ -14,8 +14,8 @@ import java.util.List;
 /**
  * How one key of an order is rendered over the table local {@code table} names: the value it sorts by,
  * its sort term, and the cursor column a connection reads it back from. A key reading the table's own
- * column is that column; a key down a path is one correlated scalar subselect over its hops, each to-one;
- * a key a consumer's method computes is that method called with the table. A key's collation applies
+ * column is that column; a key down a path is one correlated scalar subselect over its hops, each to-one.
+ * A key's collation applies
  * to what it sorts by, not to the value its cursor reads back.
  */
 public final class OrderKeys {
@@ -47,8 +47,6 @@ public final class OrderKeys {
         return switch (key.derived()) {
             case null -> CodeBlock.of("$L.$L", table, key.column().javaName());
             case Derived.Path path -> pathValue(path, key, table);
-            case Derived.Method method -> CodeBlock.of("$T.$L($L)", CatalogRefs.className(method.className()),
-                method.methodName(), table);
         };
     }
 

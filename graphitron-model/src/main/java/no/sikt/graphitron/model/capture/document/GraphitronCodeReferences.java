@@ -74,7 +74,6 @@ final class GraphitronCodeReferences {
                 inline(".path.").concat(r.PATH_INDEX.cast(String.class))).otherwise(inline("")));
         Field<String> kind = when(r.ARGUMENT_INDEX.isNull(), inline("ROOT"))
             .when(r.ARGUMENT_NAME.eq("path"), inline("PATH_ELEMENT"))
-            .when(r.ARGUMENT_NAME.eq("fields").and(r.PATH_INDEX.isNull()), inline("ORDER_FIELD"))
             .when(r.ARGUMENT_NAME.eq("fields"), inline("ORDER_FIELD_PATH"))
             .when(r.ARGUMENT_NAME.eq("routes"), inline("ROUTE_PATH"));
         // The one site whose omitted method has a default: an @externalField names its field.
@@ -102,6 +101,9 @@ final class GraphitronCodeReferences {
                 app.SOURCE_LINE.eq(da.SOURCE_LINE), app.SOURCE_COLUMN.eq(da.SOURCE_COLUMN))
             .leftJoin(ef).on(ef.GRAPH_NAME.eq(el.GRAPH_NAME), ef.COORDINATE.eq(el.COORDINATE))
             .where(r.GRAPH_NAME.eq(graph))
+            // A method a fields element of an ordering names is refused, SORT_KEY_METHOD, so it is no
+            // reference anything resolves.
+            .and(r.ARGUMENT_INDEX.isNull().or(r.ARGUMENT_NAME.ne("fields")).or(r.PATH_INDEX.isNotNull()))
             .asTable("site");
 
         // The class the graph resolves the name to, so classpath order settles a name two entries

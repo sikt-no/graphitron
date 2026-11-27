@@ -1,0 +1,10 @@
+Reported at the `fields` element of an `@order` or `@defaultOrder` that names a `method`, in any form. A sort key is a column graphitron reads, on the field's table or through a `path`; a `method` computes it in Java instead, out of sight of the schema, the catalog and every tool reading them, and it is refused.
+
+*Next step.* Put the value in a view or a jOOQ computed column and name it with `name:`. FS-plattform's opptak sorts this way already, by columns such as `EFFEKTIVT_STUDIENAVN` and the `*_SORTERING` columns.
+
+[source,graphql]
+----
+enum FilmSort {
+  LATEST_STOCK_STORE @order(fields: [{name: "latest_stock_store"}])
+}
+----

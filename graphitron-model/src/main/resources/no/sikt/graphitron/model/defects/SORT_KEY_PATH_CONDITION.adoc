@@ -1,3 +1,5 @@
 An element of a `fields` element's `path` carries a `condition:`, and an ordering path follows key joins only.
 
+*Instead.* State which related row counts in a view or a jOOQ computed column on the field's table, and name it with `name`: a name read through a hop with a condition such as a language code `'nob'` becomes a column computing that name on the field's table.
+
 include::_ordering.adoc[]

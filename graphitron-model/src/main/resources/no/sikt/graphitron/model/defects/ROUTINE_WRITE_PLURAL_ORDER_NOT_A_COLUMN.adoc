@@ -1,5 +1,5 @@
-Reported at the field, the detail naming the element's `name`, or `method:` where it writes none.
+Reported at the field, the detail naming the element's `name`.
 
-On a plural mutation behind a routine, `@defaultOrder` orders the routine's own result, and reads nothing but its columns. A `method:` computes a value over a table and a `path:` leaves for another table, so neither names a column of the result.
+On a plural mutation behind a routine, `@defaultOrder` orders the routine's own result, and reads nothing but its columns. A `path:` leaves for another table, so it names no column of the result. An element naming a `method:` is `SORT_KEY_METHOD`.
 
 *Next step.* Name a column the routine returns, typically one carrying each row's place in the input. See xref:directives/defaultOrder.adoc#plural-routine-write[On a plural mutation backed by a routine].

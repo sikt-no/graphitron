@@ -28,6 +28,11 @@ The rewrite's `@deprecated(reason:)` markers do not carry a structured removal v
 | Discouraged transition mechanism
 | Rewrite v1
 | Drop the override and let the generator synthesize `{ParentType}{FieldName}Connection`. Each connection field should own its own Connection type; sharing one across fields conflates distinct semantic contexts (different parents, filters, orders) at the type level.
+
+| `FieldSort.method` in xref:directives/order.adoc[`@order`] and xref:directives/defaultOrder.adoc[`@defaultOrder`]
+| Refused, fails the build (`SORT_KEY_METHOD`); kept in the SDL so a schema writing it reaches the guidance
+| Rewrite v1
+| Put the value in a view or a jOOQ computed column and name it with `name:`. See xref:../how-to/sort-results.adoc#a-value-you-compute[How-to: A value you compute].
 |===
 
 == Removed

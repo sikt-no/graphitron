@@ -1,3 +1,5 @@
 A hop of a `fields` element's `path` reaches many rows of the table it lands on, the key named in the detail; an ordering path follows to-one hops only.
 
+*Instead.* Put the value derived from the many rows in a view or a jOOQ computed column on the field's table and name it with `name`, or make the hop to-one with a view that has a unique key on the parent's id and a jOOQ synthetic foreign key to it.
+
 include::_ordering.adoc[]

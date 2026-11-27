@@ -151,6 +151,9 @@ class GraphQLAnchorTest {
                     // directive definition, which the specification spells and which reached no
                     // relation while the applications were kept one per site.
                     tuple("@asConnection(connectionName:)", "deprecated", 0),
+                    // the refused method: of a sort field, an input field of a directive's own
+                    // input type, deprecated so a schema writing it reaches its refusal.
+                    tuple("FieldSort.method", "deprecated", 0),
                     // and the @oneOf on its TypeCondition input, a type-level application like
                     // any the author writes.
                     tuple("TypeCondition", "oneOf", 0),

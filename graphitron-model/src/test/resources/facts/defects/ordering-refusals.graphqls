@@ -3,9 +3,9 @@
 # fields element naming both a column and a method; an @orderBy argument whose input type has no
 # direction field, so it offers no choice, or that takes a list; a sort enum value with no @order; a
 # client's choice of order on a list read inline in its parent's statement, which graphitron does
-# not generate yet, though its choices are stated; and such a list over a table with no primary key
-# with no order written at all. The near misses beside them draw nothing: the same keyless list
-# ordered by a column, and a sort enum whose every value carries @order, read by a root list.
+# not generate yet, though its choices are stated; such a list over a keyless table with no order
+# written at all; and a fields element naming a method alone. The near misses draw nothing: the
+# keyless list ordered by a column, and a sort enum whose every value carries @order, read at the root.
 
 type Actor @table(name: "actor") {
     lastName: String @field(name: "last_name")
@@ -31,7 +31,7 @@ type Film @table(name: "film") {
     actorsByNoColumn: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
         @defaultOrder(fields: [{name: "no_such_column"}])
     actorsByBoth: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
-        @defaultOrder(fields: [{name: "last_name", method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
+        @defaultOrder(fields: [{name: "last_name", method: {className: "no.example.ActorSortKeys", method: "lastNameFolded"}}])
 
     actorsSorted(order: ActorOrderBy @orderBy): [Actor!]!
         @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
@@ -94,14 +94,15 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   71,          LIST_ORDER_UNDETERMINED,     public.films_for_actor
   77,          LIST_ORDER_UNDETERMINED,     public.film_list
   77,          PARTICIPANT_WITHOUT_PRIMARY_KEY, FilmListEntry
-  137,         LIST_ORDER_UNDETERMINED,     public.role_assignment
   138,         LIST_ORDER_UNDETERMINED,     public.role_assignment
-  148,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
-  164,         ORDER_FIELDS_EMPTY,
-  184,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
-  193,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
-  200,         LIST_ORDER_UNDETERMINED,     public.role_assignment
-  202,         ORDER_INPUT_LIST,            RoleChoiceOrderBy
+  139,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  149,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  165,         ORDER_FIELDS_EMPTY,
+  185,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  194,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
+  201,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  203,         ORDER_INPUT_LIST,            RoleChoiceOrderBy
+  211,         SORT_KEY_METHOD,
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
@@ -200,4 +201,14 @@ extend type Query {
     rolesChosen(order: RoleChoiceOrderBy @orderBy): [RoleAssignment!]!
     rolesChosenRequired(order: RoleChoiceOrderBy! @orderBy): [RoleAssignment!]!
     rolesChosenList(order: [RoleChoiceOrderBy!]! @orderBy): [RoleAssignment!]!
+}
+
+# A fields element naming a method is refused where it is written, SORT_KEY_METHOD: a value a sort
+# needs computed goes in a view or a jOOQ computed column, named with name:. The near miss draws
+# nothing: Film.actorsByName names the column.
+extend type Film {
+    actorsByMethod: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(fields: [{method: {className: "no.example.ActorSortKeys", method: "lastNameFolded"}}])
+    actorsByName: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(fields: [{name: "last_name"}])
 }
