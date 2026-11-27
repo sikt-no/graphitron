@@ -292,6 +292,19 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    @Test
+    void multiTableRoot_overTenantTables_readsEachParticipantOnTheDivinedTenant() {
+        var result = execute("{ filmHoldings(filmId: 1) { __typename } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var holdings = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("filmHoldings");
+        assertThat(holdings).extracting(row -> row.get("__typename"))
+            .as("tenant 1's film and its two inventory rows")
+            .containsExactlyInAnyOrder("Film", "Inventory", "Inventory");
+        assertThat(TENANT_2_OPENED.get())
+            .as("nothing in the operation touches the other tenant's database")
+            .isZero();
+    }
+
     // ===== A nesting type's fields route as they would on the enclosing @table type =====
 
     @Test

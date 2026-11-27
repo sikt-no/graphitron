@@ -213,6 +213,10 @@ type Query {
     languagesConnection: [Language!]! @asConnection @defaultOrder(primaryKey: true)
     # Global-read multi-table polymorphic root.
     globalThings: [GlobalThing!]!
+    # A root over several tenant tables, film and inventory, routed by the tenant its argument names
+    # on each: the store does not state such a read whole yet, so it holds it back as tenanted and the
+    # walk serves it.
+    filmHoldings(filmId: Int! @field(name: "film_id")): [FilmHolding!]!
     # A root service returning a global @table: the service's SQL is opaque, so it runs on the
     # default source, and graphitron re-reads its rows on that same connection.
     languagesOnConnection: [Language!]! @service(service: {
@@ -323,6 +327,9 @@ type GlobalLanguage implements Node @table(name: "language") @node(keyColumns: [
 
 # A polymorphic root over global participants only.
 union GlobalThing = Language | Store
+
+# A polymorphic root over tenant participants only: both tables carry film_id.
+union FilmHolding = Film | Inventory
 
 # A global write: film_endorsement has no tenant column, so the insert runs on the empty key.
 input FilmEndorsementCreateInput {

@@ -52,6 +52,10 @@ class EmissionCensusTest {
     private static Map<BuildQuery.Root, BuildQuery.Result> builds;
     private static Map<String, ProjectionQuery.Unit> projections;
     private static Map<String, RootQuery.Result> roots;
+    /** The multi-tenant example's root reads, under the tenant column its build configures. */
+    private static Map<String, RootQuery.Result> tenantRoots;
+    /** The connection the store states for each of the multi-tenant example's producers. */
+    private static Map<String, ConnectionQuery.Row> tenantConnections;
 
     @BeforeAll
     static void capture() throws Exception {
@@ -66,6 +70,17 @@ class EmissionCensusTest {
                 builds = BuildQuery.read(handle);
                 projections = ProjectionQuery.read(handle);
                 roots = RootQuery.read(handle);
+                return null;
+            });
+        // Under the tenant column the example's multi-tenant build sets in its pom.
+        var tenantContext = testContext().withTenantColumn("film_id");
+        String tenantSdl = Files.readString(Path.of("..", "graphitron-sakila-example", "src", "main", "resources",
+            "graphql", "multitenant.graphqls"));
+        FactGraphs.inline().read("sakila-multitenant", tenantSdl, CatalogInput.of(tenantContext),
+            TestSchemaHelper.sakilaExampleClasspath(),
+            no.sikt.graphitron.model.run.SubjectConfig.of(tenantContext), graph -> {
+                tenantRoots = RootQuery.read(graph.handle());
+                tenantConnections = ConnectionQuery.read(graph.handle());
                 return null;
             });
     }
@@ -330,23 +345,11 @@ class EmissionCensusTest {
      */
     @Test
     void theCensusOfTheExampleSchemasRootReads() {
-        var emitted = new ArrayList<String>();
-        var nodes = new ArrayList<String>();
-        var multiTables = new ArrayList<String>();
-        var held = new TreeMap<String, List<String>>();
-        for (var result : roots.values()) {
-            switch (result) {
-                case RootQuery.Emitted e -> emitted.add(e.coordinate());
-                case RootQuery.NodeFetcher n -> nodes.add(n.coordinate());
-                case RootQuery.MultiTable m -> multiTables.add(m.coordinate());
-                case RootQuery.NotYet n -> held.computeIfAbsent(n.reason().name(), k -> new ArrayList<>())
-                    .add(n.coordinate());
-            }
-        }
-        java.util.Collections.sort(emitted);
-        java.util.Collections.sort(nodes);
-        java.util.Collections.sort(multiTables);
-        held.values().forEach(java.util.Collections::sort);
+        var census = RootCensus.of(roots);
+        var emitted = census.emitted();
+        var nodes = census.nodes();
+        var multiTables = census.multiTables();
+        var held = census.held();
         org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
             soft.assertThat(nodes).as("the node fetchers the store emits")
                 .containsExactly("Query.internalNode", "Query.node", "Query.nodes");
@@ -426,5 +429,60 @@ class EmissionCensusTest {
             // not to re-pin.
             soft.assertThat(held).as("the roots the walk keeps").isEmpty();
         });
+    }
+
+    /**
+     * Which of the multi-tenant example's root reads the store states whole, which of those it routes
+     * by the tenant their arguments name, as their stored connection says, and why each of the rest
+     * stays the walk's. A read of a tenant's rows marked {@code @tenantFanOut} has no stored connection
+     * and is held back as a fan-out.
+     */
+    @Test
+    void theCensusOfTheMultiTenantExampleSchemasRootReads() {
+        var census = RootCensus.of(tenantRoots);
+        var routed = census.emitted().stream()
+            .filter(coordinate -> tenantConnections.containsKey(coordinate)
+                && tenantConnections.get(coordinate).outcome() == ConnectionQuery.Outcome.ROUTED)
+            .toList();
+        org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
+            soft.assertThat(census.nodes()).as("the node fetchers the store emits")
+                .containsExactly("Query.node", "Query.nodes");
+            soft.assertThat(census.multiTables()).as("the roots over several tables the store emits")
+                .containsExactly("Query.globalThings");
+            soft.assertThat(routed).as("the roots the store emits and routes by their tenant")
+                .containsExactly("Query.filmActorsByNodeId", "Query.filmActorsWhere", "Query.films",
+                    "Query.filmsByKey", "Query.filmsByWireId", "Query.filmsConnectionScoped",
+                    "Query.filmsUnderOverride");
+            soft.assertThat(census.emitted()).as("the roots the store emits").containsExactly(
+                "Query.bookmarks", "Query.endorsements", "Query.filmActorsByNodeId", "Query.filmActorsWhere",
+                "Query.films", "Query.filmsByKey", "Query.filmsByWireId", "Query.filmsConnectionScoped",
+                "Query.filmsUnderOverride", "Query.languages", "Query.languagesConnection");
+            soft.assertThat(census.held()).as("the roots the walk keeps").containsExactly(
+                Map.entry("TENANTED", List.of("Query.filmHoldings")),
+                Map.entry("TENANT_FAN_OUT", List.of("Query.filmsEverywhere", "Query.filmsEverywhereStrict",
+                    "Query.filmsNarrowable", "Query.filmsNarrowableByIds", "Query.filmsNarrowableByWireId")));
+        });
+    }
+
+    /** One schema's root reads, sorted by what the store states of each. */
+    private record RootCensus(List<String> emitted, List<String> nodes, List<String> multiTables,
+                              Map<String, List<String>> held) {
+        static RootCensus of(Map<String, RootQuery.Result> results) {
+            var census = new RootCensus(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new TreeMap<>());
+            for (var result : results.values()) {
+                switch (result) {
+                    case RootQuery.Emitted e -> census.emitted().add(e.coordinate());
+                    case RootQuery.NodeFetcher n -> census.nodes().add(n.coordinate());
+                    case RootQuery.MultiTable m -> census.multiTables().add(m.coordinate());
+                    case RootQuery.NotYet n -> census.held().computeIfAbsent(n.reason().name(),
+                        k -> new ArrayList<>()).add(n.coordinate());
+                }
+            }
+            java.util.Collections.sort(census.emitted());
+            java.util.Collections.sort(census.nodes());
+            java.util.Collections.sort(census.multiTables());
+            census.held().values().forEach(java.util.Collections::sort);
+            return census;
+        }
     }
 }
