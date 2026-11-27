@@ -1995,6 +1995,12 @@ someone to profile.
   `ViewReferences` fails the build on a view whose body names another view, the ruling being Alf's
   (`fact-model.adoc`, 2026-11-14/15); its measure is the count of views reading a view that
   `ViewCensusReport` writes, which the gate holds at zero.
+* **No rule parses or classifies an input string, each one doing so captured at input** `open`. A
+  census of every rule's text for string surgery (`SUBSTRING`, `UPPER`, `REGEXP_REPLACE`, `LIKE '$...'`)
+  and literal `IN` lists lists them, each moved to the capture that reads the input or to a
+  vocabulary relation; the seven rules jOOQ's parser refuses on such lists (R1131 step 25) are the
+  first known, among them the `$scope.` member split in the argMapping pair rules and the JSON class
+  test in the outbox target rules.
 * **A rule view's rows are exactly one relation's, claimed by G** `open`, off the critical path. A stage inserts
   part of a rule view's rows into a relation, a Java filter choosing them: the condition parameter rule into
   `graphitron_occurrence_call_parameter` by a join to the method the call pinned, which an
