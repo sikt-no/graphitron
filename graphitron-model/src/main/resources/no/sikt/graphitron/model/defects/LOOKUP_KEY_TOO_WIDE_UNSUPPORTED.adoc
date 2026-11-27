@@ -1,0 +1,5 @@
+Reported at the field carrying the `@lookupKey`, the detail the number of key columns. Valid: a lookup may be keyed by several columns, as arguments or as fields of an input object, and a node id key unpacks into its node's key columns.
+
+Graphitron joins a lookup's keys to its rows as typed jOOQ rows holding each key's index and one value per key column, a column key counting one and a node id one per key column of its node. jOOQ types rows of at most 22 values, so a lookup keyed by more than 21 columns has no row to join its keys by. This holds at the query root and below it alike.
+
+*Instead.* Narrow the key, or look the rows up by fewer columns. See xref:directives/lookupKey.adoc[`@lookupKey`].

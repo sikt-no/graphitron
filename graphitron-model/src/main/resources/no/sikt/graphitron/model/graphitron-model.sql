@@ -27947,7 +27947,8 @@ COMMENT ON VIEW graphitron_field_target_entry_defect_rule IS 'One row the field 
 -- table than the list reads, as the argument itself, or as a field of the input object it takes whose
 -- path's one foreign key does not carry every key position back to the list's table, either narrowing
 -- by nothing; and a node id the keys do state, read off an input object's field, on a list below the
--- root, whose read does not decode it yet.
+-- root, whose read does not decode it yet; and keys the list states but cannot join, more key columns
+-- than a typed row holds.
 CREATE VIEW graphitron_occurrence_lookup_key_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
@@ -27996,6 +27997,25 @@ SELECT DISTINCT lk.graph_name, da.source_name, da.source_line, da.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
                     WHERE p.graph_name = lk.graph_name AND p.coordinate = lk.coordinate
                       AND p.start = 'ROOT')
+UNION ALL
+-- A list narrowed by more key columns than the rows its keys are joined to can hold, at the field, at
+-- the root and below it alike: the keys are joined as typed jOOQ rows of an index and one value per key
+-- column, a column key one and a node id one per key position of its node, and jOOQ types rows up to
+-- the widest RowN only. Counted per table the list reads, and reported once at the field, every
+-- occurrence and every table it reads answering one site. The detail is the widest count.
+SELECT w.graph_name, w.source_name, w.source_line, w.source_column,
+       'LOOKUP_KEY_TOO_WIDE_UNSUPPORTED', CAST(MAX(w.width) AS VARCHAR), 'occurrence-lookup-keys'
+  FROM (SELECT lk.graph_name, el.source_name, el.source_line, el.source_column, COUNT(*) AS width
+          FROM graphitron_occurrence_lookup_key lk
+          JOIN graphitron_occurrence o ON o.graph_name = lk.graph_name AND o.coordinate = lk.coordinate
+          JOIN graphql_ast_element_entry el
+            ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+          LEFT JOIN graphitron_occurrence_node_id n
+            ON lk.key_kind = 'NODE_ID' AND n.graph_name = lk.graph_name AND n.coordinate = lk.key_coordinate
+           AND n.bound = lk.key_bound
+         GROUP BY lk.graph_name, lk.coordinate, lk.bound, el.source_name, el.source_line, el.source_column) w
+ WHERE w.width + 1 > (SELECT MAX(t.degree) FROM code_tuple_class t WHERE t.kind = 'ROW')
+ GROUP BY w.graph_name, w.source_name, w.source_line, w.source_column
 UNION ALL
 -- A root @lookupKey read whose records are rows of no one table, at the field: a union or an
 -- interface whose participants are told apart by their tables, or a type bound to no table. A lookup
@@ -36021,6 +36041,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A @lookupKey argument is a node id of a node on another table than the one the field reads, or takes an input object with such a field that no one foreign key from the field''s table carries back to its columns, so it unpacks into no key of the field''s rows and there is nothing for it to narrow by: drop @lookupKey, which leaves the id a filter through the foreign key, put the id in an input object the field''s table points from, or key on the field''s own node.'),
   ('LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED',
    'A @lookupKey argument on a field below the root takes an input object with a node id field, and a lookup below the root does not decode such an id yet, so its read would hand the id to the key column undecoded: take the node id as a top-level @nodeId argument, or key on a column, until child lookups decode it.'),
+  ('LOOKUP_KEY_TOO_WIDE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_LOOKUP_KEY_TOO_WIDE_UNSUPPORTED',
+   'A field is looked up by more key columns than its keys can be joined by, a column key counting one and a node id one per key column of its node: the keys are joined as typed jOOQ rows of an index and one value per key column, and jOOQ types rows of at most 22. Narrow the key, or look the rows up by fewer columns.'),
   ('ORDER_FIELDS_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELDS_EMPTY',
    'A @defaultOrder or @order sorts by fields and names none, so the read it orders states no order: name at least one field, or write index or primaryKey: true instead.'),
   ('SORT_KEY_PATH_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_PATH_CONDITION',

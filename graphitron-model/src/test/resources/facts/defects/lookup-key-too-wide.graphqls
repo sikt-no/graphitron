@@ -1,0 +1,67 @@
+# A lookup's keys are joined to its rows as typed jOOQ rows holding each key's index and one value
+# per key column, and jOOQ types rows of at most 22 values. Query.widesByKey is keyed by an input object
+# naming 22 columns of nodeidfixture.too_wide, one more than a row holds beside the index, and is
+# refused at the field, LOOKUP_KEY_TOO_WIDE_UNSUPPORTED counting the columns. Beside it the near miss:
+# Query.widesByNarrowKey, keyed by 21 of them, fills a row of 22 exactly and is refused by nothing.
+
+type TooWide @table(name: "nodeidfixture.too_wide") { k1: String }
+
+input WideKey {
+    k1: String!
+    k2: String!
+    k3: String!
+    k4: String!
+    k5: String!
+    k6: String!
+    k7: String!
+    k8: String!
+    k9: String!
+    k10: String!
+    k11: String!
+    k12: String!
+    k13: String!
+    k14: String!
+    k15: String!
+    k16: String!
+    k17: String!
+    k18: String!
+    k19: String!
+    k20: String!
+    k21: String!
+    k22: String!
+}
+
+input NarrowKey {
+    k1: String!
+    k2: String!
+    k3: String!
+    k4: String!
+    k5: String!
+    k6: String!
+    k7: String!
+    k8: String!
+    k9: String!
+    k10: String!
+    k11: String!
+    k12: String!
+    k13: String!
+    k14: String!
+    k15: String!
+    k16: String!
+    k17: String!
+    k18: String!
+    k19: String!
+    k20: String!
+    k21: String!
+}
+
+type Query {
+    widesByKey(key: [WideKey!]! @lookupKey): [TooWide!]!
+    widesByNarrowKey(key: [NarrowKey!]! @lookupKey): [TooWide!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'LOOKUP_KEY_TOO_WIDE_UNSUPPORTED'", rows: """
+  code,                            coordinate,       detail
+  LOOKUP_KEY_TOO_WIDE_UNSUPPORTED, Query.widesByKey, 22
+  """)
