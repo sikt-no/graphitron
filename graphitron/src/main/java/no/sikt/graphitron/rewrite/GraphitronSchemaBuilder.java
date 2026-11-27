@@ -1387,9 +1387,7 @@ public class GraphitronSchemaBuilder {
         String prefix = "a @reference facet joins its path onto the connection's table and counts "
             + "distinct rows by that table's primary key; ";
         if (carrier.hasAppliedDirective(DIR_ROUTINE)) {
-            return prefix + "consumer '" + carrierCoordinate + "' reads from a @routine, whose "
-                + "result has no primary key to join from or count by. Facets over a related "
-                + "table on @routine connections are a follow-up; remove @reference or @asFacet";
+            return null; // the store's FACET_REFERENCE_OVER_ROUTINE_UNSUPPORTED
         }
         var element = GraphQLTypeUtil.unwrapAll(carrier.getType());
         if (element instanceof GraphQLObjectType elementObj

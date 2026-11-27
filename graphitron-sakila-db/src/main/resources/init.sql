@@ -1093,6 +1093,44 @@ AS $$
     ORDER BY f.film_id
 $$;
 
+-- The films of one rating: a read function taking the mpaa_rating enum, which jOOQ binds as its
+-- generated MpaaRating class, so a GraphQL enum argument reaches it as that class's constant.
+CREATE OR REPLACE FUNCTION public.films_rated(
+    p_rating mpaa_rating
+) RETURNS TABLE(film_id INTEGER, title TEXT)
+LANGUAGE sql STABLE
+AS $$
+    SELECT f.film_id, f.title
+    FROM film f
+    WHERE f.rating = p_rating
+    ORDER BY f.film_id
+$$;
+
+-- The films of the ids an array lists: a read function taking an array, which a GraphQL list
+-- argument is copied into.
+CREATE OR REPLACE FUNCTION public.films_by_ids(
+    p_film_ids INTEGER[]
+) RETURNS TABLE(film_id INTEGER, title TEXT)
+LANGUAGE sql STABLE
+AS $$
+    SELECT f.film_id, f.title
+    FROM film f
+    WHERE f.film_id = ANY(p_film_ids)
+    ORDER BY f.film_id
+$$;
+
+-- The films of any of several ratings: a read function taking an array of the mpaa_rating enum.
+CREATE OR REPLACE FUNCTION public.films_rated_any(
+    p_ratings mpaa_rating[]
+) RETURNS TABLE(film_id INTEGER, title TEXT)
+LANGUAGE sql STABLE
+AS $$
+    SELECT f.film_id, f.title
+    FROM film f
+    WHERE f.rating = ANY(p_ratings)
+    ORDER BY f.film_id
+$$;
+
 -- R451 routine fixture: the VOLATILE set-returning write function backing @routine on a
 -- Mutation field (the routine call IS the write and commits before the follow-up query).
 -- Inserts a rental row and returns its generated key as a one-row table, the shape the

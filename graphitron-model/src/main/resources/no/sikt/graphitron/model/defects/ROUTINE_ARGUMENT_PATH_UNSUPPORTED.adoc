@@ -1,0 +1,5 @@
+Reported at the `@routine`, the detail naming the parameter.
+
+The parameter takes an array, and the call copies one GraphQL list into it: the list the binding's path ends on, element by element. A path reading through a list above its last name would have to gather each element's value into the array, and that read is not generated yet.
+
+*Instead.* Bind the parameter to a list argument or a list input field directly, so the path ends on the list the array is copied from. See xref:directives/routine.adoc[`@routine`].

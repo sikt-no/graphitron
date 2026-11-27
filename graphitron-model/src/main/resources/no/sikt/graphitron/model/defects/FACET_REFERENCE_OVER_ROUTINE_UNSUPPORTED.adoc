@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the first such facet.
+
+A facet carrying `@reference` counts its buckets by joining its path onto the connection's table and counting distinct rows by that table's primary key. A `@routine` connection's rows are the function's result, which has no primary key to join from or count by.
+
+*Instead.* Remove `@reference` and facet on a column of the routine's own result, or remove `@asFacet`. See xref:directives/asFacet.adoc[`@asFacet`].

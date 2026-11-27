@@ -96,10 +96,10 @@ class ArgmappingProjectionRejectionPipelineTest {
     }
 
     /**
-     * The walk's routine leaf-type gate, which stands aside on a {@code @nodeId} leaf, that value being
+     * The routine parameter's type gate, which stands aside on a {@code @nodeId} leaf, that value being
      * decoded before the parameter sees it, still rejects where no decode is in play. An {@code ID!}
-     * bound to an {@code Integer} routine parameter with no {@code @nodeId} on it is the coercion
-     * failure that gate exists for, and its message offers the decode as one of the remedies.
+     * bound to an {@code Integer} routine parameter with no {@code @nodeId} on it is the mismatch the
+     * gate exists for, which the store refuses at a root routine as {@code PARAMETER_MISMATCH}.
      */
     @Test
     void anIdBoundToAnIntegerParameterWithNoDecodeStillFailsTheBuild(@TempDir Path tmp)
@@ -119,8 +119,7 @@ class ArgmappingProjectionRejectionPipelineTest {
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
                 .as("the coercion gate is intact where the leaf carries no decode")
-                .anyMatch(m -> m.contains("@routine parameter 'pInventoryId'")
-                    && m.contains("cannot be cast to the declared Java type")));
+                .anyMatch(m -> m.contains("Mutation.rentFilm") && m.contains("[PARAMETER_MISMATCH]")));
     }
 
     /**

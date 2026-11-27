@@ -1,0 +1,5 @@
+Reported at the `@routine`, the detail naming the routine as written.
+
+More than one schema in the catalog declares a function of this name with a generated call, so the bare name could call either and graphitron will not pick one.
+
+*Next step.* Qualify the name with its schema, as `@routine(name: "public.films_for_actor")`. See xref:directives/routine.adoc[`@routine`].

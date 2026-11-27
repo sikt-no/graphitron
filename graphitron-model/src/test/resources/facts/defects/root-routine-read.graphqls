@@ -1,0 +1,195 @@
+# A root @routine read's parameters and what the store refuses at them.
+#
+# Query.filmsRated binds pRating, which jOOQ types as its generated MpaaRating enum, to a GraphQL enum
+# argument: the value reaches the parameter as MpaaRating's constant of its name. Query.filmsForActor
+# binds two Int arguments, which arrive as sent, and Query.filmsByIds a list of Int into the
+# function's integer array, copied into it: the near misses.
+#
+# A parameter of one value takes what arrives as its own class. Query.filmsRatedByText binds pRating
+# to a String, which arrives as no MpaaRating, Query.filmsForActorByText pActorId to a String, and
+# Query.filmsForActors pActorId to a list of Int: each is PARAMETER_MISMATCH.
+#
+# An array parameter takes the list a path ends on. Query.filmsByPicks binds pFilmIds through the
+# list picks to each pick's id, a list above the path's last step: ROUTINE_ARGUMENT_PATH_UNSUPPORTED.
+# An array parameter takes a list too: Query.filmsById hands it one Int and Query.filmsByTitles a
+# list of String for its integers, each PARAMETER_MISMATCH. An array of enum constants is not read
+# element by element yet: Query.filmsRatedAny is ROUTINE_ENUM_ARRAY_UNSUPPORTED. A GraphQL enum value
+# the Java enum has no constant for throws when sent: Query.filmsRatedLoosely, whose LOOSE names no
+# MpaaRating, is ENUM_CONSTANT_MISSING.
+#
+# A routine's connection may surface facets over its own result's columns, as
+# Query.filmsForActorFaceted does on title, the near miss. A facet a @reference binds counts
+# distinct rows of the connection's table by its primary key, which a routine's result has none of:
+# Query.filmsForActorByFilm is FACET_REFERENCE_OVER_ROUTINE_UNSUPPORTED, naming the facet.
+#
+# The rest of what a root routine read can get wrong, each refused at a root Query field as at any
+# other: a name resolving to no callable, blank (Query.byBlankName) or a scalar function
+# (Query.byScalarFunction), ELEMENT_UNRESOLVED; an argMapping that does not parse
+# (Query.byUnparseable), ARGMAPPING_UNPARSEABLE; one naming a parameter the routine lacks
+# (Query.byUnknownParameter), ARGMAPPING_PARAMETER_UNKNOWN; one whose path names no argument
+# (Query.byUnknownArgument), ARGMAPPING_PATH_UNRESOLVED; an order by a primary key the result has none
+# of (Query.byPrimaryKeyOrder), ORDER_PRIMARY_KEY_MISSING; a chain's hop with two foreign keys to
+# take (Query.languagesOfFilms), ROUTE_AMBIGUOUS, and one ending elsewhere than its return
+# (Query.actorsOfFilms), NO_ROUTE_TO_TARGET; a return with no fields to read the result into
+# (Query.titlesForActor, and Query.titlesForActorEmptyHop, whose empty @reference leaves the routine
+# ending the path), ROUTINE_RETURN_NOT_OBJECT; and a return bound to a table no step from the
+# result reaches (Query.actorsForActor), NO_ROUTE_TO_TARGET at the @routine.
+#
+# A @reference written with no elements after the routine (Query.filmsForActorEmptyHop) asks for the
+# step the store infers, as with no @reference at all: from the result to film by film_id.
+
+enum Rating { G PG PG_13 R NC_17 }
+enum LooseRating { G LOOSE }
+
+type RatedFilm {
+  filmId: Int @field(name: "film_id")
+  title: String
+}
+
+input FilmPick { id: Int! }
+
+type FilmRow @table(name: "film") { title: String }
+type LanguageRow @table(name: "language") { name: String }
+type ActorRow @table(name: "actor") { lastName: String @field(name: "last_name") }
+
+input TitleFacetFilter { title: [String!] @field(name: "title") @asFacet }
+input FilmFacetFilter { filmTitle: [String!] @field(name: "title") @reference(path: [{table: "film"}]) @asFacet }
+
+type Query {
+  filmsRated(rating: Rating!): [RatedFilm!]
+    @routine(name: "films_rated", argMapping: "pRating: rating")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsForActor(actorId: Int!, minLength: Int!): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsByIds(ids: [Int!]!): [RatedFilm!]
+    @routine(name: "films_by_ids", argMapping: "pFilmIds: ids")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsRatedByText(rating: String!): [RatedFilm!]
+    @routine(name: "films_rated", argMapping: "pRating: rating")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsForActorByText(actorId: String!, minLength: Int!): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsForActors(actorIds: [Int!]!, minLength: Int!): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorIds, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsByPicks(picks: [FilmPick!]!): [RatedFilm!]
+    @routine(name: "films_by_ids", argMapping: "pFilmIds: picks.id")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsForActorFaceted(actorId: Int!, minLength: Int!, filter: TitleFacetFilter): [RatedFilm!]! @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsForActorByFilm(actorId: Int!, minLength: Int!, filter: FilmFacetFilter): [RatedFilm!]! @asConnection
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byBlankName(actorId: Int!, minLength: Int!): [RatedFilm!]
+    @routine(name: "", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byScalarFunction(customerId: Int!): [RatedFilm!]
+    @routine(name: "rental_count_for_customer", argMapping: "pCustomerId: customerId")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byUnparseable(actorId: Int!, minLength: Int!): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, oops")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byUnknownParameter(actorId: Int!, minLength: Int!): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength, pNope: actorId")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byUnknownArgument(actorId: Int!, minLength: Int!): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: nobody, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byPrimaryKeyOrder(actorId: Int!, minLength: Int!): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(primaryKey: true)
+  languagesOfFilms(actorId: Int!, minLength: Int!): [LanguageRow!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}, {table: "language"}])
+    @defaultOrder(primaryKey: true)
+  actorsOfFilms(actorId: Int!, minLength: Int!): [ActorRow!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}])
+    @defaultOrder(primaryKey: true)
+  titlesForActor(actorId: Int!, minLength: Int!): [String]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+  titlesForActorEmptyHop(actorId: Int!, minLength: Int!): [String]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [])
+  filmsById(id: Int!): [RatedFilm!]
+    @routine(name: "films_by_ids", argMapping: "pFilmIds: id")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsByTitles(titles: [String!]!): [RatedFilm!]
+    @routine(name: "films_by_ids", argMapping: "pFilmIds: titles")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsRatedAny(ratings: [Rating!]!): [RatedFilm!]
+    @routine(name: "films_rated_any", argMapping: "pRatings: ratings")
+    @defaultOrder(fields: [{name: "film_id"}])
+  filmsRatedLoosely(rating: LooseRating!): [RatedFilm!]
+    @routine(name: "films_rated", argMapping: "pRating: rating")
+    @defaultOrder(fields: [{name: "film_id"}])
+  actorsForActor(actorId: Int!, minLength: Int!): [ActorRow!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(primaryKey: true)
+  filmsForActorEmptyHop(actorId: Int!, minLength: Int!): [FilmRow!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [])
+    @defaultOrder(primaryKey: true)
+}
+
+# A routine's parameter is an enum where the class its binding type names declares constants, and an
+# array takes a list copied into it.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_extraction",
+    where: "coordinate IN ('Query.filmsRated(rating:)', 'Query.filmsForActor(actorId:)', 'Query.filmsForActor(minLength:)', 'Query.filmsByIds(ids:)')", rows: """
+  coordinate,                        extraction,    component
+  Query.filmsByIds(ids:),            LIST_TO_ARRAY,
+  Query.filmsForActor(actorId:),     AS_SENT,
+  Query.filmsForActor(minLength:),   AS_SENT,
+  Query.filmsRated(rating:),         ENUM_CONSTANT,
+  """)
+
+# Each refusal, at the @routine, the parameter its detail; the near misses draw none.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "coordinate LIKE 'Query.%' AND code IN ('PARAMETER_MISMATCH', 'ROUTINE_ARGUMENT_PATH_UNSUPPORTED', 'ROUTINE_ENUM_ARRAY_UNSUPPORTED', 'ENUM_CONSTANT_MISSING')", rows: """
+  coordinate,                code,                              detail
+  Query.filmsById,           PARAMETER_MISMATCH,                pFilmIds
+  Query.filmsByPicks,        ROUTINE_ARGUMENT_PATH_UNSUPPORTED, pFilmIds
+  Query.filmsByTitles,       PARAMETER_MISMATCH,                pFilmIds
+  Query.filmsForActorByText, PARAMETER_MISMATCH,                pActorId
+  Query.filmsForActors,      PARAMETER_MISMATCH,                pActorId
+  Query.filmsRatedAny,       ROUTINE_ENUM_ARRAY_UNSUPPORTED,    pRatings
+  Query.filmsRatedByText,    PARAMETER_MISMATCH,                pRating
+  Query.filmsRatedLoosely,   ENUM_CONSTANT_MISSING,             LooseRating.LOOSE
+  """)
+
+# The rest, each at its field, by code; the near misses and the empty hop draw none of them.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  coordinate LIKE 'Query.%' AND code IN ('ELEMENT_UNRESOLVED', 'ARGMAPPING_UNPARSEABLE',
+    'ARGMAPPING_PARAMETER_UNKNOWN', 'ARGMAPPING_PATH_UNRESOLVED', 'ORDER_PRIMARY_KEY_MISSING',
+    'ROUTE_AMBIGUOUS', 'NO_ROUTE_TO_TARGET', 'ROUTINE_RETURN_NOT_OBJECT')
+  """, rows: """
+  coordinate,               code
+  Query.actorsForActor,     NO_ROUTE_TO_TARGET
+  Query.actorsOfFilms,      NO_ROUTE_TO_TARGET
+  Query.byBlankName,        ELEMENT_UNRESOLVED
+  Query.byPrimaryKeyOrder,  ORDER_PRIMARY_KEY_MISSING
+  Query.byScalarFunction,   ELEMENT_UNRESOLVED
+  Query.byUnknownArgument,  ARGMAPPING_PATH_UNRESOLVED
+  Query.byUnknownParameter, ARGMAPPING_PARAMETER_UNKNOWN
+  Query.byUnparseable,      ARGMAPPING_UNPARSEABLE
+  Query.languagesOfFilms,   ROUTE_AMBIGUOUS
+  Query.titlesForActor,     ROUTINE_RETURN_NOT_OBJECT
+  Query.titlesForActorEmptyHop, ROUTINE_RETURN_NOT_OBJECT
+  """)
+
+# The empty hop's step, inferred as for a routine with no @reference.
+extend schema @expectEquals(relation: "graphitron_join_path_step",
+    where: "coordinate = 'Query.filmsForActorEmptyHop'", rows: """
+  coordinate,                  target_type, position, element_place, from_table,      to_table
+  Query.filmsForActorEmptyHop, FilmRow,     0,        ,              films_for_actor, film
+  """)
+
+# The facet refusal, at the producing field; the facet over the routine's own column draws none.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'FACET%' OR code = 'FACETED_CONNECTION_UNSUPPORTED'", rows: """
+  coordinate,                code,                                     detail
+  Query.filmsForActorByFilm, FACET_REFERENCE_OVER_ROUTINE_UNSUPPORTED, filmTitle
+  """)

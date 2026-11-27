@@ -530,7 +530,9 @@ final class RoutineDirectiveResolver {
             Map<String, graphql.schema.GraphQLInputType> slotTypes, boolean isRoot) {
         var segments = path.segments();
         for (int i = 0; i < segments.size() - 1; i++) {
-            if (segments.get(i).liftsList()) {
+            // At a root the store refuses it: PARAMETER_MISMATCH, or ROUTINE_ARGUMENT_PATH_UNSUPPORTED
+            // at an array parameter.
+            if (segments.get(i).liftsList() && !isRoot) {
                 return Rejection.deferred(
                     "@routine parameter '" + param.name() + "' binds to '" + path.asString()
                     + "', which walks through the list-shaped field '" + segments.get(i).name()
@@ -563,7 +565,7 @@ final class RoutineDirectiveResolver {
         var extraction = ctx.svc.argExtraction(param.typeName(), leafType,
             "@routine parameter '" + param.name() + "'");
         if (extraction instanceof ServiceCatalog.ArgExtraction.Rejected rejected) {
-            return rejected.rejection();
+            return isRoot ? null : rejected.rejection(); // at a root, the store's PARAMETER_MISMATCH
         }
         var resolved = ((ServiceCatalog.ArgExtraction.Resolved) extraction).extraction();
         if (!(resolved instanceof CallSiteExtraction.Direct)) {

@@ -84,13 +84,17 @@ extend schema @assertAbsent(relation: "graphitron_spelled_table", rows: """
 # rent_film, departs from films_for_actor's result and finds no value there for its parameters, the
 # same code at its own @routine; and
 # the two names that resolve to nothing are each a name claimed that does not exist, at the @routine
-# that claims it. That each list here states no order is ordering-refusals' to pin.
+# that claims it; the name two schemas declare says nothing of which it calls; and a root field calls
+# one routine, so the chain's two are one too many. That each list here states no order is
+# ordering-refusals' to pin, and that each returns no object type root-routine-read's.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
-    where: "code <> 'LIST_ORDER_UNDETERMINED'", rows: """
-  code,               coordinate
-  PARAMETER_UNFILLED, Query.films
-  PARAMETER_UNFILLED, Query.chained
-  PARAMETER_UNFILLED, Query.chained
-  ELEMENT_UNRESOLVED, Query.missing
-  ELEMENT_UNRESOLVED, Query.notCallable
+    where: "code NOT IN ('LIST_ORDER_UNDETERMINED', 'ROUTINE_RETURN_NOT_OBJECT')", rows: """
+  code,                   coordinate
+  PARAMETER_UNFILLED,     Query.films
+  PARAMETER_UNFILLED,     Query.chained
+  PARAMETER_UNFILLED,     Query.chained
+  MULTIPLE_ROUTINE_NODES, Query.chained
+  ELEMENT_UNRESOLVED,     Query.missing
+  ELEMENT_UNRESOLVED,     Query.notCallable
+  ROUTINE_AMBIGUOUS,      Query.ambiguous
   """)

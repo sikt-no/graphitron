@@ -378,27 +378,6 @@ class FacetedConnectionPipelineTest {
     // ===== Rejections (use-keyed, @reference facets) =====
 
     @Test
-    void referenceFacetOnRoutineCarrier_rejected() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Film @table(name: "film") { title: String }
-            input FilmFilter {
-                languageName: [String!] @field(name: "name")
-                    @reference(path: [{key: "film_language_id_fkey"}]) @asFacet
-            }
-            type Query {
-                recent(actorId: Int!, minLength: Int!, filter: FilmFilter): [Film!]! @asConnection
-                    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
-                    @reference(path: [{table: "film"}])
-            }
-            """);
-
-        assertThat(schema.diagnostics())
-            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
-                && e.message().contains("FilmFilter.languageName")
-                && e.message().contains("consumer 'Query.recent' reads from a @routine"));
-    }
-
-    @Test
     void referenceFacetOnCarrierWithoutPrimaryKey_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type RoleAssignment @table(name: "role_assignment") { roleCode: String @field(name: "role_code") }

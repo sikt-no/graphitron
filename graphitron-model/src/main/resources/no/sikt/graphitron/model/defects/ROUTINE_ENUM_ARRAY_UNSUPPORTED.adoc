@@ -1,0 +1,5 @@
+Reported at the `@routine`, the detail naming the parameter.
+
+The parameter takes an array of a Java enum's constants. The call copies the GraphQL list the binding names into the array as it arrives, and reading each element as the enum's constant of its name is not generated yet.
+
+*Instead.* Bind one constant at a time to a parameter taking the enum, or give the function a parameter taking the names as text. See xref:directives/routine.adoc[`@routine`].

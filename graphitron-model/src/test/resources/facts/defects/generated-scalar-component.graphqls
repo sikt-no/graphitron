@@ -11,8 +11,9 @@
 #   (Query.asInt), a Long (Query.asLong) or a list of strings (Query.asList), is a mismatch, as is
 #   a routine parameter whose SQL type is an integer (Mutation.endorseIntoInteger). Near misses
 #   draw nothing: a String and an Object service parameter (Query.asString, Query.asObject), a text
-#   routine parameter (Mutation.endorseByStart), and a routine parameter bound to a plain argument
-#   of another type (Mutation.endorsePlain), which the component rule does not judge.
+#   routine parameter (Mutation.endorseByStart). A routine parameter bound to a plain argument of
+#   another type (Mutation.endorsePlain), a String for an integer, is no component's to judge, and is
+#   the argument rule's PARAMETER_MISMATCH.
 
 scalar Path @generatedScalar(kind: SCHEMA_PATH)
 scalar TypeName @generatedScalar(kind: TYPE_NAME)
@@ -84,4 +85,5 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_defe
   Query.asLong,                SERVICE,   id
   Query.asList,                SERVICE,   titles
   Mutation.endorseIntoInteger, ROUTINE,   pEndorsedFilm
+  Mutation.endorsePlain,       ROUTINE,   pEndorsedFilm
   """)

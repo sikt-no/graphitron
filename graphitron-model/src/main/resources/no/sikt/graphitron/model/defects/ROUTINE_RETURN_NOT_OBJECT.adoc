@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the type it returns.
+
+A query field calling a `@routine` whose path ends on the routine, with no step out of its result, reads the function's result rows, and those rows bind the type the field returns. A scalar, an enum, an interface or a union has no fields to read the result's columns into.
+
+*Next step.* Return an object type whose fields name the result's columns, or write a `@reference` path from the result to a table the returned type is bound to. See xref:directives/routine.adoc[`@routine`].

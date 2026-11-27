@@ -16564,7 +16564,8 @@ CREATE TABLE graphitron_occurrence_call_parameter_defect (
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
   CHECK (code IN ('PARAMETER_UNFILLED', 'PARAMETER_AMBIGUOUS', 'PARAMETER_FILLED_TWICE',
                   'PARAMETER_NAMES_MISSING', 'PARAMETER_MISMATCH', 'PARAMETER_TYPE_UNSPELLED',
-                  'ROUTINE_SOURCE_AT_ROOT', 'ROUTINE_BOUND_INPUT_FILTERED'))
+                  'ROUTINE_SOURCE_AT_ROOT', 'ROUTINE_BOUND_INPUT_FILTERED',
+                  'ROUTINE_ARGUMENT_PATH_UNSUPPORTED', 'ROUTINE_ENUM_ARRAY_UNSUPPORTED'))
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that nothing binds, that two fills bind, or that cannot take what fills it: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument by that name and no pair naming it is PARAMETER_UNFILLED at that parameter, under each occurrence of the call.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
@@ -16573,7 +16574,7 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call IS 'which of 
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call_kind IS 'the call''s kind, the split its writing stages share it by';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.position IS 'the parameter''s position in the call';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without its names';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, PARAMETER_MISMATCH, ROUTINE_SOURCE_AT_ROOT or ROUTINE_BOUND_INPUT_FILTERED, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, PARAMETER_MISMATCH, ROUTINE_SOURCE_AT_ROOT, ROUTINE_BOUND_INPUT_FILTERED, ROUTINE_ARGUMENT_PATH_UNSUPPORTED or ROUTINE_ENUM_ARRAY_UNSUPPORTED, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.touched_at IS 'the reading that last wrote this row; the stage writing its kind sweeps the rows an older reading wrote';
 
 -- Where a call's parameter defect is reported, and what it is about: the reference the directive the
@@ -17840,7 +17841,9 @@ COMMENT ON COLUMN graphitron_occurrence_producer_routine.touched_at IS 'the read
 -- states at the slot, and never the id as sent (Alf, 2026-11-26);
 -- an input object built into the class graphitron_occurrence_built_class states; a list copied into
 -- the array a routine's parameter takes; a value as the constant of its name where the parameter
--- is a Java enum; and as it arrives otherwise. In that order, the first that holds.
+-- is a Java enum, a method's by its stated extraction and a routine's where the class its binding
+-- type names in the graph declares constants; and as it arrives otherwise. In that order, the first
+-- that holds.
 CREATE VIEW graphitron_occurrence_binding_extraction_rule
   (graph_name, coordinate, bound, extraction, component) AS
 SELECT b.graph_name, b.coordinate, b.bound,
@@ -17851,6 +17854,10 @@ SELECT b.graph_name, b.coordinate, b.bound,
                           WHERE bc.graph_name = b.graph_name AND bc.coordinate = b.coordinate) THEN 'BUILT'
             WHEN sp.binding_type LIKE '[%' THEN 'LIST_TO_ARRAY'
             WHEN mp.extraction = 'ENUM_VALUE_OF' THEN 'ENUM_CONSTANT'
+            WHEN EXISTS (SELECT 1 FROM code_graph_class g
+                           JOIN code_enum_constant k
+                             ON k.source_name = g.source_name AND k.class_name = g.class_name
+                          WHERE g.graph_name = b.graph_name AND g.class_name = sp.binding_type) THEN 'ENUM_CONSTANT'
             ELSE 'AS_SENT' END,
        COALESCE(al.trailing_name, kn.column_name)
   FROM graphitron_occurrence_binding_parameter b
@@ -18214,7 +18221,9 @@ COMMENT ON VIEW graphitron_occurrence_routine_parameter_rule IS 'One row the rou
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.landing_coordinate';
 
 -- A root routine call's parameter nothing binds, where no pair names it, one a generated scalar's
--- component fills that does not take the component's class, one bound to $source, which a root has
+-- component fills that does not take the component's class, one an argument fills with what it does
+-- not take, an array one read through a list above the path's last step or taking enum constants, one
+-- bound to $source, which a root has
 -- no row for, one bound to an input object where the function takes one value, and one bound to an
 -- argument or input field carrying @field or @condition, which the call spends and no filter reads.
 -- Written by occurrence-producers once the routine calls' fills are.
@@ -18285,6 +18294,94 @@ SELECT DISTINCT oc.graph_name, oc.coordinate, oc.call, oc.call_kind, sp.position
    AND pp.target_kind = 'NAME' AND pp.target_name = sp.jooq_name
  WHERE oc.call_kind = 'ROUTINE'
    AND (pp.bound_to = '$source' OR pp.bound_to LIKE '$source.%')
+UNION ALL
+-- A root routine call's parameter an argument fills, by name or by a pair's path, that cannot take
+-- what the argument delivers: one value where the path reads a list, an array where it reads none,
+-- or a value, an array's element, graphitron_type_arrival says does not arrive as the class the
+-- parameter or its array's element is bound to. Object takes any value whole. An array of enum
+-- constants is the arm below's, a node id decoded onto the parameter is the node id rules' to judge,
+-- a scalar of no known class no one's, a generated scalar's component the arm above, and an input
+-- object the arm below.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'PARAMETER_MISMATCH'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = cp.graph_name AND pr.coordinate = cp.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name AND sp.position = cp.position
+  JOIN graphitron_occurrence lo ON lo.graph_name = cp.graph_name AND lo.coordinate = cp.landing_coordinate
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = lo.graph_name AND it.coordinate = lo.coordinate AND it.type_kind IN ('SCALAR', 'ENUM')
+ -- The class one value arrives as is the parameter's, or its array's element's: an array of objects,
+ -- [L<class>;, the class between the brackets.
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT'
+   AND (sp.binding_type NOT LIKE '[%' OR sp.binding_type LIKE '[L%;')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = lo.graph_name AND x.coordinate = lo.element_coordinate
+                      AND x.kind = 'NODE_ID')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
+                     JOIN graphitron_argmapping_landing l
+                       ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
+                      AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
+                      AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name
+                      AND l.call_coordinate = pp.coordinate AND l.receives = 'COMPONENT'
+                    WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
+                      AND pp.call = cp.call AND pp.position = cp.position)
+   AND NOT ((sp.binding_type LIKE '[%') AND EXISTS (SELECT 1 FROM code_graph_class g
+                                         JOIN code_enum_constant k
+                                           ON k.source_name = g.source_name AND k.class_name = g.class_name
+                                        WHERE g.graph_name = cp.graph_name AND g.class_name = (CASE WHEN sp.binding_type LIKE '[%' THEN SUBSTRING(sp.binding_type FROM 3 FOR CHAR_LENGTH(sp.binding_type) - 3)
+                                         ELSE sp.binding_type END)))
+   AND EXISTS (SELECT 1 FROM graphitron_type_arrival ar
+                WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
+                  AND ar.arrival_kind <> 'UNTYPED')
+   AND (sp.binding_type LIKE '[%'
+        AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                         WHERE st.graph_name = lo.graph_name AND st.coordinate = lo.coordinate AND st.is_list)
+        OR sp.binding_type NOT LIKE '[%'
+        AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                     WHERE st.graph_name = lo.graph_name AND st.coordinate = lo.coordinate AND st.is_list)
+        OR NOT EXISTS (SELECT 1 FROM graphitron_type_arrival ar
+                        WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
+                          AND (ar.arrival_kind IN ('EXACT', 'UNTYPED') AND ar.arrival_class = (CASE WHEN sp.binding_type LIKE '[%' THEN SUBSTRING(sp.binding_type FROM 3 FOR CHAR_LENGTH(sp.binding_type) - 3)
+                                         ELSE sp.binding_type END)
+                            OR ar.arrival_kind = 'ANY_NON_JDK' AND POSITION('.', (CASE WHEN sp.binding_type LIKE '[%' THEN SUBSTRING(sp.binding_type FROM 3 FOR CHAR_LENGTH(sp.binding_type) - 3)
+                                         ELSE sp.binding_type END)) > 0
+                               AND (CASE WHEN sp.binding_type LIKE '[%' THEN SUBSTRING(sp.binding_type FROM 3 FOR CHAR_LENGTH(sp.binding_type) - 3)
+                                         ELSE sp.binding_type END) NOT LIKE 'java.%')))
+UNION ALL
+-- A root routine call's parameter taking an array of a Java enum's constants: the call copies a list
+-- into the array as it arrives, and reading each element as its constant is not generated yet.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'ROUTINE_ENUM_ARRAY_UNSUPPORTED'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = cp.graph_name AND pr.coordinate = cp.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name AND sp.position = cp.position
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT' AND sp.binding_type LIKE '[L%;'
+   AND EXISTS (SELECT 1 FROM code_graph_class g
+                 JOIN code_enum_constant k ON k.source_name = g.source_name AND k.class_name = g.class_name
+                WHERE g.graph_name = cp.graph_name
+                  AND g.class_name = SUBSTRING(sp.binding_type FROM 3 FOR CHAR_LENGTH(sp.binding_type) - 3))
+UNION ALL
+-- A root routine call's array parameter an argument fills along a path reading through a list above
+-- its last step: the call copies the list the path ends on into the array, and no other.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'ROUTINE_ARGUMENT_PATH_UNSUPPORTED'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = cp.graph_name AND pr.coordinate = cp.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name AND sp.position = cp.position
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT' AND sp.binding_type LIKE '[%'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                WHERE st.graph_name = cp.graph_name AND st.coordinate = cp.landing_coordinate AND st.is_list
+                  AND st.depth < (SELECT MAX(st2.depth) FROM graphitron_occurrence_argument_step st2
+                                   WHERE st2.graph_name = st.graph_name AND st2.coordinate = st.coordinate))
 UNION ALL
 -- A root routine call's parameter bound to an input object: the function takes one value of its
 -- parameter's type, and an input object is a map of them.
@@ -23699,11 +23796,13 @@ COMMENT ON VIEW graphitron_anchor_entry_defect_rule IS 'One row the anchor stage
 
 CREATE VIEW graphitron_root_field_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- The @routine that heads a chain: the last one written at a mutation-root field.
--- An application counts where it names a routine, which is where it has a graphitron_ast_routine_entry.
-WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
+-- The @routine that heads a chain: the last one written at a query- or mutation-root field, with the
+-- root's operation. An application counts where it names a routine, which is where it has a
+-- graphitron_ast_routine_entry.
+WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column,
+           operation) AS (
   SELECT r.graph_name, fe.type_name, fe.field_name, r.coordinate, r.source_name, r.source_line,
-         r.source_column
+         r.source_column, ro.operation
     FROM graphql_directive_application r
     JOIN graphitron_ast_routine_entry re
       ON re.graph_name = r.graph_name AND re.source_name = r.source_name
@@ -23712,7 +23811,7 @@ WITH head (graph_name, type_name, field_name, coordinate, source_name, source_li
       ON fe.graph_name = r.graph_name AND fe.coordinate = r.coordinate
     JOIN graphql_root_operation ro
       ON ro.graph_name = fe.graph_name AND ro.type_name = fe.type_name
-     AND ro.operation = 'MUTATION'
+     AND ro.operation IN ('QUERY', 'MUTATION')
    WHERE r.directive_name = 'routine'
      AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphql_directive_application r2
                         JOIN graphitron_ast_routine_entry re2
@@ -23754,8 +23853,9 @@ poly_member (graph_name, container_name, member_type_name) AS (
   UNION ALL
   SELECT graph_name, interface_name, type_name FROM graphql_implements_interface
 )
--- More than one write on one field. The row sits at the head, the individual applications
--- being legal each on their own and the plurality being what has no emitter.
+-- More than one routine on one root field: a write writes more than once, and a read calls a second
+-- routine on the first one's result. The row sits at the head, the individual applications being
+-- legal each on their own and the plurality being what has no emitter.
 SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
        'MULTIPLE_ROUTINE_NODES', NULL, 'anchor'
   FROM head h
@@ -23775,6 +23875,7 @@ SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
     ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
   JOIN head h
     ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
+   AND h.operation = 'MUTATION'
  WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
 UNION ALL
 SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
@@ -23784,6 +23885,7 @@ SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
     ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
   JOIN head h
     ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
+   AND h.operation = 'MUTATION'
  WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
 UNION ALL
 SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
@@ -23793,6 +23895,7 @@ SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
     ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
   JOIN head h
     ON h.graph_name = ae.graph_name AND h.type_name = ae.type_name AND h.field_name = ae.field_name
+   AND h.operation = 'MUTATION'
  WHERE ob.directive_name = 'orderBy' AND ob.ordinal = 0
 UNION ALL
 -- A root field's path with nothing to depart from, at the @reference that starts it.
@@ -24627,6 +24730,15 @@ SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
                     WHERE ef.graph_name = f.graph_name AND ef.type_name = f.type_name
                       AND ef.field_name = f.field_name AND da.directive_name = 'pivot')
 UNION ALL
+-- A @routine naming a routine more than one schema declares with a generated call, at the @routine:
+-- nothing says which it calls. The detail is the name as written.
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column, 'ROUTINE_AMBIGUOUS', r.routine_ref,
+       'path-claims'
+  FROM graphitron_ast_routine_entry r
+ WHERE 1 < (SELECT COUNT(*) FROM graphitron_path_element_routine pe
+             WHERE pe.graph_name = r.graph_name AND pe.source_name = r.source_name
+               AND pe.source_line = r.source_line AND pe.source_column = r.source_column)
+UNION ALL
 -- Two claims a field cannot hold together, at the field's own declaration.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR), 'path-claims'
   FROM claim_conflict x
@@ -25096,6 +25208,37 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
   JOIN graphitron_occurrence co ON co.graph_name = cp.graph_name AND co.coordinate = cp.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = co.graph_name AND el.coordinate = co.element_coordinate
  WHERE cp.call_kind = 'SERVICE' AND cp.fill = 'ARGUMENT' AND mp.extraction = 'ENUM_VALUE_OF'
+   AND EXISTS (SELECT 1 FROM code_enum_constant k0
+                WHERE k0.source_name = g.source_name AND k0.class_name = g.class_name)
+   AND NOT EXISTS (SELECT 1 FROM code_enum_constant k
+                    WHERE k.source_name = g.source_name AND k.class_name = g.class_name
+                      AND k.constant_name = COALESCE(b.name_ref, v.value_name))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- The same at a root routine's parameter the binding extraction takes as an enum's constant, the
+-- class the parameter's binding type names.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ENUM_CONSTANT_MISSING', MIN(v.coordinate), 'occurrence-producers'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_producer_routine pr
+    ON pr.graph_name = cp.graph_name AND pr.coordinate = cp.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name AND sp.position = cp.position
+  JOIN graphitron_occurrence lo ON lo.graph_name = cp.graph_name AND lo.coordinate = cp.landing_coordinate
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = lo.graph_name AND it.coordinate = lo.coordinate AND it.type_kind = 'ENUM'
+  JOIN code_graph_class g ON g.graph_name = cp.graph_name AND g.class_name = sp.binding_type
+  JOIN graphitron_enum_value v ON v.graph_name = it.graph_name AND v.type_name = it.type_name
+  LEFT JOIN graphql_directive_application da
+    ON da.graph_name = v.graph_name AND da.coordinate = v.coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+  LEFT JOIN graphitron_ast_binding_entry b
+    ON b.graph_name = da.graph_name AND b.source_name = da.source_name
+   AND b.source_line = da.source_line AND b.source_column = da.source_column
+  JOIN graphitron_occurrence co ON co.graph_name = cp.graph_name AND co.coordinate = cp.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = co.graph_name AND el.coordinate = co.element_coordinate
+ WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT'
    AND EXISTS (SELECT 1 FROM code_enum_constant k0
                 WHERE k0.source_name = g.source_name AND k0.class_name = g.class_name)
    AND NOT EXISTS (SELECT 1 FROM code_enum_constant k
@@ -25629,6 +25772,21 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                 OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer rp
                             WHERE rp.graph_name = pc.graph_name AND rp.coordinate = pc.coordinate
                               AND rp.kind = 'ROUTINE')))
+UNION ALL
+-- A routine's connection surfacing a facet a @reference binds, at the producing field: the facet's
+-- counts join its path onto the connection's table and count distinct rows by its primary key, and a
+-- routine's result has none. The detail is the first such facet.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'FACET_REFERENCE_OVER_ROUTINE_UNSUPPORTED', MIN(pf.facet_name), 'occurrence-producers'
+  FROM graphitron_occurrence_producer_facet pf
+  JOIN graphitron_facet_binding fb
+    ON fb.graph_name = pf.graph_name AND fb.type_name = pf.facet_type_name AND fb.field_name = pf.facet_name
+   AND fb.reference_bound
+  JOIN graphitron_occurrence_producer rp
+    ON rp.graph_name = pf.graph_name AND rp.coordinate = pf.coordinate AND rp.kind = 'ROUTINE'
+  JOIN graphitron_occurrence o ON o.graph_name = pf.graph_name AND o.coordinate = pf.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
 -- An @asFacet field reached through its own arguments by no faceted connection and by no field
 -- returning a connection type the author declared, at the @asFacet: its counts would surface
@@ -31023,6 +31181,24 @@ COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the oc
 
 CREATE VIEW graphitron_occurrence_result_shape_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A query root's @routine read whose path ends on the routine, no step leaving its result, and whose
+-- field returns no object type, at the field: the routine's result rows bind the returned type, and
+-- only an object type has fields to read their columns into. The detail is the type returned.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ROUTINE_RETURN_NOT_OBJECT', f.named_type, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_routine pr ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'QUERY'
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.start = 'ROOT'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type t
+                    WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'OBJECT')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s
+                    WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate)
+UNION ALL
 -- A list over one value, at the field: a service whose method hands back one value, or a write
 -- returning an object, which it hands back once however many rows it writes, under a field
 -- declaring a list. A list of what the producer delivers once has nothing to list.
@@ -31413,6 +31589,31 @@ COMMENT ON VIEW graphitron_occurrence_column_entry_defect_rule IS 'One row the c
 
 CREATE VIEW graphitron_occurrence_need_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A query root's @routine read whose path ends on the routine, no step leaving its result, and whose
+-- field's target is bound to another table than the routine's result, at the @routine: no foreign
+-- key out of the result reaches the target's table, so the path has to be written. The detail is the
+-- target's table.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NO_ROUTE_TO_TARGET', tt.table_name, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_routine pr ON pr.graph_name = p.graph_name AND pr.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'QUERY'
+  -- The @routine the producer calls, the field's first, where it is written.
+  JOIN graphql_directive_application da
+    ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
+   AND da.directive_name = 'routine' AND da.ordinal = 0
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE p.start = 'ROOT'
+   AND NOT (tt.table_source_name = pr.routine_source_name AND tt.table_schema = pr.table_schema
+            AND tt.table_name = pr.routine_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s
+                    WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate)
+UNION ALL
 -- A filter term whose need starts on a table the field's rows are on and lands on another with no
 -- join path between them, whose column is on that other table, at the term's declaration: the filter
 -- compares on the row's own table, and nothing says how to reach the column from it. An argument
@@ -35448,7 +35649,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('READ_SURFACE_ON_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_READ_SURFACE_ON_WRITE',
    'A mutation field carrying @routine writes, and neither write shape has a filter or an ordering to resolve a @condition or an @orderBy against, so the generator emits nothing for one written here.'),
   ('MULTIPLE_ROUTINE_NODES', 'error', 'GRAPHITRON', 'GRAPHITRON_MULTIPLE_ROUTINE_NODES',
-   'A mutation field carrying more than one @routine writes more than once, and the generator emits one write per field.'),
+   'A root field carrying more than one @routine calls more than one routine: a mutation writes more than once, and a query calls the second on the first one''s result, and the generator emits one call per root field.'),
   ('SERVICE_TRANSACTION_OUTSIDE_MUTATION', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_TRANSACTION_OUTSIDE_MUTATION',
    'A @service says its service owns its transaction, with transactionControl: SERVICE, on a field that is not a field of the root mutation type, and only a top-level mutation field runs in a transaction the service could step out of: remove the argument, or move the service onto a mutation field.'),
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
@@ -35620,7 +35821,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('INPUT_CYCLE_EXPANDED', 'error', 'GRAPHITRON', 'GRAPHITRON_INPUT_CYCLE_EXPANDED',
    'An input object is reached again inside itself where a call builds its value into a class or a filter compares it, and its nesting has no last level, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
   ('ENUM_CONSTANT_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ENUM_CONSTANT_MISSING',
-   'A GraphQL enum value a @service parameter or input member takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
+   'A GraphQL enum value a @service parameter, input member or root @routine parameter takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
   ('ERROR_FIELD_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_ERROR_FIELD_UNREADABLE',
    'An @error type''s field, other than path and message, is read off the exception its handler matches, and that class has no get or is getter of the field''s name or @field(name:) returning what the field''s scalar is, a bare accessor or a public field not being read: name a getter the class has with @field(name:), give the class one, or give the field the type its getter returns. A field carrying @nodeId(typeName:) encodes what its getter yields, so the getter has to return the one key column of the node named, in that column''s own class and not as the encoded id, and a node whose key has several columns, or a type that is several nodes, cannot be read from one getter.'),
   ('CHECKED_EXCEPTION_UNHANDLED', 'error', 'GRAPHITRON', 'GRAPHITRON_CHECKED_EXCEPTION_UNHANDLED',
@@ -35720,7 +35921,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('PARAMETER_TYPE_UNSPELLED', 'error', 'UNSUPPORTED', 'GRAPHITRON_PARAMETER_TYPE_UNSPELLED',
    'A @condition method''s parameter is typed as a member of a parameterised class, Outer<A>.Inner, which the generated condition cannot declare a local of yet: take the member''s own class, or a type the argument arrives as.'),
   ('PARAMETER_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_MISMATCH',
-   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, a @condition parameter taking one Java enum where its argument is a list of them, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar; or a @service or root @routine parameter an argMapping hands a generated scalar''s component, typed as another class than the component''s; or a root @routine parameter bound to an input object, where the function takes one value. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
+   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, a @condition parameter taking one Java enum where its argument is a list of them, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar; or a @service or root @routine parameter an argMapping hands a generated scalar''s component, typed as another class than the component''s; or a root @routine parameter bound to an input object, where the function takes one value, or one taking one value where its argument is a list, an array where it is one value, or a class the value or element does not arrive as. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',
@@ -35773,6 +35974,10 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A @node pins no key columns, and its table publishes no node metadata and has no primary key, so there is nothing to build an id from: declare keyColumns on @node or give the table a primary key.'),
   ('TABLE_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_UNRESOLVED',
    'A @table names a table the catalog does not hold, so the type is bound to nothing: the name is misspelt, or the table is in a schema the build does not generate.'),
+  ('ROUTINE_RETURN_NOT_OBJECT', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_RETURN_NOT_OBJECT',
+   'A query field calling a @routine whose path ends on the routine, no step leaving its result, returns a scalar, an enum, an interface or a union, and the routine''s result rows bind the returned type, which only an object type''s fields can read: return an object type whose fields name the result''s columns.'),
+  ('ROUTINE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_AMBIGUOUS',
+   'A @routine names a routine more than one schema declares, so nothing says which it calls; qualifying the name with its schema settles it.'),
   ('TABLE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_AMBIGUOUS',
    'A @table names a table more than one schema declares, so nothing says which the type is bound to; qualifying the name with its schema settles it.'),
   ('SCALAR_TYPE_REFERENCE_MALFORMED', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_REFERENCE_MALFORMED',
@@ -35839,6 +36044,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'Fields returning one connection type fill one facets record, the type''s, so each must surface the same facets from its own filter arguments: the same names, with the same value types and nullability, in the same order. Give each field the same @asFacet filter fields, or return a connection type of its own; a field returning a type whose facets field asks for facets must surface some.'),
   ('FACETED_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_FACETED_CONNECTION_UNSUPPORTED',
    'A connection with @asFacet filter fields is generated only as a root Query field over a @table-bound object type: a faceted connection under another type, fetched in a batch over its parents, or one over an interface or a union, is not generated yet. Move the connection to the root, or remove @asFacet from its filter.'),
+  ('FACET_REFERENCE_OVER_ROUTINE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_FACET_REFERENCE_OVER_ROUTINE_UNSUPPORTED',
+   'A @routine connection surfaces an @asFacet field carrying @reference, whose counts join its path onto the connection''s table and count distinct rows by that table''s primary key, and a routine''s result has none: remove @reference or @asFacet.'),
   ('FACET_SURFACED_NOWHERE', 'error', 'GRAPHITRON', 'GRAPHITRON_FACET_SURFACED_NOWHERE',
    'An @asFacet filter field counts its values for the connections that take its input type as an argument, and no field returning a connection takes it: the counts would surface nowhere. Use the input as the filter of an @asConnection field, or remove @asFacet.'),
   ('AUTHORED_CONNECTION_FACET_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_AUTHORED_CONNECTION_FACET_UNSUPPORTED',
@@ -35899,6 +36106,10 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.'),
   ('VOUCHER_ACCEPT_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_NOT_GENERATED',
    '@accept is on a type with a connection below it, at any depth through the types its subtree reads, and a connection does not yet read on the vouched connection: read those rows as a list, in the entity''s SELECT, a split query or a @service.'),
+  ('ROUTINE_ARGUMENT_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_ARGUMENT_PATH_UNSUPPORTED',
+   'A root @routine parameter taking an array is bound along a path that reads through a list above its last name, and the call copies only the list the path ends on into the array: bind the list itself.'),
+  ('ROUTINE_ENUM_ARRAY_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_ENUM_ARRAY_UNSUPPORTED',
+   'A root @routine parameter takes an array of a Java enum''s constants, and the call copies a list into the array as it arrives, without reading each element as its constant: bind a parameter taking an array of the enum''s names, or one constant at a time.'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on one field, at the root or as a step of a split child''s path, classifies but graphitron does not generate it yet.'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
