@@ -247,7 +247,9 @@ metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
   up by the order columns' names in the one map that drives the re-projection). The classifier's
   agreement rules, which type each
   union column by its first participant's column, are what make the two one value of one type, and
-  no stronger invariant is held (Filip, 2026-11-16). A cursor is still computed from the element and
+  no stronger invariant is held (Filip, 2026-11-16). Separately, the store refuses participants whose
+  primary key columns are exchanged with the database as different types at a position
+  (`PARTICIPANT_KEYS_DIFFER_IN_TYPE`, Alf, 2026-11-27). A cursor is still computed from the element and
   the ordering, never from the element's place in the page.
 - *A refused element*: a cursor the decoder can check itself (its Base64, its JSON shape, its
   arity, an element Java parses) is refused as the client's error. Where only the database can tell

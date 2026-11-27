@@ -447,7 +447,11 @@ reference one key as `film.language_id` and `film.original_language_id` do, is t
 
 A source lift needs the source's table to have a primary key, and a key spanning several columns is
 read whole and in key order. A polymorphic producer has one lift: which participant each fetched row
-is, `graphitron_occurrence_participant` decides once the rows are fetched. A node id argument on
+is, `graphitron_occurrence_participant` decides once the rows are fetched. The participants of a
+multi-table read, an interface or union whose participants are told apart by their own tables, must
+agree on the type of each primary key column, and the store refuses them otherwise as
+`PARTICIPANT_KEYS_DIFFER_IN_TYPE`, because the read's first stage unions their keys as one value per
+key position (Alf, 2026-11-27). A node id argument on
 such a producer is dispatched by the type id every node id carries, known at runtime without
 decoding (Alf, 2026-11-14): each id goes to the participant whose type it names, so a lookup by ids
 of several participant types answers each from its own participant's rows, and no participant

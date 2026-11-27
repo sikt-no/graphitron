@@ -17857,7 +17857,66 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
    AND (pr.kind IS NULL OR pr.kind <> 'SERVICE')
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant dp
                     WHERE dp.graph_name = p.graph_name AND dp.coordinate = p.coordinate
-                      AND dp.recognized_by = 'DISCRIMINATOR');
+                      AND dp.recognized_by = 'DISCRIMINATOR')
+UNION ALL
+-- Participants told apart by their tables whose primary keys have as many columns, and columns at one
+-- position the database exchanges as different Java types: the combined read unions every
+-- participant's key column at a position into one column, read back as one value of one type, so the
+-- columns at a position must agree. Compared by the type jOOQ exchanges with the database for each
+-- column (database_type), behind any converter, so a domain over bigint agrees with a bigint and a
+-- varchar of one length with one of another, while an integer and a varchar do not. At the field,
+-- naming each participant whose key column at a position differs from a participant before it by
+-- name, on the fields the arity arms judge; keys of different numbers of columns are theirs alone.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'PARTICIPANT_KEYS_DIFFER_IN_TYPE', p.participant_type, 'occurrence-participants'
+  FROM graphitron_occurrence_participant p
+  JOIN graphitron_occurrence_participant q
+    ON q.graph_name = p.graph_name AND q.coordinate = p.coordinate
+   AND q.recognized_by = 'TABLE' AND q.participant_type < p.participant_type
+  JOIN sql_primary_key kp
+    ON kp.source_name = p.table_source_name AND kp.table_schema = p.table_schema AND kp.table_name = p.table_name
+  JOIN sql_primary_key kq
+    ON kq.source_name = q.table_source_name AND kq.table_schema = q.table_schema AND kq.table_name = q.table_name
+  JOIN sql_constraint_column lc
+    ON lc.source_name = kp.source_name AND lc.table_schema = kp.table_schema
+   AND lc.table_name = kp.table_name AND lc.constraint_name = kp.constraint_name
+  JOIN sql_constraint_column sc
+    ON sc.source_name = kq.source_name AND sc.table_schema = kq.table_schema
+   AND sc.table_name = kq.table_name AND sc.constraint_name = kq.constraint_name
+   AND sc.position = lc.position
+  JOIN sql_column lt
+    ON lt.source_name = lc.source_name AND lt.table_schema = lc.table_schema
+   AND lt.table_name = lc.table_name AND lt.column_name = lc.column_name
+  JOIN sql_column st
+    ON st.source_name = sc.source_name AND st.table_schema = sc.table_schema
+   AND st.table_name = sc.table_name AND st.column_name = sc.column_name
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+  LEFT JOIN graphitron_producer pr
+    ON pr.graph_name = f.graph_name AND pr.type_name = f.type_name AND pr.field_name = f.field_name
+ WHERE p.recognized_by = 'TABLE'
+   AND lt.database_type <> st.database_type
+   AND NOT (pr.kind = 'LOOKUP' AND f.named_type = 'Node')
+   AND (pr.kind IS NULL OR pr.kind <> 'SERVICE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant dp
+                    WHERE dp.graph_name = p.graph_name AND dp.coordinate = p.coordinate
+                      AND dp.recognized_by = 'DISCRIMINATOR')
+   AND NOT EXISTS (SELECT 1 FROM sql_constraint_column la
+                    WHERE la.source_name = kp.source_name AND la.table_schema = kp.table_schema
+                      AND la.table_name = kp.table_name AND la.constraint_name = kp.constraint_name
+                      AND NOT EXISTS (SELECT 1 FROM sql_constraint_column sa
+                                       WHERE sa.source_name = kq.source_name AND sa.table_schema = kq.table_schema
+                                         AND sa.table_name = kq.table_name AND sa.constraint_name = kq.constraint_name
+                                         AND sa.position = la.position))
+   AND NOT EXISTS (SELECT 1 FROM sql_constraint_column sa
+                    WHERE sa.source_name = kq.source_name AND sa.table_schema = kq.table_schema
+                      AND sa.table_name = kq.table_name AND sa.constraint_name = kq.constraint_name
+                      AND NOT EXISTS (SELECT 1 FROM sql_constraint_column la
+                                       WHERE la.source_name = kp.source_name AND la.table_schema = kp.table_schema
+                                         AND la.table_name = kp.table_name AND la.constraint_name = kp.constraint_name
+                                         AND la.position = sa.position));
 COMMENT ON VIEW graphitron_occurrence_participant_entry_defect_rule IS 'One row the occurrence-participants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @service returning an interface whose participants a discriminator tells apart on film, one of them on a table of its own, gives one SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED row at the field, naming that participant.';
 
 CREATE TABLE graphitron_occurrence_producer_routine (
@@ -36183,6 +36242,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An interface or union field has a participant on a table with no primary key, and the read over its participants keys each row by its table''s primary key to order it and hand it to its type: give the table a primary key, or leave the type out of the interface or union.'),
   ('PARTICIPANT_KEYS_DIFFER_IN_ARITY', 'error', 'GRAPHITRON', 'GRAPHITRON_PARTICIPANT_KEYS_DIFFER_IN_ARITY',
    'An interface or union field has participants whose tables'' primary keys have different numbers of columns, and the read over its participants projects every participant''s key into the same columns: give the field participants whose keys have as many columns, or split the interface or union.'),
+  ('PARTICIPANT_KEYS_DIFFER_IN_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARTICIPANT_KEYS_DIFFER_IN_TYPE',
+   'An interface or union field has participants whose tables'' primary keys have columns of different types at one position, as the database exchanges them, and the read over its participants unions every participant''s key column at a position into one column of one type: give the participants keys of one type at each position, or return a single table type.'),
   ('PARTICIPANT_DETAIL_UNJOINED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARTICIPANT_DETAIL_UNJOINED',
    'A query-root field returns an interface whose participants a discriminator tells apart on its table, and a participant on a detail table of its own has no field whose path is one step from the detail table to the shared one riding one foreign key, so nothing names the join its rows are read through: give the participant a field read off the shared table with @reference(path: [{key: ...}]) naming the foreign key from the detail table.'),
   ('PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED',

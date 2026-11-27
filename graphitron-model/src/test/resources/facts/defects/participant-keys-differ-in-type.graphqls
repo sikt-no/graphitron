@@ -1,0 +1,34 @@
+# Participants told apart by their tables are read and combined keyed by their tables' primary keys,
+# one column per key position, and the combined read holds one value of one type in each, so the
+# participants' key columns at a position must be exchanged with the database as one type. Query.labels, a union of Language, keyed by an
+# integer language_id, and StudyLevel, keyed by a varchar code, is PARTICIPANT_KEYS_DIFFER_IN_TYPE,
+# named at StudyLevel, the participant after Language by name. Query.codes, a union of Rolle, keyed by
+# a varchar(20) rollekode, and StudyLevel, keyed by a varchar(10) code, is the near miss: both are
+# exchanged as a String, and a declared length is not part of that.
+
+type Language @table(name: "language") {
+    name: String
+}
+
+type StudyLevel @table(name: "study_level") {
+    name: String
+}
+
+type Rolle @table(name: "rolle") {
+    rollekode: String
+}
+
+union Label = Language | StudyLevel
+
+union Code = Rolle | StudyLevel
+
+type Query {
+    labels: [Label!]!
+    codes: [Code!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'PARTICIPANT_KEYS_DIFFER_IN_TYPE'", rows: """
+  code,                            coordinate,    detail
+  PARTICIPANT_KEYS_DIFFER_IN_TYPE, Query.labels,  StudyLevel
+  """)
