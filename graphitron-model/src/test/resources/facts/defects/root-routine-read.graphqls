@@ -28,7 +28,10 @@
 # (Query.byUnparseable), ARGMAPPING_UNPARSEABLE; one naming a parameter the routine lacks
 # (Query.byUnknownParameter), ARGMAPPING_PARAMETER_UNKNOWN; one whose path names no argument
 # (Query.byUnknownArgument), ARGMAPPING_PATH_UNRESOLVED; an order by a primary key the result has none
-# of (Query.byPrimaryKeyOrder), ORDER_PRIMARY_KEY_MISSING; a chain's hop with two foreign keys to
+# of (Query.byPrimaryKeyOrder), ORDER_PRIMARY_KEY_MISSING; an input cycle in a filter argument the
+# routine does not take (Query.byCycledFilter), INPUT_CYCLE_EXPANDED at the field reaching it again,
+# the routine's result being the rows it filters, where a filter on a column of that result
+# (Query.byTitleFilter) draws nothing; a chain's hop with two foreign keys to
 # take (Query.languagesOfFilms), ROUTE_AMBIGUOUS, and one ending elsewhere than its return
 # (Query.actorsOfFilms), NO_ROUTE_TO_TARGET; a return with no fields to read the result into
 # (Query.titlesForActor, and Query.titlesForActorEmptyHop, whose empty @reference leaves the routine
@@ -47,6 +50,11 @@ type RatedFilm {
 }
 
 input FilmPick { id: Int! }
+
+input CycledFilter {
+  title: String
+  again: CycledFilter
+}
 
 type FilmRow @table(name: "film") { title: String }
 type LanguageRow @table(name: "language") { name: String }
@@ -97,6 +105,12 @@ type Query {
     @defaultOrder(fields: [{name: "film_id"}])
   byUnknownArgument(actorId: Int!, minLength: Int!): [RatedFilm!]
     @routine(name: "films_for_actor", argMapping: "pActorId: nobody, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byCycledFilter(actorId: Int!, minLength: Int!, filter: CycledFilter): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byTitleFilter(actorId: Int!, minLength: Int!, title: String): [RatedFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
   byPrimaryKeyOrder(actorId: Int!, minLength: Int!): [RatedFilm!]
     @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
@@ -192,4 +206,26 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code LIKE 'FACET%' OR code = 'FACETED_CONNECTION_UNSUPPORTED'", rows: """
   coordinate,                code,                                     detail
   Query.filmsForActorByFilm, FACET_REFERENCE_OVER_ROUTINE_UNSUPPORTED, filmTitle
+  """)
+
+# The cycle, at the input field reaching its type again, and the title a filter compares, a column of
+# the function's result, draws nothing. An argument a broken argMapping leaves the routine untaken
+# filters the result too, and names no column of it.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('INPUT_CYCLE_EXPANDED', 'COLUMN_UNRESOLVED')", rows: """
+  code,                 coordinate,                        detail
+  COLUMN_UNRESOLVED,    Query.byUnknownArgument(actorId:), actorId
+  COLUMN_UNRESOLVED,    Query.byUnparseable(actorId:),     actorId
+  COLUMN_UNRESOLVED,    Query.byUnparseable(minLength:),   minLength
+  INPUT_CYCLE_EXPANDED, CycledFilter.again,                CycledFilter
+  """)
+
+# Each untaken argument reads the function's result.
+extend schema @expectEquals(relation: "graphitron_occurrence_row_input",
+    where: "field_coordinate IN ('Query.byCycledFilter', 'Query.byTitleFilter')", rows: """
+  coordinate,                         table_name
+  Query.byCycledFilter(filter:),      films_for_actor
+  Query.byCycledFilter(filter.again:), films_for_actor
+  Query.byCycledFilter(filter.title:), films_for_actor
+  Query.byTitleFilter(title:),        films_for_actor
   """)

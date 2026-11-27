@@ -454,6 +454,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_source_claim_root_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_own_service_record_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_record_parameter_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_source_claim_argument_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_argument_target_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_argument_member_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_argument_write_rule", Arm.DERIVED);

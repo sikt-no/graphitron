@@ -30960,6 +30960,7 @@ INSERT INTO graphitron_occurrence_source_precedence VALUES
   ('recordParameter', 'TABLE', 'occurrence-source-claims', 20),
   ('declaringTable', 'TABLE', 'occurrence-source-claims', 30),
   ('rootRoutine', 'TABLE', 'occurrence-source-claims', 40),
+  ('argumentRoutine', 'TABLE', 'occurrence-source-claims', 45),
   ('argumentTarget', 'TABLE', 'occurrence-source-claims', 50),
   ('argumentMember', 'TABLE', 'occurrence-source-claims', 60),
   ('argumentWrite', 'TABLE', 'occurrence-source-claims', 70),
@@ -32552,6 +32553,20 @@ COMMENT ON VIEW graphitron_occurrence_source_claim_record_parameter_rule IS 'One
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_argument_routine_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'argumentRoutine', 'TABLE', rr.table_source_name, rr.table_schema, rr.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate AND p.depth = 0
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphql_root_operation ro ON ro.graph_name = pf.graph_name AND ro.type_name = pf.type_name
+  JOIN graphitron_routine_result rr
+    ON rr.graph_name = pf.graph_name AND rr.type_name = pf.type_name AND rr.field_name = pf.field_name
+ -- A return a table is bound to steps on from the result to that table, whose rows are filtered.
+ WHERE o.kind = 'FIELD_ARGUMENT'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = rr.graph_name AND tt.type_name = rr.target_type_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_argument_routine_rule IS 'One claim the argumentRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a root field whose path ends on its @routine, returning a type no table is bound to, reads the function''s result, the rows the field returns. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
 
 CREATE VIEW graphitron_occurrence_source_claim_argument_target_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
 SELECT DISTINCT o.graph_name, o.coordinate, 'argumentTarget', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
@@ -34904,6 +34919,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_own_service_record_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_record_parameter_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_root_routine_rule'),
+  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_routine_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_member_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_target_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_write_rule'),
@@ -34911,6 +34927,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_own_service_record_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_record_parameter_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_root_routine_rule'),
+  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_routine_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_tenant_entry_defect_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_argument_read_entry_defect_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_filter_column_entry_defect_rule'),
@@ -36893,6 +36910,10 @@ INSERT INTO meta_relation VALUES
    'One claim the declaringTable rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field where a chain starts, on a type bound to a table, reads that table.',
    'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
    'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_argument_routine_rule', 'source-claim-table', 'graphitron',
+   'One claim the argumentRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a root field whose path ends on its @routine, returning a type no table is bound to, reads the function''s result, the rows the field returns.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'The rows an argument of a root routine read filters are the function''s result, which graphitron_routine_result names; argumentTarget reads a @table target only, so without this an argument the routine does not take had no table, no row input, and no filter or refusal the store states.'),
   ('graphitron_occurrence_source_claim_root_routine_rule', 'source-claim-table', 'graphitron',
    'One claim the rootRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: a root field whose producer calls a routine reads the derived table its function returns.',
    'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
