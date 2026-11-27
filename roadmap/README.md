@@ -51,7 +51,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-20 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
+| `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-27 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-14 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Review | 2026-11-19 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R534` | An explicit null for a NOT NULL column survives a later plain value in a service's jOOQ record | In Review | 2026-11-23 <sub>created 2026-07-25</sub> | [plan](record-key-decode-null-write-erasure.md) |

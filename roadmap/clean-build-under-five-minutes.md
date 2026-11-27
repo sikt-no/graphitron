@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-20
+last-updated: 2026-11-27
 ---
 
 # A clean build runs in under five minutes
@@ -524,6 +524,19 @@ parallelises a module's tests is priced against that before it is tried.
       parallel captures in one store: `store_source`'s write, which gets a fix of its own, and the
       store-wide delete of `sql_name_matched_key_column`, which goes when R876 dissolves that
       relation and is not patched before. Fewer stores waits for both.
+23. **The coverage agent instruments only `no.sikt`.** Done 2026-11-27. CI's build job runs
+    `-Pcoverage` on every PR and trunk push, and the agent, given no includes, instrumented every
+    class a test fork loaded, H2's planner, jOOQ and graphql-java among them. `graphitron-model`'s
+    tests on the 4-core sandbox at `5bc97d383a`: 17:15 with no agent, 1 h 45 min under the agent as
+    it was (every slow class about seven times slower), and 17:26 with
+    `<include>no.sikt.*</include>`. CI's model step had grown to 63 to 66 minutes of a 96-minute
+    reactor step on 11-26, so the estimate is 45 to 55 minutes off every CI run; the local
+    verification build, which runs no agent, is unchanged. Every report analyses only its own
+    module's classes, all under `no.sikt`, so no figure moves. `check-coverage-agent-wiring` now
+    holds both halves: every `prepare-agent` execution carries the include, and no module's
+    sources or generated packages leave `no.sikt`, which would otherwise report as uncovered.
+    For Alf and Filip, not a step: step 20's 11.1 and 21.0 minute tier reruns were measured under
+    the unrestricted agent, so the nightly decision rests on figures this changes.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
