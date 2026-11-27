@@ -67,3 +67,14 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   PARAMETER_MISMATCH, Query.recordsForOne
   PARAMETER_MISMATCH, Query.scalarForInput
   """)
+
+# Whether each value fits where it lands, which each mismatch above reads: the members withBean's and
+# withNumberBean's beans take, a list taken whole by an Object parameter, and an Int filling an int.
+extend schema @expectEquals(relation: "graphitron_occurrence_value_slot",
+    where: "coordinate IN ('Query.bean(in.filmId:)', 'Query.numberBean(in.filmId:)', 'Query.anything(value:)', 'Query.intForInt(id:)')", rows: """
+  coordinate,                    kind,      stated_by, element_class,    takes_many, arrives_many, arrival_kind, fits
+  Query.anything(value:),        PARAMETER, SERVICE,   java.lang.Object, FALSE,      TRUE,         UNTYPED,      TRUE
+  Query.bean(in.filmId:),        MEMBER,    SERVICE,   java.lang.Long,   FALSE,      FALSE,        ,             FALSE
+  Query.intForInt(id:),          PARAMETER, SERVICE,   int,              FALSE,      FALSE,        EXACT,        TRUE
+  Query.numberBean(in.filmId:),  MEMBER,    SERVICE,   java.lang.Integer, FALSE,     FALSE,        EXACT,        TRUE
+  """)

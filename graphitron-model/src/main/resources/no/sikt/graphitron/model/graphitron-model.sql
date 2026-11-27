@@ -5388,9 +5388,11 @@ CREATE TABLE graphitron_argmapping_landing (
   descends           BOOLEAN   NOT NULL,
   receives           VARCHAR   NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
+  component_kind     VARCHAR,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name,
                call_coordinate),
   CHECK (receives IN ('WHOLE', 'COLUMN', 'COMPONENT')),
+  CHECK ((component_kind IS NOT NULL) = (receives = 'COMPONENT')),
   -- The pair, so a landing cannot outlive what an author wrote.
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
     REFERENCES graphitron_argmapping_pair (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
@@ -5414,6 +5416,7 @@ COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argum
 COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: what the value at the landing opens into. Past a node id, whose element claims NODE_ID, a key column of it, which the landing''s binding resolves and judges; past a generated scalar, one of the components its kind decodes a value into, as graphitron_generated_scalar_component lists them. A name past anything else, or past a generated scalar naming none of its components, lands nowhere';
 COMMENT ON COLUMN graphitron_argmapping_landing.descends IS 'whether the path goes past the slot it opens, an argument of a field-level call or the argument or input field the directive is written on, rather than stopping on it';
 COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what the landing hands over: COMPONENT, the one component of a generated scalar''s decoded value that trailing_name names; for a node id COLUMN, the one key column the path names past the id; WHOLE otherwise, the value as it arrives, for a node id the whole key wherever the path stops on it or descends onto it, the encoded id at an @outbox payload key, whose clients see the id as the API does';
+COMMENT ON COLUMN graphitron_argmapping_landing.component_kind IS 'at COMPONENT, the generated scalar''s kind, which with trailing_name keys the component in graphitron_generated_scalar_component, the class it is decoded as among its facts; NULL otherwise';
 COMMENT ON COLUMN graphitron_argmapping_landing.repeats_own_name IS 'whether the path began with the call''s own name, as an argument-level or input-field-level argMapping was once required to: a spelling that still resolves';
 COMMENT ON COLUMN graphitron_argmapping_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 CREATE INDEX graphitron_argmapping_landing_landing_ix
@@ -9863,6 +9866,10 @@ INSERT INTO graphitron_generated_scalar_component VALUES
   ('TYPE_NAME',   'text',      'java.lang.String'),
   ('TYPE_NAME',   'name',      'java.lang.String');
 
+-- A landing on a component names one of these, which is declared after the landing.
+ALTER TABLE graphitron_argmapping_landing ADD FOREIGN KEY (component_kind, trailing_name)
+  REFERENCES graphitron_generated_scalar_component (kind, component);
+
 CREATE TABLE graphitron_scalar_class (
   graph_name VARCHAR   NOT NULL,
   type_name  VARCHAR   NOT NULL,
@@ -10534,7 +10541,7 @@ COMMENT ON VIEW graphitron_occurrence_input_type_rule IS 'One row the occurrence
 
 CREATE VIEW graphitron_argmapping_landing_rule
   (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
-   landing_coordinate, trailing_name, repeats_own_name, descends, receives) AS
+   landing_coordinate, trailing_name, repeats_own_name, descends, receives, component_kind) AS
 -- Where the path stops: every name consumed, or every name but one where the occurrence reached
 -- opens into the last name. A node id opens into a key column of it, as its NODE_ID binding claim
 -- says, the path end's to resolve; a generated scalar opens into the components its kind decodes a
@@ -10558,13 +10565,14 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.targe
        -- past the id hands it over whole, wherever it stops: a key column is one the path names.
        CASE WHEN gc.component IS NOT NULL THEN 'COMPONENT'
             WHEN s.consumed < s.segments THEN 'COLUMN'
-            ELSE 'WHOLE' END
+            ELSE 'WHOLE' END,
+       gc.kind
   FROM graphitron_argmapping_step s
   JOIN graphitron_occurrence co ON co.graph_name = s.graph_name AND co.coordinate = s.call_coordinate
   JOIN graphitron_occurrence lo ON lo.graph_name = s.graph_name AND lo.coordinate = s.step_coordinate
   -- The component the one name left names, where the occurrence reached is a generated scalar whose
   -- kind has it: one row at most, a scalar having one kind.
-  LEFT JOIN (SELECT it.graph_name, it.coordinate, c.component
+  LEFT JOIN (SELECT it.graph_name, it.coordinate, c.component, c.kind
                FROM graphitron_occurrence_input_type it
                JOIN graphitron_scalar_class sc
                  ON sc.graph_name = it.graph_name AND sc.type_name = it.type_name AND sc.source = 'GENERATED'
@@ -15576,6 +15584,8 @@ CREATE VIEW graphitron_occurrence_call_parameter_candidate_rule
 -- states. A primitive erases to no class, so its element is the declared type, int for int. Where one named parameter and one argument are all
 -- that is left of the call, they pair whenever their list-ness agrees and type cannot tell them
 -- apart: an input object, or a scalar no Java type is known for.
+-- Whether a value fits is graphitron_occurrence_value_slot's to state once the fills are written, and
+-- this pairing decides the fills, so it judges agreement by type here itself.
 WITH open_parameter (graph_name, coordinate, call, method_source_name, method_class_name, method_name,
                      method_descriptor, position, parameter_name, element, many) AS (
   SELECT s.graph_name, s.coordinate, s.call, s.method_source_name, s.method_class_name, s.method_name,
@@ -16358,25 +16368,26 @@ CREATE TABLE graphitron_occurrence_value_slot (
                           AND element_class = 'java.lang.Object' AND NOT takes_many)),
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, slot),
-  -- What each subtype references, so a subtype row can only hang under a slot of its own kind.
-  UNIQUE (graph_name, coordinate, slot, kind),
+  -- What each subtype references, so a subtype row can only hang under a slot of its own kind and
+  -- owner, the supertype's sweep taking it with the slot.
+  UNIQUE (graph_name, coordinate, slot, kind, stated_by),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (kind = 'PARAMETER'),
-  CHECK (stated_by IN ('SERVICE', 'ROUTINE')),
+  CHECK (kind IN ('PARAMETER', 'MEMBER')),
+  CHECK (stated_by IN ('SERVICE', 'ROUTINE', 'CONDITION')),
   CHECK (arrival_kind IS NULL OR arrival_kind IN ('EXACT', 'UNTYPED', 'ANY_NON_JDK', 'COMPONENT'))
 );
 COMMENT ON TABLE graphitron_occurrence_value_slot IS 'Where a value that is no node id lands in Java, and whether it fits there: one row per occurrence and place an argument or input field fills, a scalar, an enum, an input object or a generated scalar''s component. For example Query.filmsForActor(actorId:), an Int filling the routine parameter pActorId, which takes a java.lang.Integer, arrives EXACT and fits.';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.coordinate IS 'the occurrence whose value arrives';
-COMMENT ON COLUMN graphitron_occurrence_value_slot.slot IS 'the place it lands, spelled from the subtype''s own key: a parameter as its call coordinate, call and position';
-COMMENT ON COLUMN graphitron_occurrence_value_slot.kind IS 'what kind of place, PARAMETER, pinned so a subtype row hangs only under a slot of its own kind';
-COMMENT ON COLUMN graphitron_occurrence_value_slot.stated_by IS 'the kind of call whose place it is, SERVICE or ROUTINE, which says the stage that writes the row';
+COMMENT ON COLUMN graphitron_occurrence_value_slot.slot IS 'the place it lands, spelled from the subtype''s own key: a parameter as its call coordinate, call and position, a member as its MEMBER binding''s bound';
+COMMENT ON COLUMN graphitron_occurrence_value_slot.kind IS 'what kind of place, a call''s PARAMETER or a built class''s MEMBER, pinned so a subtype row hangs only under a slot of its own kind';
+COMMENT ON COLUMN graphitron_occurrence_value_slot.stated_by IS 'the kind of call whose place it is, SERVICE, ROUTINE or CONDITION, as the member binding states it for a member, which says the stage that writes the row';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.element_class IS 'the class one value lands as: the parameter''s once its containers or array are peeled off';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.takes_many IS 'whether the place takes many of that class, a collection or an array';
-COMMENT ON COLUMN graphitron_occurrence_value_slot.arrives_many IS 'whether the value arrives as many, the occurrence''s path reading through a list';
+COMMENT ON COLUMN graphitron_occurrence_value_slot.arrives_many IS 'whether the value arrives as many: for a parameter, filled once per call, the occurrence''s path reading through a list; for a member, filled once per instance built, a list of the objects above building each in turn, its own input field being one';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.arrival_kind IS 'which arrival answers the class, as graphitron_type_arrival states it: EXACT, the class itself; UNTYPED, java.lang.Object or java.util.Map taking the value whole, or a service''s Object taking a component; ANY_NON_JDK, a class outside java. an enum is taken as by its constant or an input object built into; COMPONENT, the class of the generated scalar''s component the pair names. NULL where none does';
-COMMENT ON COLUMN graphitron_occurrence_value_slot.fits IS 'whether the value fits: an arrival answers, and the place takes many exactly where the value arrives as many, or it is a service''s parameter taking one Object, which takes a value whole, a list too. Generated, so nothing writes it';
+COMMENT ON COLUMN graphitron_occurrence_value_slot.fits IS 'whether the value fits: an arrival answers, and the place takes many exactly where the value arrives as many, or it is a service''s parameter or member taking one Object, which takes a value whole, a list too. Generated, so nothing writes it. A CONDITION row''s verdict is not yet the @condition''s judgment: which values a condition parameter takes is unruled, and nothing reads it';
 COMMENT ON COLUMN graphitron_occurrence_value_slot.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_occurrence_value_slot_parameter (
@@ -16386,17 +16397,17 @@ CREATE TABLE graphitron_occurrence_value_slot_parameter (
   position        INT       NOT NULL,
   coordinate      VARCHAR   NOT NULL,
   kind            VARCHAR   NOT NULL,
-  call_kind       VARCHAR   NOT NULL,
+  stated_by       VARCHAR   NOT NULL,
   slot            VARCHAR GENERATED ALWAYS AS (call_coordinate || ' ' || call || ' ' || position) NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, call_coordinate, call, position),
-  FOREIGN KEY (graph_name, coordinate, slot, kind)
-    REFERENCES graphitron_occurrence_value_slot (graph_name, coordinate, slot, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, slot, kind, stated_by)
+    REFERENCES graphitron_occurrence_value_slot (graph_name, coordinate, slot, kind, stated_by) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, call_coordinate, call, position)
     REFERENCES graphitron_occurrence_call_parameter (graph_name, coordinate, call, position)
     ON DELETE CASCADE,
   CHECK (kind = 'PARAMETER'),
-  CHECK (call_kind IN ('SERVICE', 'ROUTINE'))
+  CHECK (stated_by IN ('SERVICE', 'ROUTINE', 'CONDITION'))
 );
 COMMENT ON TABLE graphitron_occurrence_value_slot_parameter IS 'The call parameter a value that is no node id lands on: one row per parameter an ARGUMENT fill hands a scalar, an enum, an input object or a generated scalar''s component. For example Query.filmsForActor(actorId:) lands on the routine parameter pActorId of public.films_for_actor.';
 COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.graph_name IS 'the owning graph''s partition';
@@ -16405,9 +16416,32 @@ COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.call IS 'which of i
 COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.position IS 'the parameter''s position';
 COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.coordinate IS 'the occurrence the fill lands on, whose value arrives';
 COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.kind IS 'always PARAMETER, pinned so the foreign key holds the row to a slot of that kind';
-COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.call_kind IS 'the call''s kind, SERVICE or ROUTINE, which says the stage that writes the row';
+COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.stated_by IS 'the call''s kind, SERVICE, ROUTINE or CONDITION, the supertype''s owner, pinned so the foreign key holds the row to a slot that owner wrote';
 COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.slot IS 'the slot the supertype states, spelled from the parameter. Generated, so nothing writes it';
 COMMENT ON COLUMN graphitron_occurrence_value_slot_parameter.touched_at IS 'the reading that last wrote this row';
+
+CREATE TABLE graphitron_occurrence_value_slot_member (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  bound      VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  stated_by  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  FOREIGN KEY (graph_name, coordinate, bound, kind, stated_by)
+    REFERENCES graphitron_occurrence_value_slot (graph_name, coordinate, slot, kind, stated_by) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding_member (graph_name, coordinate, bound) ON DELETE CASCADE,
+  CHECK (kind = 'MEMBER'),
+  CHECK (stated_by IN ('SERVICE', 'CONDITION'))
+);
+COMMENT ON TABLE graphitron_occurrence_value_slot_member IS 'The member of a built class a value that is no node id fills: one row per occurrence with a MEMBER binding taking a scalar, an enum or an input object. For example Query.filmsByTitleBean(by.title:), a String, fills the title member of the FilmTitleFilter its @condition builds.';
+COMMENT ON COLUMN graphitron_occurrence_value_slot_member.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_value_slot_member.coordinate IS 'the input field occurrence whose value fills the member';
+COMMENT ON COLUMN graphitron_occurrence_value_slot_member.bound IS 'the member, as its MEMBER binding''s bound spells it, which is the slot';
+COMMENT ON COLUMN graphitron_occurrence_value_slot_member.kind IS 'always MEMBER, pinned so the foreign key holds the row to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_value_slot_member.stated_by IS 'SERVICE or CONDITION, as the member binding states it, the supertype''s owner, pinned so the foreign key holds the row to a slot that owner wrote';
+COMMENT ON COLUMN graphitron_occurrence_value_slot_member.touched_at IS 'the reading that last wrote this row';
 
 -- A service call's parameter defects: two written fills for one parameter, candidates by type that
 -- did not bind, and a parameter nothing binds where no pair names it, the pair's defect being its
@@ -16424,11 +16458,11 @@ SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position
   FROM graphitron_occurrence_value_slot_parameter vp
   JOIN graphitron_occurrence_value_slot vs
     ON vs.graph_name = vp.graph_name AND vs.coordinate = vp.coordinate AND vs.slot = vp.slot
-   AND vs.kind = vp.kind
+   AND vs.kind = vp.kind AND vs.stated_by = vp.stated_by
   JOIN graphitron_occurrence_call_parameter cp
     ON cp.graph_name = vp.graph_name AND cp.coordinate = vp.call_coordinate AND cp.call = vp.call
    AND cp.position = vp.position AND cp.landing_coordinate = vp.coordinate
- WHERE vp.call_kind = 'SERVICE' AND NOT vs.fits
+ WHERE vp.stated_by = 'SERVICE' AND NOT vs.fits
 UNION ALL
 -- A parameter of a service's call taking a Java array that a pair fills with a generated scalar's
 -- component: the component is one value, and an array parameter has no place in
@@ -17867,20 +17901,26 @@ COMMENT ON COLUMN graphitron_occurrence_producer_routine.table_schema IS 'the ro
 COMMENT ON COLUMN graphitron_occurrence_producer_routine.routine_name IS 'the routine';
 COMMENT ON COLUMN graphitron_occurrence_producer_routine.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- The call parameters values that are no node id land on, and whether each fits: the class a
--- parameter takes one value as and whether it takes many, as its method states it for a service and
--- as the catalog does for a root routine, beside whether the value arrives as many, its path reading
--- through a list, and which arrival answers the class. A generated scalar's component, which a pair
+-- The places values that are no node id land on, and whether each fits: the class a place takes one
+-- value as and whether it takes many, as its method states it for a service's or a @condition's
+-- parameter, as the
+-- catalog does for a root routine's and as the write slot does for a built class's member, beside
+-- whether the value arrives as many and which arrival answers the class. A parameter's value arrives
+-- as many where its path reads through a list; a member's where its own input field is a list, a list
+-- of the objects above it building each one in turn. A generated scalar's component, which a pair
 -- names past it, arrives as its component's class; any other value as graphitron_type_arrival says,
 -- an exact class first, then Object or Map taking it whole, then a class outside java. an enum is
 -- taken as by its constant or an input object is built into. A value whose type arrives as no known
--- class has no place here, and neither has a service's array parameter, whose element the code family
--- does not state yet, nor an input object filling a routine's parameter, which takes none.
-CREATE VIEW graphitron_occurrence_value_slot_parameter_rule
-  (graph_name, coordinate, call_coordinate, call, position, slot, stated_by, element_class, takes_many,
-   arrives_many, arrival_kind) AS
-WITH place (graph_name, coordinate, call_coordinate, call, position, kind, element_class, takes_many) AS (
-  SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate, cp.call, cp.position, cp.call_kind,
+-- class has no place here, and neither has a service's array parameter or a member set through an
+-- array, whose element the code family does not state yet, nor an input object filling a routine's
+-- parameter, which takes none.
+CREATE VIEW graphitron_occurrence_value_slot_rule
+  (graph_name, coordinate, slot, kind, stated_by, call_coordinate, call, position, bound, element_class,
+   takes_many, arrives_many, arrival_kind) AS
+WITH place (graph_name, coordinate, slot, kind, stated_by, call_coordinate, call, position, bound,
+            element_class, takes_many) AS (
+  SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate || ' ' || cp.call || ' ' || cp.position,
+         'PARAMETER', cp.call_kind, cp.coordinate, cp.call, cp.position, CAST(NULL AS VARCHAR),
          COALESCE(mp.element_class, mp.erased_class, mp.parameter_type), COALESCE(mp.delivery, '') = 'MANY'
     FROM graphitron_occurrence_call_parameter cp
     JOIN graphitron_occurrence_call_method cm
@@ -17889,9 +17929,10 @@ WITH place (graph_name, coordinate, call_coordinate, call, position, kind, eleme
       ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
      AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
      AND mp.position = cp.position
-   WHERE cp.call_kind = 'SERVICE' AND cp.fill = 'ARGUMENT' AND mp.parameter_type NOT LIKE '%[]'
+   WHERE cp.call_kind IN ('SERVICE', 'CONDITION') AND cp.fill = 'ARGUMENT' AND mp.parameter_type NOT LIKE '%[]'
   UNION ALL
-  SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate, cp.call, cp.position, cp.call_kind,
+  SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate || ' ' || cp.call || ' ' || cp.position,
+         'PARAMETER', cp.call_kind, cp.coordinate, cp.call, cp.position, CAST(NULL AS VARCHAR),
          sp.element_class, sp.delivery = 'MANY'
     FROM graphitron_occurrence_call_parameter cp
     JOIN graphitron_occurrence_producer_routine pr
@@ -17900,28 +17941,32 @@ WITH place (graph_name, coordinate, call_coordinate, call, position, kind, eleme
       ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
      AND sp.routine_name = pr.routine_name AND sp.position = cp.position
    WHERE cp.call_kind = 'ROUTINE' AND cp.fill = 'ARGUMENT'
+  UNION ALL
+  SELECT bm.graph_name, bm.coordinate, bm.bound, 'MEMBER', bm.stated_by, CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), CAST(NULL AS INT), bm.bound,
+         COALESCE(ws.element_class, ws.erased_class, ws.slot_type), COALESCE(ws.delivery, '') = 'MANY'
+    FROM graphitron_occurrence_binding_member bm
+    JOIN code_write_slot ws
+      ON ws.source_name = bm.slot_source_name AND ws.class_name = bm.class_name
+     AND ws.method_name = bm.slot_method_name AND ws.descriptor = bm.slot_descriptor
+     AND ws.position = bm.slot_position
+   WHERE ws.slot_type NOT LIKE '%[]'
 ),
-arriving (graph_name, coordinate, call_coordinate, call, position, kind, element_class, takes_many,
-          type_name, component_class) AS (
-  SELECT pl.graph_name, pl.coordinate, pl.call_coordinate, pl.call, pl.position, pl.kind,
-         pl.element_class, pl.takes_many, it.type_name,
-         -- The class of the generated scalar's component the parameter's pair names past it.
-         (SELECT gc.java_class
+arriving (graph_name, coordinate, slot, kind, stated_by, call_coordinate, call, position, bound,
+          element_class, takes_many, type_name, is_list, component_class) AS (
+  SELECT pl.graph_name, pl.coordinate, pl.slot, pl.kind, pl.stated_by, pl.call_coordinate, pl.call,
+         pl.position, pl.bound, pl.element_class, pl.takes_many, it.type_name, it.is_list,
+         -- The class of the generated scalar's component a parameter's pair names past it.
+         -- One pair fills a parameter; two are the parameter's own defect, and the class is then either.
+         (SELECT MAX(gc.java_class)
             FROM graphitron_occurrence_call_parameter_pair pp
             JOIN graphitron_argmapping_landing l
               ON l.graph_name = pp.graph_name AND l.coordinate = pp.pair_coordinate
              AND l.directive_name = pp.directive_name AND l.ordinal = pp.ordinal AND l.owner = pp.owner
              AND l.target_kind = pp.target_kind AND l.target_name = pp.target_name
-             AND l.call_coordinate = pp.coordinate AND l.receives = 'COMPONENT'
-            JOIN graphitron_occurrence_input_type ct
-              ON ct.graph_name = l.graph_name AND ct.coordinate = l.landing_coordinate
-            JOIN graphql_directive_application gd
-              ON gd.graph_name = ct.graph_name AND gd.coordinate = ct.type_name
-             AND gd.directive_name = 'generatedScalar' AND gd.ordinal = 0
-            JOIN graphitron_ast_generated_scalar_entry ge
-              ON ge.graph_name = gd.graph_name AND ge.source_name = gd.source_name
-             AND ge.source_line = gd.source_line AND ge.source_column = gd.source_column
-            JOIN graphitron_generated_scalar_component gc ON gc.kind = ge.kind AND gc.component = l.trailing_name
+             AND l.call_coordinate = pp.coordinate
+            JOIN graphitron_generated_scalar_component gc
+              ON gc.kind = l.component_kind AND gc.component = l.trailing_name
            WHERE pp.graph_name = pl.graph_name AND pp.coordinate = pl.call_coordinate AND pp.call = pl.call
              AND pp.position = pl.position)
     FROM place pl
@@ -17929,19 +17974,20 @@ arriving (graph_name, coordinate, call_coordinate, call, position, kind, element
     JOIN graphitron_occurrence_input_type it
       ON it.graph_name = lo.graph_name AND it.coordinate = lo.coordinate
    -- A routine takes no input object, whatever its parameter's class: the routine rule's own arm.
-   WHERE NOT (pl.kind = 'ROUTINE' AND it.type_kind = 'INPUT_OBJECT')
+   WHERE NOT (pl.stated_by = 'ROUTINE' AND it.type_kind = 'INPUT_OBJECT')
      AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                       WHERE x.graph_name = lo.graph_name AND x.coordinate = lo.element_coordinate
                         AND x.kind = 'NODE_ID')
 )
-SELECT a.graph_name, a.coordinate, a.call_coordinate, a.call, a.position,
-       a.call_coordinate || ' ' || a.call || ' ' || a.position, a.kind, a.element_class, a.takes_many,
-       EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
-                WHERE st.graph_name = a.graph_name AND st.coordinate = a.coordinate AND st.is_list),
+SELECT a.graph_name, a.coordinate, a.slot, a.kind, a.stated_by, a.call_coordinate, a.call, a.position,
+       a.bound, a.element_class, a.takes_many,
+       CASE WHEN a.kind = 'MEMBER' THEN a.is_list
+            ELSE EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                          WHERE st.graph_name = a.graph_name AND st.coordinate = a.coordinate AND st.is_list) END,
        CASE WHEN a.component_class IS NOT NULL
             THEN CASE WHEN a.element_class = a.component_class THEN 'COMPONENT'
                       -- A service's Object takes the component whole.
-                      WHEN a.kind = 'SERVICE' AND a.element_class = 'java.lang.Object' THEN 'UNTYPED' END
+                      WHEN a.stated_by = 'SERVICE' AND a.element_class = 'java.lang.Object' THEN 'UNTYPED' END
             WHEN EXISTS (SELECT 1 FROM graphitron_type_arrival ar
                           WHERE ar.graph_name = a.graph_name AND ar.type_name = a.type_name
                             AND ar.arrival_kind = 'EXACT' AND ar.arrival_class = a.element_class) THEN 'EXACT'
@@ -17957,7 +18003,7 @@ SELECT a.graph_name, a.coordinate, a.call_coordinate, a.call, a.position,
     OR EXISTS (SELECT 1 FROM graphitron_type_arrival ar
                 WHERE ar.graph_name = a.graph_name AND ar.type_name = a.type_name
                   AND ar.arrival_kind <> 'UNTYPED');
-COMMENT ON VIEW graphitron_occurrence_value_slot_parameter_rule IS 'One row the value slot parameter rule computes, in the shape graphitron_occurrence_value_slot and graphitron_occurrence_value_slot_parameter store: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers writes this view''s rows for one graph and call kind into the two relations once that kind''s fills are written.';
+COMMENT ON VIEW graphitron_occurrence_value_slot_rule IS 'One row the value slot rule computes, in the shape graphitron_occurrence_value_slot and its subtypes store: the rule itself, evaluated on demand rather than read off disk. For example occurrence-producers writes this view''s rows for one graph, kind and call kind into the supertype and the subtype of that kind once those places are written.';
 
 -- How the value an argument or input field supplies reaches the call parameter it binds, decided once
 -- for every reader of a call's parameters: one generated scalar's component where the binding's pair
@@ -18399,11 +18445,11 @@ SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position
   FROM graphitron_occurrence_value_slot_parameter vp
   JOIN graphitron_occurrence_value_slot vs
     ON vs.graph_name = vp.graph_name AND vs.coordinate = vp.coordinate AND vs.slot = vp.slot
-   AND vs.kind = vp.kind
+   AND vs.kind = vp.kind AND vs.stated_by = vp.stated_by
   JOIN graphitron_occurrence_call_parameter cp
     ON cp.graph_name = vp.graph_name AND cp.coordinate = vp.call_coordinate AND cp.call = vp.call
    AND cp.position = vp.position AND cp.landing_coordinate = vp.coordinate
- WHERE vp.call_kind = 'ROUTINE' AND NOT vs.fits
+ WHERE vp.stated_by = 'ROUTINE' AND NOT vs.fits
 UNION ALL
 -- A root routine call's parameter taking an array of a Java enum's constants: the call copies a list
 -- into the array as it arrives, and reading each element as its constant is not generated yet.
@@ -23272,37 +23318,20 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE d.graph_name = o2.graph_name AND d.coordinate = o2.element_coordinate)
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
--- An input field filling a member of the class a service's call builds that cannot take what the
--- field delivers, at the field: the member's parameter of the constructor or setter, on the terms
--- the service parameter defect rule judges a parameter by. The detail is the member.
+-- An input field filling a member of the class a service's call builds that what the field delivers
+-- does not fit, as graphitron_occurrence_value_slot states it, at the field: a list where the member
+-- takes one value or one where it takes many, or a value that does not arrive as the member's class.
+-- A node id is the node id rules' to judge, a scalar of no known class and an array member no one's.
+-- The detail is the member.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'PARAMETER_MISMATCH', m.bound, 'occurrence-builds'
-  FROM graphitron_occurrence_binding_member m
-  JOIN code_write_slot ws
-    ON ws.source_name = m.slot_source_name AND ws.class_name = m.class_name
-   AND ws.method_name = m.slot_method_name AND ws.descriptor = m.slot_descriptor
-   AND ws.position = m.slot_position
-  JOIN graphitron_occurrence o ON o.graph_name = m.graph_name AND o.coordinate = m.coordinate
-  JOIN graphitron_occurrence_input_type it ON it.graph_name = o.graph_name AND it.coordinate = o.coordinate
+       'PARAMETER_MISMATCH', vm.bound, 'occurrence-builds'
+  FROM graphitron_occurrence_value_slot_member vm
+  JOIN graphitron_occurrence_value_slot vs
+    ON vs.graph_name = vm.graph_name AND vs.coordinate = vm.coordinate AND vs.slot = vm.bound
+   AND vs.kind = vm.kind AND vs.stated_by = vm.stated_by
+  JOIN graphitron_occurrence o ON o.graph_name = vm.graph_name AND o.coordinate = vm.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE m.stated_by = 'SERVICE' AND ws.slot_type NOT LIKE '%[]'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind = 'NODE_ID')
-   AND EXISTS (SELECT 1 FROM graphitron_type_arrival ar
-                WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
-                  AND ar.arrival_kind <> 'UNTYPED')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_type_arrival ar
-                    WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
-                      AND (ar.arrival_kind = 'UNTYPED' AND ar.arrival_class = 'java.lang.Object'
-                           AND COALESCE(ws.element_class, ws.erased_class, ws.slot_type) = 'java.lang.Object'
-                           AND COALESCE(ws.delivery, '') <> 'MANY'
-                        OR it.is_list = (COALESCE(ws.delivery, '') = 'MANY')
-                           AND (ar.arrival_kind IN ('EXACT', 'UNTYPED')
-                                AND ar.arrival_class = COALESCE(ws.element_class, ws.erased_class, ws.slot_type)
-                             OR ar.arrival_kind = 'ANY_NON_JDK'
-                                AND POSITION('.', COALESCE(ws.element_class, ws.erased_class, ws.slot_type)) > 0
-                                AND COALESCE(ws.element_class, ws.erased_class, ws.slot_type) NOT LIKE 'java.%')))
+ WHERE vm.stated_by = 'SERVICE' AND NOT vs.fits
 UNION ALL
 -- An input object reached again inside itself under a class a @condition's parameter builds, or as a
 -- row input under a field's rows, at the input field that reaches it again: the occurrences stop
@@ -34488,6 +34517,10 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_defect'),
   ('occurrence-producers', 'graphitron_occurrence_value_slot'),
   ('occurrence-producers', 'graphitron_occurrence_value_slot_parameter'),
+  ('occurrence-producers', 'graphitron_occurrence_value_slot_member'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot_member'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot_parameter'),
   ('occurrence-bindings', 'graphitron_occurrence_binding_parameter'),
   ('occurrence-bindings', 'graphitron_occurrence_call_parameter_defect'),
   ('occurrence-producers', 'graphitron_occurrence_producer'),
@@ -34549,8 +34582,15 @@ INSERT INTO meta_stage_write_kind VALUES
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_defect', 'call_kind', 'ROUTINE'),
   ('occurrence-producers', 'graphitron_occurrence_value_slot', 'stated_by', 'SERVICE'),
   ('occurrence-producers', 'graphitron_occurrence_value_slot', 'stated_by', 'ROUTINE'),
-  ('occurrence-producers', 'graphitron_occurrence_value_slot_parameter', 'call_kind', 'SERVICE'),
-  ('occurrence-producers', 'graphitron_occurrence_value_slot_parameter', 'call_kind', 'ROUTINE'),
+  ('occurrence-producers', 'graphitron_occurrence_value_slot_parameter', 'stated_by', 'SERVICE'),
+  ('occurrence-producers', 'graphitron_occurrence_value_slot_parameter', 'stated_by', 'ROUTINE'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot', 'stated_by', 'CONDITION'),
+  ('occurrence-producers', 'graphitron_occurrence_value_slot_member', 'stated_by', 'SERVICE'),
+  -- The value slot rule states every kind of place in one view; its routine parameters' call kind is
+  -- the producers' too, though no member is stated by a routine.
+  ('occurrence-producers', 'graphitron_occurrence_value_slot_member', 'stated_by', 'ROUTINE'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot_member', 'stated_by', 'CONDITION'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot_parameter', 'stated_by', 'CONDITION'),
   ('occurrence-bindings', 'graphitron_occurrence_call_parameter_defect', 'call_kind', 'CONDITION'),
   ('occurrence-producers', 'graphitron_occurrence_call', 'call_kind', 'SERVICE'),
   ('occurrence-producers', 'graphitron_occurrence_call', 'call_kind', 'WRITE'),
@@ -34835,8 +34875,12 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_candidate', 'graphitron_occurrence_call_parameter_candidate_rule'),
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_defect', 'graphitron_occurrence_routine_parameter_defect_rule'),
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_defect', 'graphitron_occurrence_service_parameter_defect_rule'),
-  ('occurrence-producers', 'graphitron_occurrence_value_slot', 'graphitron_occurrence_value_slot_parameter_rule'),
-  ('occurrence-producers', 'graphitron_occurrence_value_slot_parameter', 'graphitron_occurrence_value_slot_parameter_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_value_slot', 'graphitron_occurrence_value_slot_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_value_slot_parameter', 'graphitron_occurrence_value_slot_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_value_slot_member', 'graphitron_occurrence_value_slot_rule'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot', 'graphitron_occurrence_value_slot_rule'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot_member', 'graphitron_occurrence_value_slot_rule'),
+  ('occurrence-builds', 'graphitron_occurrence_value_slot_parameter', 'graphitron_occurrence_value_slot_rule'),
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_pair', 'graphitron_occurrence_call_parameter_pair_rule'),
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_written', 'graphitron_occurrence_call_parameter_written_rule'),
   ('occurrence-producers', 'graphitron_occurrence_producer', 'graphitron_occurrence_producer_rule'),
@@ -35430,6 +35474,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-value-slot-parameter',
    'one call parameter a value that is no node id lands on, in one graph',
    'graph_name, call_coordinate, call, position', 'sdl'),
+  ('occurrence-value-slot-member',
+   'one built class member a value that is no node id fills, in one graph',
+   'graph_name, coordinate, bound', 'sdl'),
   ('occurrence-node-id-slot-step-parameter',
    'one routine step parameter a node id lands on, in one graph',
    'graph_name, step_coordinate, target_type, position, parameter_position', 'sdl'),
@@ -36630,10 +36677,14 @@ INSERT INTO meta_relation VALUES
    'The call parameter a value that is no node id lands on: one row per parameter an ARGUMENT fill hands a scalar, an enum, an input object or a generated scalar''s component.',
    'For example Query.filmsForActor(actorId:) lands on the routine parameter pActorId of public.films_for_actor.',
    'The parameter subtype of graphitron_occurrence_value_slot, keyed by the parameter itself, one value landing on one parameter, and held to the fill it is the place of.'),
-  ('graphitron_occurrence_value_slot_parameter_rule', 'occurrence-value-slot-parameter', 'graphitron',
-   'One row the value slot parameter rule computes, in the shape graphitron_occurrence_value_slot and graphitron_occurrence_value_slot_parameter store: the rule itself, evaluated on demand rather than read off disk.',
-   'For example occurrence-producers writes this view''s rows for one graph and call kind into the two relations once that kind''s fills are written.',
-   'The rule both relations are written from, the place and its parameter in one row: the class a parameter takes and whether it takes many, from the method or the catalog, beside the arrival that answers it.'),
+  ('graphitron_occurrence_value_slot_member', 'occurrence-value-slot-member', 'graphitron',
+   'The member of a built class a value that is no node id fills: one row per occurrence with a MEMBER binding taking a scalar, an enum or an input object.',
+   'For example Query.filmsByTitleBean(by.title:), a String, fills the title member of the FilmTitleFilter its @condition builds.',
+   'The member subtype of graphitron_occurrence_value_slot, keyed by the value''s own MEMBER binding, whose bound is the slot, so the member arm reads whether a member''s value fits as a parameter''s does.'),
+  ('graphitron_occurrence_value_slot_rule', 'occurrence-value-slot', 'graphitron',
+   'One row the value slot rule computes, in the shape graphitron_occurrence_value_slot and its subtypes store: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-producers writes this view''s rows for one graph, kind and call kind into the supertype and the subtype of that kind once those places are written.',
+   'The rule the supertype and both subtypes are written from, the place and its subtype''s key in one row: the class a place takes and whether it takes many, from the method, the catalog or the write slot, beside the arrival that answers it, one predicate for every kind of place.'),
   ('graphitron_occurrence_node_id_slot_parameter_rule', 'occurrence-node-id-slot-parameter', 'graphitron',
    'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_parameter stores.',
    'For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.',

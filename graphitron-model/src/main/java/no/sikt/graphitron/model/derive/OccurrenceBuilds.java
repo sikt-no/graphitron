@@ -39,13 +39,17 @@ public final class OccurrenceBuilds {
     static final String CONDITION = "CONDITION";
 
     /**
-     * The stage: the conditions' built classes and member bindings, then where each node id lands and
-     * the shape it lands in, then how each binding's value reaches its parameter, each swept, then the
-     * defects judging them.
+     * The stage: the conditions' built classes and member bindings and where each of their members' and
+     * parameters' values lands, then where each node id lands and the shape it lands in, then how each
+     * binding's value reaches its parameter, each swept, then the defects judging them.
      */
     public static void derive(DSLContext dsl, String graph, LocalDateTime readAt) {
         write(dsl, graph, readAt, CONDITION);
         sweep(dsl, graph, readAt, CONDITION);
+        OccurrenceValueSlots.write(dsl, graph, readAt, OccurrenceValueSlots.MEMBER, CONDITION);
+        // A condition's parameters, written here with its bean's members rather than where its fills
+        // are, so each call kind's places have one writer.
+        OccurrenceValueSlots.write(dsl, graph, readAt, OccurrenceValueSlots.PARAMETER, CONDITION);
         OccurrenceNodeIdSlots.write(dsl, graph, readAt);
         OccurrenceNodeIdSlots.sweep(dsl, graph, readAt);
         OccurrenceNodeIdShapes.write(dsl, graph, readAt);

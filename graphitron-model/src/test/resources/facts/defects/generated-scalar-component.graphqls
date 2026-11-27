@@ -54,14 +54,15 @@ type Mutation {
     @reference(path: [{table: "film_endorsement"}])
 }
 
-# The landing case's calls, every landing they write; the mismatch case's calls land too, outside it.
+# The landing case's calls, every landing they write, with the kind of generated scalar each component is of;
+# the mismatch case's calls land too, outside it.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing",
     where: "call_coordinate IN ('Query.start', 'Query.nested', 'Query.named', 'Query.misspelt', 'Query.misspeltNested', 'Query.otherKind')", rows: """
-  call_coordinate, target_name, landing_coordinate,          trailing_name, receives
-  Query.nested,    p,           Query.nested(route.sti:),    endType,       COMPONENT
-  Query.nested,    q,           Query.nested(route.sti:),    text,          COMPONENT
-  Query.named,     p,           Query.named(type:),          name,          COMPONENT
-  Query.start,     p,           Query.start(path:),          startType,     COMPONENT
+  call_coordinate, target_name, landing_coordinate,          trailing_name, receives,  component_kind
+  Query.nested,    p,           Query.nested(route.sti:),    endType,       COMPONENT, SCHEMA_PATH
+  Query.nested,    q,           Query.nested(route.sti:),    text,          COMPONENT, SCHEMA_PATH
+  Query.named,     p,           Query.named(type:),          name,          COMPONENT, TYPE_NAME
+  Query.start,     p,           Query.start(path:),          startType,     COMPONENT, SCHEMA_PATH
   """)
 
 extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """

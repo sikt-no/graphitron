@@ -40,10 +40,10 @@ public final class ArgMappingLandings {
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.TARGET_KIND, t.TARGET_NAME,
                 t.CALL_COORDINATE, t.LANDING_COORDINATE, t.TRAILING_NAME, t.REPEATS_OWN_NAME,
-                t.DESCENDS, t.RECEIVES, t.TOUCHED_AT)
+                t.DESCENDS, t.RECEIVES, t.COMPONENT_KIND, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.DIRECTIVE_NAME, r.ORDINAL,
                     r.OWNER, r.TARGET_KIND, r.TARGET_NAME, r.CALL_COORDINATE, r.LANDING_COORDINATE, r.TRAILING_NAME,
-                    r.REPEATS_OWN_NAME, r.DESCENDS, r.RECEIVES, val(touchedAt, t.TOUCHED_AT))
+                    r.REPEATS_OWN_NAME, r.DESCENDS, r.RECEIVES, r.COMPONENT_KIND, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.TARGET_KIND, t.TARGET_NAME,
@@ -54,6 +54,7 @@ public final class ArgMappingLandings {
             .set(t.REPEATS_OWN_NAME, excluded(t.REPEATS_OWN_NAME))
             .set(t.DESCENDS, excluded(t.DESCENDS))
             .set(t.RECEIVES, excluded(t.RECEIVES))
+            .set(t.COMPONENT_KIND, excluded(t.COMPONENT_KIND))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
 

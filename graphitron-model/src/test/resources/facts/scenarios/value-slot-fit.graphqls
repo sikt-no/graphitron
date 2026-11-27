@@ -45,7 +45,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_value_slot",
 # Each place, the parameter it is.
 extend schema @expectEquals(relation: "graphitron_occurrence_value_slot_parameter",
     where: "call_coordinate IN ('Query.byStart', 'Query.byIds')", rows: """
-  call_coordinate, call,     position, coordinate,           kind,      call_kind
+  call_coordinate, call,     position, coordinate,           kind,      stated_by
   Query.byIds,     producer, 0,        Query.byIds(ids:),    PARAMETER, ROUTINE
   Query.byStart,   producer, 0,        Query.byStart(path:), PARAMETER, SERVICE
   """)

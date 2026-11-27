@@ -854,44 +854,16 @@ static method needs no holder.
     `TABLE_CONCRETE`/`TABLE_ANY` split onto it, then the record side, then `@service`, writes and
     `@routine` as calls reading the same rule (Alf: one rule for every Java call).
   * **A @routine's generated method is read as a code method, and its parameters fit by the one rule** `open`, after the build-time work (performance first, Alf 2026-11-16). A `@routine` binds the Java method jOOQ generates for it, the Routines method or the table-valued function's class, and every call directive works the same (Alf). Today its parameters are `sql_routine_parameter`, read reflectively by the jooq gatherer, and no code method: the classpath reading takes the jOOQ package header-only. The reading reads the Routines class and the table-valued functions' classes with their members, and no other class of the package, so table classes stay header-only; the method a `@routine` resolves to is named, and `graphitron_call_parameter_table` covers its parameters as it covers a `@service`'s. `sql_routine_parameter`'s Java side, `jooq_name` and `binding_type`, dissolves into `code_method_parameter`, and its readers move: the routine parameter rule, its `PARAMETER_UNFILLED` rule and the outbox routine target rule. `intent_argmapping_bound_parameter_type` is left to dissolve on its own.
-  * **Whether what arrives fits a call parameter is one stored fact** `open`, before the root routine
-    read's flip emits from the store. Three rule views each judge whether an argument's value fits the
-    parameter it fills, and each differently on `Object`, untyped arrivals and arrays: the service
-    parameter defect rule's `PARAMETER_MISMATCH`, the routine parameter defect rule's, which reads
-    `sql_routine_parameter.binding_type` and an array's element class, and the condition fill's. The
-    stage writing a call's fills writes, per call parameter and occurrence, whether what arrives fits
-    the parameter's class and list-ness, from `graphitron_type_arrival` and the argument's steps; each
-    kind's `PARAMETER_MISMATCH` filters on it, and the three predicates go. The node above, reading a
-    routine's method as a code method, gives the routine its parameter class off `code_method_parameter`
-    and lands either side of this one.
-    The fact is `graphitron_occurrence_value_slot`, the twin of `graphitron_occurrence_node_id_slot` for
-    values that are no node id, keyed by the arriving occurrence and the place, its `kind` saying which
-    stage writes the row: the class one value lands as, whether the place takes many, whether the value
-    arrives as many, which arrival answers (`EXACT`, `UNTYPED`, `ANY_NON_JDK`, a generated scalar's
-    `COMPONENT`), and a generated `fits`. Three steps: the service and root routine call parameters at
-    `occurrence-producers`, their `PARAMETER_MISMATCH` arms reading it, with the catalog stating a
-    routine parameter's element class and delivery on `sql_routine_parameter`; a member subtype at
-    `occurrence-builds`, the member arm reading it; the `@condition` parameters' rows at
-    `occurrence-bindings`, their defect still judging only an enum list against one constant until Alf
-    rules on judging condition parameters whole (A to put it to him). A service's array parameter has
-    no place yet, since the code family states no element for a Java array: it waits on
-    "A Java array parameter's component is captured as a multiplying delivery". The call parameter
-    candidate pairing keeps its own copy of the predicate, a named survivor: it decides the fills, so it
-    cannot read a fact written with them. Until then a generated scalar's component filling a service's
-    array parameter is refused by a narrow arm of its own. Whether a class is outside `java.`, what
-    `ANY_NON_JDK` asks, is spelled in three rule views (the candidate pairing, the value slot rule, the
-    write slot's member arm); a generated column on the code family's class facts would let each read
-    it. Before the condition rows, the class of a generated scalar's component a pair names is stored on
-    `graphitron_argmapping_landing`, which the value slot rule and the binding extraction rule each
-    derive today.
   * **A Java array parameter's component is captured as a multiplying delivery** `open`, off the
     critical path. `CodeCapture.deliveryOf` peels containers from the type's root path only, and
     `ClassfileCensus` records an array's component at path `[]`, so a `String[]` parameter, result or
     write slot states no `element_class` and no `delivery`. Peeling an array as a container that
     multiplies states `java.lang.String` delivered `MANY`; every reader of the two columns then sees
-    arrays as the collections they are, and a service's array parameter gets a place in
-    `graphitron_occurrence_value_slot`. FS main (2026-11-12) declares no array parameter on any of its
-    433 `@service` applications.
+    arrays as the collections they are, and a service's array parameter, or a member set through an
+    array, gets a place in `graphitron_occurrence_value_slot` beside every other value, judged by its
+    `fits`. The narrow arm of the service parameter defect rule refusing a generated scalar's component
+    filling a service's array parameter goes then, the value slot judging it. FS main (2026-11-12)
+    declares no array parameter on any of its 433 `@service` applications.
   * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on
     "A `@condition` is a call per table its occurrence binds". The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
     name, with whether it reads context or the session; the multiset's filter and the `dsl` closure
