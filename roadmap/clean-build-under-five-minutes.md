@@ -524,6 +524,12 @@ parallelises a module's tests is priced against that before it is tried.
       parallel captures in one store: `store_source`'s write, which gets a fix of its own, and the
       store-wide delete of `sql_name_matched_key_column`, which goes when R876 dissolves that
       relation and is not patched before. Fewer stores waits for both.
+    - `store_source`'s write is fixed (`aead40ea84`, R876): a row every graph shares is read first
+      and written only where it is missing or changed, and the spike's full arm ran with no failure
+      against 35 before. Two cold captures finding one shared row missing at once still race; that
+      and the rest of the way to parallel captures is R876's "Each gatherer commits its own
+      consistent boundary", whose first two nodes are statements to settle before any code. Fewer
+      stores waits on that branch and on `sql_name_matched_key_column`.
 23. **The coverage agent instruments only `no.sikt`.** Done 2026-11-27. CI's build job runs
     `-Pcoverage` on every PR and trunk push, and the agent, given no includes, instrumented every
     class a test fork loaded, H2's planner, jOOQ and graphql-java among them. `graphitron-model`'s
