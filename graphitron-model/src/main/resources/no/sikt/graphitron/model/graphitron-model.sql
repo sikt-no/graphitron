@@ -27935,7 +27935,8 @@ COMMENT ON VIEW graphitron_field_target_entry_defect_rule IS 'One row the field 
 -- What a @lookupKey the keys above cannot state, at the application: a node id of a node on another
 -- table than the list reads, as the argument itself, or as a field of the input object it takes whose
 -- path's one foreign key does not carry every key position back to the list's table, either narrowing
--- by nothing.
+-- by nothing; and a node id the keys do state, read off an input object's field, on a list below the
+-- root, whose read does not decode it yet.
 CREATE VIEW graphitron_occurrence_lookup_key_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
@@ -27967,6 +27968,23 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key lk
                     WHERE lk.graph_name = t.graph_name AND lk.coordinate = t.coordinate
                       AND lk.bound = t.bound AND lk.key_coordinate = i.coordinate)
+UNION ALL
+-- A node id read off a field of the input object a @lookupKey argument takes, on a list below the
+-- root, at the application: a child's read hands the id to its one key column undecoded, or decodes
+-- the whole input object as one id, so the read compiles and fails on every call. The root lookup
+-- decodes it; a child's is not generated yet. The detail is the input field's name.
+SELECT DISTINCT lk.graph_name, da.source_name, da.source_line, da.source_column,
+       'LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED', i.name, 'occurrence-lookup-keys'
+  FROM graphitron_occurrence_lookup_key lk
+  JOIN graphitron_occurrence i ON i.graph_name = lk.graph_name AND i.coordinate = lk.key_coordinate
+  JOIN graphitron_occurrence k ON k.graph_name = i.graph_name AND k.coordinate = i.parent_coordinate
+  JOIN graphql_directive_application da
+    ON da.graph_name = k.graph_name AND da.coordinate = k.element_coordinate
+   AND da.directive_name = 'lookupKey'
+ WHERE lk.key_kind = 'NODE_ID' AND lk.field_ordinal >= 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                    WHERE p.graph_name = lk.graph_name AND p.coordinate = lk.coordinate
+                      AND p.start = 'ROOT')
 UNION ALL
 -- A root @lookupKey read whose records are rows of no one table, at the field: a union or an
 -- interface whose participants are told apart by their tables, or a type bound to no table. A lookup
@@ -35990,6 +36008,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A query-root field with a @lookupKey argument returns an interface whose participants a discriminator tells apart on its table, and the lookup handing each keyed row to its participant is not generated yet: drop @lookupKey and filter the rows instead, or look the rows up through a field returning one participant.'),
   ('LOOKUP_KEY_OFF_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_OFF_TABLE',
    'A @lookupKey argument is a node id of a node on another table than the one the field reads, or takes an input object with such a field that no one foreign key from the field''s table carries back to its columns, so it unpacks into no key of the field''s rows and there is nothing for it to narrow by: drop @lookupKey, which leaves the id a filter through the foreign key, put the id in an input object the field''s table points from, or key on the field''s own node.'),
+  ('LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED',
+   'A @lookupKey argument on a field below the root takes an input object with a node id field, and a lookup below the root does not decode such an id yet, so its read would hand the id to the key column undecoded: take the node id as a top-level @nodeId argument, or key on a column, until child lookups decode it.'),
   ('ORDER_FIELDS_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELDS_EMPTY',
    'A @defaultOrder or @order sorts by fields and names none, so the read it orders states no order: name at least one field, or write index or primaryKey: true instead.'),
   ('SORT_KEY_PATH_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_PATH_CONDITION',
@@ -38054,7 +38074,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_lookup_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the lookup key defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-lookup-keys stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.',
-   'What a @lookupKey the keys cannot state, stated beside them: a key the relation cannot state would narrow a list by fewer keys than were written, which reads more rows than the author asked for. Two are rules the walk enforces, a connection (LookupKeyDirectiveResolver.resolveAtChild, the root validator) and a node id of another table''s node as the argument (FieldBuilder) or as an input field no one foreign key carries back; one is a deferral, a single table-bound child, which the walk refuses as not supported.'),
+   'What a @lookupKey the keys cannot state, stated beside them: a key the relation cannot state would narrow a list by fewer keys than were written, which reads more rows than the author asked for. Two are rules the walk enforces, a connection (LookupKeyDirectiveResolver.resolveAtChild, the root validator) and a node id of another table''s node as the argument (FieldBuilder) or as an input field no one foreign key carries back; one is a deferral, a single table-bound child, which the walk refuses as not supported. One more is a key the relation does state: a node id read off an input object''s field on a list below the root, which the walk''s child read neither decodes nor refuses, so it compiles and fails on every call; it is refused until the child read decodes it.'),
   ('graphitron_occurrence_lookup_key', 'occurrence-lookup-key', 'graphitron',
    'One key a caller narrows a list by: one row per field occurrence, table it reads, and argument or input-field occurrence written @lookupKey that binds a column or node id there, in key order.',
    'For example Film.actors(actor_id:) narrows Film.actors at public.actor by actor_id, the field''s first argument.',

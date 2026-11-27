@@ -285,8 +285,16 @@ public final class LauncherCommands {
             case no.sikt.graphitron.emit.RootQuery.LookupArg.Fields fields ->
                 new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput(
                     fields.argument(), fields.list(), fields.fields().stream()
-                        .map(field -> new no.sikt.graphitron.rewrite.model.InputColumnBinding.MapBinding(field.field(),
-                            field.column(), extractionOf(field.conversion(), field.column())))
+                        .map(field -> switch (field) {
+                            case no.sikt.graphitron.emit.RootQuery.FieldKey.Column column ->
+                                new no.sikt.graphitron.rewrite.model.InputColumnBinding.MapBinding(column.field(),
+                                    column.column(), extractionOf(column.conversion(), column.column()));
+                            // The store holds back a root whose input object carries a node id, so none reaches here.
+                            case no.sikt.graphitron.emit.RootQuery.FieldKey.NodeId nodeId ->
+                                throw new IllegalStateException("Graphitron generator bug (lookup key): the store "
+                                    + "hands the lookup argument " + fields.argument() + " a node id field "
+                                    + nodeId.field() + ", which it holds back while the walk renders the lookup");
+                        })
                         .toList());
             case no.sikt.graphitron.emit.RootQuery.LookupArg.NodeId nodeId -> {
                 var decode = nodeId.decode();

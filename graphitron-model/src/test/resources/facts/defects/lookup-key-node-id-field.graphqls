@@ -1,0 +1,52 @@
+# A node id read off a field of the input object a @lookupKey argument takes is a key the store
+# states, decoded into its node's key columns, but a lookup below the root does not decode it yet:
+# Store.customersByIdKey, read inline in the store's statement, and Store.customersByIdKeySplit, read
+# by a split query, are refused at the application, LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED naming the
+# input field. Beside them the near misses: Store.customersById takes the same node id as a top-level
+# argument, Store.customersByEmailKey an input object of columns only, and Query.customersByIdKey reads
+# the same input object at the root, whose lookup states the node id as a key and is refused by nothing.
+
+type Store @table(name: "store") {
+    customersByIdKey(key: [CustomerIdKey!]! @lookupKey): [Customer!]!
+        @reference(path: [{key: "customer_store_id_fkey"}])
+    customersByIdKeySplit(key: [CustomerIdKey!]! @lookupKey): [Customer!]! @splitQuery
+        @reference(path: [{key: "customer_store_id_fkey"}])
+    customersById(id: [ID!]! @nodeId(typeName: "Customer") @lookupKey): [Customer!]!
+        @reference(path: [{key: "customer_store_id_fkey"}])
+    customersByEmailKey(key: [CustomerEmailKey!]! @lookupKey): [Customer!]!
+        @reference(path: [{key: "customer_store_id_fkey"}])
+}
+
+type Customer implements Node @table(name: "customer") @node(typeId: "Customer", keyColumns: ["customer_id"]) {
+    id: ID!
+    email: String
+}
+
+input CustomerIdKey {
+    id: ID! @nodeId(typeName: "Customer")
+}
+
+input CustomerEmailKey {
+    email: String!
+}
+
+type Query {
+    stores: [Store!]!
+    customersByIdKey(key: [CustomerIdKey!]! @lookupKey): [Customer!]!
+    node(id: ID!): Node
+}
+
+interface Node {
+    id: ID!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED'", rows: """
+  code,                                 coordinate,                         detail
+  LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED, Store.customersByIdKey(key:),       id
+  LOOKUP_KEY_NODE_ID_FIELD_UNSUPPORTED, Store.customersByIdKeySplit(key:),  id
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_lookup_key", where: "coordinate = 'Query.customersByIdKey'", rows: """
+  coordinate,             bound,           key_coordinate,                 key_bound,       key_kind, argument_ordinal, field_ordinal
+  Query.customersByIdKey, public.customer, Query.customersByIdKey(key.id:), public.customer, NODE_ID,  0,                0
+  """)

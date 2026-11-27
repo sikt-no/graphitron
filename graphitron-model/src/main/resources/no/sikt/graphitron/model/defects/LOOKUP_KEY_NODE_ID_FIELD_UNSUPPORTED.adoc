@@ -1,0 +1,5 @@
+Reported at the `@lookupKey` application, the detail naming the input field carrying the node id. Valid: an input object a lookup takes may carry a node id field, decoded into its node's key columns, and a lookup at the query root reads it so.
+
+A lookup on a field below the root reads its keys without decoding a node id inside an input object: it hands the id to the key column as it is, or reads the whole input object as one id, so the generated read compiles and fails on every call. Decoding it there is not generated yet.
+
+*Instead.* Take the node id as a top-level `@nodeId` argument written `@lookupKey`, or key the input object on columns, until lookups below the root decode it. See xref:directives/lookupKey.adoc[`@lookupKey`] and xref:directives/nodeId.adoc[`@nodeId`].

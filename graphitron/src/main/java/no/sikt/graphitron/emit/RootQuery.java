@@ -37,6 +37,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
@@ -45,6 +46,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_CARRIED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -357,8 +359,25 @@ public final class RootQuery {
         record NodeId(String argument, boolean list, NodeDecode decode) implements LookupArg {}
     }
 
-    /** One key field of an input object a lookup's argument takes: its name, its column and its conversion. */
-    public record FieldKey(String field, ColumnRef column, String conversion) {}
+    /** One key field of an input object a lookup's argument takes, by its name. */
+    public sealed interface FieldKey {
+        String field();
+
+        /** A field matching one column of the lookup's table: its column and its conversion. */
+        record Column(String field, ColumnRef column, String conversion) implements FieldKey {}
+
+        /**
+         * A field whose value is a node id: how it decodes to its node's key columns, and per key
+         * position the column of the lookup's table the decoded value lands on, the node's own key
+         * column where the node is on that table and the column its foreign key carries it back to
+         * where it is not.
+         */
+        record NodeId(String field, NodeDecode decode, List<ColumnRef> targetColumns) implements FieldKey {
+            public NodeId {
+                targetColumns = List.copyOf(targetColumns);
+            }
+        }
+    }
 
     /**
      * One facet a connection surfaces, in the order it surfaces them: its name, the filter argument
@@ -1417,14 +1436,31 @@ public final class RootQuery {
         return max == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(max);
     }
 
-    /** A root lookup's keys in key order, or the reason the store does not state them whole yet. */
+    /**
+     * A root lookup's keys in key order, none where the store does not state them whole, and the reason
+     * it holds the lookup back, {@code null} where it does not.
+     */
     private record Keys(List<LookupArg> keys, Reason reason) {}
+
+    /**
+     * Each root lookup's keys the store states whole, by occurrence, those held back for a node id read
+     * off an input object's field among them, which the walk still renders.
+     */
+    static Map<String, List<LookupArg>> statedLookupKeys(StoreHandle store) {
+        var out = new LinkedHashMap<String, List<LookupArg>>();
+        lookups(store).forEach((coordinate, keys) -> {
+            if (!keys.keys().isEmpty()) out.put(coordinate, keys.keys());
+        });
+        return out;
+    }
 
     /**
      * Each root lookup's keys, an argument at a time in declaration order: a scalar {@code @lookupKey}
      * argument binding a column of the field's own table, an input object whose key fields each bind
-     * one, or a node id decoded to its node's key columns there. A node id read off an input object's
-     * field holds the lookup back.
+     * one or are a node id decoded to its node's key columns and landing on the field's table, or a
+     * node id decoded to its node's key columns there. A node id read off an input object's field is
+     * stated, and holds the lookup back all the same. A lookup the store states no whole keys for
+     * keeps none.
      */
     private static Map<String, Keys> lookups(StoreHandle store) {
         var lk = GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
@@ -1438,6 +1474,7 @@ public final class RootQuery {
         var decodes = lookupDecodes(store);
         var keys = new LinkedHashMap<String, List<LookupArg>>();
         var held = new LinkedHashMap<String, Reason>();
+        var broken = new java.util.HashSet<String>();
         store.dsl()
             .select(lk.COORDINATE, lk.KEY_KIND, lk.FIELD_ORDINAL, field(lk.KEY_BOUND.eq(lk.BOUND)), a.ARGUMENT_NAME,
                 a.IS_LIST, ko.NAME, lk.KEY_COORDINATE, cv.CONVERSION, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE,
@@ -1458,36 +1495,44 @@ public final class RootQuery {
                 String coordinate = row.value1();
                 boolean field = row.value3() != -1;
                 boolean nodeId = "NODE_ID".equals(row.value2());
+                // An input object's node id lands on the field's table through the columns its decode
+                // states, wherever its node is; it holds the root on the walk until the store renders it.
                 if (nodeId && field) {
                     held.putIfAbsent(coordinate, Reason.LOOKUP_NODE_ID);
-                    return;
-                }
-                if (!Boolean.TRUE.equals(row.value4())) {
+                } else if (!Boolean.TRUE.equals(row.value4())) {
                     held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
+                    broken.add(coordinate);
                     return;
                 }
                 var args = keys.computeIfAbsent(coordinate, k -> new ArrayList<>());
                 String argument = row.value5();
                 boolean list = Boolean.TRUE.equals(row.value6());
+                FieldKey key;
                 if (nodeId) {
                     var decode = decodes.get(List.of(coordinate, row.value8()));
                     if (decode == null) {
                         held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
-                    } else {
-                        args.add(new LookupArg.NodeId(argument, list, decode));
+                        broken.add(coordinate);
+                        return;
                     }
-                    return;
+                    if (!field) {
+                        args.add(new LookupArg.NodeId(argument, list, decode.decode()));
+                        return;
+                    }
+                    key = new FieldKey.NodeId(row.value7(), decode.decode(), decode.targetColumns());
+                } else {
+                    if (row.value10() == null || row.value9() == null) {
+                        held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
+                        broken.add(coordinate);
+                        return;
+                    }
+                    var column = new ColumnRef(row.value10(), row.value11(), row.value12(), row.value13());
+                    if (!field) {
+                        args.add(new LookupArg.Scalar(argument, list, column, row.value9()));
+                        return;
+                    }
+                    key = new FieldKey.Column(row.value7(), column, row.value9());
                 }
-                if (row.value10() == null || row.value9() == null) {
-                    held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
-                    return;
-                }
-                var column = new ColumnRef(row.value10(), row.value11(), row.value12(), row.value13());
-                if (!field) {
-                    args.add(new LookupArg.Scalar(argument, list, column, row.value9()));
-                    return;
-                }
-                var key = new FieldKey(row.value7(), column, row.value9());
                 if (!args.isEmpty() && args.getLast() instanceof LookupArg.Fields fields
                         && fields.argument().equals(argument)) {
                     var more = new ArrayList<>(fields.fields());
@@ -1498,49 +1543,77 @@ public final class RootQuery {
                 }
             });
         var out = new LinkedHashMap<String, Keys>();
-        keys.forEach((coordinate, list) -> {
-            if (!held.containsKey(coordinate)) out.put(coordinate, new Keys(list, null));
-        });
-        held.forEach((coordinate, reason) -> out.put(coordinate, new Keys(List.of(), reason)));
+        keys.forEach((coordinate, list) -> out.put(coordinate,
+            new Keys(broken.contains(coordinate) ? List.of() : List.copyOf(list), held.get(coordinate))));
+        held.forEach((coordinate, reason) -> out.putIfAbsent(coordinate, new Keys(List.of(), reason)));
         return out;
     }
 
+    /** How a root lookup's node-id key decodes, and per key position the lookup's column it lands on. */
+    private record KeyDecode(NodeDecode decode, List<ColumnRef> targetColumns) {}
+
     /**
-     * How each root lookup's node-id argument decodes on the lookup's own table, by the lookup and the
-     * argument's occurrence: the node type, its type id, the table and its key columns in order. A
-     * node with no type id or a table with no generated class decodes to nothing here.
+     * How each root lookup's node-id key decodes, by the lookup and the key's occurrence, an argument
+     * or an input object's field: the node type, its type id, the table and its key columns in order,
+     * and per position the column of the lookup's table the value lands on. That is the key column
+     * itself where the node is on the lookup's table, and otherwise the column
+     * {@code graphitron_occurrence_node_id_carried} carries it back to, which the lookup key rule
+     * states for every position of such a key. A node with no type id or a table with no generated
+     * class decodes to nothing here.
      */
-    private static Map<List<String>, NodeDecode> lookupDecodes(StoreHandle store) {
+    private static Map<List<String>, KeyDecode> lookupDecodes(StoreHandle store) {
         var lk = GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var t = GRAPHITRON_OCCURRENCE_BINDING_TABLE;
         var ni = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var cr = GRAPHITRON_OCCURRENCE_NODE_ID_CARRIED;
         var gn = GRAPHITRON_NODE;
         var c = SQL_COLUMN;
-        record Read(String coordinate, String key, String nodeType, String typeId, String source, String schema,
-                    String table, ColumnRef column) {}
+        var cc = SQL_COLUMN.as("cc");
+        record Read(String nodeType, String typeId, String source, String schema, String table, boolean own,
+                    ColumnRef column, ColumnRef carried) {}
         var byKey = new LinkedHashMap<List<String>, List<Read>>();
         store.dsl()
             .select(lk.COORDINATE, lk.KEY_COORDINATE, ni.NODE_TYPE_NAME, gn.TYPE_ID, ni.TABLE_SOURCE_NAME,
-                ni.TABLE_SCHEMA, ni.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
+                ni.TABLE_SCHEMA, ni.TABLE_NAME, field(lk.KEY_BOUND.eq(lk.BOUND)), c.COLUMN_NAME, c.JOOQ_NAME,
+                c.BINDING_TYPE, c.DATABASE_TYPE, cc.COLUMN_NAME, cc.JOOQ_NAME, cc.BINDING_TYPE, cc.DATABASE_TYPE)
             .from(lk)
             .join(p).on(p.GRAPH_NAME.eq(lk.GRAPH_NAME), p.COORDINATE.eq(lk.COORDINATE), p.START.eq("ROOT"))
+            .join(t).on(t.GRAPH_NAME.eq(lk.GRAPH_NAME), t.COORDINATE.eq(lk.COORDINATE), t.BOUND.eq(lk.BOUND))
             .join(ni).on(ni.GRAPH_NAME.eq(lk.GRAPH_NAME), ni.COORDINATE.eq(lk.KEY_COORDINATE),
                 ni.BOUND.eq(lk.KEY_BOUND))
             .join(c).on(c.SOURCE_NAME.eq(ni.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(ni.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(ni.TABLE_NAME), c.COLUMN_NAME.eq(ni.COLUMN_NAME))
+            .leftJoin(cr).on(cr.GRAPH_NAME.eq(ni.GRAPH_NAME), cr.COORDINATE.eq(ni.COORDINATE),
+                cr.BOUND.eq(ni.BOUND), cr.POSITION.eq(ni.POSITION), cr.TABLE_SOURCE_NAME.eq(t.TABLE_SOURCE_NAME),
+                cr.TABLE_SCHEMA.eq(t.TABLE_SCHEMA), cr.TABLE_NAME.eq(t.TABLE_NAME))
+            .leftJoin(cc).on(cc.SOURCE_NAME.eq(cr.TABLE_SOURCE_NAME), cc.TABLE_SCHEMA.eq(cr.TABLE_SCHEMA),
+                cc.TABLE_NAME.eq(cr.TABLE_NAME), cc.COLUMN_NAME.eq(cr.COLUMN_NAME))
             .leftJoin(gn).on(gn.GRAPH_NAME.eq(ni.GRAPH_NAME), gn.TYPE_NAME.eq(ni.NODE_TYPE_NAME))
-            .where(lk.GRAPH_NAME.eq(store.graphName()), lk.KEY_KIND.eq("NODE_ID"), lk.FIELD_ORDINAL.eq(-1))
+            .where(lk.GRAPH_NAME.eq(store.graphName()), lk.KEY_KIND.eq("NODE_ID"))
             .orderBy(lk.COORDINATE, lk.KEY_COORDINATE, ni.POSITION)
             .forEach(r -> byKey.computeIfAbsent(List.of(r.value1(), r.value2()), k -> new ArrayList<>())
-                .add(new Read(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(), r.value7(),
-                    new ColumnRef(r.value8(), r.value9(), r.value10(), r.value11()))));
-        var out = new LinkedHashMap<List<String>, NodeDecode>();
+                .add(new Read(r.value3(), r.value4(), r.value5(), r.value6(), r.value7(),
+                    Boolean.TRUE.equals(r.value8()), new ColumnRef(r.value9(), r.value10(), r.value11(), r.value12()),
+                    r.value13() == null ? null : new ColumnRef(r.value13(), r.value14(), r.value15(), r.value16()))));
+        var out = new LinkedHashMap<List<String>, KeyDecode>();
         byKey.forEach((key, reads) -> {
+            var targets = new ArrayList<ColumnRef>();
+            for (var read : reads) {
+                var target = read.own() ? read.column() : read.carried();
+                if (target == null) {
+                    throw new IllegalStateException("Graphitron generator bug (lookup key): the store states "
+                        + key.get(1) + " a key of " + key.get(0) + " on " + read.schema() + "." + read.table()
+                        + " and carries key column " + read.column().sqlName() + " back to no column of the "
+                        + "lookup's table, which the lookup key rule admits no key without; the two have drifted");
+                }
+                targets.add(target);
+            }
             var first = reads.getFirst();
             var table = tableRef(store, first.source(), first.schema(), first.table());
             if (first.typeId() != null && table != null) {
-                out.put(key, new NodeDecode(first.nodeType(), first.typeId(), table,
-                    reads.stream().map(Read::column).toList()));
+                out.put(key, new KeyDecode(new NodeDecode(first.nodeType(), first.typeId(), table,
+                    reads.stream().map(Read::column).toList()), targets));
             }
         });
         return out;
