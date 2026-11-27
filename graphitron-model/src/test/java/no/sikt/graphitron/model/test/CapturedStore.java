@@ -229,9 +229,15 @@ public final class CapturedStore implements AutoCloseable {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ownedStore(use);
-        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, jooq, false,
-            classpath);
-        return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
+        // A capture that fails hands its caller no store to close, so it is closed here.
+        try {
+            var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, jooq, false,
+                classpath);
+            return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
+        } catch (RuntimeException | Error e) {
+            store.close();
+            throw e;
+        }
     }
 
     /**
@@ -248,9 +254,15 @@ public final class CapturedStore implements AutoCloseable {
                                                    List<ClasspathEntry> classpath) {
         var store = ownedStore(StoreUse.ONE_CAPTURE);
         Path folder = directory.resolve(graphName);
-        var schemas = runDocument(store.dsl(), folder, path, graphName, fixture, classpath);
-        return new CapturedStore(store, graphName, folder, folder, schemas.written().read().registry(),
-            schemas, true);
+        // As in ownStoreOfCatalogWith: a failed run hands its caller no store to close.
+        try {
+            var schemas = runDocument(store.dsl(), folder, path, graphName, fixture, classpath);
+            return new CapturedStore(store, graphName, folder, folder,
+                schemas.written().read().registry(), schemas, true);
+        } catch (RuntimeException | Error e) {
+            store.close();
+            throw e;
+        }
     }
 
     /**
