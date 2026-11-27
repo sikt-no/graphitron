@@ -6,6 +6,7 @@ import graphql.GraphQL;
 import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
+import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AutoClose;
@@ -25,7 +26,8 @@ import static org.assertj.core.api.InstanceOfAssertFactories.list;
  * Behavioural assertions on {@code filmActorsByKey([FilmActorKey!]!)} live alongside the rest
  * of the lookup-field coverage in {@code GraphQLQueryTest}; this class pins that both key
  * columns take part in the match: a key resolves only when {@code film_id} and
- * {@code actor_id} both match a row.
+ * {@code actor_id} both match a row; and that a node id inside an input key decodes per field,
+ * a null one answering null at its position and a bad one failing the field.
  */
 @ExecutionTier
 class CompositeKeyLookupQueryTest {
@@ -47,6 +49,18 @@ class CompositeKeyLookupQueryTest {
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
+    }
+
+    private graphql.ExecutionResult executeRaw(String query) {
+        return graphql.execute(Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build());
+    }
+
+    private static String customer(int id) {
+        return NodeIdEncoder.encode("Customer", id);
+    }
+
+    private static String address(int id) {
+        return NodeIdEncoder.encode("Address", id);
     }
 
     @Test
@@ -81,5 +95,100 @@ class CompositeKeyLookupQueryTest {
             .element(1, as(MAP))
             .containsEntry("filmId", 1)
             .containsEntry("actorId", 1);
+    }
+
+    @Test
+    void nodeIdKey_answersEachIdAtItsPosition() {
+        // Reverse of key order, with an id that decodes but matches no customer in between.
+        Map<String, Object> data = execute("{ customersByIdKey(key: [{id: \"" + customer(3) + "\"}, {id: \""
+            + customer(999999) + "\"}, {id: \"" + customer(1) + "\"}]) { customerId } }");
+
+        assertThat(data).extractingByKey("customersByIdKey", as(list(Map.class)))
+            .extracting(r -> r == null ? null : r.get("customerId"))
+            .containsExactly(3, null, 1);
+    }
+
+    @Test
+    void nodeIdKey_singleKeyArgument_answersOneCustomer() {
+        Map<String, Object> data = execute(
+            "{ customerByIdKey(key: {id: \"" + customer(2) + "\"}) { customerId } }");
+
+        assertThat(data).extractingByKey("customerByIdKey", as(MAP)).containsEntry("customerId", 2);
+    }
+
+    @Test
+    void carriedNodeIdKey_matchesThroughTheForeignKeyColumn() {
+        // Address 3 is Linda's (customer 3) alone; address 4 has no customer.
+        Map<String, Object> data = execute("{ customersByAddressKey(key: [{address: \"" + address(3)
+            + "\"}, {address: \"" + address(4) + "\"}]) { customerId } }");
+
+        assertThat(data).extractingByKey("customersByAddressKey", as(list(Map.class)))
+            .extracting(r -> r == null ? null : r.get("customerId"))
+            .containsExactly(3, null);
+    }
+
+    @Test
+    void carriedNodeIdKey_nullOrAbsentIdAnswersNullAtItsPosition() {
+        Map<String, Object> data = execute("{ customersByAddressKey(key: [{address: null}, {address: \""
+            + address(3) + "\"}, {}]) { customerId } }");
+
+        assertThat(data).extractingByKey("customersByAddressKey", as(list(Map.class)))
+            .as("a null and an absent id match nothing and keep their slots; the other key still matches")
+            .extracting(r -> r == null ? null : r.get("customerId"))
+            .containsExactly(null, 3, null);
+    }
+
+    @Test
+    void mixedKey_matchesOnTheColumnAndTheCarriedId() {
+        // Mary (customer 1) lives at address 1, not 2; Linda's key has no address.
+        Map<String, Object> data = execute("{ customersByEmailAndAddress(key: ["
+            + "{email: \"mary.smith@example.com\", address: \"" + address(1) + "\"}, "
+            + "{email: \"mary.smith@example.com\", address: \"" + address(2) + "\"}, "
+            + "{email: \"linda.williams@example.com\", address: null}]) { customerId } }");
+
+        assertThat(data).extractingByKey("customersByEmailAndAddress", as(list(Map.class)))
+            .extracting(r -> r == null ? null : r.get("customerId"))
+            .containsExactly(1, null, null);
+    }
+
+    @Test
+    void nodeIdKey_malformedId_failsWithTheDecodeClientError() {
+        graphql.ExecutionResult result = executeRaw(
+            "{ customersByIdKey(key: [{id: \"" + customer(1) + "\"}, {id: \"not-a-node-id\"}]) { customerId } }");
+
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"not-a-node-id\"")
+                .contains("not a valid Customer id")
+                .doesNotContain("Reference:"));
+    }
+
+    @Test
+    void carriedNodeIdKey_idOfAnotherType_failsWithTheDecodeClientError() {
+        String film = NodeIdEncoder.encode("Film", 1);
+        graphql.ExecutionResult result = executeRaw(
+            "{ customersByAddressKey(key: [{address: \"" + film + "\"}]) { customerId } }");
+
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> assertThat(e.getMessage())
+                .contains("Invalid node id \"" + film + "\"")
+                .contains("decodes to type \"Film\", expected a Address id")
+                .doesNotContain("Reference:"));
+    }
+
+    @Test
+    void compositeNodeIdKey_decodesBothKeyColumnsFromOneId() {
+        // (actor 2, film 2) is no film_actor row and outside every pair DmlBulkMutationsExecutionTest
+        // seeds; see compositeKeyLookup_subset_returnsOnlyMatchingPair.
+        Map<String, Object> data = execute("{ filmActorsByIdKey(key: ["
+            + "{id: \"" + NodeIdEncoder.encode("FilmActor", 3, 5) + "\"}, "
+            + "{id: \"" + NodeIdEncoder.encode("FilmActor", 2, 2) + "\"}, "
+            + "{id: \"" + NodeIdEncoder.encode("FilmActor", 2, 1) + "\"}]) { filmId actorId } }");
+
+        assertThat(data).extractingByKey("filmActorsByIdKey", as(list(Map.class)))
+            .extracting(r -> r == null ? null : r.get("actorId") + ":" + r.get("filmId"))
+            .containsExactly("3:5", null, "2:1");
     }
 }

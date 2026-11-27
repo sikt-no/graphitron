@@ -101,8 +101,6 @@ public final class RootQuery {
 
     /** Why a root's fetcher is not emitted from the store yet. */
     public enum Reason {
-        /** A {@code @lookupKey} key is a node id read off a field of an input object the argument takes. */
-        LOOKUP_NODE_ID,
         /** Its rows may be several types', told apart by the table each is a row of, and it is a lookup over them. */
         POLYMORPHIC,
         /**
@@ -172,8 +170,8 @@ public final class RootQuery {
      * lookup narrows its rows by in key order, none for a plain read, and the {@code @orderBy} choice a
      * client picks its order by, {@code null} where it picks none, and for a connection the page it
      * serves where the client asks for none, {@code null} for a list or a record. A lookup's list
-     * follows its keys rather than an order; a list with a choice reads the default order where the
-     * client picks none. {@code routine} is the routine whose result its
+     * follows its keys rather than an order, so it states neither; a list with a choice reads the
+     * default order where the client picks none. {@code routine} is the routine whose result its
      * rows are read from, and the steps on to {@code table}, {@code null} for a read of a table.
      * {@code connection} is the connection the store states the root runs on, {@code null} where it runs
      * on the request's own; {@code projectionTakesSession} is whether its type's projection reads the
@@ -681,7 +679,9 @@ public final class RootQuery {
             }
             out.put(at.coordinate(), new Emitted(at.coordinate(), at.parentType(), at.fieldName(), at.returnType(),
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
-                signature, lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()),
+                signature, lookup ? lookups.get(at.coordinate()).keys() : List.of(),
+                // A lookup has no order of its own: its list follows its keys.
+                lookup ? null : choices.get(at.coordinate()),
                 pageSize, told == null ? null : told.discriminated(), faceted,
                 routine == null ? null : routine.routine(),
                 row.value20() == null ? null : ConnectionQuery.Outcome.valueOf(row.value20()),
@@ -1453,10 +1453,7 @@ public final class RootQuery {
      */
     private record Keys(List<LookupArg> keys, Reason reason) {}
 
-    /**
-     * Each root lookup's keys the store states whole, by occurrence, those held back for a node id read
-     * off an input object's field among them, which the walk still renders.
-     */
+    /** Each root lookup's keys the store states whole, by occurrence. */
     static Map<String, List<LookupArg>> statedLookupKeys(StoreHandle store) {
         var out = new LinkedHashMap<String, List<LookupArg>>();
         lookups(store).forEach((coordinate, keys) -> {
@@ -1469,8 +1466,7 @@ public final class RootQuery {
      * Each root lookup's keys, an argument at a time in declaration order: a scalar {@code @lookupKey}
      * argument binding a column of the field's own table, an input object whose key fields each bind
      * one or are a node id decoded to its node's key columns and landing on the field's table, or a
-     * node id decoded to its node's key columns there. A node id read off an input object's field is
-     * stated, and holds the lookup back all the same. A lookup the store states no whole keys for
+     * node id decoded to its node's key columns there. A lookup the store states no whole keys for
      * keeps none.
      */
     private static Map<String, Keys> lookups(StoreHandle store) {
@@ -1507,10 +1503,8 @@ public final class RootQuery {
                 boolean field = row.value3() != -1;
                 boolean nodeId = "NODE_ID".equals(row.value2());
                 // An input object's node id lands on the field's table through the columns its decode
-                // states, wherever its node is; it holds the root on the walk until the store renders it.
-                if (nodeId && field) {
-                    held.putIfAbsent(coordinate, Reason.LOOKUP_NODE_ID);
-                } else if (!Boolean.TRUE.equals(row.value4())) {
+                // states, wherever its node is; every other key binds a column of the field's own table.
+                if (!(nodeId && field) && !Boolean.TRUE.equals(row.value4())) {
                     held.putIfAbsent(coordinate, Reason.NOT_ONE_TABLE);
                     broken.add(coordinate);
                     return;

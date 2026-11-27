@@ -78,7 +78,7 @@ public final class LauncherCommands {
      * The launch-family verdict: which launcher family a coordinate's facts place it in, or
      * {@link #NONE}. The membership declaration and the production dispatch are total switches
      * over these arms, so a new family is a compile-time decision at every consumer
-     * ({@link #mintedMethodOf}, the {@link #produce} dispatch, the schema-free walk) rather
+     * ({@link #mintedMethodsOf}, the {@link #produce} dispatch, the schema-free walk) rather
      * than a re-derived boolean; the membership census pins a per-arm non-vacuity floor over
      * its fixture so a family silently ceasing to produce is a census failure.
      */
@@ -96,7 +96,7 @@ public final class LauncherCommands {
     /**
      * The one membership accessor: the verdict for {@code field} under {@code schema}'s member
      * and delivery views. Every membership consumer (the closure test's covered set,
-     * {@link #mintedMethodOf}, the {@link #produce} dispatch, the Encoded-DML negative pin)
+     * {@link #mintedMethodsOf}, the {@link #produce} dispatch, the Encoded-DML negative pin)
      * reads the verdict here.
      */
     public static Launch verdictOf(GraphitronSchema schema, GraphitronField field) {
@@ -269,92 +269,21 @@ public final class LauncherCommands {
     }
 
     /**
-     * A stored lookup argument as the lookup rows read it: a scalar or an input object's fields each
-     * converted as the store states, and a node id decoded once per row by its node's decoder, failing
-     * the field on an id of another type.
-     */
-    private static no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg lookupArgOf(
-            no.sikt.graphitron.emit.RootQuery.LookupArg key, GeneratedUnits units) {
-        return switch (key) {
-            case no.sikt.graphitron.emit.RootQuery.LookupArg.Scalar scalar ->
-                new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
-                    scalar.argument(), scalar.column(), extractionOf(scalar.conversion(), scalar.column()),
-                    scalar.list());
-            case no.sikt.graphitron.emit.RootQuery.LookupArg.Fields fields ->
-                new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput(
-                    fields.argument(), fields.list(), fields.fields().stream()
-                        .map(field -> switch (field) {
-                            case no.sikt.graphitron.emit.RootQuery.FieldKey.Column column ->
-                                new no.sikt.graphitron.rewrite.model.InputColumnBinding.MapBinding(column.field(),
-                                    column.column(), extractionOf(column.conversion(), column.column()));
-                            // The store holds back a root whose input object carries a node id, so none reaches here.
-                            case no.sikt.graphitron.emit.RootQuery.FieldKey.NodeId nodeId ->
-                                throw new IllegalStateException("Graphitron generator bug (lookup key): the store "
-                                    + "hands the lookup argument " + fields.argument() + " a node id field "
-                                    + nodeId.field() + ", which it holds back while the walk renders the lookup");
-                        })
-                        .toList());
-            case no.sikt.graphitron.emit.RootQuery.LookupArg.NodeId nodeId -> {
-                var decode = nodeId.decode();
-                var encoder = units.singleton(GeneratedUnits.SUB_UTIL, "NodeIdEncoder");
-                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(
-                    new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
-                        com.palantir.javapoet.ClassName.get(encoder.packageName(), encoder.simpleName()),
-                        no.sikt.graphitron.emit.NodeIdHelperNames.decode(decode.nodeType()), decode.keyColumns(),
-                        decode.typeId(), decode.table()));
-                if (decode.keyColumns().size() == 1) {
-                    yield new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
-                        nodeId.argument(), decode.keyColumns().getFirst(), extraction, nodeId.list());
-                }
-                var bindings = new ArrayList<no.sikt.graphitron.rewrite.model.InputColumnBinding.RecordBinding>();
-                for (int i = 0; i < decode.keyColumns().size(); i++) {
-                    bindings.add(new no.sikt.graphitron.rewrite.model.InputColumnBinding.RecordBinding(i,
-                        decode.keyColumns().get(i)));
-                }
-                yield new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord(
-                    nodeId.argument(), nodeId.list(), extraction, bindings);
-            }
-        };
-    }
-
-    /** How a caller's value reaches its column, as {@code graphitron_occurrence_column_conversion} states it. */
-    private static no.sikt.graphitron.rewrite.model.CallSiteExtraction extractionOf(String conversion,
-                                                                                    ColumnRef column) {
-        return switch (conversion) {
-            case "ENUM_CONSTANT" -> new no.sikt.graphitron.rewrite.model.CallSiteExtraction.EnumValueOf(
-                column.columnClass());
-            case "CONVERTED" -> new no.sikt.graphitron.rewrite.model.CallSiteExtraction.JooqConvert(column.javaName());
-            default -> new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct();
-        };
-    }
-
-    /**
      * A root the store states whole that RootReadEmitter does not render yet, read off its occurrence:
-     * a lookup, a root over a discriminated table, or a faceted connection. The table its rows are of,
-     * projected by its type's unit, its condition method where its table has one, called as the store
-     * says it is defined, and a list in its default order or one record, or a connection's page. A
-     * lookup joins its keys' rows instead, its list following the keys. A single record is null exactly
-     * when the read finds no row.
+     * a root over a discriminated table, or a faceted connection. The table its rows are of, projected
+     * by its type's unit, its condition method where its table has one, called as the store says it is
+     * defined, and a list in its default order or one record, or a connection's page. A single record
+     * is null exactly when the read finds no row. A lookup is RootReadEmitter's.
      */
     private static LauncherCommand storeRootRow(no.sikt.graphitron.emit.RootQuery.Emitted root,
             GeneratedUnits units) {
+        if (!root.keys().isEmpty()) {
+            throw new IllegalStateException("Graphitron generator bug (root launcher): the store states the lookup "
+                + root.coordinate() + " whole and RootReadEmitter does not render it; a lookup is rendered there");
+        }
         var where = root.condition() == null ? null
             : new GlueCall(units.conditionMethod(root.parentType(), root.fieldName()),
                 root.condition().takesContext(), root.condition().takesSession());
-        if (!root.keys().isEmpty()) {
-            var mapping = new no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping(root.keys().stream()
-                .map(key -> lookupArgOf(key, units)).toList(), root.table());
-            return new LauncherCommand(
-                units.lookupMethod(root.parentType(), root.fieldName()),
-                FieldCoordinates.coordinates(root.parentType(), root.fieldName()),
-                new LaunchSource.KeyedLookup(root.table(), units.typeClass(root.returnType()), mapping,
-                    units.inputRowsMethod(units.fetchers(root.parentType()), root.fieldName())),
-                where,
-                new Invocation.Direct(),
-                new TenantStrategy.Single(),
-                root.list() ? new ResultShape.RecordList(null) : new ResultShape.SingleRecord(),
-                units.selectionOccurrences());
-        }
         ResultShape result;
         if (root.pageSize() != null) {
             // A connection pages in its chosen or default order, which the store states for every one
@@ -1499,12 +1428,10 @@ public final class LauncherCommands {
             java.util.LinkedHashMap<String, graphql.language.SourceLocation>>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                var ref = mintedMethodOf(schema, field, units);
-                if (ref == null) {
-                    continue;
+                for (var ref : mintedMethodsOf(schema, field, units)) {
+                    origins.computeIfAbsent(ref, k -> new java.util.LinkedHashMap<>())
+                        .putIfAbsent("field '" + field.qualifiedName() + "'", field.location());
                 }
-                origins.computeIfAbsent(ref, k -> new java.util.LinkedHashMap<>())
-                    .putIfAbsent("field '" + field.qualifiedName() + "'", field.location());
             }
         }
         return origins.entrySet().stream()
@@ -1525,24 +1452,27 @@ public final class LauncherCommands {
             graphql.language.SourceLocation location) {}
 
     /**
-     * The name the covered family would mint for {@code field}, or {@code null} for a
-     * non-member: a total switch over the launch verdict, reading only the naming schemes
-     * (never conditions or tenancy, which a name census does not need). The lookup fork inside
-     * the root catalog arm is a member read (the lookup member's presence names the
-     * {@code lookup<Field>} scheme), so no leaf identity participates in the census either.
+     * The names the covered family may mint for {@code field}, none for a non-member: a total
+     * switch over the launch verdict, reading only the naming schemes (never conditions or
+     * tenancy, which a name census does not need). A root lookup mints both its names: the
+     * {@code lookup<Field>} the walk renders it as where the store holds it back, and the launcher
+     * method RootReadEmitter renders its body as where the store states it whole. The census asks
+     * no store, so it names both and a collision with either is caught. The lookup fork is a member
+     * read (the lookup member's presence), so no leaf identity participates in the census either.
      */
-    private static no.sikt.graphitron.command.UnitMethodRef mintedMethodOf(
+    private static List<no.sikt.graphitron.command.UnitMethodRef> mintedMethodsOf(
             GraphitronSchema schema, GraphitronField field, GeneratedUnits units) {
         return switch (verdictOf(schema, field)) {
-            case NONE -> null;
+            case NONE -> List.of();
             case DML_REENTRY ->
-                units.reentryRowsMethod(field.parentTypeName(), field.name());
+                List.of(units.reentryRowsMethod(field.parentTypeName(), field.name()));
             case ROOT_CATALOG ->
                 hasKind(schema.operationMembersOf(field.parentTypeName(), field.name()),
                         OperationMember.Kind.LOOKUP)
-                    ? units.lookupMethod(field.parentTypeName(), field.name())
-                    : units.launcherMethod(field.parentTypeName(), field.name());
-            case BATCHED_CHILD_CATALOG -> units.rowsMethod(field.parentTypeName(), field.name());
+                    ? List.of(units.lookupMethod(field.parentTypeName(), field.name()),
+                        units.launcherMethod(field.parentTypeName(), field.name()))
+                    : List.of(units.launcherMethod(field.parentTypeName(), field.name()));
+            case BATCHED_CHILD_CATALOG -> List.of(units.rowsMethod(field.parentTypeName(), field.name()));
         };
     }
 

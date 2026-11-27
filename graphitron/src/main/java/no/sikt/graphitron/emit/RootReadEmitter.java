@@ -8,13 +8,20 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.emit.RootQuery.Emitted;
+import no.sikt.graphitron.emit.RootQuery.FieldKey;
 import no.sikt.graphitron.emit.RootQuery.Key;
+import no.sikt.graphitron.emit.RootQuery.LookupArg;
+import no.sikt.graphitron.emit.RootQuery.NodeDecode;
 import no.sikt.graphitron.emit.RootQuery.Routine;
 import no.sikt.graphitron.emit.RootQuery.RoutineArgument;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.ColumnComparison;
+import no.sikt.graphitron.render.ColumnValuesRef;
+import no.sikt.graphitron.render.NodeIdDecodeFailure;
 
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -28,9 +35,9 @@ import java.util.Set;
  * result, and what is done with them: the root's condition method over the table the rows are read off,
  * that type's projection, the order, and the fetch of a list, one record or a connection's page.
  *
- * <p>The source is the variation point. A table and a routine call are rendered here; a lookup joining
- * its keys' rows and a root over several tables are each to arrive as a source of their own, over the
- * same condition, projection and fetch.
+ * <p>The source is the variation point. A table, a routine call and a lookup joining its keys' rows
+ * are rendered here; a root over several tables is to arrive as a source of its own, over the same
+ * condition, projection and fetch.
  */
 public final class RootReadEmitter {
 
@@ -46,10 +53,21 @@ public final class RootReadEmitter {
     private static final TypeName FIELD_LIST = ParameterizedTypeName.get(LIST,
         ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), WildcardTypeName.subtypeOf(Object.class)));
     private static final TypeName RESULT_OF_RECORD = ParameterizedTypeName.get(RESULT, RECORD);
+    private static final TypeName LIST_OF_RECORD = ParameterizedTypeName.get(LIST, RECORD);
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+    private static final ClassName ARRAYS = ClassName.get("java.util", "Arrays");
+
+    /**
+     * jOOQ's typed rows stop at {@code Row22}, and a lookup's row carries its key's index before its key
+     * columns, so a lookup keys on at most 21 columns; the store refuses a wider one.
+     */
+    private static final int MAX_ROW_ARITY = 22;
 
     /** The locals a body declares itself, which no parameter's local may take. */
     private static final Set<String> TAKEN = Set.of("dsl", "env", "condition", "orderBy", "ordering", "extraFields",
-        "first", "last", "after", "before", "page", "result", "pageCondition");
+        "first", "last", "after", "before", "page", "result", "pageCondition", "selectFields", "n", "rows", "i",
+        "input", "flat", "out", "r", "idx");
 
     private RootReadEmitter() {}
 
@@ -69,27 +87,53 @@ public final class RootReadEmitter {
         ClassName selectionOccurrences();
         ClassName connectionHelper();
         ClassName orderByResult();
+
+        /**
+         * The run's output package, which places the generated node-id encoder a lookup's node id is
+         * decoded by, the column-values helper its keys are coerced through and the client error a
+         * node id that does not decode raises.
+         */
+        String outputPackage();
     }
 
     /**
      * Whether this emitter renders {@code root}: a list, one record or a connection's page, of a table or a
-     * routine, in its order or as the request's {@code @orderBy} argument chooses. A lookup, a root over a
-     * discriminated table and a faceted connection are rendered elsewhere until their piece lands here.
+     * routine, in its order or as the request's {@code @orderBy} argument chooses, or a lookup's list or
+     * one record. A root over a discriminated table and a faceted connection are rendered elsewhere until
+     * their piece lands here; a lookup is never a connection.
      */
     public static boolean renders(Emitted root) {
-        return root.keys().isEmpty() && root.discriminated() == null && root.facets().isEmpty();
+        return root.discriminated() == null && root.facets().isEmpty()
+            && (root.keys().isEmpty() || root.pageSize() == null);
     }
 
     /**
      * What the body hands back: the store's connection class for a connection, {@code connection} being
-     * the store's answer for the root's field, the fetched rows for a list, the one record or {@code null}
-     * otherwise.
+     * the store's answer for the root's field, the fetched rows for a list, one slot per key for a
+     * lookup's list, a slot for a key no row matched holding {@code null}, which a jOOQ {@code Result}
+     * does not carry, and the one record or {@code null} otherwise.
      */
     public static TypeName valueTypeOf(Emitted root, Names names, ConnectionsQuery.FieldConnection connection) {
         if (root.pageSize() != null) {
             return ConnectionConstruction.classOf(names.connectionHelper(), connection);
         }
-        return root.list() ? RESULT_OF_RECORD : RECORD;
+        if (!root.list()) {
+            return RECORD;
+        }
+        return root.keys().isEmpty() ? RESULT_OF_RECORD : LIST_OF_RECORD;
+    }
+
+    /**
+     * Whether {@code root}'s keys carry a node id, as an argument or as a field of the input object
+     * an argument takes: the body then decodes it through the generated node-id encoder, which the
+     * fetchers class the body sits in must reach.
+     */
+    public static boolean decodesNodeId(Emitted root) {
+        return root.keys().stream().anyMatch(key -> switch (key) {
+            case LookupArg.NodeId ignored -> true;
+            case LookupArg.Scalar ignored -> false;
+            case LookupArg.Fields fields -> fields.fields().stream().anyMatch(field -> field instanceof FieldKey.NodeId);
+        });
     }
 
     /**
@@ -112,7 +156,8 @@ public final class RootReadEmitter {
             .returns(valueTypeOf(root, names, connection))
             .addParameter(DSL_CONTEXT, "dsl")
             .addParameter(ENV, "env");
-        var source = root.routine() == null ? table(root.table()) : routine(root.routine());
+        var source = !root.keys().isEmpty() ? lookupRows(root, names)
+            : root.routine() == null ? table(root.table()) : routine(root.routine());
         method.addCode(source.declarations());
 
         var condition = root.condition() == null
@@ -132,6 +177,10 @@ public final class RootReadEmitter {
             return method.build();
         }
 
+        if (source.shape() instanceof Shape.KeyedList keyed) {
+            method.addCode(keyedList(source, keyed, projection));
+            return method.build();
+        }
         boolean ordered = root.list() && (root.choice() != null || !root.order().isEmpty());
         if (ordered) {
             method.addCode(order(root, names, source.terminal(), false));
@@ -147,6 +196,37 @@ public final class RootReadEmitter {
         fetch.add(root.list() ? ".fetch()" : ".fetchOne()").unindent();
         method.addStatement("return $L", fetch.build());
         return method.build();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The keyed list: a lookup's list, one slot per key.
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * A lookup's list: the rows its keys match, fetched with no order, the key index the source states
+     * selected beside the projection under {@link OrderKeys#LOOKUP_INDEX_ALIAS}, each row placed at
+     * that index among the slots the source states, so the answer holds one slot per key in key order.
+     * A key no row matched leaves its slot {@code null}, and a key several rows match keeps the first
+     * the database yields, since a lookup's key columns need not be unique; a key given twice is
+     * answered at each of its positions. The input order is the scatter's, so the select needs none.
+     */
+    private static CodeBlock keyedList(Source source, Shape.KeyedList keyed, CodeBlock projection) {
+        var code = CodeBlock.builder();
+        code.addStatement("$T selectFields = new $T<>($L)", FIELD_LIST, ARRAY_LIST, projection);
+        code.addStatement("selectFields.add($L.as($S))", keyed.indexField(), OrderKeys.LOOKUP_INDEX_ALIAS);
+        code.add("$T flat = dsl\n", RESULT_OF_RECORD).indent()
+            .add(".select(selectFields)\n")
+            .add(".from($L)\n", source.from())
+            .add(".where(condition)\n")
+            .add(".fetch();\n").unindent();
+        code.addStatement("$T[] out = new $T[$L]", RECORD, RECORD, keyed.slotCount());
+        code.beginControlFlow("for ($T r : flat)", RECORD)
+            .addStatement("int idx = r.get($S, $T.class)", OrderKeys.LOOKUP_INDEX_ALIAS, Integer.class)
+            .beginControlFlow("if (out[idx] == null)")
+            .addStatement("out[idx] = r")
+            .endControlFlow()
+            .endControlFlow();
+        return code.addStatement("return $T.asList(out)", ARRAYS).build();
     }
 
     /**
@@ -210,10 +290,31 @@ public final class RootReadEmitter {
     }
 
     /**
-     * Where a read's rows come from: the locals it declares, the table local the condition, projection
-     * and order read the rows off, what the select runs over, and the filters its steps add.
+     * Where a read's rows come from: the statements it opens the body with, a return that answers
+     * before any row is read among them, the table local the condition, projection and order read the
+     * rows off, what the select runs over, the filters its steps add, and the shape its answer takes.
      */
-    private record Source(CodeBlock declarations, String terminal, CodeBlock from, List<CodeBlock> filters) {}
+    private record Source(CodeBlock declarations, String terminal, CodeBlock from, List<CodeBlock> filters,
+                          Shape shape) {
+
+        /** A source whose answer is the shape the root states. */
+        Source(CodeBlock declarations, String terminal, CodeBlock from, List<CodeBlock> filters) {
+            this(declarations, terminal, from, filters, new Shape.Stated());
+        }
+    }
+
+    /** The shape a source's answer takes. */
+    private sealed interface Shape {
+
+        /** The root's own: its list, its one record or its connection's page. */
+        record Stated() implements Shape {}
+
+        /**
+         * One slot per key: {@code slotCount} the number of slots, and {@code indexField} the field
+         * of the source's rows carrying each row's slot.
+         */
+        record KeyedList(CodeBlock slotCount, CodeBlock indexField) implements Shape {}
+    }
 
     /** A table, read whole. */
     private static Source table(TableRef table) {
@@ -302,6 +403,204 @@ public final class RootReadEmitter {
             default -> throw new IllegalStateException("Graphitron generator bug (root read): parameter "
                 + argument.parameter() + " is read " + argument.extraction() + ", which RootQuery holds back");
         };
+    }
+
+    /**
+     * One column of a lookup's key row: the column of the lookup's table it lands on, and the value
+     * read for it per key, a client's wire value coerced at that column or a position of a decoded
+     * node id's record.
+     */
+    private record KeyCell(ColumnRef column, CodeBlock value) {}
+
+    /**
+     * A lookup's keys, joined to its table as rows of a {@code VALUES} table: each key argument read
+     * once, {@code n} keys, the length of the first list argument, or one where none is a list, no keys
+     * answering the empty list or {@code null} before any row is built, since {@code VALUES} takes no
+     * empty set of rows, then per key one typed row, its index followed by its key columns, each bound
+     * at its column's own {@code DataType}, a column key's wire value read at its column as the store
+     * states its conversion. A node id is decoded once per key, a top-level one failing the field where
+     * it is absent or does not decode, one read off an input object's field leaving its columns
+     * {@code null} where it is absent and failing the field where it does not decode. The table joins
+     * the rows on every key column; a list is the keyed list, {@code n} slots placed by each row's
+     * index. The condition method already leaves the key arguments out.
+     */
+    private static Source lookupRows(Emitted root, Names names) {
+        String table = localOf(root.table());
+        var used = new HashSet<>(TAKEN);
+        used.add(table);
+        var declarations = CodeBlock.builder().add(declare(root.table(), table));
+        // Each argument read once, into a local named after it.
+        var locals = new ArrayList<String>();
+        String primary = null;
+        for (var key : root.keys()) {
+            String local = localFor(key.argument(), used);
+            locals.add(local);
+            if (key.list()) {
+                declarations.addStatement("$T<?> $L = env.getArgument($S)", LIST, local, key.argument());
+                if (primary == null) primary = local;
+            } else {
+                declarations.addStatement("$T $L = env.getArgument($S)", Object.class, local, key.argument());
+            }
+        }
+        if (primary == null) {
+            declarations.addStatement("int n = 1");
+        } else {
+            declarations.addStatement("int n = $L == null ? 0 : $L.size()", primary, primary);
+        }
+        if (root.list()) {
+            declarations.addStatement("if (n == 0) return $T.of()", LIST);
+        } else {
+            declarations.addStatement("if (n == 0) return null");
+        }
+
+        // Per key, the decodes first, then the cells they and the wire values fill. The encoder and
+        // the client error are reached only where a key decodes a node id.
+        var outputPackage = names.outputPackage();
+        var columnValues = ColumnValuesRef.of(outputPackage);
+        boolean decodes = decodesNodeId(root);
+        var encoder = decodes ? ClassName.get(outputPackage + ".util", "NodeIdEncoder") : null;
+        var clientException = decodes ? NodeIdDecodeFailure.clientException(outputPackage) : null;
+        var decoded = CodeBlock.builder();
+        var cells = new ArrayList<KeyCell>();
+        for (int a = 0; a < root.keys().size(); a++) {
+            var key = root.keys().get(a);
+            String local = locals.get(a);
+            var element = key.list() ? CodeBlock.of("$L.get(i)", local) : CodeBlock.of("$L", local);
+            switch (key) {
+                case LookupArg.Scalar scalar -> cells.add(new KeyCell(scalar.column(),
+                    atColumn(scalar.conversion(), table, scalar.column(), element, local, columnValues, used)));
+                case LookupArg.NodeId nodeId -> {
+                    String record = localFor(local + "Record", used);
+                    decoded.add(decode(nodeId.decode(), element, local + "Wire", record, true, encoder,
+                        clientException, used));
+                    var columns = nodeId.decode().keyColumns();
+                    for (int j = 0; j < columns.size(); j++) {
+                        cells.add(new KeyCell(columns.get(j), CodeBlock.of("$L == null ? null : $L.value$L()",
+                            record, record, j + 1)));
+                    }
+                }
+                case LookupArg.Fields fields -> {
+                    for (var field : fields.fields()) {
+                        var wire = CodeBlock.of("(($T<?, ?>) $L).get($S)", MAP, element, field.field());
+                        String stem = local + Character.toUpperCase(field.field().charAt(0))
+                            + field.field().substring(1);
+                        switch (field) {
+                            case FieldKey.Column column -> cells.add(new KeyCell(column.column(),
+                                atColumn(column.conversion(), table, column.column(), wire, stem, columnValues, used)));
+                            case FieldKey.NodeId nodeId -> {
+                                String record = localFor(stem + "Record", used);
+                                decoded.add(decode(nodeId.decode(), wire, stem + "Wire", record, false, encoder,
+                                    clientException, used));
+                                for (int j = 0; j < nodeId.targetColumns().size(); j++) {
+                                    cells.add(new KeyCell(nodeId.targetColumns().get(j), CodeBlock.of(
+                                        "$L == null ? null : $L.value$L()", record, record, j + 1)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (cells.size() + 1 > MAX_ROW_ARITY) {
+            throw new IllegalStateException("Graphitron generator bug (root read): the lookup " + root.coordinate()
+                + " keys on " + cells.size() + " columns, more than jOOQ's typed rows carry beside the key's index,"
+                + " which the store refuses");
+        }
+
+        // Row{k+1}<Integer, T1..Tk>[] rows, filled one key at a time.
+        var typeArgs = new ArrayList<TypeName>();
+        typeArgs.add(ClassName.get(Integer.class));
+        cells.forEach(cell -> typeArgs.add(CatalogRefs.columnType(cell.column())));
+        var rowClass = ClassName.get("org.jooq", "Row" + (cells.size() + 1));
+        var rowType = ParameterizedTypeName.get(rowClass, typeArgs.toArray(TypeName[]::new));
+        var recordType = ParameterizedTypeName.get(ClassName.get("org.jooq", "Record" + (cells.size() + 1)),
+            typeArgs.toArray(TypeName[]::new));
+        declarations.add("@$T({$S, $S})\n", SuppressWarnings.class, "unchecked", "rawtypes");
+        declarations.addStatement("$T[] rows = ($T[]) new $T[n]", rowType, rowType, rowClass);
+        declarations.beginControlFlow("for (int i = 0; i < n; i++)");
+        declarations.add(decoded.build());
+        var row = CodeBlock.builder().add("$T.inline(i)", DSL);
+        for (var cell : cells) {
+            row.add(", $T.val($L, $L.$L.getDataType())", DSL, cell.value(), table, cell.column().javaName());
+        }
+        declarations.addStatement("rows[i] = $T.row($L)", DSL, row.build());
+        declarations.endControlFlow();
+
+        // The rows as a table, its index column first, each key column labelled by the SQL name of the
+        // column it lands on.
+        String index = "idx";
+        var labels = CodeBlock.builder().add("$S, $S", root.fieldName() + "Input", index);
+        cells.forEach(cell -> labels.add(", $S", cell.column().sqlName()));
+        declarations.addStatement("$T input = $T.values(rows).as($L)",
+            ParameterizedTypeName.get(ClassName.get("org.jooq", "Table"), recordType), DSL, labels.build());
+
+        var on = new ArrayList<CodeBlock>();
+        for (var cell : cells) {
+            var operand = CodeBlock.of("input.field($S, $L.$L.getDataType())", cell.column().sqlName(), table,
+                cell.column().javaName());
+            on.add(ColumnComparison.equalityAgainstField(table, cell.column(), cell.column(), operand));
+        }
+        var joined = CodeBlock.builder().add("$L", on.getFirst());
+        on.stream().skip(1).forEach(eq -> joined.add(".and($L)", eq));
+        var from = CodeBlock.of("$L.join(input).on($L)", table, joined.build());
+        Shape shape = root.list()
+            ? new Shape.KeyedList(CodeBlock.of("n"), CodeBlock.of("input.field($S)", index))
+            : new Shape.Stated();
+        return new Source(declarations.build(), table, from, List.of(), shape);
+    }
+
+    /**
+     * A client's wire value as a value of the lookup table's column it is a key of, as the store
+     * states its conversion ({@link ColumnConversion#atColumn}), an enum constant's pattern variable
+     * named after {@code stem} apart from the body's other locals.
+     */
+    private static CodeBlock atColumn(String conversion, String table, ColumnRef column, CodeBlock wire, String stem,
+                                      ClassName columnValues, Set<String> used) {
+        return ColumnConversion.atColumn(conversion, CatalogRefs.columnType(column),
+            CodeBlock.of("$L.$L", table, column.javaName()), wire, () -> localFor(stem + "Name", used), columnValues);
+    }
+
+    /**
+     * One node id decoded into {@code record}, the record of its node's key columns, by the node's
+     * decoder on the generated encoder. A {@code required} id fails the field where it is absent or
+     * does not decode; another fails it only where it is present and does not decode, its record
+     * {@code null} where it is absent.
+     */
+    private static CodeBlock decode(NodeDecode decode, CodeBlock element, String wireStem, String record,
+            boolean required, ClassName encoder, ClassName clientException, Set<String> used) {
+        String wire = localFor(wireStem, used);
+        String text = localFor(wire + "String", used);
+        // The refusal declares these two off the wire local's name.
+        used.add(wire + "Text");
+        used.add(wire + "Peeked");
+        var recordType = ParameterizedTypeName.get(ClassName.get("org.jooq", "Record" + decode.keyColumns().size()),
+            decode.keyColumns().stream().map(CatalogRefs::columnType).toArray(TypeName[]::new));
+        return CodeBlock.builder()
+            .addStatement("$T $L = $L", Object.class, wire, element)
+            .addStatement("$T $L = $L instanceof $T $L ? $T.$L($L) : null", recordType, record, wire, String.class,
+                text, encoder, NodeIdHelperNames.decode(decode.nodeType()), text)
+            .beginControlFlow(required ? "if ($L == null)" : "if ($L != null && $L == null)",
+                required ? new Object[] {record} : new Object[] {wire, record})
+            .add(NodeIdDecodeFailure.throwStatement(clientException, encoder, decode.typeId(), decode.nodeType(),
+                wire))
+            .endControlFlow()
+            .build();
+    }
+
+    /**
+     * A local named after {@code name}, apart from every local the body already declares and from the
+     * language's keywords.
+     */
+    private static String localFor(String name, Set<String> used) {
+        String local = name;
+        if (!SourceVersion.isName(local) || used.contains(local)) {
+            local = name + "Argument";
+        }
+        for (int k = 2; used.contains(local); k++) {
+            local = name + "Argument" + k;
+        }
+        used.add(local);
+        return local;
     }
 
     /** {@code <Conditions>.<field>Condition(<table>, env.getArguments()[, env][, dsl])}. */

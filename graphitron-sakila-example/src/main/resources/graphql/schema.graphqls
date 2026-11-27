@@ -577,6 +577,14 @@ type Query {
     # film_id) and joins on both PK columns. Decode-on-mismatch surfaces as
     # GraphqlErrorException via the ThrowOnMismatch contract. See lift-nodeid-out-of-model.md.
     filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor]!
+    # A node id inside an input key: each id field decodes once per row and its key columns are
+    # the VALUES cells. A null or absent id answers null at its position; an id that does not
+    # decode, or decodes to another node type, fails the field.
+    customersByIdKey(key: [CustomerIdKey!]! @lookupKey): [Customer]!
+    customerByIdKey(key: CustomerIdKey! @lookupKey): Customer
+    customersByAddressKey(key: [CustomerAddressKey!]! @lookupKey): [Customer]!
+    customersByEmailAndAddress(key: [CustomerEmailAddressKey!]! @lookupKey): [Customer]!
+    filmActorsByIdKey(key: [FilmActorIdKey!]! @lookupKey): [FilmActor]!
     # R79 compilation-tier regression guard: composite-PK NodeId on a *non-lookupKey* arg, fed
     # through the consumer-resolved input type. Reaches FieldBuilder.compositeImplicitBodyParam →
     # BodyParam.RowIn → the condition glue's typed `DSL.row(table.c1, table.c2).in(ids)`
@@ -3590,6 +3598,27 @@ type FilmInlineBundle {
 input FilmActorKey {
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
+}
+
+# Node ids inside input keys. CustomerIdKey's id is customer's own key; CustomerAddressKey's is
+# Address's, carried back through customer.address_id and nullable so a null id is reachable;
+# CustomerEmailAddressKey mixes a plain column with a carried id; FilmActorIdKey's id decodes to
+# film_actor's two key columns.
+input CustomerIdKey {
+    id: ID! @nodeId(typeName: "Customer")
+}
+
+input CustomerAddressKey {
+    address: ID @nodeId(typeName: "Address")
+}
+
+input CustomerEmailAddressKey {
+    email:   String! @field(name: "email")
+    address: ID @nodeId(typeName: "Address")
+}
+
+input FilmActorIdKey {
+    id: ID! @nodeId(typeName: "FilmActor")
 }
 
 # Deliberately the *inferred* node spelling: `film_actor`'s generated jOOQ class publishes

@@ -1347,8 +1347,13 @@ public class TypeFetcherGenerator {
 
     /** The names a store root read calls by, as the units that render them name them. */
     private static no.sikt.graphitron.emit.RootReadEmitter.Names rootReadNames(
-            no.sikt.graphitron.plan.GeneratedUnits units) {
+            no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage) {
         return new no.sikt.graphitron.emit.RootReadEmitter.Names() {
+            @Override
+            public String outputPackage() {
+                return outputPackage;
+            }
+
             @Override
             public String launcherMethod(String parentType, String fieldName) {
                 return units.launcherMethod(parentType, fieldName).methodName();
@@ -1409,7 +1414,7 @@ public class TypeFetcherGenerator {
             return false;
         }
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
-        var names = rootReadNames(units);
+        var names = rootReadNames(units, outputPackage);
         var root = rootRead.get();
         var connection = root.pageSize() == null ? null
             : ctx.connections().at(field.parentTypeName(), field.name());

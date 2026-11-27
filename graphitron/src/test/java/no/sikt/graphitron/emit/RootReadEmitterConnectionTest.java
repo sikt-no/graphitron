@@ -97,6 +97,11 @@ class RootReadEmitterConnectionTest {
         public ClassName orderByResult() {
             return ClassName.get(PACKAGE + ".util", OrderByResultClassGenerator.CLASS_NAME);
         }
+
+        @Override
+        public String outputPackage() {
+            return PACKAGE;
+        }
     };
 
     private static final OrderByHelperEmitter.Names HELPER_NAMES = new OrderByHelperEmitter.Names() {

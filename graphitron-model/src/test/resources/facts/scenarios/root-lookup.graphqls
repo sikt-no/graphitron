@@ -1,0 +1,39 @@
+"Root lookups the store states whole: filmsByKey by a scalar key, filmsByLanguage by a key no row is unique on, filmByKey by one key, customersByKey by an input object of a column and a store's node id carried back to customer.store_id, and storesById by a node id of the lookup's own table."
+type Film @table(name: "film") {
+  filmId: Int! @field(name: "film_id")
+  title: String
+}
+
+type Customer @table(name: "customer") {
+  email: String
+}
+
+type Store implements Node @table(name: "store") @node(typeId: "Store", keyColumns: ["store_id"]) {
+  id: ID!
+}
+
+interface Node {
+  id: ID!
+}
+
+input CustomerKey {
+  email: String
+  store: ID @nodeId(typeName: "Store")
+}
+
+type Query {
+  filmsByKey(film_id: [Int] @lookupKey @field(name: "film_id")): [Film]!
+  filmsByLanguage(language_id: [Int] @lookupKey @field(name: "language_id")): [Film]!
+  filmByKey(film_id: Int! @lookupKey @field(name: "film_id")): Film
+  customersByKey(key: [CustomerKey] @lookupKey): [Customer]!
+  storesById(id: [ID!] @nodeId(typeName: "Store") @lookupKey): [Store]!
+  node(id: ID!): Node
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_lookup_key", rows: """
+  coordinate,           bound,           key_coordinate,                   key_bound,       key_kind, argument_ordinal, field_ordinal
+  Query.customersByKey, public.customer, Query.customersByKey(key.email:), public.customer, COLUMN,   0,                0
+  Query.customersByKey, public.customer, Query.customersByKey(key.store:), public.store,    NODE_ID,  0,                1
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect")

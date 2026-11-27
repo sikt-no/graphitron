@@ -22,6 +22,15 @@ public final class OrderKeys {
 
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
 
+    /**
+     * The alias a lookup's list selects each row's key index under, beside the projection, which the
+     * keyed list reads back to place the row at its key's position. Its input order is that scatter's,
+     * not a sort's. It is one of the reserved aliases the generated queries and their readers share,
+     * the walk's lookup and batched bodies minting the same scatter key, so it stays in step with
+     * {@code ReservedAliases.IDX}, which emit may not name.
+     */
+    public static final String LOOKUP_INDEX_ALIAS = "__idx__";
+
     private OrderKeys() {}
 
     /**

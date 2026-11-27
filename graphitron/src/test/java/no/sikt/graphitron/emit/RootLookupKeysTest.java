@@ -16,8 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The keys {@link RootQuery} states for a root lookup whose input object carries a node id, read over
  * the {@code scenarios/inline-list-lookup-key} fact document: {@code Query.customersByKey} takes a
  * {@code CustomerKey} of a column, {@code email}, and a store's node id, {@code store}, whose key the
- * customer's foreign key carries back to {@code customer.store_id}. The lookup is held back while the
- * walk renders it, and its keys are stated all the same.
+ * customer's foreign key carries back to {@code customer.store_id}.
  */
 @PipelineTier
 class RootLookupKeysTest {

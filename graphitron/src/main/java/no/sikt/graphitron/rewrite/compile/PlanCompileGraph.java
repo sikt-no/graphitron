@@ -626,7 +626,10 @@ public final class PlanCompileGraph {
         /**
          * The roots the store reads whole, which launch through no row: the parent's fetchers class
          * calls its type's projection unit, its condition's glue unit, the {@code OrderByResult} carrier
-         * where a choice orders it, and for a connection the helper and the connection classes.
+         * where a choice orders it, for a connection the helper and the connection classes, and for a
+         * lookup whose keys carry a node id the encoder that decodes it. A lookup's key rows coerce
+         * through {@code ColumnValues} and refuse an id with the client exception, both frozen
+         * scaffolds every fetchers class already reaches.
          */
         private void addRootReadEdges() {
             for (var root : plan.launchers().rootReads()) {
@@ -649,6 +652,9 @@ public final class PlanCompileGraph {
                 if (root.pageSize() != null) {
                     precise(owner, require(GlobalUnitKind.CONNECTION_HELPER));
                     refOf(GlobalUnitKind.CONNECTIONS).ifPresent(c -> precise(owner, c));
+                }
+                if (no.sikt.graphitron.emit.RootReadEmitter.decodesNodeId(root)) {
+                    precise(owner, require(GlobalUnitKind.NODE_ID_ENCODER));
                 }
             }
         }
