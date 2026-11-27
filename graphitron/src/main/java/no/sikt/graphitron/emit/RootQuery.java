@@ -170,14 +170,13 @@ public final class RootQuery {
      * client picks its order by, {@code null} where it picks none, and for a connection the page it
      * serves where the client asks for none, {@code null} for a list or a record. A lookup's list
      * follows its keys rather than an order; a list with a choice reads the default order where the
-     * client picks none. {@code routed} is whether it reads a tenant's tables on the connection the
-     * store routes by the tenant its arguments name. {@code routine} is the routine whose result its
+     * client picks none. {@code routine} is the routine whose result its
      * rows are read from, and the steps on to {@code table}, {@code null} for a read of a table.
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
                           List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated,
-                          List<Facet> facets, boolean routed, Routine routine)
+                          List<Facet> facets, Routine routine)
             implements Result {
         public Emitted {
             facets = List.copyOf(facets);
@@ -627,8 +626,7 @@ public final class RootQuery {
                 out.put(at.coordinate(), new NotYet(at.coordinate(), reason));
                 continue;
             }
-            boolean routed = "TENANT".equals(row.value12());
-            if (routed && !"ROUTED".equals(row.value20())) {
+            if ("TENANT".equals(row.value12()) && !"ROUTED".equals(row.value20())) {
                 throw new IllegalStateException("Graphitron generator bug (root read scope): the store states "
                     + at.coordinate() + " reads a tenant's tables on a connection " + row.value20()
                     + ", which only a routed one may be");
@@ -656,7 +654,7 @@ public final class RootQuery {
             out.put(at.coordinate(), new Emitted(at.coordinate(), at.parentType(), at.fieldName(), at.returnType(),
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
                 signature, lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()),
-                pageSize, told == null ? null : told.discriminated(), faceted, routed,
+                pageSize, told == null ? null : told.discriminated(), faceted,
                 routine == null ? null : routine.routine()));
         }
         return out;

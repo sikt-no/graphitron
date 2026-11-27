@@ -229,7 +229,8 @@ public final class TestSchemaHelper {
 
     /** A store-backed plan and the store's record accessors, read in the one capture window. */
     private record StoreBacked(no.sikt.graphitron.plan.EmitPlan plan,
-                               no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {}
+                               no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
+                               no.sikt.graphitron.emit.RootFrame.Rows rootFrames) {}
 
     private static StoreBacked storeBacked(java.nio.file.Path directory, String schemaText, RunContext ctx,
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
@@ -246,10 +247,16 @@ public final class TestSchemaHelper {
             : no.sikt.graphitron.model.run.SubjectConfig.none();
         return FactGraphs.inline().read(STEM, schemaText,
             no.sikt.graphitron.model.test.CatalogInput.of(ctx), testClasspath(), configuration,
-            graph -> new StoreBacked(no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
-                bundle.federationLink(), bundle.usesOneOf(), ctx.outputPackage(), projections,
-                graph.handle()),
-                no.sikt.graphitron.emit.RecordAccessorQuery.read(graph.handle())));
+            graph -> {
+                var plan = no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
+                    bundle.federationLink(), bundle.usesOneOf(), ctx.outputPackage(), projections,
+                    graph.handle());
+                return new StoreBacked(plan, no.sikt.graphitron.emit.RecordAccessorQuery.read(graph.handle()),
+                    no.sikt.graphitron.emit.RootFrame.Rows.framed(plan.rootReads(),
+                        no.sikt.graphitron.emit.FrameQuery.read(graph.handle()),
+                        no.sikt.graphitron.emit.ConnectionQuery.read(graph.handle()),
+                        no.sikt.graphitron.emit.ConnectionQuery.tenantType(graph.handle())));
+            });
     }
 
     /**
@@ -277,6 +284,7 @@ public final class TestSchemaHelper {
         return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
             bundle.model(), bundle.assembled(), ctx.outputPackage(), plan.launchers(),
             plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(), plan.routineWrites(),
+            backed.rootFrames(),
             plan.keyProjections(), plan.errorChannels(), plan.outboxes(), backed.recordAccessors(), no.sikt.graphitron.emit.ServiceEmission.none(),
             no.sikt.graphitron.emit.ConnectionKeyShape.none());
     }

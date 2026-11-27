@@ -138,6 +138,7 @@ public class TypeFetcherGenerator {
             List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
             List<no.sikt.graphitron.command.TypeUnitCommand.ErrorFetchersUnit> errorRows,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
+            no.sikt.graphitron.emit.RootFrame.Rows rootFrames,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
@@ -166,7 +167,7 @@ public class TypeFetcherGenerator {
             if (type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
-                    nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections,
+                    nestingByType.get(row.typeName()), launchers, routineWrites, rootFrames, keyProjections,
                     errorChannels, outboxes, recordAccessors, services, connectionKeyShape));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
@@ -190,6 +191,7 @@ public class TypeFetcherGenerator {
                     // nesting-reached type's children are never mutation roots, so every lookup
                     // against it comes back empty, which is exactly the behaviour this arm wants.
                     routineWrites,
+                    rootFrames,
                     keyProjections,
                     errorChannels,
                     outboxes,
@@ -408,6 +410,7 @@ public class TypeFetcherGenerator {
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
+            no.sikt.graphitron.emit.RootFrame.Rows rootFrames,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
@@ -426,8 +429,8 @@ public class TypeFetcherGenerator {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
-            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes, recordAccessors, services,
-            connectionKeyShape);
+            dualWiring, launchers, routineWrites, rootFrames, keyProjections, errorChannels, outboxes, recordAccessors,
+            services, connectionKeyShape);
     }
 
     /**
@@ -687,8 +690,9 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
             no.sikt.graphitron.emit.ServiceEmission services) {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage,
-            graphitronSchema, dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes,
-            recordAccessors, services, no.sikt.graphitron.emit.ConnectionKeyShape.none());
+            graphitronSchema, dualWiring, launchers, routineWrites, no.sikt.graphitron.emit.RootFrame.Rows.empty(),
+            keyProjections, errorChannels, outboxes, recordAccessors, services,
+            no.sikt.graphitron.emit.ConnectionKeyShape.none());
     }
 
     /** The canonical form over the build's connection key; the overload above passes none. */
@@ -700,6 +704,7 @@ public class TypeFetcherGenerator {
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
+            no.sikt.graphitron.emit.RootFrame.Rows rootFrames,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
@@ -798,7 +803,7 @@ public class TypeFetcherGenerator {
                             + qtf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow,
-                        launchers.rootFrameFor(qtf.parentTypeName(), qtf.name()), outputPackage));
+                        rootFrames.frameFor(qtf.parentTypeName(), qtf.name()), rootFrames.tenantType(), outputPackage));
                     // A root read the store states whole is rendered by its own emitter, off the store's
                     // values; the row's renderer keeps the rest until their piece lands there.
                     var rootRead = launchers.rootReadFor(qtf.parentTypeName(), qtf.name());
@@ -888,7 +893,7 @@ public class TypeFetcherGenerator {
                             + f.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, f, interfaceRow,
-                        launchers.rootFrameFor(f.parentTypeName(), f.name()), outputPackage));
+                        rootFrames.frameFor(f.parentTypeName(), f.name()), rootFrames.tenantType(), outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(interfaceRow, launchers.carrierDsl(), ctx.connections(), ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
@@ -1384,7 +1389,8 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.OutputField field,
             no.sikt.graphitron.command.LauncherCommand row,
-            Optional<no.sikt.graphitron.emit.RootFrame> rootFrame, String outputPackage) {
+            Optional<no.sikt.graphitron.emit.RootFrame> rootFrame, Optional<String> tenantType,
+            String outputPackage) {
         var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row, ctx.connections());
         var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
         // A root read the store routes runs in the frame around its launcher, on the connection the
@@ -1395,7 +1401,7 @@ public class TypeFetcherGenerator {
                 new no.sikt.graphitron.emit.FrameEmitter.Body.LauncherCall(launcherClass, row.unit().methodName()),
                 frameRuntime(ctx, new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)), true, false,
                 no.sikt.graphitron.emit.FrameConnections.of(framed.frame(), Optional.of(framed.connection()), false,
-                    framed.tenantType(), routing(outputPackage), field.parentTypeName() + "." + field.name()));
+                    tenantType, routing(outputPackage), field.parentTypeName() + "." + field.name()));
         }
 
         var builder = MethodSpec.methodBuilder(field.name())

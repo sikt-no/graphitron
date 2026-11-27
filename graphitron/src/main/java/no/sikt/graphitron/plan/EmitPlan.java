@@ -10,6 +10,7 @@ import no.sikt.graphitron.emit.ErrorChannelRelation;
 import no.sikt.graphitron.emit.FrameQuery;
 import no.sikt.graphitron.emit.OutboxQuery;
 import no.sikt.graphitron.emit.LiftQuery;
+import no.sikt.graphitron.emit.RootQuery;
 import no.sikt.graphitron.emit.RoutineWriteQuery;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -20,6 +21,7 @@ import no.sikt.graphitron.emit.SessionIdentityRows;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The emit decisions of one generation run, produced eagerly by the core before any rendering.
@@ -43,7 +45,8 @@ import java.util.List;
  * write's frame and connection beside it and carried here so the reachability check below and the
  * emission read one answer), and the key-projection relation
  * ({@link no.sikt.graphitron.command.KeyProjectionRelation}: one row per {@code argMapping} binding
- * that decodes a node id and projects one of its key columns).
+ * that decodes a node id and projects one of its key columns), and the store's verdict on each root
+ * read ({@link RootQuery}), read once and handed to the launchers and to the frame reader.
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
  * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
  * schema without entities, the node fetcher on a schema without node types, the dev executor on a
@@ -57,7 +60,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                        KeyProjectionRelation keyProjections,
                        ErrorChannelRelation errorChannels,
                        OutboxQuery.Rows outboxes,
-                       SessionIdentityRows sessionIdentity) {
+                       SessionIdentityRows sessionIdentity,
+                       Map<String, RootQuery.Result> rootReads) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -92,6 +96,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         if (outboxes == null) {
             throw new IllegalArgumentException("the plan carries the outbox rows; no rows is a value, not null");
         }
+        rootReads = Map.copyOf(rootReads);
     }
 
     /**
@@ -278,8 +283,12 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                 : no.sikt.graphitron.emit.VoucherBindingQuery.read(store),
             frames);
         requireEveryServiceKeyIsProjected(frames, projectionRelation, units);
+        // The store's verdict on each root read, read once and handed to the launchers here and to the
+        // frame reader after the plan: a verdict that goes with the walk's root arm, so it is shared as
+        // one read rather than stored.
+        var rootReads = store == null ? Map.<String, RootQuery.Result>of() : RootQuery.read(store);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
-            projectionRelation.dslProjections(), store);
+            projectionRelation.dslProjections(), store, rootReads);
         var keyProjections = KeyProjectionCommands.produce(projections);
         requireEveryProjectionIsReachable(keyProjections, launchers, conditions);
         LauncherCommands.requireResolvedOrderingsAreLowered(launchers, projectionRelation);
@@ -292,7 +301,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             keyProjections,
             errorChannels,
             outboxes,
-            sessionIdentity);
+            sessionIdentity,
+            rootReads);
     }
 
     /**

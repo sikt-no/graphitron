@@ -197,14 +197,24 @@ public final class LauncherCommands {
     public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
             String outputPackage, java.util.Set<no.sikt.graphitron.command.UnitRef> dslProjections,
             no.sikt.graphitron.model.read.StoreHandle store) {
+        return produce(schema, conditions, outputPackage, dslProjections, store, store == null
+            ? java.util.Map.of()
+            : no.sikt.graphitron.emit.RootQuery.read(store));
+    }
+
+    /**
+     * {@link #produce(GraphitronSchema, ConditionRelation, String, java.util.Set,
+     * no.sikt.graphitron.model.read.StoreHandle)} over {@code roots}, the run's one
+     * {@link no.sikt.graphitron.emit.RootQuery#read} answer, which the frame reader is handed too.
+     */
+    public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
+            String outputPackage, java.util.Set<no.sikt.graphitron.command.UnitRef> dslProjections,
+            no.sikt.graphitron.model.read.StoreHandle store,
+            java.util.Map<String, no.sikt.graphitron.emit.RootQuery.Result> roots) {
         var connections = store == null
             ? no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections.empty()
             : no.sikt.graphitron.emit.ConnectionsQuery.byField(store);
         var units = new GeneratedUnits(outputPackage);
-        // The roots the store states whole, whose rows are read off it rather than off the walk.
-        var roots = store == null
-            ? java.util.Map.<String, no.sikt.graphitron.emit.RootQuery.Result>of()
-            : no.sikt.graphitron.emit.RootQuery.read(store);
         // Each root's facets per occurrence, which a faceted root the walk still launches groups by.
         var facets = store == null
             ? java.util.Map.<String, List<no.sikt.graphitron.emit.RootQuery.Facet>>of()
@@ -257,44 +267,7 @@ public final class LauncherCommands {
             }
         }
         return new LauncherRelation(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables,
-            rootFrames(store, roots), rootReads);
-    }
-
-    /**
-     * The frame each root the store states whole runs in where the store routes it by the tenant its
-     * arguments name: its fetcher is the frame around its launcher, on the connection the store states,
-     * rather than the walk's tenant binding. A root of global tables, or of a graph with no tenant
-     * column, keeps the fetcher it has.
-     */
-    private static java.util.Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames(
-            no.sikt.graphitron.model.read.StoreHandle store,
-            java.util.Map<String, no.sikt.graphitron.emit.RootQuery.Result> roots) {
-        var out = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootFrame>();
-        if (store == null) {
-            return out;
-        }
-        if (roots.values().stream().noneMatch(root -> root instanceof no.sikt.graphitron.emit.RootQuery.Emitted e
-                && e.routed())) {
-            return out;
-        }
-        var connections = no.sikt.graphitron.emit.ConnectionQuery.read(store);
-        var frames = new java.util.HashMap<String, no.sikt.graphitron.emit.FrameQuery.Row>();
-        no.sikt.graphitron.emit.FrameQuery.read(store).forEach(f -> frames.put(f.coordinate(), f));
-        var tenantType = no.sikt.graphitron.emit.ConnectionQuery.tenantType(store);
-        for (var root : roots.values()) {
-            if (!(root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted) || !emitted.routed()) {
-                continue;
-            }
-            var connection = connections.get(emitted.coordinate());
-            var frame = frames.get(emitted.coordinate());
-            if (connection == null || frame == null) {
-                throw new IllegalStateException("Graphitron generator bug (root frame): the store routes the root "
-                    + emitted.coordinate() + " and states no connection or no frame for it; the queries have drifted");
-            }
-            out.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()),
-                new no.sikt.graphitron.emit.RootFrame(frame, connection, tenantType));
-        }
-        return out;
+            rootReads);
     }
 
     /**

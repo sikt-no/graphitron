@@ -572,9 +572,15 @@ public class GraphQLRewriteGenerator {
         no.sikt.graphitron.emit.ConnectionQuery.requireTenancyAgrees(store,
             schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured);
 
+        // The root reads that run in the frame, read off the plan's one root verdict beside each
+        // read's frame and stored connection.
+        var rootFrames = no.sikt.graphitron.emit.RootFrame.Rows.framed(plan.rootReads(),
+            no.sikt.graphitron.emit.FrameQuery.read(store), no.sikt.graphitron.emit.ConnectionQuery.read(store),
+            no.sikt.graphitron.emit.ConnectionQuery.tenantType(store));
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
             plan.routineWrites(),
+            rootFrames,
             plan.keyProjections(),
             plan.errorChannels(),
             plan.outboxes(),

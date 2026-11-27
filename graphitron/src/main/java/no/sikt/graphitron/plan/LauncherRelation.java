@@ -74,7 +74,6 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
         Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
         Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
-        Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames,
         Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.Emitted> rootReads) {
 
     /** The relation over {@code rows}, indexed on the coordinate key it is declared to have. */
@@ -107,29 +106,15 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         this(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables, Map.of());
     }
 
-    /**
-     * The relation over {@code rows}, with the root order specs, node fetchers and multi-table roots the
-     * store states, and the root reads it routes, whose fetcher is the frame around the launcher.
-     */
-    public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
-            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
-            Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
-            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
-            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
-            Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames) {
-        this(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables, rootFrames, Map.of());
-    }
-
     /** The relation over {@code rows}, with everything above and the root reads the store's emitter renders. */
     public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
             no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
             Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
-            Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.Emitted> rootReads) {
         this(CoordinateIndex.of(rows, LauncherCommand::coordinate, "launcher"), carrierDsl, connections,
-            argumentOrders, nodeFetchers, multiTables, rootFrames, rootReads);
+            argumentOrders, nodeFetchers, multiTables, rootReads);
     }
 
     public LauncherRelation {
@@ -139,7 +124,6 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         argumentOrders = Map.copyOf(argumentOrders);
         nodeFetchers = Map.copyOf(nodeFetchers);
         multiTables = Map.copyOf(multiTables);
-        rootFrames = Map.copyOf(rootFrames);
         rootReads = Map.copyOf(rootReads);
         var byMethod = new LinkedHashMap<UnitMethodRef, LauncherCommand>();
         for (var row : index.rows()) {
@@ -191,11 +175,6 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
     /** The root read at this coordinate whose body the store's root read emitter renders, if it is one. */
     public Optional<no.sikt.graphitron.emit.RootQuery.Emitted> rootReadFor(String parentTypeName, String fieldName) {
         return Optional.ofNullable(rootReads.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
-    }
-
-    /** The frame the root read at this coordinate runs in, where the store routes it. */
-    public Optional<no.sikt.graphitron.emit.RootFrame> rootFrameFor(String parentTypeName, String fieldName) {
-        return Optional.ofNullable(rootFrames.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
     }
 
     /** The root over several tables the store states at this coordinate, if it states one. */
