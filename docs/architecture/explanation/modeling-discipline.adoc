@@ -150,11 +150,11 @@ relation beside it. A new relation is for a fact nothing stores yet.
 When the inputs are already in the store, the fact is a derivation. Nothing has to be read again and
 nothing outside the store is consulted.
 
-A derived fact is stored too: its owner's stage writes it from a rule view into a relation with
+A derived fact is stored too: its owner's stage writes it from its rule into a relation with
 keys and foreign keys, and marks and sweeps it like any other. Stored at a grain an existing
 relation already keys, it is a derived relation; establishing a key no relation has yet is
 anchoring. A plain view is only for a trivial join and filter of stored relations, no view reads
-another view, and a rule view that grows complex is a sign a derivation was skipped upstream and
+another view, and a rule that grows complex is a sign a derivation was skipped upstream and
 belongs stored there. xref:fact-model.adoc#grain[The fact model] states the rule in full.
 
 A derived fact is stored at the finest grain it holds at, and a coarser reader collapses it in its
