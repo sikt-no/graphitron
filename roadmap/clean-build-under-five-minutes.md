@@ -560,6 +560,21 @@ parallelises a module's tests is priced against that before it is tried.
     which took 1,018 s alone in that JVM. The stage answers are fastest per graph, as the class's
     `eachReading` says: a rule view over many graphs costs more than the statements it saves. The
     cost is the warm, which steps 18, 21 and 22 reach.
+25. **Rule views out of the store's schema.** Open, a probe. Alf, 2026-11-27, leaning: a stage's rule
+    moves out of `graphitron-model.sql` into a named SQL file the stage runs as `INSERT ... SELECT` or
+    `MERGE`, and views are created only on an opt-in for debugging, which tests leave off. Test the
+    hypothesis first. Measured on an empty store with `PopulationHeapProbe` at 0 documents, three
+    arms: (a) every view; (b) the rule views `meta_stage_rule` registers dropped; (c) only those of
+    them nothing but their stage reads, no other view and no main source naming them, dropped. Each
+    reports the live heap and the view text dropped, in characters.
+    - H4, the rule views are most of the parsed-view cost: (b) frees most of the ~40 MB step 21 put
+      on the views, over 25 MB, and in proportion to the characters dropped, at about 30 bytes a
+      character.
+    - H5, most rule views are read by their stage alone: (c) frees at least two thirds of what (b)
+      frees.
+    - H6, a rule runs as well as a statement as it does as a view: one stage's rule text, run as
+      `INSERT ... SELECT` against a store without its view, writes the same rows as the view-based
+      write.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
