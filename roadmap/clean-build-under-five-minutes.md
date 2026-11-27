@@ -365,6 +365,165 @@ parallelises a module's tests is priced against that before it is tried.
     unit tier and 21.0 min for the pipeline tier (run 45867383154). Those reruns and the
     source-coverage page now run nightly from trunk, and a trunk push publishes the last nightly
     page, so it is up to a day old. The combined coverage stays in every push build.
+21. **What the population keeps on the heap.** Open. Alf, 2026-11-26: a test fork should not need 3
+    to 4 GB, so before more tuning, find out what the heap holds and why, by fast experiments. The
+    tool is `PopulationHeapProbe`, a test class that runs only when `heap.probe.documents` is set: it
+    warms an evenly spread slice of the population, collects, and writes the live heap and a class
+    histogram grouped by owning library to `target/heap-probe/`. One variable at a time, each
+    hypothesis with its prediction written here before the run, and a refuted one kept as refuted.
+    - H1, the heap follows the open stores, not the documents: at a fixed store count, halving the
+      documents leaves the live heap within 20% of where it was.
+    - H2, H2's parsed statements and plans dominate: at a population cache of 1,024 the
+      `h2-statements` group holds over half of the live heap, at 64 under a fifth, and the two runs
+      differ mostly in that group.
+    - H3, MVStore's page cache per store: `h2-mvstore` is a fixed amount a store, the same at 64 and
+      1,024.
+    - H4, our own objects dominate: `graphitron` is the largest group. Predicted refuted, under a
+      tenth.
+    - H5, the RC57 to RC58 growth sits in one group: the same probe at both, diffed by group.
+    - H6, the statement texts kept beside the plans: each store keeps up to 20,000 texts in H2's
+      query statistics and every text it ran in the shard's own map, so `jdk-and-arrays` (String,
+      byte[]) grows with the distinct statements and not with the cache.
+    - Results, 2026-11-26, live heap after collections, the population alone:
+
+      | run | stores | live MB | per store |
+      |---|---|---|---|
+      | one booted store, no graph (334 views) | 1 | 60 | 60 |
+      | 1 document, cache 64 | 1 | 97 | 97 |
+      | 60 documents, cache 64 / 0 / 1,024 | 7 | 605 / 582 / 1,062 | 86 / 83 / 152 |
+      | 120 documents, cache 64, 4 shards / 1 shard | 10 / 6 | 853 / 567 | 85 / 94 |
+      | all 445 documents, cache 64 | 18 | 1,557 | 87 |
+
+      H1 holds: the heap follows the stores, about 60 MB of each fixed before its first capture
+      (H7, added: H2's parsed SQL for the schema's views and rules), and about 1 MB a document on
+      top. H2 holds in part: 1,024 adds about 65 MB a store, nearly all of it parse tokens, while
+      0 and 64 differ by little. H3 is small, `h2-mvstore` 52 MB over 18 stores. H4 is refuted,
+      `graphitron` under 1 MB. H6 is unmeasured apart: `jdk-and-arrays` is 767 MB at 445
+      documents, byte[] 397 MB beside 480 MB of `Token` objects, so most of it reads as parsed
+      SQL too. One shard a catalog instead of four cut 120 documents from 853 to 567 MB and made
+      warming 2.7 times slower, its captures serialized.
+    - What it adds up to: at 64 the whole population holds about 1.6 GB, two thirds of it the
+      18 stores' fixed parse; at 1,024, predicted, about 2.8 GB. The model fork's 4 GB peak is
+      therefore more than the population, and the next experiment is what holds the rest, starting
+      with the test classes that open stores of their own beside it.
+    - The whole module at 4 GB and 64, sampled from outside once a minute: a live class histogram,
+      the `.mv.db` files the fork holds open, and the test classes on its threads. Predictions:
+      P1 (H6), at the peak the fork holds more `org.h2.engine.Database` instances than the
+      population's 18, the extra ones in memory and opened by the classes that open stores of their
+      own; P2, those extras hold 0.5 to 1.4 GB, 60 to 140 MB each; P3, the population still holds
+      about 1.6 GB, and what is neither, results and schemas held by running tests, is under 0.5 GB.
+    - Results, `cfbc5af520` with the probe's commit, 752 tests passed in about 19 minutes (inflated
+      by a full collection a minute). From the third minute the fork held 2.0 to 2.07 GB in 23 or 24
+      databases, 18 of them the population's files and 5 or 6 in memory, for ten minutes. In the last
+      four it rose to 2.98 GB as the databases went to 32, three more population files for inline
+      schemas and the rest in memory, and the sessions from about 70 to 127, while
+      `FactCaptureAgreementTest`, `ArgMappingCandidateTest`, `RulePlanGateTest`,
+      `NameMatchedKeyPairTest`, `CapturedStoreTest`, `DefectStageGateTest`, `StoreNodeTablesTest`,
+      `FactGraphsTest`, `ModelCaptureMembershipTest` and `GraphitronStoreTest` ran. With only
+      `StoreConsoleTest` left running the fork still held 32: a store opened by a test class lives
+      to the end of the fork. P1 and P2 hold, about nine stores of about 100 MB each over the
+      plateau; P3 holds in its numbers, the population and the plateau's in-memory stores about
+      2 GB. Next: which classes open the in-memory stores and keep them past their own end.
+    - Who opens them, by a stack logged at each store's open and a line at each close, over the
+      classes that ran at the rise and on the plateau. Predictions: Q1, the plateau's in-memory
+      stores are one a JUnit worker thread, the thread's shared store; Q2, the late ones are opened
+      through `GraphitronStore`'s factories by the classes that open stores of their own, and more
+      than half of them are never closed.
+    - Results over 16 of the classes that ran at the rise and on the plateau, 122 tests: 107 stores
+      opened, 104 closed. Q2 is refuted: the classes with stores of their own close them within
+      their own run. Q1 holds and says more. The stores that outlive their class are
+      `ThreadConfinedStore`'s, one booted per thread and never closed, which its comment justifies
+      by an in-memory database dying with the fork. It does not die with its thread: an in-memory
+      store keeps `DB_CLOSE_DELAY=-1`, so H2's engine holds the database after the thread and its
+      `ThreadLocal` are gone. Hypothesis R, to test next: JUnit's pool retires idle workers and
+      starts new ones, each new worker boots a store, and the old one stays, which would be the 5
+      or 6 in-memory stores of the plateau growing to 11 at the end. Prediction: a whole run boots
+      more thread stores than its four workers, about one for each in-memory store over the
+      population at the end.
+    - R is refuted. A whole run on `9161e3881d` with the trace, 752 tests passed: four thread
+      stores, one each on `ForkJoinPool-1-worker-1` to `-4`, no worker replaced. Of 269 stores
+      opened, 264 were closed; the five never closed are the four thread stores, by design, and one
+      `CapturedStore.ownedStore` from `NodeTypeIdDerivationTest`, a leak. So the claim that stores
+      live to the fork's end holds only for those five and the population. The rise to 32 databases
+      at the end reads instead as four concurrent classes each holding a store of its own
+      (`FactStores` class stores 79, `GraphitronStore.inMemory` 46, owned stores 23 over the run)
+      beside three more population files for inline schemas. A trace that writes the time and the
+      count of live stores at each open and close would show that rather than infer it.
+    - Shards by size, counted from the documents' `@withConfiguration`: about 430 documents share
+      the fixture catalog and the corpus over four stores; `jooqPackage: null` has 4,
+      `singleschemafixture` 2, and six named classpath fixtures 1 or 2 each. So some 14 of the 18
+      stores hold about 13 documents, 60 MB apiece. One store for each small combination saves
+      perhaps four or five stores, about 0.3 GB; the combinations of one document still need a store
+      each, since their catalog and classpath rows are keyed by no graph.
+    - What the fixed cost is, on one booted store with no graph (`heap.probe.views`). Predictions:
+      V1, dropping every view frees at least 40 of the 60 MB; V2, the cost follows the views' text,
+      so dropping views holding half of it frees about half; V3, with no views the `Token` objects
+      are nearly gone, which puts the tokens in the views H2 keeps parsed.
+    - Results, one empty store: 60 MB with its 315 views (1.34 million characters of view SQL as H2
+      keeps it), 36 MB with the longest views holding half the text dropped, 20 MB with every view
+      dropped, `h2-statements` then at 0. V1 holds, the views are 40 of the 60 MB; V2 holds near
+      enough, about 30 bytes a character, so the cost follows the text and no single view
+      dominates (the 30 longest hold 40% of it); V3 holds. V4, added: H2 keeps a view's parsed query
+      (`QueryExpressionTable.viewQuery`) with its token list (`Prepared.sqlTokens`), and an H2 that
+      dropped that list after the parse would save the tokens. Refuted as the lever: emptying the
+      list on all 315 views freed 7 MB, 345,000 keyword tokens remaining in the queries nested
+      inside them. The cost is the parsed views themselves, so its levers are less view text in the
+      schema and fewer stores, not a setting.
+22. **Fewer population stores with captures in parallel inside one.** Open, a spike. The population
+    keeps four stores a catalog and classpath because a store has one writing connection and a
+    capture holds it for its whole transaction, and each store costs about 60 MB before its first
+    capture (step 21). H2's MVStore runs transactions of separate sessions side by side, and the
+    graph-keyed relations keep captures apart; what stands in the way is the single writer
+    `GraphitronModelStore` is built on, the catalog and classpath families every capture writes
+    under no graph, and anchoring and sweeping that run over the whole store. The spike: capture a
+    store's catalog and classpath once, then its graphs on sessions of their own in parallel, and
+    see whether they conflict or sweep each other's rows. If it holds, six stores instead of 18,
+    about 0.7 GB, with the warming as parallel as now.
+    - The spike, a test opening its stores itself and so not kept (`StoreFixtureGuardTest` refuses
+      that outside a harness): the same documents of the fixture catalog and the corpus
+      captured serially into one store, and into another first one alone, then the rest on four
+      handles of their own in parallel, the rows each graph holds in every graph-keyed relation
+      compared. Predictions: S1, the parallel captures finish with no lock timeout or failure; S2,
+      every graph holds the same rows in both stores; S3, the parallel part takes at most half the
+      serial time for the same documents.
+    - First result, 16 documents spread over the fixture catalog's and the corpus's, four handles:
+      S1 holds, no failure and no lock timeout. S3 holds: 80 s serially, 31 s in the parallel store
+      (4 s for the first capture, 26 s for the other 15), 2.6 times faster. S2 holds for every
+      relation holding facts: of 1,891 graph and relation pairs, the 12 that differ are all
+      `store_graph_read`, whose rows are the reads that took a millisecond or more, so they follow
+      timing rather than facts. Not yet measured: the heap of one store holding a whole catalog's
+      documents against four, and the claims checked over the parallel store.
+    - Next arms, predictions first. Whole: every document of the fixture catalog and the corpus,
+      about 430, in one store on four handles; F1, no failure; F2, it warms no slower than today's
+      four stores of them; F3, it holds about 60 MB plus about 1 MB a document, some 0.5 GB against
+      about 0.67 GB for four. Mixed: the documents of every other combination with a few of the main
+      one, in one store against a store each, since the catalog (`sql_`) and classpath (`code_`)
+      families are keyed by `source_name`, a classpath entry's path, which the fixtures do not
+      share with different contents; M1, every graph holds the same rows in both, and a graph that
+      differs names a rule reading those families without scoping them to the graph's sources.
+    - Results. Whole, 433 documents on four handles: 908 s, about today's warming; F1 refuted, 35
+      captures (8%) failed, every one on a concurrent write to `store_source`, the one relation every
+      capture touches keyed by its source alone, `merge` or `update` of rows another handle held;
+      the 16-document run missed it by luck. F3 refuted the other way: the one store with all 433
+      documents held 111 MB live, against 1,557 MB for the population's 18 stores, so a document
+      costs the store about 0.1 MB and the population's heap is nearly all its stores' fixed cost.
+      Mixed, 22 documents of 9 combinations: one capture failed on `store_source` again, and M1 is
+      refuted where it was meant to look: six graphs of the combinations with another catalog or
+      none (`catalog-isolation-bare`, `entry-family-bare`, `federation-key-inferred-bare`,
+      `column-match-claim-own-catalog`, `result-shapes-other-catalog-record`,
+      `entry-defect-write-rules`) held 58 to 60 more `code_graph_class` rows in the shared store,
+      classes of a catalog they do not read. The report printed the first 40 of 149 differences,
+      most of them the failed graph's, so a full listing comes next.
+    - So two things stand between the population and fewer stores: the capture's write to
+      `store_source` conflicts under parallel captures, and `code_graph_class` reaches classes of
+      sources outside the graph's own. Both are store defects a parallel dev loop or a shared store
+      would meet too, and the prize is large: one store's fixed cost instead of eighteen.
+    - The second is fixed (R876, 2026-11-27): which classes are a catalog's is now read off the entry,
+      a concrete `org.jooq.impl.SchemaImpl` subclass's package, not off `sql_schema` across the
+      store, so a jar's code rows no longer depend on the graphs beside it. Two blockers remain for
+      parallel captures in one store: `store_source`'s write, which gets a fix of its own, and the
+      store-wide delete of `sql_name_matched_key_column`, which goes when R876 dissolves that
+      relation and is not patched before. Fewer stores waits for both.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
