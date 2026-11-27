@@ -77,10 +77,9 @@ The pom's `leaf-coverage` profile comment says the traces are "produced and disc
 written and is now false: the CI publish chain shipped, and the comment's forward reference points at
 two item ids that no longer exist. In `.github/workflows/rewrite-build.yml` today, the `build` job's
 `Regenerate leaf-coverage report` step runs the regen against the in-workspace traces on every trunk
-push and uploads `roadmap/inference-axis-coverage.adoc` as the `inference-axis-coverage` artifact;
-`docs-build` downloads that artifact over the committed file before rendering; `docs-deploy` publishes
-the result. Every trunk push therefore publishes a coverage table whose rows depend on the order
-Surefire happened to schedule test classes in.
+push, writing `roadmap/inference-axis-coverage.adoc` over the committed file, and the same job renders
+the site from it; `docs-deploy` publishes the result. Every trunk push therefore publishes a coverage
+table whose rows depend on the order Surefire happened to schedule test classes in.
 
 ### The damage is verifiable today, with no build
 

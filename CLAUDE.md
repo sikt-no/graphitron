@@ -132,7 +132,7 @@ Prefer many small `Edit` calls over one large `Write` when trimming or rewriting
 
 ## Documentation site
 
-`/docs/` is a Maven module (`graphitron-docs`, packaging `pom`) that renders an AsciiDoc site to `docs/target/generated-docs/` and gets deployed to GitHub Pages by the `docs-build` / `docs-deploy` jobs in `.github/workflows/rewrite-build.yml` (trunk pushes only). The contributor-facing architecture docs under `/docs/architecture/` and the roadmap under `/roadmap/` also render into the site. PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact. Doc changes ship through the same trunk-based flow as code; PR breakage on `.adoc` files fails CI.
+`/docs/` is a Maven module (`graphitron-docs`, packaging `pom`) that renders an AsciiDoc site to `docs/target/generated-docs/`; on a trunk push the `build` job in `.github/workflows/rewrite-build.yml` renders it after the reactor and `docs-deploy` publishes it to GitHub Pages. The contributor-facing architecture docs under `/docs/architecture/` and the roadmap under `/roadmap/` also render into the site. PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact. Doc changes ship through the same trunk-based flow as code; PR breakage on `.adoc` files fails CI.
 
 To skip the AsciiDoctor render in a local build (saves ~10s of JRuby startup):
 

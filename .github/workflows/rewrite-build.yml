@@ -33,6 +33,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # A job's permissions replace the workflow's, so contents is restated. actions: read is for
+    # the docs render on trunk pushes, which takes the source-coverage page from the last nightly
+    # run's artifacts.
+    permissions:
+      contents: read
+      actions: read
 
     # Native Postgres service so `-Plocal-db` resolves jdbc:postgresql://localhost:5432
     # to a real instance during graphitron-sakila-db's jooq-codegen and the
@@ -111,8 +117,8 @@ jobs:
         # continuously exercised, so an argLine regression or agent incompatibility fails
         # on the PR that introduced it instead of on trunk. PR builds pay the agent
         # overhead without publishing anything; only the nightly steps below read the
-        # CSVs. `install` rather than `verify` because the nightly per-tier runs are
-        # separate -pl :graphitron invocations that resolve graphitron's reactor
+        # CSVs. `install` rather than `verify` because the steps below that build one module,
+        # the nightly per-tier runs and a trunk push's docs render, resolve its reactor
         # dependencies from the local repository.
         env:
           # Behavioural guard for the maven-archiver override in the root pom's
@@ -129,19 +135,48 @@ jobs:
           SOURCE_DATE_EPOCH: '315532800'
         run: mvn install -Plocal-db -Pcoverage --batch-mode -T 1C
       - name: Regenerate leaf-coverage report
-        # Trunk-push only. PRs and main pushes skip; the artifact only feeds the
-        # downstream docs-build/docs-deploy jobs, which are themselves trunk-gated.
+        # Trunk-push only, since only a trunk push publishes the site. It reads the classifier
+        # traces this job's reactor run left in the workspace and writes
+        # roadmap/inference-axis-coverage.adoc over the committed placeholder, for the render below.
         if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
         run: |
           mvn -pl roadmap-tool exec:java -q \
             -Dexec.args='leaf-coverage .'
-      - name: Upload leaf-coverage artifact
+      - name: Find the last nightly run
+        # The source-coverage page is the last nightly run's, up to a day old. Before the first
+        # nightly run there is none, and the stub renders.
         if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
-        uses: actions/upload-artifact@v7
+        id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow rewrite-build.yml --event schedule \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          echo "run-id=$id" >> "$GITHUB_OUTPUT"
+      - name: Download source-coverage artifact
+        # Lands at roadmap/source-coverage.adoc. Nothing committed to overwrite: the page has no
+        # repo-verifiable fixed point, so render-adoc synthesizes a stub when it is absent (local
+        # doc builds, PR previews) and this download replaces the stub path with the real page.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite' && steps.nightly.outputs.run-id != ''
+        uses: actions/download-artifact@v8
         with:
-          name: inference-axis-coverage
-          path: roadmap/inference-axis-coverage.adoc
-          if-no-files-found: error
+          name: source-coverage
+          path: roadmap/
+          run-id: ${{ steps.nightly.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Render the docs site
+        # The reactor above rendered the site once with the committed placeholder coverage pages;
+        # this renders it again with the two real ones. Without -am: the reactor's install put
+        # this tree's graphitron, graphitron-model and roadmap-tool, the renderers the docs module
+        # runs, in the local repository, so nothing upstream is built twice. clean, so the Pages
+        # artifact is this render alone.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        run: mvn -pl :graphitron-docs clean package --batch-mode
+      - name: Upload Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/target/generated-docs
       - name: Coverage of graphitron's unit tier
         # Nightly only: the page is up to a day old, and every trunk push saves the two tier
         # reruns, about 32 minutes of graphitron's suite under the agent. The per-tier split is the
@@ -178,62 +213,9 @@ jobs:
           path: roadmap/source-coverage.adoc
           if-no-files-found: error
 
-  docs-build:
-    # Renders the docs site against the freshly-regenerated leaf-coverage report
-    # produced by the `build` job. Trunk-push only; PRs use preview-docs.yml.
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
-    permissions:
-      contents: read
-      # The source-coverage page is the last nightly run's artifact.
-      actions: read
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up JDK 25
-        uses: actions/setup-java@v6
-        with:
-          java-version: '25'
-          distribution: 'temurin'
-          cache: maven
-      - name: Download leaf-coverage artifact
-        # Lands at roadmap/inference-axis-coverage.adoc and
-        # overwrites the committed placeholder in this checkout.
-        uses: actions/download-artifact@v8
-        with:
-          name: inference-axis-coverage
-          path: roadmap/
-      - name: Find the last nightly run
-        # The page is the last nightly run's, up to a day old. Before the first nightly run
-        # there is none, and the stub renders.
-        id: nightly
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow rewrite-build.yml --event schedule \
-            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-          echo "run-id=$id" >> "$GITHUB_OUTPUT"
-      - name: Download source-coverage artifact
-        # Lands at roadmap/source-coverage.adoc. Nothing committed to overwrite: the page
-        # has no repo-verifiable fixed point, so render-adoc synthesizes a stub when it is
-        # absent (local doc builds, PR previews) and this download replaces the stub path
-        # with the real page on trunk.
-        if: steps.nightly.outputs.run-id != ''
-        uses: actions/download-artifact@v8
-        with:
-          name: source-coverage
-          path: roadmap/
-          run-id: ${{ steps.nightly.outputs.run-id }}
-          github-token: ${{ github.token }}
-      - name: Build docs site
-        run: mvn -pl :graphitron-docs -am package -DskipTests
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: docs/target/generated-docs
-
   docs-deploy:
-    needs: docs-build
+    # Publishes the Pages artifact the build job rendered on a trunk push.
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
     runs-on: ubuntu-latest
     permissions:

@@ -3,7 +3,7 @@
 
 This folder is the source for the Graphitron documentation site at https://graphitron.sikt.no/.
 
-The site is built by Maven via the `graphitron-docs` module (this directory) and deployed to GitHub Pages by the `docs-build` / `docs-deploy` jobs in `.github/workflows/rewrite-build.yml` (trunk pushes only). PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact.
+The site is built by Maven via the `graphitron-docs` module (this directory). On a trunk push the `build` job in `.github/workflows/rewrite-build.yml` renders it after the reactor and the `docs-deploy` job publishes it to GitHub Pages. PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact.
 
 toc::[]
 
