@@ -321,6 +321,9 @@ class SupertypeSignatureGateTest {
         // The key a step rode, written or inferred, read to ask its reach: the sibling pair above,
         // kept apart by decision, so the rule reads both rather than a supertype nobody owes.
         "graphitron_join_path_step_to_one_rule|graphitron_join_path_step_inferred_key,graphitron_join_path_step_key",
+        // The same pair read to ask whether a detail-table participant's joining step rides one key the
+        // catalog generates a constant for, as RootQuery's joined read asks it.
+        "graphitron_occurrence_participant_detail_entry_defect_rule|graphitron_join_path_step_inferred_key,graphitron_join_path_step_key",
         // The voucher stage's refusals, which judge both markers' vouched-for fields by the rules they share,
         // an empty or repeated claim: the markers' own rule and the vouched-for fields' rule beside it
         // each read the two entry relations. The supertype they reconstruct is the sibling pair recorded

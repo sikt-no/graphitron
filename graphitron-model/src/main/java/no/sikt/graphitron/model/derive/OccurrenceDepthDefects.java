@@ -34,6 +34,7 @@ public final class OccurrenceDepthDefects {
         dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph), t.TOUCHED_AT.ne(readAt)).execute();
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.DEPTHS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.RESULT_SHAPES);
+        EntryDefects.derive(dsl, graph, readAt, EntryDefects.PARTICIPANT_DETAILS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.COLUMNS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.NEEDS);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.FILTERS);

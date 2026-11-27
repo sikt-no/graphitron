@@ -1,0 +1,5 @@
+Reported at the participant type, the detail naming the interface's table.
+
+A query-root field returning an interface whose participants a discriminator tells apart reads a participant on a detail table of its own by joining that table onto the interface's. The join is named by the participant's first field, in declaration order, whose path is one step from the detail table to the interface's table, riding one foreign key. With no such field, or with a step that pairs no columns or rides no one foreign key, nothing says how the detail table's rows meet the interface's.
+
+*Next step.* Give the participant a field read off the interface's table through `@reference(path: [{key: "..."}])`, naming the foreign key from the detail table. See xref:directives/discriminate.adoc[`@discriminate`] and xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types].

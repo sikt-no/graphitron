@@ -366,6 +366,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_depth_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_routine_write_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_result_shape_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_participant_detail_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_column_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_need_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_filter_entry_defect_rule", Arm.DERIVED);

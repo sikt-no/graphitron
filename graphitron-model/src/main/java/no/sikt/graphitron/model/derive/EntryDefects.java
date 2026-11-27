@@ -62,6 +62,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FILTER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NEED_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT_DETAIL_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_RESULT_SHAPE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_WRITE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE;
@@ -241,7 +242,7 @@ public final class EntryDefects {
 
     /**
      * The keys and lift defects' rule, {@link OccurrenceDepthDefects}. The stage raises its other
-     * families from rules of their own beside it, {@link #RESULT_SHAPES}, {@link #COLUMNS},
+     * families from rules of their own beside it, {@link #RESULT_SHAPES}, {@link #PARTICIPANT_DETAILS}, {@link #COLUMNS},
      * {@link #NEEDS}, {@link #FILTERS} and {@link #ROUTINE_WRITES}: H2 keeps a parsed copy of a union
      * at every level of its nesting, so no rule nests one deeper than seven.
      */
@@ -250,6 +251,12 @@ public final class EntryDefects {
     /** The shapes a producer's result cannot take where its field puts it. */
     public static final Rule RESULT_SHAPES =
         new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_RESULT_SHAPE_ENTRY_DEFECT_RULE);
+
+    /**
+     * The detail-table participants of a discriminated root read that its joined read cannot serve.
+     */
+    public static final Rule PARTICIPANT_DETAILS =
+        new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_PARTICIPANT_DETAIL_ENTRY_DEFECT_RULE);
 
     /** The column or member a field reads or writes, naming none or several. */
     public static final Rule COLUMNS = new Rule("occurrence-depth-defects", GRAPHITRON_OCCURRENCE_COLUMN_ENTRY_DEFECT_RULE);

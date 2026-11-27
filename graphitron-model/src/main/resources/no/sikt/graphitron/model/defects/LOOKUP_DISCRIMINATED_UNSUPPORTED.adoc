@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the interface it returns. Valid: the interface has a table, and its keys are columns of it.
+
+A lookup returning an interface whose participants a discriminator tells apart would read the keyed rows of the interface's table and hand each to its participant by the discriminating column. That read is not generated yet.
+
+*Instead.* Drop `@lookupKey` and filter the rows by the argument, or look the rows up through a field returning one participant type. See xref:directives/lookupKey.adoc[`@lookupKey`] and xref:directives/discriminate.adoc[`@discriminate`].

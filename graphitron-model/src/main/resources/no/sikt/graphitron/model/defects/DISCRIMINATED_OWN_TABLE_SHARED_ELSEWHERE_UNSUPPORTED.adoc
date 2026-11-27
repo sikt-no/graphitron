@@ -1,0 +1,5 @@
+Reported at the participant type, the detail naming the first inherited field it reads. Valid: a type may implement two discriminated interfaces.
+
+A query-root read over a discriminated interface reads a participant on a detail table of its own by joining that table onto the interface's, and reads an inherited field, one off the interface's table, under an alias the read projects for it. A participant on the shared table of another discriminated interface a query-root field returns reads the same field off its own row instead. One type's fields read one alias, so the two reads cannot share them, and reading both is not generated yet.
+
+*Instead.* Return the type from the root through one of the two interfaces, or read the inherited field off the type's own table. See xref:directives/discriminate.adoc[`@discriminate`] and xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types].

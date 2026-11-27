@@ -1,0 +1,31 @@
+# A type taking part in two discriminated interfaces the query root returns, on a detail table of its
+# own under one and on the shared table under the other.
+#
+# Person is a participant of Subject on jti_person, a detail table joined onto jti_subject, reading
+# displayName off jti_subject through jti_person_subject_fk, an inherited field. It is also a
+# participant of PersonKind, whose shared table is jti_person itself. Query.persons reads Person on
+# its own table and inherits nothing, the near miss. Query.subjects would read displayName under an
+# alias the joined read projects, where PersonKind's read takes Person's fields off its own row, and
+# one type's fields read one alias: DISCRIMINATED_OWN_TABLE_SHARED_ELSEWHERE_UNSUPPORTED, at Person,
+# naming the inherited field.
+
+interface Subject @table(name: "jti_subject") @discriminate(on: "subject_kind") {
+  displayName: String! @field(name: "display_name")
+}
+
+interface PersonKind @table(name: "jti_person") @discriminate(on: "subject_kind") {
+  fullName: String @field(name: "full_name")
+}
+
+type Person implements Subject & PersonKind @table(name: "jti_person") @discriminator(value: "PERSON") {
+  displayName: String! @reference(path: [{key: "jti_person_subject_fk"}]) @field(name: "display_name")
+  fullName: String @field(name: "full_name")
+}
+
+type Query { subjects: [Subject!]! persons: [PersonKind!]! }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'DISCRIMINATED_OWN_TABLE_SHARED_ELSEWHERE_UNSUPPORTED'", rows: """
+  coordinate, code,                                                 detail
+  Person,     DISCRIMINATED_OWN_TABLE_SHARED_ELSEWHERE_UNSUPPORTED, displayName
+  """)

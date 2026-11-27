@@ -1,0 +1,5 @@
+Reported at the participant type, the detail naming the first field carrying a node id. Valid: a participant's field may carry a node id.
+
+A query-root field returning an interface whose participants a discriminator tells apart reads a participant on a detail table of its own by joining that table onto the interface's, projecting each detail column under the participant's own name. A node id is encoded from key columns, and projecting it through that join is not generated yet.
+
+*Instead.* Leave the node id off the participant's fields, or keep the participant on the interface's table. See xref:directives/nodeId.adoc[`@nodeId`] and xref:directives/discriminate.adoc[`@discriminate`].

@@ -3080,7 +3080,7 @@ COMMENT ON COLUMN graphitron_ast_order_field_entry.touched_at IS 'when the readi
 COMMENT ON COLUMN graphitron_ast_order_field_entry.application_line IS 'source line of the application the element was written in, a reference into graphitron_ast_order_entry with the file and the column beside it, so the element''s application is a column rather than a walk up the value tree';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.application_column IS 'source column of the same';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.position IS 'the element''s index in the fields list, numbered from zero, a lone object written without brackets being the list of that one at 0; unique within the application, which is the order the keys sort by';
-COMMENT ON COLUMN graphitron_ast_order_field_entry.shape IS 'which key the element names, decided here so no reader judges the fields written: COLUMN, a name alone; PATH, a name with a path, read through the hops the path writes; METHOD, a method alone, whose class and method are the code reference''s decode; MALFORMED, anything else, neither or both of name and method, or a path beside a method. An explicit null is no value written';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.shape IS 'which key the element names, decided here so no reader judges the fields written: COLUMN, a name alone; PATH, a name with a path, read through the hops the path writes; METHOD, a method alone naming its class and its method and mapping no arguments, whose class and method are the code reference''s decode; MALFORMED, anything else, neither or both of name and method, a path beside a method, or a method missing its class or its method or writing an argMapping. An explicit null is no value written';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.name_ref IS 'the element''s name field decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.collate IS 'the element''s collate field on the same terms. A database-specific collation name, resolving against nothing here';
 COMMENT ON COLUMN graphitron_ast_order_field_entry.direction IS 'the element''s direction field as the enum token the author wrote, or NULL where they wrote none';
@@ -17694,6 +17694,10 @@ COMMENT ON COLUMN graphitron_occurrence_participant.base_name IS 'on DISCRIMINAT
 COMMENT ON COLUMN graphitron_occurrence_participant.discriminator_column IS 'on DISCRIMINATOR, the column @discriminate(on:) names, by its SQL name';
 COMMENT ON COLUMN graphitron_occurrence_participant.discriminator_value IS 'on DISCRIMINATOR, the value the column holds for a row of this participant, as @discriminator(value:) writes it: the database''s own spelling, an enum column''s literal';
 COMMENT ON COLUMN graphitron_occurrence_participant.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+-- Where a type participates, which a reader holding the type asks: whether it is a participant on the
+-- shared table of some read, without reading every participant of the graph per type.
+CREATE INDEX graphitron_occurrence_participant_type_ix
+  ON graphitron_occurrence_participant (graph_name, participant_type);
 
 -- The occurrence-participants stage's own defects: a @service whose participants are told apart other
 -- than by one column of one shared table, and two participants told apart by one table, at the field.
@@ -23952,6 +23956,19 @@ SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
        'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR), 'anchor'
   FROM root_reference rr
 UNION ALL
+(
+-- A @pivot on a root field, of any operation, at the @pivot: a pivot folds an aggregate of the rows
+-- its path reaches into its parent's row, and a root field has no parent row to fold it into. The
+-- detail is the field.
+SELECT pv.graph_name, pv.source_name, pv.source_line, pv.source_column,
+       'PIVOT_AT_ROOT', pv.coordinate, 'anchor'
+  FROM graphql_directive_application pv
+  JOIN graphql_field_element fe
+    ON fe.graph_name = pv.graph_name AND fe.coordinate = pv.coordinate
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = fe.graph_name AND ro.type_name = fe.type_name
+ WHERE pv.directive_name = 'pivot' AND pv.source_name IS NOT NULL
+UNION ALL
 -- A field on the subscription root, at the field's own declaration. Meaningful under the
 -- specification and under the directives alike: graphitron generates no subscription resolver
 -- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
@@ -23969,7 +23986,8 @@ UNION ALL
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column,
        'MUTATION_UPSERT', CAST(NULL AS VARCHAR), 'anchor'
   FROM graphitron_ast_mutation_entry m
- WHERE m.operation = 'UPSERT';
+ WHERE m.operation = 'UPSERT'
+);
 COMMENT ON VIEW graphitron_root_field_entry_defect_rule IS 'One row the root field defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example anchor inserts this view''s rows for one graph into graphitron_entry_defect, a read surface written on a write giving one READ_SURFACE_ON_WRITE row at its site.';
 
 CREATE VIEW graphitron_discriminator_entry_defect_rule
@@ -27919,7 +27937,42 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND da.directive_name = 'lookupKey'
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key lk
                     WHERE lk.graph_name = t.graph_name AND lk.coordinate = t.coordinate
-                      AND lk.bound = t.bound AND lk.key_coordinate = i.coordinate);
+                      AND lk.bound = t.bound AND lk.key_coordinate = i.coordinate)
+UNION ALL
+-- A root @lookupKey read whose records are rows of no one table, at the field: a union or an
+-- interface whose participants are told apart by their tables, or a type bound to no table. A lookup
+-- narrows one table's rows by columns of it, and such a return has no one table for the keys to be
+-- columns of. A node fetcher reads its rows by the id's type instead, a connection is
+-- LOOKUP_KEY_ON_CONNECTION's, and a return whose participants a discriminator tells apart
+-- LOOKUP_DISCRIMINATED_UNSUPPORTED's. The detail is the type returned.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'LOOKUP_KEY_ON_UNBOUND_TYPE', f.named_type, 'occurrence-lookup-keys'
+  FROM graphitron_occurrence_producer p
+  LEFT JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'LOOKUP' AND p.start = 'ROOT'
+   AND r.table_name IS NULL AND (r.shape IS NULL OR r.shape <> 'CONNECTION')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_node pn
+                    WHERE pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant x
+                    WHERE x.graph_name = p.graph_name AND x.coordinate = p.coordinate
+                      AND x.recognized_by = 'DISCRIMINATOR')
+UNION ALL
+-- A root @lookupKey read returning an interface whose participants a discriminator tells apart on
+-- its table, at the field: the lookup would join its keys' rows on the shared table and hand each to
+-- its participant, and that read is not generated yet. The detail is the type returned.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'LOOKUP_DISCRIMINATED_UNSUPPORTED', f.named_type, 'occurrence-lookup-keys'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'LOOKUP' AND p.start = 'ROOT'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_participant x
+                WHERE x.graph_name = p.graph_name AND x.coordinate = p.coordinate
+                  AND x.recognized_by = 'DISCRIMINATOR');
 COMMENT ON VIEW graphitron_occurrence_lookup_key_entry_defect_rule IS 'One row the lookup key defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-lookup-keys stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.';
 -- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect.source_name';
@@ -29271,7 +29324,8 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
 COMMENT ON VIEW graphitron_occurrence_read_order_entry_defect_rule IS 'One row the read order defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-orderings inserts this view''s rows for one graph into graphitron_entry_defect, a list whose rows are read with no order stated for a table they are on giving one LIST_ORDER_UNDETERMINED row at that table.';
 
 -- What a sort key's path cannot state: an element writing a condition, a hop reaching many rows, a key
--- not touching the table the path stands on, and a column the landing table lacks. Raised by the
+-- not touching the table the path stands on, and a column the landing table lacks; and a path or a
+-- method on a root read over several tables, which has no slot for either. Raised by the
 -- occurrence-orderings stage beside its order rule rather than as arms of it, H2 holding a parsed copy
 -- of a union at every level of its nesting.
 CREATE VIEW graphitron_occurrence_sort_key_path_entry_defect_rule
@@ -29385,7 +29439,40 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
  WHERE NOT EXISTS (SELECT 1 FROM sql_column_spelling sp
                     WHERE sp.source_name = l.to_source_name AND sp.table_schema = l.to_schema
                       AND sp.table_name = l.to_table AND sp.spelling_upper = UPPER(fe.name_ref)
-                      AND sp.reach = 1);
+                      AND sp.reach = 1)
+UNION ALL
+-- A key reading no column of the list's own table, through a path or by a method, on a root read
+-- over several tables its participants are told apart by, at the fields element writing it: the
+-- read folds each participant's order into shared slots, one column of that participant's table
+-- each, and such a key has no slot. A read whose participants a discriminator tells apart is one
+-- table's, and a lookup over several tables is LOOKUP_KEY_ON_UNBOUND_TYPE's. The detail is what the
+-- key reads, PATH or METHOD.
+SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'SORT_KEY_ACROSS_PARTICIPANTS',
+       MIN(k.kind), 'occurrence-orderings'
+  FROM graphitron_occurrence_order r
+  JOIN graphitron_occurrence_sort_key k
+    ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
+   AND k.choice = r.choice
+  -- A LEFT JOIN so the order drives the plan, which an inner join lets H2 reorder into a partition read
+  -- (RulePlanGateTest); inner in effect, the fields entry below matching no missing application.
+  LEFT JOIN graphitron_directive_application ra
+    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
+   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
+  JOIN graphitron_ast_order_field_entry fe
+    ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
+   AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
+   AND fe.position = k.position
+ WHERE k.kind <> 'COLUMN'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                WHERE p.graph_name = r.graph_name AND p.coordinate = r.coordinate
+                  AND p.start = 'ROOT' AND p.kind = 'SELECT')
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_participant x
+                WHERE x.graph_name = r.graph_name AND x.coordinate = r.coordinate
+                  AND x.recognized_by = 'TABLE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant x
+                    WHERE x.graph_name = r.graph_name AND x.coordinate = r.coordinate
+                      AND x.recognized_by = 'DISCRIMINATOR')
+ GROUP BY fe.graph_name, fe.source_name, fe.source_line, fe.source_column;
 COMMENT ON VIEW graphitron_occurrence_sort_key_path_entry_defect_rule IS 'One row the sort key path defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-orderings inserts this view''s rows for one graph into graphitron_entry_defect, a fields element whose path: rides a to-many hop giving one SORT_KEY_PATH_TO_MANY row at the element.';
 
 
@@ -31386,6 +31473,117 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
                                      AND pc.outcome_type_name = f.type_name));
 COMMENT ON VIEW graphitron_occurrence_result_shape_entry_defect_rule IS 'One row the result shape defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field whose producer hands back one value under a list giving one LIST_OVER_ONE_VALUE row at the field.';
+
+CREATE VIEW graphitron_occurrence_participant_detail_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A participant of a query-root read on a detail table of its own, told apart by a discriminator on
+-- the table it shares with the others, with no field joining the detail table to the shared one, at
+-- the participant type: the read joins each such participant's rows onto the shared table's, and
+-- the join is named by the type's first field, in declaration order, whose path is one step from the
+-- detail table to the shared one and no more. Joined where that step pairs columns and rides one
+-- foreign key, written or inferred, the catalog generates a key constant for. Read where every
+-- participant of the read is told apart by the discriminator, a read mixing the two being refused
+-- whole. The detail is the shared table.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'PARTICIPANT_DETAIL_UNJOINED', MIN(x.base_name), 'occurrence-depth-defects'
+  FROM graphitron_occurrence_participant x
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = x.graph_name AND p.coordinate = x.coordinate AND p.start = 'ROOT'
+   AND p.kind IN ('SELECT', 'LOOKUP')
+  JOIN graphql_ast_element_entry el ON el.graph_name = x.graph_name AND el.coordinate = x.participant_type
+ WHERE x.recognized_by = 'DISCRIMINATOR' AND x.table_name <> x.base_name
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant y
+                    WHERE y.graph_name = x.graph_name AND y.coordinate = x.coordinate
+                      AND y.recognized_by = 'TABLE')
+   AND NOT EXISTS (
+     SELECT 1 FROM graphitron_field g
+       JOIN graphitron_join_path_step s
+         ON s.graph_name = g.graph_name AND s.coordinate = g.coordinate AND s.position = 0
+        AND s.from_table = x.table_name AND s.to_table = x.base_name
+      WHERE g.graph_name = x.graph_name AND g.type_name = x.participant_type
+        AND 1 = (SELECT COUNT(*) FROM graphitron_join_path_step s1
+                  WHERE s1.graph_name = g.graph_name AND s1.coordinate = g.coordinate)
+        -- the first such field
+        AND NOT EXISTS (SELECT 1 FROM graphitron_field h
+                          JOIN graphitron_join_path_step hs
+                            ON hs.graph_name = h.graph_name AND hs.coordinate = h.coordinate
+                           AND hs.position = 0 AND hs.from_table = x.table_name
+                           AND hs.to_table = x.base_name
+                         WHERE h.graph_name = g.graph_name AND h.type_name = g.type_name
+                           AND h.ordinal < g.ordinal
+                           AND 1 = (SELECT COUNT(*) FROM graphitron_join_path_step h1
+                                     WHERE h1.graph_name = h.graph_name AND h1.coordinate = h.coordinate))
+        AND EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                     WHERE sc.graph_name = g.graph_name AND sc.coordinate = g.coordinate
+                       AND sc.position = 0)
+        AND 1 = (SELECT COUNT(*) FROM graphitron_join_path_step_key wk
+                  WHERE wk.graph_name = g.graph_name AND wk.coordinate = g.coordinate AND wk.position = 0)
+              + (SELECT COUNT(*) FROM graphitron_join_path_step_inferred_key ik
+                  WHERE ik.graph_name = g.graph_name AND ik.coordinate = g.coordinate AND ik.position = 0)
+        AND (EXISTS (SELECT 1 FROM graphitron_join_path_step_key wk
+                       JOIN sql_constraint k
+                         ON k.source_name = wk.constraint_source_name AND k.table_schema = wk.constraint_schema
+                        AND k.table_name = wk.constraint_table AND k.constraint_name = wk.constraint_name
+                       JOIN sql_schema sch ON sch.source_name = k.source_name AND sch.table_schema = k.table_schema
+                      WHERE wk.graph_name = g.graph_name AND wk.coordinate = g.coordinate AND wk.position = 0
+                        AND sch.keys_class_fqn IS NOT NULL)
+             OR EXISTS (SELECT 1 FROM graphitron_join_path_step_inferred_key ik
+                          JOIN sql_constraint k
+                            ON k.source_name = ik.constraint_source_name AND k.table_schema = ik.constraint_schema
+                           AND k.table_name = ik.constraint_table AND k.constraint_name = ik.constraint_name
+                          JOIN sql_schema sch ON sch.source_name = k.source_name AND sch.table_schema = k.table_schema
+                         WHERE ik.graph_name = g.graph_name AND ik.coordinate = g.coordinate AND ik.position = 0
+                           AND sch.keys_class_fqn IS NOT NULL)))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- The same participant with a field carrying a node id, at the participant type: the read projects
+-- each detail column under the participant's own name and an inherited one off the shared table, and
+-- an id encoded from the participant's key is not projected that way yet. The detail is the first
+-- such field by name.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED', MIN(g.field_name), 'occurrence-depth-defects'
+  FROM graphitron_occurrence_participant x
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = x.graph_name AND p.coordinate = x.coordinate AND p.start = 'ROOT'
+   AND p.kind IN ('SELECT', 'LOOKUP')
+  JOIN graphitron_field g ON g.graph_name = x.graph_name AND g.type_name = x.participant_type
+  JOIN graphql_ast_element_entry el ON el.graph_name = x.graph_name AND el.coordinate = x.participant_type
+ WHERE x.recognized_by = 'DISCRIMINATOR' AND x.table_name <> x.base_name
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant y
+                    WHERE y.graph_name = x.graph_name AND y.coordinate = x.coordinate
+                      AND y.recognized_by = 'TABLE')
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                WHERE ni.graph_name = g.graph_name AND ni.coordinate = g.coordinate)
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+-- The same participant with a field reading one column of the shared table, an inherited field,
+-- where the type is also a participant on the shared table of another discriminated query-root
+-- read, at the participant type: the two reads would alias the inherited field two ways, and one
+-- type's fields read one alias. The detail is the first such field by name.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'DISCRIMINATED_OWN_TABLE_SHARED_ELSEWHERE_UNSUPPORTED', MIN(g.field_name), 'occurrence-depth-defects'
+  FROM graphitron_occurrence_participant x
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = x.graph_name AND p.coordinate = x.coordinate AND p.start = 'ROOT'
+   AND p.kind IN ('SELECT', 'LOOKUP')
+  JOIN graphitron_field g ON g.graph_name = x.graph_name AND g.type_name = x.participant_type
+  JOIN graphql_ast_element_entry el ON el.graph_name = x.graph_name AND el.coordinate = x.participant_type
+ WHERE x.recognized_by = 'DISCRIMINATOR' AND x.table_name <> x.base_name
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant y
+                    WHERE y.graph_name = x.graph_name AND y.coordinate = x.coordinate
+                      AND y.recognized_by = 'TABLE')
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                WHERE c.graph_name = g.graph_name AND c.coordinate = g.coordinate
+                  AND c.table_name = x.base_name)
+   AND 1 = (SELECT COUNT(*) FROM graphitron_occurrence_column c1
+             WHERE c1.graph_name = g.graph_name AND c1.coordinate = g.coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_participant q
+                 JOIN graphitron_occurrence_producer qp
+                   ON qp.graph_name = q.graph_name AND qp.coordinate = q.coordinate AND qp.start = 'ROOT'
+                WHERE q.graph_name = x.graph_name AND q.participant_type = x.participant_type
+                  AND q.recognized_by = 'DISCRIMINATOR' AND q.table_name = q.base_name)
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
+COMMENT ON VIEW graphitron_occurrence_participant_detail_entry_defect_rule IS 'One row the participant detail defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a detail-table participant of a discriminated root read no field joins to the shared table giving one PARTICIPANT_DETAIL_UNJOINED row at the participant type.';
 
 CREATE VIEW graphitron_occurrence_column_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
@@ -34551,6 +34749,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record_column', 'graphitron_occurrence_node_id_slot_record_column_rule'),
   ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_depth_entry_defect_rule'),
   ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_result_shape_entry_defect_rule'),
+  ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_participant_detail_entry_defect_rule'),
   ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_column_entry_defect_rule'),
   ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_need_entry_defect_rule'),
   ('occurrence-depth-defects', 'graphitron_entry_defect', 'graphitron_occurrence_filter_entry_defect_rule'),
@@ -35724,6 +35923,10 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A @lookupKey argument sits on a field returning a connection, and a lookup answers the keys it is given where a connection pages through rows, so the two cannot both hold: drop @asConnection or drop @lookupKey.'),
   ('LOOKUP_KEY_NOT_IDENTIFYING', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_NOT_IDENTIFYING',
    'A field below the root returning one table-bound object is looked up by keys that cover no key identifying a row of its table, its primary key or a unique key whose columns refuse NULL, so several rows could match the one value it returns: key it by such a key, or return a list.'),
+  ('LOOKUP_KEY_ON_UNBOUND_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_ON_UNBOUND_TYPE',
+   'A query-root field with a @lookupKey argument returns a type whose rows are those of no one table, a union or an interface whose participants are on tables of their own, or a type with no @table, and a lookup narrows one table''s rows by columns of it: return a @table type, or drop @lookupKey and filter the rows instead.'),
+  ('LOOKUP_DISCRIMINATED_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_LOOKUP_DISCRIMINATED_UNSUPPORTED',
+   'A query-root field with a @lookupKey argument returns an interface whose participants a discriminator tells apart on its table, and the lookup handing each keyed row to its participant is not generated yet: drop @lookupKey and filter the rows instead, or look the rows up through a field returning one participant.'),
   ('LOOKUP_KEY_OFF_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_OFF_TABLE',
    'A @lookupKey argument is a node id of a node on another table than the one the field reads, or takes an input object with such a field that no one foreign key from the field''s table carries back to its columns, so it unpacks into no key of the field''s rows and there is nothing for it to narrow by: drop @lookupKey, which leaves the id a filter through the foreign key, put the id in an input object the field''s table points from, or key on the field''s own node.'),
   ('ORDER_FIELDS_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELDS_EMPTY',
@@ -35732,6 +35935,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An element of a sort key''s path carries a condition; an ordering path follows key joins only, and the rule for which related row counts belongs in a method that returns the sort key.'),
   ('SORT_KEY_PATH_TO_MANY', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_PATH_TO_MANY',
    'A hop of a sort key''s path reaches many rows of the table it lands on, and an ordering path may only follow to-one hops: supply a value derived from many rows through method, or make the hop to-one with a view that has a unique key on the parent''s id and a jOOQ synthetic foreign key to it.'),
+  ('SORT_KEY_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_SORT_KEY_ACROSS_PARTICIPANTS',
+   'An ordering of a query-root field over a union or an interface whose participants are on tables of their own sorts by a path or a method, and the read folds each participant''s order into shared slots, one column of its own table each, which such a key has no slot in: sort by columns of the participants'' own tables.'),
   ('SORT_KEY_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_PATH_UNRESOLVED',
    'A key named in a sort key''s path does not touch the table the path stands on at that hop, the list''s own at the first, so the path does not continue: name a key joining the two tables.'),
   ('SORT_KEY_COLUMN_OFF_PATH', 'error', 'GRAPHITRON', 'GRAPHITRON_SORT_KEY_COLUMN_OFF_PATH',
@@ -35745,7 +35950,7 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
   ('ORDER_INPUT_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_INPUT_SHAPE',
    'An @orderBy argument''s type is not an input object with exactly one field typed as an enum whose values carry @order or @index and exactly one other enum field, the direction, so it offers the client no order to pick: give the input type one of each, told apart by type rather than name.'),
   ('ORDER_FIELD_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELD_SHAPE',
-   'A fields element of an ordering writes neither or both of name and method, or a path beside a method, so it names no one key: write a name, optionally with a path, or a method.'),
+   'A fields element of an ordering writes neither or both of name and method, a path beside a method, or a method missing its className or its method or writing an argMapping, so it names no one key: write a name, optionally with a path, or a method naming its class and its method, which takes the field''s table and nothing else.'),
   ('ORDER_VALUE_UNORDERED', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_VALUE_UNORDERED',
    'A value of the enum an @orderBy argument picks its order by carries neither @order nor @index, so a client choosing it asks for an order that says nothing: give it @order.'),
   ('ORDER_CHOICE_ON_INLINE_LIST', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDER_CHOICE_ON_INLINE_LIST',
@@ -35864,6 +36069,12 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'An interface or union field has a participant on a table with no primary key, and the read over its participants keys each row by its table''s primary key to order it and hand it to its type: give the table a primary key, or leave the type out of the interface or union.'),
   ('PARTICIPANT_KEYS_DIFFER_IN_ARITY', 'error', 'GRAPHITRON', 'GRAPHITRON_PARTICIPANT_KEYS_DIFFER_IN_ARITY',
    'An interface or union field has participants whose tables'' primary keys have different numbers of columns, and the read over its participants projects every participant''s key into the same columns: give the field participants whose keys have as many columns, or split the interface or union.'),
+  ('PARTICIPANT_DETAIL_UNJOINED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARTICIPANT_DETAIL_UNJOINED',
+   'A query-root field returns an interface whose participants a discriminator tells apart on its table, and a participant on a detail table of its own has no field whose path is one step from the detail table to the shared one riding one foreign key, so nothing names the join its rows are read through: give the participant a field read off the shared table with @reference(path: [{key: ...}]) naming the foreign key from the detail table.'),
+  ('PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED',
+   'A query-root field returns an interface whose participants a discriminator tells apart on its table, and a participant on a detail table of its own has a field carrying a node id, which the read joining the detail table does not project yet: leave the node id off the participant''s fields, or keep the participant on the shared table.'),
+  ('DISCRIMINATED_OWN_TABLE_SHARED_ELSEWHERE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_DISCRIMINATED_OWN_TABLE_SHARED_ELSEWHERE_UNSUPPORTED',
+   'A type is a participant on a detail table of its own under one discriminated interface a query-root field returns, reading an inherited field off that interface''s table, and a participant on the shared table of another, so the inherited field would be read under two aliases, which one type''s fields do not do yet: give the type one discriminated interface it participates in from the root, or read the inherited field off the type''s own table.'),
   ('SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED',
    'A participant of a discriminated @service''s result answers an object with no table of its own read down a path, where the service''s lift reads each participant off its one row: read the object off the row, give its type a @table, or read the rows with a field graphitron fetches.'),
   ('SCALAR_PATH', 'error', 'UNSUPPORTED', 'GRAPHITRON_SCALAR_PATH',
@@ -36132,6 +36343,8 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.'),
   ('OUTBOX_PAYLOAD_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_PAYLOAD_INVALID',
    'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.'),
+  ('PIVOT_AT_ROOT', 'error', 'GRAPHITRON', 'GRAPHITRON_PIVOT_AT_ROOT',
+   'A root field, of a query or a mutation, carries @pivot, which folds an aggregate of the rows its path reaches into its parent''s row, and a root field has no parent row: move the field onto a @table type and read it from there.'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.'),
   ('CLAIMS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_CLAIMS_CONFLICT',
@@ -37741,6 +37954,10 @@ INSERT INTO meta_relation VALUES
    'One row the result shape defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field whose producer hands back one value under a list giving one LIST_OVER_ONE_VALUE row at the field.',
    'The shapes a producer''s result cannot take where the field puts it: a list over one value, an outcome or a service payload in a list, errors in a row. A family of the occurrence-depth-defects stage beside its occurrence rule, so no rule nests a union deeper than seven.'),
+  ('graphitron_occurrence_participant_detail_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the participant detail defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a detail-table participant of a discriminated root read no field joins to the shared table giving one PARTICIPANT_DETAIL_UNJOINED row at the participant type.',
+   'The detail-table participants of a discriminated root read the joined read cannot serve: none joining its table to the shared one, one carrying a node id, one whose inherited field is also read single-table elsewhere. A family of the occurrence-depth-defects stage of its own, after the join path steps, the occurrence columns and the node ids it reads are written, so no rule nests a union deeper than seven.'),
   ('graphitron_occurrence_column_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the column defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a scalar field whose spelling names no column where its path lands giving one COLUMN_UNRESOLVED row at the field.',

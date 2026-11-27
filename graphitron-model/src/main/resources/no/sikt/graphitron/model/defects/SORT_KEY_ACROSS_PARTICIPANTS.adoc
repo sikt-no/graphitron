@@ -1,0 +1,5 @@
+Reported at the `fields` element, the detail naming what the key reads, `PATH` or `METHOD`.
+
+A query-root list or connection returning a union or an interface whose participants are on tables of their own reads each participant from its own table and combines the reads, ordering every participant by its own keys in shared slots, one column of that participant's table each. A key read through a path or computed by a method is no column of the participant's table, so it has no slot, and combining such keys is not generated yet.
+
+*Instead.* Sort by columns of the participants' own tables, or give the interface a `@table` with `@discriminate` so the field reads one table. See xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] and xref:directives/defaultOrder.adoc[`@defaultOrder`].

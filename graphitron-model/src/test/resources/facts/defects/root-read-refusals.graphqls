@@ -1,0 +1,146 @@
+# What the store refuses at a query-root read that it holds back from generating, each beside its
+# near miss.
+#
+# A @pivot folds an aggregate of the rows its path reaches into its parent's row. Film.translations
+# does so under film's row, the near miss; Query.translations, the same pivot on the query root, has
+# no parent row to fold into: PIVOT_AT_ROOT, at the @pivot.
+#
+# A root list over a union whose participants are on tables of their own orders each participant by
+# its own keys in shared slots, one column of its table each. Query.castByUpdate sorts by last_update,
+# a column of film and of actor, the near miss; Query.castByStore sorts by a method, which has no
+# slot: SORT_KEY_ACROSS_PARTICIPANTS, at the fields element, naming METHOD.
+#
+# A lookup narrows one table's rows by columns of it. Query.filmsByKey looks films up by film_id, the
+# near miss; Query.castByKey returns the union, whose participants are on two tables, and
+# Query.summariesByKey a type with no @table: each LOOKUP_KEY_ON_UNBOUND_TYPE, at the field, naming
+# the type returned. Query.contentByKey looks up the interface a discriminator tells apart on content,
+# which is not generated yet: LOOKUP_DISCRIMINATED_UNSUPPORTED. Query.content reads the same interface
+# with no lookup, the near miss.
+#
+# A sort key's method names its class and its method and maps no arguments. Query.filmsByStore names
+# both, the near miss; Query.filmsByNoMethod names no method, Query.filmsByNoClass no class, and
+# Query.filmsByMappedMethod writes an argMapping: each names no one key, ORDER_FIELD_SHAPE at the
+# fields element.
+#
+# A participant on a detail table of its own is joined onto the interface's table by its first field
+# whose path is one step from the detail table to the shared one. Under Query.subjects, Person reads
+# displayName through jti_person_subject_fk, the near miss; AppAccount has no such field:
+# PARTICIPANT_DETAIL_UNJOINED, at the participant type, naming the shared table. Under Query.parties,
+# Company is the near miss and Individual, a node whose id is encoded from its key, has a field
+# carrying a node id the joined read does not project yet: PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED,
+# naming the field.
+
+interface Node {
+  id: ID!
+}
+
+type Film @table(name: "film") {
+  title: String
+  translations: Texts
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt")
+}
+
+type Texts { nob: String }
+
+type Actor @table(name: "actor") {
+  lastName: String @field(name: "last_name")
+}
+
+union Cast = Film | Actor
+
+type Summary { title: String }
+
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+  contentId: Int!    @field(name: "CONTENT_ID")
+  title:     String! @field(name: "TITLE")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int!    @field(name: "CONTENT_ID")
+  title:     String! @field(name: "TITLE")
+}
+
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int!    @field(name: "CONTENT_ID")
+  title:     String! @field(name: "TITLE")
+}
+
+interface Subject @table(name: "jti_subject") @discriminate(on: "subject_kind") {
+  subjectKind: String @field(name: "subject_kind")
+}
+
+type Person implements Subject @table(name: "jti_person") @discriminator(value: "PERSON") {
+  subjectKind: String @field(name: "subject_kind")
+  displayName: String @reference(path: [{key: "jti_person_subject_fk"}]) @field(name: "display_name")
+  fullName: String @field(name: "full_name")
+}
+
+type AppAccount implements Subject @table(name: "jti_app_account") @discriminator(value: "APP") {
+  subjectKind: String @field(name: "subject_kind")
+  clientId: String @field(name: "client_id")
+}
+
+interface Party @table(name: "party") @discriminate(on: "party_kind") {
+  partyId: Int @field(name: "party_id")
+}
+
+type Company implements Party @table(name: "party_company") @discriminator(value: "COMPANY") {
+  partyId: Int @field(name: "party_id")
+  displayName: String @reference(path: [{key: "party_company_party_id_fkey"}]) @field(name: "display_name")
+}
+
+type Individual implements Party & Node @table(name: "party_individual") @discriminator(value: "INDIVIDUAL")
+    @node(typeId: "Individual", keyColumns: ["party_id"]) {
+  partyId: Int @field(name: "party_id")
+  id: ID!
+  displayName: String @reference(path: [{key: "party_individual_party_id_fkey"}]) @field(name: "display_name")
+}
+
+type Query {
+  films: [Film!]!
+  translations: Texts
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt")
+
+  castByUpdate: [Cast!]! @defaultOrder(fields: [{name: "last_update"}])
+  castByStore: [Cast!]!
+    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
+
+  filmsByKey(film_id: [Int!] @lookupKey @field(name: "film_id")): [Film!]!
+  castByKey(film_id: [Int!] @lookupKey @field(name: "film_id")): [Cast!]!
+  summariesByKey(film_id: [Int!] @lookupKey @field(name: "film_id")): [Summary!]!
+  content: [Content!]!
+  contentByKey(contentId: [Int!] @lookupKey @field(name: "content_id")): [Content!]!
+
+  filmsByStore: [Film!]!
+    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
+  filmsByNoMethod: [Film!]!
+    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys"}}])
+  filmsByNoClass: [Film!]!
+    @defaultOrder(fields: [{method: {method: "latestStockStore"}}])
+  filmsByMappedMethod: [Film!]!
+    @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore", argMapping: "x: y"}}])
+
+  subjects: [Subject!]!
+  parties: [Party!]!
+}
+
+# Each refusal at its site, by coordinate; the near misses draw none of them.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('PIVOT_AT_ROOT', 'SORT_KEY_ACROSS_PARTICIPANTS', 'LOOKUP_KEY_ON_UNBOUND_TYPE',
+    'LOOKUP_DISCRIMINATED_UNSUPPORTED', 'ORDER_FIELD_SHAPE', 'PARTICIPANT_DETAIL_UNJOINED',
+    'PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED')
+  """, rows: """
+  coordinate,                code,                                   detail
+  AppAccount,                PARTICIPANT_DETAIL_UNJOINED,            jti_subject
+  Individual,                PARTICIPANT_DETAIL_NODE_ID_UNSUPPORTED, id
+  Query.castByKey,           LOOKUP_KEY_ON_UNBOUND_TYPE,             Cast
+  Query.castByStore,         SORT_KEY_ACROSS_PARTICIPANTS,           METHOD
+  Query.contentByKey,        LOOKUP_DISCRIMINATED_UNSUPPORTED,       Content
+  Query.filmsByMappedMethod, ORDER_FIELD_SHAPE,
+  Query.filmsByNoClass,      ORDER_FIELD_SHAPE,
+  Query.filmsByNoMethod,     ORDER_FIELD_SHAPE,
+  Query.summariesByKey,      LOOKUP_KEY_ON_UNBOUND_TYPE,             Summary
+  Query.translations,        PIVOT_AT_ROOT,                          Query.translations
+  """)

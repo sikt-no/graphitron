@@ -137,7 +137,9 @@ final class GraphitronOrderEntries {
 
     /**
      * Which key the element names: a name alone a column, with a path a column read through it, a
-     * method alone a method; anything else names no one key.
+     * method alone a method, where it names its class and its method and maps no arguments; anything
+     * else names no one key. A sort key has no field name to default the method from, and its method
+     * takes the field's table and nothing else.
      */
     private static String shape(ObjectValue element) {
         boolean name = written(element, "name");
@@ -146,7 +148,23 @@ final class GraphitronOrderEntries {
         if (name && !method) {
             return path ? "PATH" : "COLUMN";
         }
-        return method && !name && !path ? "METHOD" : "MALFORMED";
+        return method && !name && !path && namesOneMethod(element) ? "METHOD" : "MALFORMED";
+    }
+
+    /**
+     * Whether the element's method reference names a class and a method, neither blank, and writes no
+     * argMapping. A reference written as anything but an object is judged by the schema's own
+     * validation, not here.
+     */
+    private static boolean namesOneMethod(ObjectValue element) {
+        if (!(inside(element, "method") instanceof ObjectValue reference)) {
+            return true;
+        }
+        String className = stringOf(inside(reference, "className"));
+        String methodName = stringOf(inside(reference, "method"));
+        String argMapping = stringOf(inside(reference, "argMapping"));
+        return className != null && !className.isBlank() && methodName != null && !methodName.isBlank()
+            && (argMapping == null || argMapping.isBlank());
     }
 
     /** Whether the element writes the field, an explicit null being no value written. */

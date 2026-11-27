@@ -1,0 +1,5 @@
+Reported at the `@pivot`, the detail naming the field.
+
+A pivot reads the rows at the end of its path, one aggregate per slot, and folds them into the row of the type declaring the field, correlated with it. A field on a root operation type, query or mutation, has no such row: nothing is read before it, so there is nothing for the aggregate to fold into.
+
+*Next step.* Move the field onto a `@table` type and reach it through a query field returning that type. See xref:directives/pivot.adoc[`@pivot`].

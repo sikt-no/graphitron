@@ -1,0 +1,5 @@
+Reported at the field, the detail naming the type it returns.
+
+A lookup narrows one table's rows by the keys the caller passes, each a column of that table. A union, an interface whose participants are on tables of their own, or a type with no `@table` has no one table for the keys to be columns of.
+
+*Next step.* Return a `@table` type, or drop `@lookupKey` and filter the rows by the argument instead. See xref:directives/lookupKey.adoc[`@lookupKey`].
