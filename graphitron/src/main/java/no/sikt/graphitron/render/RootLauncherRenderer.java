@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.emit.ConnectionConstruction;
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.Invocation;
@@ -147,7 +148,7 @@ public final class RootLauncherRenderer {
                             }
                             case ResultShape.Connection connection -> builder.addCode(
                                 connectionBody(anchor.projection(), row, connection,
-                                    ConnectionConstruction.of(connections, row), tableLocal, tableLocal,
+                                    connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName()), tableLocal, tableLocal,
                                     carrierDsl));
                         }
                     }
@@ -204,7 +205,7 @@ public final class RootLauncherRenderer {
                     }
                     case ResultShape.Connection connection -> builder.addCode(
                         discriminatedConnectionBody(disc, connection,
-                            ConnectionConstruction.of(connections, row), tableLocal, carrierDsl,
+                            connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName()), tableLocal, carrierDsl,
                             TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
                 }
             }
@@ -240,7 +241,7 @@ public final class RootLauncherRenderer {
                     case ResultShape.SingleRecord ignored2 -> RECORD;
                     case ResultShape.Connection connection ->
                         ConnectionConstruction.classOf(className(connection.helper()),
-                            ConnectionConstruction.of(connections, row));
+                            connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName()));
                 };
             }
         };
@@ -666,7 +667,7 @@ public final class RootLauncherRenderer {
                 code.add(directReturn(selectChain(projection, fromLocal, true, ordered)));
             }
             case ResultShape.Connection connection -> code.add(
-                connectionBody(chain.projection(), row, connection, ConnectionConstruction.of(connections, row),
+                connectionBody(chain.projection(), row, connection, connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName()),
                     fromLocal, terminal, carrierDsl));
         }
         return code.build();

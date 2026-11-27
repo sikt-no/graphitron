@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.emit.ConnectionConstruction;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.TenantStrategy;
@@ -86,7 +87,7 @@ public final class BatchedRowsFragments {
         var prelude = prelude(body, fieldName, batched.sourceKey(), chain, argHelpers);
 
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            connectionTail(body, row, chain, prelude, conn, ConnectionConstruction.of(connections, row),
+            connectionTail(body, row, chain, prelude, conn, connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName()),
                 carrierDsl);
             return body.build();
         }
@@ -301,7 +302,7 @@ public final class BatchedRowsFragments {
             TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
 
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            discriminatedConnectionTail(body, chain, prelude, conn, ConnectionConstruction.of(connections, row),
+            discriminatedConnectionTail(body, chain, prelude, conn, connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName()),
                 carrierDsl);
             return body.build();
         }
@@ -389,7 +390,7 @@ public final class BatchedRowsFragments {
             return ParameterizedTypeName.get(LIST_CN, ClassName.get(Object.class));
         }
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            return ConnectionConstruction.classOf(className(conn.helper()), ConnectionConstruction.of(connections, row));
+            return ConnectionConstruction.classOf(className(conn.helper()), connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName()));
         }
         return row.result() instanceof no.sikt.graphitron.command.ResultShape.SingleRecord
             ? RECORD

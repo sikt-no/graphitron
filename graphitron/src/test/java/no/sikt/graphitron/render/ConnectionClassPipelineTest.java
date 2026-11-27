@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.emit.ConnectionConstruction;
 import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.emit.ConnectionsQuery;
 import no.sikt.graphitron.model.test.FactGraphs;

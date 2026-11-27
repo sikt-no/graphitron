@@ -1,8 +1,7 @@
-package no.sikt.graphitron.render;
+package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
-import no.sikt.graphitron.emit.ConnectionsEmitter;
 import no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection;
 
 /**
@@ -31,15 +30,6 @@ public final class ConnectionConstruction {
     private static final String FACETS_CLASS_NAME = "Facets";
 
     private ConnectionConstruction() {}
-
-    /**
-     * The store's answer for the connection the launcher {@code row} produces, out of the run's
-     * {@code connections}: a connection row the store states no connection for is a generator bug.
-     */
-    public static FieldConnection of(no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
-            no.sikt.graphitron.command.LauncherCommand row) {
-        return connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName());
-    }
 
     /** The class a producer of {@code connection} builds, beside {@code helper} in the util package. */
     public static ClassName classOf(ClassName helper, FieldConnection connection) {

@@ -780,7 +780,7 @@ public final class MultiTablePolymorphicEmitter {
         var pageRequestClass = ClassName.get(outputPackage + ".util",
             "ConnectionHelper", "PageRequest");
 
-        TypeName valueType = no.sikt.graphitron.render.ConnectionConstruction.classOf(connectionHelperClass,
+        TypeName valueType = no.sikt.graphitron.emit.ConnectionConstruction.classOf(connectionHelperClass,
             connection);
 
         var builder = MethodSpec.methodBuilder(fieldName)
@@ -893,14 +893,14 @@ public final class MultiTablePolymorphicEmitter {
 
         // The count closure counts the same UNION-ALL derived table {@code pagesTable}, issuing
         // {@code SELECT count(*) FROM (UNION ALL) AS pages} lazily on selection.
-        var count = no.sikt.graphitron.render.ConnectionConstruction.countOf(CodeBlock.of(
+        var count = no.sikt.graphitron.emit.ConnectionConstruction.countOf(CodeBlock.of(
             "new $T($L, $T.noCondition()).count($L)",
             connectionHelperClass.nestedClass(
                 no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.SCOPED_CLASS_NAME),
             CONNECTION_PAGES_LOCAL, DSL,
-            no.sikt.graphitron.render.ConnectionConstruction.closureDsl(connectionHelperClass,
-                TenantDslEmitter.isMultiTenant(ctx), no.sikt.graphitron.render.ConnectionConstruction.COUNT_ENV)));
-        builder.addStatement("$T cr = $L", valueType, no.sikt.graphitron.render.ConnectionConstruction.build(
+            no.sikt.graphitron.emit.ConnectionConstruction.closureDsl(connectionHelperClass,
+                TenantDslEmitter.isMultiTenant(ctx), no.sikt.graphitron.emit.ConnectionConstruction.COUNT_ENV)));
+        builder.addStatement("$T cr = $L", valueType, no.sikt.graphitron.emit.ConnectionConstruction.build(
             connectionHelperClass, connection, "payload", count, null));
         builder.addCode(returnSyncSuccess(valueType, "cr", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
@@ -1388,7 +1388,7 @@ public final class MultiTablePolymorphicEmitter {
             no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
 
         String fieldName = batchKey.name();
-        TypeName valueType = no.sikt.graphitron.render.ConnectionConstruction.classOf(
+        TypeName valueType = no.sikt.graphitron.emit.ConnectionConstruction.classOf(
             ClassName.get(outputPackage + ".util",
                 no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME),
             connection);
@@ -1595,7 +1595,7 @@ public final class MultiTablePolymorphicEmitter {
         TypeName keyType = parentSourceKey.keyElementType();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         TypeName listOfConnection = ParameterizedTypeName.get(LIST,
-            no.sikt.graphitron.render.ConnectionConstruction.classOf(connectionHelperClass, connection));
+            no.sikt.graphitron.emit.ConnectionConstruction.classOf(connectionHelperClass, connection));
 
         var b = CodeBlock.builder();
 
@@ -1737,10 +1737,10 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T pageRows = buckets.get(i)", listOfRecord);
         b.addStatement("$T pageCount = counts.slot(i)", connectionHelperClass.nestedClass(
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.TOTAL_COUNT_CLASS_NAME));
-        var count = no.sikt.graphitron.render.ConnectionConstruction.countOf(CodeBlock.of("pageCount.count($L)",
-            no.sikt.graphitron.render.ConnectionConstruction.closureDsl(connectionHelperClass,
-                TenantDslEmitter.isMultiTenant(ctx), no.sikt.graphitron.render.ConnectionConstruction.COUNT_ENV)));
-        b.addStatement("out.add($L)", no.sikt.graphitron.render.ConnectionConstruction.build(
+        var count = no.sikt.graphitron.emit.ConnectionConstruction.countOf(CodeBlock.of("pageCount.count($L)",
+            no.sikt.graphitron.emit.ConnectionConstruction.closureDsl(connectionHelperClass,
+                TenantDslEmitter.isMultiTenant(ctx), no.sikt.graphitron.emit.ConnectionConstruction.COUNT_ENV)));
+        b.addStatement("out.add($L)", no.sikt.graphitron.emit.ConnectionConstruction.build(
             connectionHelperClass, connection, "pageRows", count, null));
         b.endControlFlow();
         b.addStatement("return out");

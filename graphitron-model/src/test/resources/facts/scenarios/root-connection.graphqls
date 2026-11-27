@@ -1,0 +1,36 @@
+"Root connections over one table, paged in their own order or as the request's @orderBy argument chooses: filmsPage by title, filmsPicked by the order the argument names with the key as its default, and filmsByOriginalLanguage by the name of the film's original language, read down a path, with the title after it."
+type Film @table(name: "film") {
+  filmId: Int! @field(name: "film_id")
+  title: String
+}
+
+enum FilmSort {
+  FILM_ID @order(primaryKey: true)
+  TITLE   @order(fields: [{name: "title"}])
+}
+
+input FilmOrderBy {
+  field:     FilmSort!
+  direction: SortDirection
+}
+
+type FilmsConnection {
+  edges: [FilmsEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type FilmsEdge { node: Film! cursor: String! }
+type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+
+type Query {
+  filmsPage(first: Int, after: String): FilmsConnection! @defaultOrder(fields: [{name: "title"}])
+  filmsPicked(order: FilmOrderBy @orderBy, first: Int, after: String): FilmsConnection!
+    @defaultOrder(primaryKey: true)
+  filmsByOriginalLanguage(first: Int, after: String): FilmsConnection!
+    @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}, {name: "title"}])
+}
+
+extend schema @assertContains(relation: "graphitron_occurrence_sort_key_column", rows: """
+  coordinate,      choice,          position, column_name
+  Query.filmsPage, Query.filmsPage, 0,        title
+  """)

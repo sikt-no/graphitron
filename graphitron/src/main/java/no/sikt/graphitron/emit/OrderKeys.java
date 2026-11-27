@@ -6,6 +6,7 @@ import no.sikt.graphitron.emit.RootQuery.Derived;
 import no.sikt.graphitron.emit.RootQuery.Key;
 import no.sikt.graphitron.emit.RootQuery.Pair;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.ColumnComparison;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,7 +15,8 @@ import java.util.List;
  * How one key of an order is rendered over the table local {@code table} names: the value it sorts by,
  * its sort term, and the cursor column a connection reads it back from. A key reading the table's own
  * column is that column; a key down a path is one correlated scalar subselect over its hops, each to-one;
- * a key a consumer's method computes is that method called with the table.
+ * a key a consumer's method computes is that method called with the table. A key's collation applies
+ * to what it sorts by, not to the value its cursor reads back.
  */
 public final class OrderKeys {
 
@@ -43,12 +45,14 @@ public final class OrderKeys {
 
     /**
      * {@code <expr>.<asc|desc>()}, or {@code <flip> ? <expr>.desc() : <expr>.asc()} where {@code flip} is the
-     * runtime-descending condition of an order a request's {@code direction:} reverses. A key that may be
-     * {@code NULL}, a nullable column or any derived key, sorts {@code NULLS LAST} either way.
+     * runtime-descending condition of an order a request's {@code direction:} reverses, {@code <expr>}
+     * collated where the key states a collation. A key the store states may be {@code NULL} sorts
+     * {@code NULLS LAST} either way.
      */
     public static CodeBlock sortTerm(Key key, String table, CodeBlock flip) {
-        var expr = expression(key, table);
-        String nulls = key.nullable() || key.derived() != null ? ".nullsLast()" : "";
+        var read = expression(key, table);
+        var expr = key.collation() == null ? read : CodeBlock.of("$L.collate($S)", read, key.collation());
+        String nulls = key.nullable() ? ".nullsLast()" : "";
         if (flip == null) {
             return CodeBlock.of("$L.$L()$L", expr, "DESC".equals(key.direction()) ? "desc" : "asc", nulls);
         }
@@ -86,11 +90,14 @@ public final class OrderKeys {
         return select.add(".where($L))", pairs(hops.getFirst().pairs(), table, aliases.getFirst())).build();
     }
 
-    /** Each pair's column on the side a hop leaves equal to its column on the side it reaches. */
+    /**
+     * Each pair's column on the side a hop leaves equal to its column on the side it reaches, the two
+     * reconciled where a converter has made their Java types differ.
+     */
     private static CodeBlock pairs(List<Pair> pairs, String left, String right) {
         var parts = new ArrayList<CodeBlock>();
         for (var pair : pairs) {
-            parts.add(CodeBlock.of("$L.$L.eq($L.$L)", left, pair.from().javaName(), right, pair.to().javaName()));
+            parts.add(ColumnComparison.equality(left, pair.from(), right, pair.to()));
         }
         return CodeBlock.join(parts, ", ");
     }

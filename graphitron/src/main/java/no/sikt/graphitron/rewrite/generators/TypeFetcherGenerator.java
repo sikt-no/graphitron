@@ -834,7 +834,9 @@ public class TypeFetcherGenerator {
                         var projection = names.projectionUnit(rootRead.get().returnType());
                         builder.addMethod(no.sikt.graphitron.emit.RootReadEmitter.render(rootRead.get(), names,
                             launcherRow.dslProjections().stream()
-                                .anyMatch(unit -> unit.fqcn().equals(projection.canonicalName()))));
+                                .anyMatch(unit -> unit.fqcn().equals(projection.canonicalName())),
+                            rootRead.get().pageSize() == null ? null
+                                : ctx.connections().at(qtf.parentTypeName(), qtf.name())));
                     } else {
                         builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                             .render(launcherRow, launchers.carrierDsl(), ctx.connections(), CodeBlock.of(""),
@@ -1388,6 +1390,18 @@ public class TypeFetcherGenerator {
             @Override
             public ClassName selectionOccurrences() {
                 var unit = units.selectionOccurrences();
+                return ClassName.get(unit.packageName(), unit.simpleName());
+            }
+
+            @Override
+            public ClassName connectionHelper() {
+                var unit = units.connectionHelper();
+                return ClassName.get(unit.packageName(), unit.simpleName());
+            }
+
+            @Override
+            public ClassName orderByResult() {
+                var unit = units.orderByResult();
                 return ClassName.get(unit.packageName(), unit.simpleName());
             }
         };
@@ -6309,7 +6323,7 @@ public class TypeFetcherGenerator {
         TypeName resultValueType = fanned
             ? ParameterizedTypeName.get(LIST, ClassName.get(Object.class))
             : row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn
-                ? no.sikt.graphitron.render.ConnectionConstruction.classOf(
+                ? no.sikt.graphitron.emit.ConnectionConstruction.classOf(
                     ClassName.get(conn.helper().packageName(), conn.helper().simpleName()),
                     ctx.connectionAt(row.coordinate().getTypeName(), row.coordinate().getFieldName()))
                 : isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
@@ -6431,7 +6445,7 @@ public class TypeFetcherGenerator {
             // Only a tenant-routed parent reaches here, its tenant read off the parent row; the empty
             // page counts 0 without a statement, so it needs no context.
             case no.sikt.graphitron.command.ResultShape.Connection conn ->
-                no.sikt.graphitron.render.ConnectionConstruction.empty(
+                no.sikt.graphitron.emit.ConnectionConstruction.empty(
                     ClassName.get(conn.helper().packageName(), conn.helper().simpleName()),
                     ctx.connectionAt(row.coordinate().getTypeName(), row.coordinate().getFieldName()));
         };

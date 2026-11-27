@@ -174,11 +174,13 @@ public final class RootQuery {
      * follows its keys rather than an order; a list with a choice reads the default order where the
      * client picks none. {@code routine} is the routine whose result its
      * rows are read from, and the steps on to {@code table}, {@code null} for a read of a table.
+     * {@code connection} is the connection the store states the root runs on, {@code null} where it runs
+     * on the request's own.
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
                           List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated,
-                          List<Facet> facets, Routine routine)
+                          List<Facet> facets, Routine routine, ConnectionQuery.Outcome connection)
             implements Result {
         public Emitted {
             facets = List.copyOf(facets);
@@ -674,7 +676,8 @@ public final class RootQuery {
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
                 signature, lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()),
                 pageSize, told == null ? null : told.discriminated(), faceted,
-                routine == null ? null : routine.routine()));
+                routine == null ? null : routine.routine(),
+                row.value20() == null ? null : ConnectionQuery.Outcome.valueOf(row.value20())));
         }
         return out;
     }
