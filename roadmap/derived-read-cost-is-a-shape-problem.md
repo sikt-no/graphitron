@@ -854,6 +854,16 @@ static method needs no holder.
     `TABLE_CONCRETE`/`TABLE_ANY` split onto it, then the record side, then `@service`, writes and
     `@routine` as calls reading the same rule (Alf: one rule for every Java call).
   * **A @routine's generated method is read as a code method, and its parameters fit by the one rule** `open`, after the build-time work (performance first, Alf 2026-11-16). A `@routine` binds the Java method jOOQ generates for it, the Routines method or the table-valued function's class, and every call directive works the same (Alf). Today its parameters are `sql_routine_parameter`, read reflectively by the jooq gatherer, and no code method: the classpath reading takes the jOOQ package header-only. The reading reads the Routines class and the table-valued functions' classes with their members, and no other class of the package, so table classes stay header-only; the method a `@routine` resolves to is named, and `graphitron_call_parameter_table` covers its parameters as it covers a `@service`'s. `sql_routine_parameter`'s Java side, `jooq_name` and `binding_type`, dissolves into `code_method_parameter`, and its readers move: the routine parameter rule, its `PARAMETER_UNFILLED` rule and the outbox routine target rule. `intent_argmapping_bound_parameter_type` is left to dissolve on its own.
+  * **Whether what arrives fits a call parameter is one stored fact** `open`, before the root routine
+    read's flip emits from the store. Three rule views each judge whether an argument's value fits the
+    parameter it fills, and each differently on `Object`, untyped arrivals and arrays: the service
+    parameter defect rule's `PARAMETER_MISMATCH`, the routine parameter defect rule's, which reads
+    `sql_routine_parameter.binding_type` and an array's element class, and the condition fill's. The
+    stage writing a call's fills writes, per call parameter and occurrence, whether what arrives fits
+    the parameter's class and list-ness, from `graphitron_type_arrival` and the argument's steps; each
+    kind's `PARAMETER_MISMATCH` filters on it, and the three predicates go. The node above, reading a
+    routine's method as a code method, gives the routine its parameter class off `code_method_parameter`
+    and lands either side of this one.
   * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on
     "A `@condition` is a call per table its occurrence binds". The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
     name, with whether it reads context or the session; the multiset's filter and the `dsl` closure
