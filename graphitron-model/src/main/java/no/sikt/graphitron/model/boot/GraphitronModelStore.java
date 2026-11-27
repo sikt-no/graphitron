@@ -201,8 +201,8 @@ public final class GraphitronModelStore implements AutoCloseable {
                                  boolean dropOnClose, String url, Reaped reaped) {
         this.connection = connection;
         // The writer times its own writes; readers mint connections of their own and are not timed.
-        this.dsl = DSL.using(new DefaultConfiguration().set(connection).set(SQLDialect.H2)
-            .set(new DefaultExecuteListenerProvider(new WriteTimes())));
+        this.dsl = DSL.using(StatementObserver.observed(new DefaultConfiguration().set(connection)
+            .set(SQLDialect.H2).set(new DefaultExecuteListenerProvider(new WriteTimes()))));
         this.location = location;
         this.dropOnClose = dropOnClose;
         this.url = url;

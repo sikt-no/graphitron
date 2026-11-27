@@ -5,6 +5,7 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
+import org.jooq.impl.DefaultConfiguration;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -85,7 +86,8 @@ public final class StoreReader implements AutoCloseable {
 
     StoreReader(Connection connection, ReadBudget budget) {
         this.connection = connection;
-        this.dsl = DSL.using(connection, SQLDialect.H2);
+        this.dsl = DSL.using(StatementObserver.observed(
+            new DefaultConfiguration().set(connection).set(SQLDialect.H2)));
         this.budget = Objects.requireNonNull(budget, "budget");
         Optional<String> command = budget.sessionCommand();
         try (Statement statement = connection.createStatement()) {
