@@ -1991,6 +1991,10 @@ someone to profile.
   join stored once at its own grain as the occurrence-source and need claims were; and a guard repeated
   across arms (the three `NOT EXISTS` on `graphitron_argmapping_landing` in builds' arm 14) stored once
   and joined.
+* **No rule view reads another view, a gate enforces it** `blocked`, on "No view reads a view, and every rule view is simple, claimed by B". A `ViewComplexityTest` sibling over
+  `ViewReferences` fails the build on a view whose body names another view, the ruling being Alf's
+  (`fact-model.adoc`, 2026-11-14/15); its measure is the count of views reading a view that
+  `ViewCensusReport` writes, which the gate holds at zero.
 * **A rule view's rows are exactly one relation's, claimed by G** `open`, off the critical path. A stage inserts
   part of a rule view's rows into a relation, a Java filter choosing them: the condition parameter rule into
   `graphitron_occurrence_call_parameter` by a join to the method the call pinned, which an
