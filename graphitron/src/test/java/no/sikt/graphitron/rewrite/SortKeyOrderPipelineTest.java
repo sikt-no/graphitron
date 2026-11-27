@@ -388,23 +388,6 @@ class SortKeyOrderPipelineTest {
     }
 
     @Test
-    void aListValuedOrderByCarriesItsSortKeysUncompletedAndAppendsTheKeyInTheHelper() {
-        var schema = build(FILM + """
-            enum FilmSort {
-                ORIGINAL @order(fields: [{name: "language_id", path: [{key: "film_original_language_id_fkey"}]}])
-                RATING @order(fields: [{method: {className: "%s", method: "rating"}}])
-            }
-            input FilmOrder { field: FilmSort!  direction: SortDirection }
-            type Query { films(order: [FilmOrder!] @orderBy): [Film!]! @asConnection }
-            """.formatted(STUB));
-        var arg = (OrderBySpec.Argument) ((QueryField.QueryTableField) schema.field("Query", "films")).orderBy();
-        var sequence = (OrderBySpec.Composition.Sequence) arg.composition();
-        assertThat(sequence.completion()).isInstanceOf(OrderBySpec.SequenceCompletion.AppendRowKey.class);
-        assertThat(sequence.namedOrders()).allSatisfy(named ->
-            assertThat(named.order().entries()).singleElement().isInstanceOf(OrderBySpec.SortKeyEntry.class));
-    }
-
-    @Test
     void aSingleValuedOrderBysSortKeyValueIsCompletedWithTheRowKey() {
         var schema = build(FILM + """
             enum FilmSort { ORIGINAL @order(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}]) }

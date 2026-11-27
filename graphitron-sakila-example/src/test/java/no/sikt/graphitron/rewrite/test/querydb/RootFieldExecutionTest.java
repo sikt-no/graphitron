@@ -72,7 +72,7 @@ class RootFieldExecutionTest {
 
     @Test
     void argumentOrderedPlainListRoot_ordersByTheArgument() {
-        var films = list(execute("{ filmsOrdered(order: [{field: TITLE, direction: DESC}]) { title } }"),
+        var films = list(execute("{ filmsOrdered(order: {field: TITLE, direction: DESC}) { title } }"),
             "filmsOrdered");
         assertThat(seededTitles(films)).containsExactly(
             "AGENT TRUMAN", "AFFAIR PREJUDICE", "ADAPTATION HOLES", "ACE GOLDFINGER", "ACADEMY DINOSAUR");

@@ -43,12 +43,11 @@ class MultiTableConnectionOrderParityTest {
             occupantsByName: [Occupant!]! @asConnection @defaultOrder(fields: [{name: "last_name"}])
             occupantsChosen(orderBy: OccupantOrderBy @orderBy): [Occupant!]! @asConnection
                 @defaultOrder(fields: [{name: "last_name"}])
-            occupantsChosenList(orderBy: [OccupantOrderBy!] @orderBy): [Occupant!]! @asConnection
         }
         """;
 
     @ParameterizedTest
-    @ValueSource(strings = {"occupants", "occupantsByName", "occupantsChosen", "occupantsChosenList"})
+    @ValueSource(strings = {"occupants", "occupantsByName", "occupantsChosen"})
     void theStoreStatesTheOrderTheWalksCursorEncodes(String fieldName) {
         var walk = ((PolymorphicOrderingField) TestSchemaHelper.buildSchema(SCHEMA).field("Query", fieldName))
             .ordering().orElseThrow();

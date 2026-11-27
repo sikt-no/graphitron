@@ -1,8 +1,8 @@
 # What an ordering cannot state, each refused where it is written: an application writing two
 # surfaces; a primary key the table does not have; an index or a column the table does not have; a
 # fields element naming both a column and a method; an @orderBy argument whose input type has no
-# direction field, so it offers no choice; a value of an @orderBy sort enum with no @order;
-# a client's choice of order on a list read inline in its parent's statement, which graphitron does
+# direction field, so it offers no choice, or that takes a list; a sort enum value with no @order; a
+# client's choice of order on a list read inline in its parent's statement, which graphitron does
 # not generate yet, though its choices are stated; and such a list over a table with no primary key
 # with no order written at all. The near misses beside them draw nothing: the same keyless list
 # ordered by a column, and a sort enum whose every value carries @order, read by a root list.
@@ -101,7 +101,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   184,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
   193,         LIST_ORDER_UNDETERMINED,     public.films_for_actor
   200,         LIST_ORDER_UNDETERMINED,     public.role_assignment
-  202,         LIST_ORDER_UNDETERMINED,     public.role_assignment
+  202,         ORDER_INPUT_LIST,            RoleChoiceOrderBy
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
@@ -170,9 +170,9 @@ type HolderNamingNothing @table(name: "role_holder") {
 # the keyless role_assignment, and ActorPages.filmsPage, a routine child connection with no order at
 # all. The near misses draw nothing: the argument non-null, filmRowsChosenRequired and
 # rolesChosenRequired; a @defaultOrder written, filmRowsChosenDefaulted; and
-# ActorPages.recentFilmsPage, which hops from the routine on to film and is ordered by its key. A
-# list-valued @orderBy never stands in, non-null or not, since a client may send it empty (Alf,
-# 2026-11-26): Query.rolesChosenList is refused.
+# ActorPages.recentFilmsPage, which hops from the routine on to film and is ordered by its key. An
+# @orderBy argument typed as a list is refused where it is written, ORDER_INPUT_LIST, and draws
+# nothing more: Query.rolesChosenList, beside rolesChosenRequired taking one value.
 
 enum ActorFilmChoiceSort { TITLE @order(fields: [{name: "title"}]) }
 input ActorFilmChoiceOrderBy { field: ActorFilmChoiceSort!, direction: SortDirection }

@@ -108,7 +108,7 @@ The `totalCount` consequence cited above applies here: a split connection counts
 == Constraints and pitfalls
 
 * `@asConnection` applies to list-typed fields. Single-cardinality `@asConnection` is rejected at classify time.
-* The field must have a stable order: the primary key of the table its target type is bound to, an xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`], or a non-null, single-valued xref:../reference/directives/orderBy.adoc[`@orderBy`] argument. A nullable `@orderBy` argument does not count, since a client may leave it out; without one of these, keyset pagination has no anchor and the build fails with `LIST_ORDER_UNDETERMINED`.
+* The field must have a stable order: the primary key of the table its target type is bound to, an xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`], or a non-null xref:../reference/directives/orderBy.adoc[`@orderBy`] argument. A nullable `@orderBy` argument does not count, since a client may leave it out; without one of these, keyset pagination has no anchor and the build fails with `LIST_ORDER_UNDETERMINED`.
 * `connectionName:` is deprecated. Each connection field should own its own Connection type; the override exists as a transition mechanism for legacy schemas. When set, the dedup is silent — two carriers with the same name and different element types reuse the first registration and only the first carrier's element type appears under that connection's `edges.node`.
 * `totalCount` on a nested connection costs one grouped statement per batch of parents, not one per parent.
 * `totalCount` is lazy on selection but a separate SQL pass when selected. Treat it as observable extra cost; don't assume it's free.

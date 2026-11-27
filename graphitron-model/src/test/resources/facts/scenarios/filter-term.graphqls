@@ -42,7 +42,7 @@ input FilmRecordDraftInput {
 }
 
 type Query {
-    films(title: String, filter: FilmTitleFilter, order: [FilmOrderBy] @orderBy): [Film!]!
+    films(title: String, filter: FilmTitleFilter, order: FilmOrderBy @orderBy): [Film!]!
     filmsByKey(film_id: [Int!] @lookupKey): [Film]!
     filmsByService(ids: [Int!]!): [Film!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})

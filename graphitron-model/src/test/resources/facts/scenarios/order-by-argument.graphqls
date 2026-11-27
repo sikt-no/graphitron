@@ -1,4 +1,4 @@
-# A connection ordered at run time: the @orderBy argument takes a list of keys from an enum whose
+# A connection ordered at run time: the @orderBy argument takes one value of an enum whose
 # values each say how they sort with @order, by primary key or by named columns, and @defaultOrder
 # is the order when the argument is left out.
 
@@ -12,7 +12,7 @@ enum MpaaRating { G PG PG_13 R NC_17 }
 type Query {
     filmsOrderedConnection(
         rating: MpaaRating @field(name: "RATING"),
-        order: [FilmOrderBy] @orderBy,
+        order: FilmOrderBy @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
 }

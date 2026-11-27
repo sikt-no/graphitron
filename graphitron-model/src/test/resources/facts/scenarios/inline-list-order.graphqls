@@ -73,7 +73,7 @@ type Query {
     films: [Film!]!
     # Nothing written: the table's primary key, and each choice the argument offers. A client's
     # choice is applied where the list is read by a query of its own; inline it is deferred.
-    actorsOrdered(order: [ActorOrderBy!] @orderBy): [Actor!]!
+    actorsOrdered(order: ActorOrderBy @orderBy): [Actor!]!
     holders: [RoleHolder!]!
     stores: [Store!]!
     stints: [Stint!]! @defaultOrder(fields: [{name: "valid_from"}])
@@ -151,12 +151,14 @@ extend schema @assertContains(relation: "graphitron_occurrence_identifying_key_c
   """)
 
 # The row-key columns completing an order that lists no identifying key, after its written keys in
-# the last one's direction: a path key or a method key counts for nothing, and a choice a client
-# composes in sequence is completed when it is picked.
+# the last one's direction, a client's choice as the default: a path key or a method key counts for
+# nothing.
 extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_completion", rows: """
   coordinate,         choice,             position, direction, column_name
   Film.actors,        Film.actors,        0,        ASC,       actor_id
   Film.actorsByIndex, Film.actorsByIndex, 0,        DESC,      actor_id
+  Query.actorsOrdered, ActorSort.BY_INDEX,  0,       ASC,       actor_id
+  Query.actorsOrdered, ActorSort.LAST_NAME, 0,       DESC,      actor_id
   Query.stints,       Query.stints,       0,        ASC,       person_id
   RoleHolder.roles,   RoleHolder.roles,   0,        ASC,       holder_id
   Store.films,        Store.films,        0,        ASC,       film_id

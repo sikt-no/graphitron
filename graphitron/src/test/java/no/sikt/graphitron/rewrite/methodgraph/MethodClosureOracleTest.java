@@ -63,7 +63,7 @@ class MethodClosureOracleTest {
           actors: [Actor!]! @splitQuery
               @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
           actorsConnection(
-              order: [ActorOrderBy] @orderBy, first: Int, last: Int, after: String, before: String
+              order: ActorOrderBy @orderBy, first: Int, last: Int, after: String, before: String
           ): ActorsConnection! @splitQuery
               @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
               @defaultOrder(primaryKey: true)

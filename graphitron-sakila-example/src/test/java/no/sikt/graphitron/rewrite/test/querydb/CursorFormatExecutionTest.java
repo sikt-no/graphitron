@@ -110,11 +110,11 @@ class CursorFormatExecutionTest {
 
     @Test
     void graphitron9Cursor_overATextAndANumericColumn_pagesToTheRowsAfterIt() {
-        // TITLE then FILM_ID covers the primary key, so graphitron appends nothing and pages on
-        // exactly the columns Graphitron 9 paged on.
+        // TITLE is completed with FILM_ID, the primary key, so graphitron pages on exactly the
+        // columns Graphitron 9 paged on.
         String cursor = graphitron9Cursor(FILM, FILM.FILM_ID.eq(2), FILM.TITLE, FILM.FILM_ID);
         assertThat(decode(cursor)).isEqualTo("[\"ACE GOLDFINGER\", 2]");
-        var data = execute("{ filmsOrderedConnection(order: [{field: TITLE}, {field: FILM_ID}], first: 100, "
+        var data = execute("{ filmsOrderedConnection(order: {field: TITLE}, first: 100, "
             + "after: \"" + cursor + "\") { nodes { filmId title } } }");
         var nodes = (List<Map<String, Object>>) ((Map<String, Object>) data.get("filmsOrderedConnection")).get("nodes");
         assertThat(nodes.stream().filter(n -> (Integer) n.get("filmId") <= 5).map(n -> n.get("title")).toList())
@@ -206,7 +206,7 @@ class CursorFormatExecutionTest {
 
     @Test
     void enumColumn_cursorCarriesTheLiteral_andPagesBackwardFromIt() {
-        var data = execute("{ filmsOrderedConnection(order: [{field: RATING}], first: 100) "
+        var data = execute("{ filmsOrderedConnection(order: {field: RATING}, first: 100) "
             + "{ edges { cursor node { filmId } } } }");
         var edges = (List<Map<String, Object>>) ((Map<String, Object>) data.get("filmsOrderedConnection")).get("edges");
         String nc17 = edges.stream().filter(e -> ((Map<String, Object>) e.get("node")).get("filmId").equals(3))
@@ -224,7 +224,7 @@ class CursorFormatExecutionTest {
 
     /** The seeded films before {@code cursor} in rating order (G, PG, PG-13, R, NC-17, then film_id). */
     private List<Object> seededBefore(String cursor) {
-        var data = execute("{ filmsOrderedConnection(order: [{field: RATING}], last: 100, before: \"" + cursor + "\") "
+        var data = execute("{ filmsOrderedConnection(order: {field: RATING}, last: 100, before: \"" + cursor + "\") "
             + "{ nodes { filmId } } }");
         return column(data, "filmsOrderedConnection", "filmId").stream().filter(id -> (Integer) id <= 5).toList();
     }
@@ -254,7 +254,7 @@ class CursorFormatExecutionTest {
     @Test
     void releaseCandidateCursor_overATextAndANumericColumn_pagesToTheRowsAfterIt() {
         String cursor = releaseCandidateCursor("ACE GOLDFINGER", 2);
-        var data = execute("{ filmsOrderedConnection(order: [{field: TITLE}, {field: FILM_ID}], first: 100, "
+        var data = execute("{ filmsOrderedConnection(order: {field: TITLE}, first: 100, "
             + "after: \"" + cursor + "\") { nodes { filmId title } } }");
         var nodes = (List<Map<String, Object>>) ((Map<String, Object>) data.get("filmsOrderedConnection")).get("nodes");
         assertThat(nodes.stream().filter(n -> (Integer) n.get("filmId") <= 5).map(n -> n.get("title")).toList())
@@ -345,7 +345,7 @@ class CursorFormatExecutionTest {
 
     @Test
     void endCursor_isAUrlSafeUnpaddedCompactJsonArray() {
-        var data = execute("{ filmsOrderedConnection(order: [{field: TITLE}, {field: FILM_ID}], first: 1) "
+        var data = execute("{ filmsOrderedConnection(order: {field: TITLE}, first: 1) "
             + "{ pageInfo { endCursor } } }");
         String endCursor = (String) ((Map<String, Object>) ((Map<String, Object>)
             data.get("filmsOrderedConnection")).get("pageInfo")).get("endCursor");

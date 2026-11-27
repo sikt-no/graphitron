@@ -34,9 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * cursor columns of the order the request's {@code @orderBy} argument names, or of the default where it
  * names none, each completed by the row key as the store states it. A picked order follows the
  * request's direction unless its author fixed one; a key that
- * may be {@code NULL} sorts last either way; a key down a path is read back under its cursor alias; and
- * a composed list is completed by the row key where the orders listed identify no row. The roots are
- * read from the {@code scenarios/order-by-helper} fact document; compiled strictly, as a consumer
+ * may be {@code NULL} sorts last either way; and a key down a path is read back under its cursor alias.
+ * The root is read from the {@code scenarios/order-by-helper} fact document; compiled strictly, as a consumer
  * compiles generated sources.
  */
 @UnitTier
@@ -67,7 +66,6 @@ class OrderByHelperEmitterTest {
         var roots = FACTS.read("scenarios/order-by-helper", graph -> RootQuery.read(graph.handle()));
         var host = TypeSpec.classBuilder("Helpers").addModifiers(Modifier.PUBLIC)
             .addMethod(OrderByHelperEmitter.render((RootQuery.Emitted) roots.get("Query.filmsPicked"), NAMES))
-            .addMethod(OrderByHelperEmitter.render((RootQuery.Emitted) roots.get("Query.filmsComposed"), NAMES))
             .build();
         var dir = Files.createTempDirectory("orderby");
         var files = new ArrayList<Path>();
@@ -148,24 +146,5 @@ class OrderByHelperEmitterTest {
         var ordered = call("filmsPickedOrderBy", order("ORIGINAL_LANGUAGE", "ASC"));
         assertThat(ordered.sortFields().getFirst().$nullOrdering()).isEqualTo(QOM.NullOrdering.NULLS_LAST);
         assertThat(columns(ordered)).containsExactly(OrderKeys.cursorAlias(0), "film_id");
-    }
-
-    @Test
-    void aComposedListIdentifyingNoRowIsCompletedByTheRowKey() throws Exception {
-        var ordered = call("filmsComposedOrderBy", List.of(order("TITLE", "DESC")));
-        assertThat(sorts(ordered)).containsExactly("title DESC", "film_id DESC");
-        assertThat(columns(ordered)).containsExactly("title", "film_id");
-    }
-
-    @Test
-    void aComposedListNamingTheRowKeyIsLeftAsListed() throws Exception {
-        var ordered = call("filmsComposedOrderBy", List.of(order("LENGTH", "ASC"), order("FILM_ID", "ASC")));
-        assertThat(sorts(ordered)).containsExactly("length ASC nulls last", "film_id ASC");
-    }
-
-    @Test
-    void anEmptyListSortsByTheDefault() throws Exception {
-        assertThat(sorts(call("filmsComposedOrderBy", List.of()))).containsExactly("film_id ASC");
-        assertThat(sorts(call("filmsComposedOrderBy", null))).containsExactly("film_id ASC");
     }
 }

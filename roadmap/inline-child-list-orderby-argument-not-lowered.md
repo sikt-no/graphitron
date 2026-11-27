@@ -19,7 +19,7 @@ stops. Today this schema
 
 ```graphql
 type Film @table(name: "film") {
-    actorsInline(order: [ActorOrderBy] @orderBy): [Actor!]!
+    actorsInline(order: ActorOrderBy @orderBy): [Actor!]!
         @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
 }
 ```

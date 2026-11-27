@@ -27202,7 +27202,7 @@ CREATE TABLE graphitron_order_input (
 );
 COMMENT ON TABLE graphitron_order_input IS 'The input type an @orderBy argument takes, as it shapes the argument: one row per such type with one sort enum field and one direction field. For example FilmOrderBy picks an order by its field FilmOrderBy.field and its direction by FilmOrderBy.direction.';
 COMMENT ON COLUMN graphitron_order_input.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_order_input.type_name IS 'the input type, taken by at least one argument written @orderBy; the shape is the type''s wherever it is taken, and whether a client composes a sequence is the argument''s own list wrapper, graphitron_argument.is_list';
+COMMENT ON COLUMN graphitron_order_input.type_name IS 'the input type, taken by at least one argument written @orderBy; the shape is the type''s wherever it is taken; an argument taking it as a list is refused, ORDER_INPUT_LIST';
 COMMENT ON COLUMN graphitron_order_input.sort_field_name IS 'the field typed as the sort enum, whose values carry @order or @index; each value is a choice graphitron_occurrence_order states at every occurrence of an argument taking the type';
 COMMENT ON COLUMN graphitron_order_input.direction_field_name IS 'the other enum field, which picks the direction a choice is read in; the fields are told apart by type, not name';
 COMMENT ON COLUMN graphitron_order_input.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
@@ -28012,9 +28012,8 @@ COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.table_name IS 'th
 COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.column_name IS 'the column, as the catalog spells it';
 COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- The row key's columns an order does not list, completing it so it identifies a row: the default, and a
--- choice the client picks one at a time; a sequence the client composes is completed at run time. An
--- order whose own-table columns list an identifying key in full is complete as written, a key read down
+-- The row key's columns an order does not list, completing it so it identifies a row: the default, and
+-- each choice the client picks. An order whose own-table columns list an identifying key in full is complete as written, a key read down
 -- a path or computed by a method counting for nothing. The columns follow the written keys in the row
 -- key's order and the direction of the last written key, so a uniform order stays uniform. A plural
 -- routine write's order is the routine's result's, which the table the field reads has no key of, so
@@ -28034,12 +28033,8 @@ SELECT r.graph_name, r.coordinate, r.bound, r.choice, rk.position, last.directio
   JOIN graphitron_occurrence_sort_key last
     ON last.graph_name = r.graph_name AND last.coordinate = r.coordinate AND last.bound = r.bound
    AND last.choice = r.choice
-  LEFT JOIN graphitron_occurrence ao
-    ON ao.graph_name = r.graph_name AND ao.coordinate = r.argument_coordinate
-  LEFT JOIN graphitron_argument ga ON ga.graph_name = ao.graph_name AND ga.coordinate = ao.element_coordinate
- WHERE (r.kind = 'DEFAULT' OR ga.list_depth = 0)
    -- The row key: no better ranked key identifies the table's rows.
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column b
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column b
                     WHERE b.graph_name = rk.graph_name AND b.coordinate = rk.coordinate AND b.bound = rk.bound
                       AND b.rank < rk.rank)
    -- The last key written.
@@ -28180,7 +28175,7 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_method.touched_at IS 'the readi
 -- What an ordering cannot state: a primary key a table does not have, a plural routine write's
 -- function table having none; an index or a column the table does not have, a plural routine write's
 -- read on its function table; an @orderBy argument whose type is no order input, so it offers no
--- choice; a value of an @orderBy argument's sort enum with no @order; a client choice on a list read
+-- choice, or is a list, which composes choices; a value of an @orderBy argument's sort enum with no @order; a client choice on a list read
 -- inline in its parent's statement, which is not generated yet; such a list, over a table with no
 -- primary key, with no order written at all; and an order over several tables' rows whose tables'
 -- keys do not line up by position.
@@ -28242,6 +28237,14 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_order_input oi
                     WHERE oi.graph_name = a.graph_name AND oi.type_name = a.named_type)
 UNION ALL
+-- An @orderBy argument typed as a list, which composes the client's choices: a combination is itself
+-- an order, so the schema names it once as its own value of the sort enum.
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column, 'ORDER_INPUT_LIST',
+       a.named_type, 'occurrence-orderings'
+  FROM graphitron_directive_application da
+  JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
+ WHERE da.directive_name = 'orderBy' AND da.source_name IS NOT NULL AND a.is_list
+UNION ALL
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column, 'ORDER_VALUE_UNORDERED',
        CAST(NULL AS VARCHAR), 'occurrence-orderings'
   FROM graphitron_order_input oi
@@ -28286,8 +28289,8 @@ CREATE VIEW graphitron_occurrence_read_order_entry_defect_rule
 -- handed a record over a keyless table has no key to be re-read by, which is NO_KEY_FROM_PARENT's,
 -- so nothing here exempts it. An @orderBy whose input offers no choice is ORDER_INPUT_SHAPE's, not
 -- stacked here. An @orderBy argument a client may leave out states no default: where it is left out
--- the rows are read in the default order, so only a non-null one stands in for it (Alf, 2026-11-25),
--- and never a list, which a client may send empty (Alf, 2026-11-26).
+-- the rows are read in the default order, so only a non-null one stands in for it (Alf, 2026-11-25).
+-- A list-typed one is ORDER_INPUT_LIST's.
 -- The default is the primary key of the table the rows are read on; a routine's result has none
 -- unless its type is bound to a table by its own @table, so it needs a @defaultOrder.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column, 'LIST_ORDER_UNDETERMINED',
@@ -28317,7 +28320,6 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                       AND ob.directive_name = 'orderBy'
                      JOIN graphitron_argument a
                        ON a.graph_name = k.graph_name AND a.coordinate = k.element_coordinate AND a.non_null
-                      AND NOT a.is_list
                     WHERE k.graph_name = o.graph_name AND k.parent_coordinate = o.coordinate
                       AND k.kind = 'FIELD_ARGUMENT')
 UNION ALL
@@ -34654,10 +34656,12 @@ INSERT INTO graphitron_defect_type (code, severity, basis, lsp_code, statement) 
    'A fields element of an ordering writes neither or both of name and method, a path beside a method, or a method missing its className or its method or writing an argMapping, so it names no one key: write a name, optionally with a path, or a method naming its class and its method, which takes the field''s table and nothing else.'),
   ('ORDER_VALUE_UNORDERED', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_VALUE_UNORDERED',
    'A value of the enum an @orderBy argument picks its order by carries neither @order nor @index, so a client choosing it asks for an order that says nothing: give it @order.'),
+  ('ORDER_INPUT_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_INPUT_LIST',
+   'An @orderBy argument''s type is a list, which composes the client''s choices one after another, and a combination is itself an order, which the schema names once: take one value, order: FilmOrderBy @orderBy, and declare a combined order as its own value of the sort enum whose @order lists all its keys.'),
   ('ORDER_CHOICE_ON_INLINE_LIST', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDER_CHOICE_ON_INLINE_LIST',
    'An @orderBy argument sits on a list read inside its parent''s query, and graphitron does not yet apply a client''s choice of order there, so the choice would be accepted and dropped: read the list in a query of its own with @splitQuery, or order it with @defaultOrder.'),
   ('LIST_ORDER_UNDETERMINED', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ORDER_UNDETERMINED',
-   'A list or connection over a table with no primary key, or over a table-valued function''s result, states no order, neither @defaultOrder nor an @orderBy argument a client must give, so where none is given its rows arrive in whatever order the database returns them, differently from run to run: add @defaultOrder naming the result''s columns with fields:, or make a single-valued @orderBy argument non-null; a list a client may send empty.'),
+   'A list or connection over a table with no primary key, or over a table-valued function''s result, states no order, neither @defaultOrder nor an @orderBy argument a client must give, so where none is given its rows arrive in whatever order the database returns them, differently from run to run: add @defaultOrder naming the result''s columns with fields:, or make the @orderBy argument non-null.'),
   ('LIST_ELEMENT_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_CONDITION',
    'An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object: put @condition(override: true) on the list field to take the whole list instead.'),
   ('LIST_ELEMENT_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NODE_ID',
@@ -36668,7 +36672,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_identifying_key_column', 'occurrence-identifying-key', 'graphitron',
    'One column of one key identifying a row of the one table a list or connection occurrence reads: one row per occurrence, table, key and position in the key.',
    'For example Query.films reads public.film, identified by film_pkey''s film_id.',
-   'What an order is completed with, decided once at the occurrence: the primary key, the node key of the type the list returns, and each unique key whose columns refuse NULL, ranked, the best the row key. Both the completion rule and the run-time completion of a sequence read it, so the precedence is stated in one place; a unique key''s columns refusing NULL is a join over the captured catalog, stated here rather than anchored.'),
+   'What an order is completed with, decided once at the occurrence: the primary key, the node key of the type the list returns, and each unique key whose columns refuse NULL, ranked, the best the row key. The completion rule reads it, and a single child''s lookup keys must cover one of its keys, so the precedence is stated in one place; a unique key''s columns refusing NULL is a join over the captured catalog, stated here rather than anchored.'),
   ('graphitron_occurrence_identifying_key_column_rule', 'occurrence-identifying-key', 'graphitron',
    'One row the identifying key column rule computes, in the shape graphitron_occurrence_identifying_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_identifying_key_column, which is the name every reader spells.',
@@ -36732,7 +36736,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_order_input', 'expanded-type', 'graphitron',
    'The input type an @orderBy argument takes, as it shapes the argument: one row per such type with one sort enum field and one direction field.',
    'For example FilmOrderBy picks an order by its field FilmOrderBy.field and its direction by FilmOrderBy.direction.',
-   'Which input field picks the order and which the direction are facts of the input type, told apart by type rather than name, so they are keyed by the type and every argument taking it reads the one row; whether a client composes a sequence is the argument''s own list wrapper and is read there. Written by the occurrence-orderings stage before the orders, whose choices are the sort enum''s values.'),
+   'Which input field picks the order and which the direction are facts of the input type, told apart by type rather than name, so they are keyed by the type and every argument taking it reads the one row; the argument takes one value of it, a list being refused at the argument. Written by the occurrence-orderings stage before the orders, whose choices are the sort enum''s values.'),
   ('graphitron_order_input_rule', 'expanded-type', 'graphitron',
    'One row the order input rule computes, in the shape graphitron_order_input stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_order_input, which is the name every reader spells.',

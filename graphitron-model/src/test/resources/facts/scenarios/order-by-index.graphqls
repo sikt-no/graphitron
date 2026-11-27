@@ -16,7 +16,7 @@ input FilmOrderBy {
 }
 
 type Query {
-    films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+    films(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
 }
 
 extend schema @expectEquals(relation: "graphitron_ast_order_entry", rows: """

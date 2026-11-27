@@ -257,17 +257,17 @@ class ProjectionEmitterExecutionTest {
     @Test
     @DisplayName("a client's choice orders an inline list: an ascending choice reversed by its direction, a written direction kept, by primary key where it picks none")
     void anInlineListInTheOrderAClientPicks() throws Exception {
-        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
-                Map.of("field", "LENGTH", "direction", "DESC"))), field("title")), "__rk_filmsChosen"))
+        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order",
+                Map.of("field", "LENGTH", "direction", "DESC")), field("title")), "__rk_filmsChosen"))
             .as("LENGTH, DESC").isEqualTo(inCategory().orderBy(FILM.LENGTH.desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
-        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
-                Map.of("field", "TITLE", "direction", "ASC"))), field("title")), "__rk_filmsChosen"))
+        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order",
+                Map.of("field", "TITLE", "direction", "ASC")), field("title")), "__rk_filmsChosen"))
             .as("TITLE, written DESC, asked ASC, then the row key the same way")
             .isEqualTo(inCategory().orderBy(FILM.TITLE.desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
         assertThat(categoryFilms(projectChoosingCategory, field("filmsChosen", field("title")), "__rk_filmsChosen"))
             .as("nothing picked").isEqualTo(inCategory().orderBy(FILM.FILM_ID).fetch(FILM.TITLE));
-        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
-                Map.of("field", "NAME_C", "direction", "DESC"))), field("title")), "__rk_filmsChosen"))
+        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order",
+                Map.of("field", "NAME_C", "direction", "DESC")), field("title")), "__rk_filmsChosen"))
             .as("NAME_C, collated C, DESC")
             .isEqualTo(inCategory().orderBy(FILM.TITLE.collate("C").desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
     }

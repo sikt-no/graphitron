@@ -173,10 +173,10 @@ class MultiTableOrderingExecutionTest {
     }
 
     @Test
-    void listValuedArgument_composesTheElementsInOrder() {
+    void combinedOrder_declaredAsOneValue_keepsEachKeysDirection() {
         assertThat(occupants("""
-            { occupantsOrderedByList(orderBy: [{field: STORE, direction: DESC}, {field: LAST_NAME}]) { %s } }
-            """.formatted(OCCUPANT), "occupantsOrderedByList"))
+            { occupantsOrdered(orderBy: {field: STORE_DESC_THEN_NAME}) { %s } }
+            """.formatted(OCCUPANT), "occupantsOrdered"))
             // store 2 by last_name (Brown, Stephens, Williams), then store 1 (Hillyer, Johnson, Jones, Smith)
             .containsExactly("C5", "S2", "C3", "S1", "C2", "C4", "C1");
     }

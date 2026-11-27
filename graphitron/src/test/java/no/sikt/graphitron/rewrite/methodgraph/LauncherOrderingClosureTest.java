@@ -74,14 +74,14 @@ class LauncherOrderingClosureTest {
         type Query {
           films: [Film!]! @defaultOrder(primaryKey: true)
           filmById(film_id: [ID] @lookupKey): [Film]!
-          filmsOrdered(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+          filmsOrdered(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
         }
 
         type Film @table(name: "film") {
           title: String
           actorsSplit: [Actor!]! @splitQuery @defaultOrder(primaryKey: true)
               @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
-          actorsOrderedSplit(order: [ActorOrderBy] @orderBy): [Actor!]! @splitQuery
+          actorsOrderedSplit(order: ActorOrderBy @orderBy): [Actor!]! @splitQuery
               @defaultOrder(primaryKey: true)
               @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
           actorsLookupSplit(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery
@@ -150,7 +150,7 @@ class LauncherOrderingClosureTest {
             type Query { film: Film }
             type Film @table(name: "film") {
               title: String
-              actorsInline(order: [ActorOrderBy] @orderBy): [Actor!]!
+              actorsInline(order: ActorOrderBy @orderBy): [Actor!]!
                 @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }

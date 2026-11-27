@@ -18,7 +18,7 @@ import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A root list ordered by a single-valued {@code @orderBy} argument whose every choice sorts by
+ * A root list ordered by an {@code @orderBy} argument whose every choice sorts by
  * columns of its own table, against a real PostgreSQL database: the client's pick orders it, its
  * runtime direction flipping a uniformly ascending choice, a choice with directions of its own
  * keeping them, and the default order reading where the client picks none. Every order ends on
@@ -44,13 +44,13 @@ class RootOrderChoiceExecutionTest {
         graphql = Graphitron.newGraphQL().build();
     }
 
-    /** The seeded film ids {@code Query.filmsOrderedByOne} answers under {@code arguments}, in its order. */
+    /** The seeded film ids {@code Query.filmsOrdered} answers under {@code arguments}, in its order. */
     private List<Integer> filmIds(String arguments) {
         var input = Graphitron.newExecutionInput(dsl, "{}", "test-user")
-            .query("{ filmsOrderedByOne" + arguments + " { filmId } }").build();
+            .query("{ filmsOrdered" + arguments + " { filmId } }").build();
         ExecutionResult result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
-        var films = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("filmsOrderedByOne");
+        var films = (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("filmsOrdered");
         return films.stream().map(film -> (Integer) film.get("filmId")).filter(SEEDED_FILM_IDS::contains).toList();
     }
 

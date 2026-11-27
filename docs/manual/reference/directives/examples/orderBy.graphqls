@@ -4,7 +4,7 @@
 type Query {
   filmsOrderedConnection(
       rating: MpaaRating @field(name: "RATING"),
-      order: [FilmOrderBy] @orderBy,
+      order: FilmOrderBy @orderBy,
       first: Int,
       last: Int,
       after: String,

@@ -31,7 +31,7 @@ enum FilmSort {
 
 type Query {
     films(filter: FilmFilter, rating: MpaaRating @field(name: "rating")): [Film!]!
-    filmsPaged(order: [FilmOrderBy] @orderBy, first: Int, after: String): [Film!]!
+    filmsPaged(order: FilmOrderBy @orderBy, first: Int, after: String): [Film!]!
         @asConnection @defaultOrder(primaryKey: true)
     node(id: ID!): Node
     nodes(ids: [ID!]!): [Node]!

@@ -44,7 +44,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_SIGNATURE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_CARRIED;
@@ -246,10 +245,10 @@ public final class RootQuery {
     }
 
     /**
-     * An {@code @orderBy} argument of a root over several tables: its name, its input type, whether it
-     * is required and whether it takes a list of orders, and the input's sort and direction fields.
+     * An {@code @orderBy} argument of a root over several tables, which takes one order: its name, its
+     * input type, whether it is required, and the input's sort and direction fields.
      */
-    public record OrderArgument(String name, String inputType, boolean nonNull, boolean list, String sortField,
+    public record OrderArgument(String name, String inputType, boolean nonNull, String sortField,
                                 String directionField) {}
 
     /**
@@ -413,20 +412,14 @@ public final class RootQuery {
     public record JoinMethod(String className, String methodName) {}
 
     /**
-     * An {@code @orderBy} argument: its name, its input type, whether it is required and whether it
-     * takes a list of orders, the input's sort and direction fields, and each value the sort field
-     * takes with the keys it sorts by, in the enum's order. A choice taken one at a time carries the
-     * row key completing it; a list the client composes is completed once composed, by the table's row
-     * key where the composition names none of the keys identifying a row, both empty where the table
-     * has none.
+     * An {@code @orderBy} argument, which takes one order: its name, its input type, whether it is
+     * required, the input's sort and direction fields, and each value the sort field takes with the keys
+     * it sorts by, in the enum's order, each followed by the row key completing it.
      */
-    public record Choice(String argument, String inputType, boolean nonNull, boolean list, String sortField,
-                         String directionField, Map<String, List<Key>> orders, List<ColumnRef> rowKey,
-                         List<List<ColumnRef>> identifyingKeys) {
+    public record Choice(String argument, String inputType, boolean nonNull, String sortField,
+                         String directionField, Map<String, List<Key>> orders) {
         public Choice {
             orders = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(orders));
-            rowKey = List.copyOf(rowKey);
-            identifyingKeys = identifyingKeys.stream().map(List::copyOf).toList();
         }
     }
 
@@ -1050,23 +1043,20 @@ public final class RootQuery {
         var ga = GRAPHITRON_ARGUMENT;
         var oi = GRAPHITRON_ORDER_INPUT;
         return store.dsl()
-            .selectDistinct(ao.NAME, ga.NAMED_TYPE, ga.NON_NULL, ga.LIST_DEPTH, oi.SORT_FIELD_NAME,
-                oi.DIRECTION_FIELD_NAME)
+            .selectDistinct(ao.NAME, ga.NAMED_TYPE, ga.NON_NULL, oi.SORT_FIELD_NAME, oi.DIRECTION_FIELD_NAME)
             .from(od)
             .join(ao).on(ao.GRAPH_NAME.eq(od.GRAPH_NAME), ao.COORDINATE.eq(od.ARGUMENT_COORDINATE))
             .join(ga).on(ga.GRAPH_NAME.eq(ao.GRAPH_NAME), ga.COORDINATE.eq(ao.ELEMENT_COORDINATE))
             .join(oi).on(oi.GRAPH_NAME.eq(ga.GRAPH_NAME), oi.TYPE_NAME.eq(ga.NAMED_TYPE))
             .where(od.GRAPH_NAME.eq(store.graphName()), od.COORDINATE.eq(coordinate), od.KIND.eq("CHOICE"))
             .limit(1)
-            .fetchOne(r -> new OrderArgument(r.value1(), r.value2(), Boolean.TRUE.equals(r.value3()), r.value4() > 0,
-                r.value5(), r.value6()));
+            .fetchOne(r -> new OrderArgument(r.value1(), r.value2(), Boolean.TRUE.equals(r.value3()), r.value4(),
+                r.value5()));
     }
 
     /**
-     * Each root list's {@code @orderBy} argument taking one order: the argument and its order input's
-     * fields, and each choice's keys in sequence, then the row-key columns the store completes it with.
-     * An argument taking a list of orders is none of these: its completion follows what the client
-     * lists, at run time.
+     * Each root list's {@code @orderBy} argument: the argument and its order input's fields, and each
+     * choice's keys in sequence, then the row-key columns the store completes it with.
      */
     private static Map<String, Choice> choices(StoreHandle store) {
         var od = GRAPHITRON_OCCURRENCE_ORDER;
@@ -1079,14 +1069,13 @@ public final class RootQuery {
         var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
         var sc = GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
         var c = SQL_COLUMN;
-        record Head(String argument, String inputType, boolean nonNull, boolean list, String sortField,
-                    String directionField) {}
+        record Head(String argument, String inputType, boolean nonNull, String sortField, String directionField) {}
         var heads = new LinkedHashMap<String, Head>();
         var keys = new LinkedHashMap<String, Map<String, List<Key>>>();
         // The argument, read whether or not its choices sort by columns: a choice with a path key
         // still takes one order, and the sort-key check holds it back.
         store.dsl()
-            .selectDistinct(od.COORDINATE, ao.NAME, ga.NAMED_TYPE, ga.NON_NULL, ga.LIST_DEPTH, oi.SORT_FIELD_NAME,
+            .selectDistinct(od.COORDINATE, ao.NAME, ga.NAMED_TYPE, ga.NON_NULL, oi.SORT_FIELD_NAME,
                 oi.DIRECTION_FIELD_NAME)
             .from(od)
             .join(p).on(p.GRAPH_NAME.eq(od.GRAPH_NAME), p.COORDINATE.eq(od.COORDINATE), p.START.eq("ROOT"))
@@ -1096,7 +1085,7 @@ public final class RootQuery {
             .where(od.GRAPH_NAME.eq(store.graphName()), od.KIND.eq("CHOICE"))
             .orderBy(od.COORDINATE)
             .forEach(row -> heads.putIfAbsent(row.value1(), new Head(row.value2(), row.value3(),
-                Boolean.TRUE.equals(row.value4()), row.value5() > 0, row.value6(), row.value7())));
+                Boolean.TRUE.equals(row.value4()), row.value5(), row.value6())));
         var hops = sortKeyHops(store);
         var methods = sortKeyMethods(store);
         store.dsl()
@@ -1136,28 +1125,9 @@ public final class RootQuery {
                         row.value6()), false, row.value7(), null));
                 }
             });
-        // The keys identifying a row of the table, by rank: the smallest the row key completing a
-        // composed list, every one a key whose presence in full leaves it complete as composed.
-        var ik = GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
-        var identifying = new LinkedHashMap<String, LinkedHashMap<Integer, List<ColumnRef>>>();
-        store.dsl()
-            .select(ik.COORDINATE, ik.RANK, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
-            .from(ik)
-            .join(p).on(p.GRAPH_NAME.eq(ik.GRAPH_NAME), p.COORDINATE.eq(ik.COORDINATE), p.START.eq("ROOT"))
-            .join(c).on(c.SOURCE_NAME.eq(ik.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(ik.TABLE_SCHEMA),
-                c.TABLE_NAME.eq(ik.TABLE_NAME), c.COLUMN_NAME.eq(ik.COLUMN_NAME))
-            .where(ik.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(ik.COORDINATE, ik.RANK, ik.POSITION)
-            .forEach(row -> identifying.computeIfAbsent(row.value1(), k -> new LinkedHashMap<>())
-                .computeIfAbsent(row.value2(), k -> new ArrayList<>())
-                .add(new ColumnRef(row.value3(), row.value4(), row.value5(), row.value6())));
         var out = new LinkedHashMap<String, Choice>();
-        heads.forEach((coordinate, head) -> {
-            var ranked = List.copyOf(identifying.getOrDefault(coordinate, new LinkedHashMap<>()).values());
-            out.put(coordinate, new Choice(head.argument(), head.inputType(), head.nonNull(), head.list(),
-                head.sortField(), head.directionField(), keys.getOrDefault(coordinate, Map.of()),
-                ranked.isEmpty() ? List.of() : ranked.getFirst(), ranked));
-        });
+        heads.forEach((coordinate, head) -> out.put(coordinate, new Choice(head.argument(), head.inputType(),
+            head.nonNull(), head.sortField(), head.directionField(), keys.getOrDefault(coordinate, Map.of()))));
         return out;
     }
 

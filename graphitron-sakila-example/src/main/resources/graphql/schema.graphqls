@@ -242,10 +242,7 @@ type Query {
     fixture the plain launcher's helper-dispatch ordering arm has no end-to-end instance;
     the root-launcher SQL baseline pins it.
     """
-    filmsOrdered(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
-    # The single-valued form on a plain root list whose every choice sorts by columns of film: the
-    # store states its order and renders its helper.
-    filmsOrderedByOne(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+    filmsOrdered(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
     # Bean-typed @condition parameters: graphql-java delivers each input object as a Map, and the
     # conditions class builds the declared bean from it before the call. A record bound by
     # argMapping, a list of records at an argument-level condition, and a setter bean with a nested
@@ -694,7 +691,7 @@ type Query {
     ): FilmsConnection! @defaultOrder(primaryKey: true, direction: DESC)
     filmsOrderedConnection(
         rating: MpaaRating @field(name: "RATING"),
-        order: [FilmOrderBy] @orderBy,
+        order: FilmOrderBy @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
     # R13: @asFacet execution fixture. The filter's rating/length fields are facets, so the
@@ -757,19 +754,12 @@ type Query {
         {name: "name", path: [{key: "film_language_id_fkey"}]},
         {name: "name", path: [{key: "film_original_language_id_fkey"}], direction: DESC}
     ])
-    # The single-valued @orderBy form on a plain list: each @order value arrives completed with
-    # film_id, so the tied films 2 and 3 keep one order.
+    # The @orderBy argument on a plain list: each @order value arrives completed with film_id, so
+    # the tied films 2 and 3 keep one order.
     filmsByLanguagesList(order: FilmLanguageOrderBy @orderBy): [Film!]! @defaultOrder(fields: [
         {name: "name", path: [{key: "film_language_id_fkey"}]},
         {name: "name", path: [{key: "film_original_language_id_fkey"}], direction: DESC}
     ])
-    # The list-valued form on a plain list: the helper completes the composed sequence.
-    filmsByLanguagesComposedList(order: [FilmLanguageOrderBy!] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
-    # The list-valued form: the composed sequence is completed with film_id in the helper.
-    filmsByLanguagesComposed(
-        order: [FilmLanguageOrderBy!] @orderBy,
-        first: Int, last: Int, after: String, before: String
-    ): FilmsConnection! @defaultOrder(primaryKey: true)
     # A sort key a method derives from a to-many relation: the store of the film's latest stocked
     # copy. Films 1 to 3 are all stocked at store 1, a tie the appended film_id breaks in the
     # entry's direction; films 4 and 5 have no inventory and sort on NULL, last.
@@ -779,7 +769,7 @@ type Query {
         method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"},
         direction: DESC
     }])
-    # The single-valued @orderBy form: each @order value arrives completed, so RENTAL_RATE pages on
+    # Each @order value arrives completed, so RENTAL_RATE pages on
     # rental_rate, film_id, and a runtime direction: DESC flips the appended film_id with the rate.
     filmsOrderedByOneKeyConnection(
         order: FilmOrderBy @orderBy,
@@ -1357,9 +1347,6 @@ type Query {
     # classifier recognises and orders by the key columns rather than projecting slots for.
     occupantsOrderedByKey(orderBy: OccupantOrderBy @orderBy): [AddressOccupant!]!
 
-    # A list-valued @orderBy argument: one direction per element, tiebreakers ascending.
-    occupantsOrderedByList(orderBy: [OccupantOrderBy!] @orderBy): [AddressOccupant!]!
-
     # The reported form: @asConnection makes the order slots the Relay cursor too, so the seek key
     # and the page order are composed together.
     # The pagination arguments are spelled out so the backward half (last / before) is available.
@@ -1607,13 +1594,12 @@ type Query {
         }])
     ): [SplitFilterParent!]!
 
-    # A list-valued @orderBy whose only sort key is a related column named like the field's own
-    # key: squad.member_id against squad_member.member_id. The helper decides by name whether the
-    # composed order already identifies a row, so the sort key has to reach it under its reserved
-    # alias; a key it mistook for member_id would leave the ties on squad.member_id unbroken and a
-    # walk would skip rows at the page boundaries.
+    # An @orderBy whose only sort key is a related column named like the field's own key:
+    # squad.member_id against squad_member.member_id. The order is completed with the row key
+    # unless it already identifies a row, so a sort key mistaken for member_id would leave the ties
+    # on squad.member_id unbroken and a walk would skip rows at the page boundaries.
     squadMembers(
-        order: [SquadMemberOrderBy!] @orderBy,
+        order: SquadMemberOrderBy @orderBy,
         first: Int, last: Int, after: String, before: String
     ): [SquadMember!]! @asConnection
         @defaultOrder(primaryKey: true)
@@ -2282,6 +2268,9 @@ enum OccupantSort {
     STORE       @order(fields: [{name: "store_id"}])
     # Direction-locked: a non-ascending entry makes the runtime direction inert for this value.
     STORE_THEN_NAME_DESC @order(fields: [{name: "store_id"}, {name: "last_name", direction: DESC}])
+    # A combined order with a direction per key, declared as one value: stores descending, each
+    # store's occupants by last name.
+    STORE_DESC_THEN_NAME @order(fields: [{name: "store_id", direction: DESC}, {name: "last_name"}])
 }
 
 input OccupantOrderBy {
@@ -3219,7 +3208,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # FK-chain terminal alias as parameter, so the column refs resolve against the Split
     # query's aliased jOOQ Table instance rather than a hard-coded canonical alias.
     actorsOrderedConnection(
-        order: [ActorOrderBy] @orderBy,
+        order: ActorOrderBy @orderBy,
         first: Int, last: Int, after: String, before: String
     ): ActorsConnection! @reference(path: [
         {key: "film_actor_film_id_fkey"},
@@ -3232,7 +3221,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # nothing else in the schema pairs @splitQuery with an @orderBy argument at list
     # cardinality, and a helper emitted only for connections leaves this coordinate calling a
     # method the fetchers class never wrote.
-    actorsOrderedBySplit(order: [ActorOrderBy] @orderBy): [Actor!]! @splitQuery @reference(path: [
+    actorsOrderedBySplit(order: ActorOrderBy @orderBy): [Actor!]! @splitQuery @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
@@ -3240,7 +3229,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # projects ordering (the keyed-lookup rows method) rather than only the plain one.
     actorsOrderedBySplitLookup(
         actor_id: [Int!] @lookupKey,
-        order: [ActorOrderBy] @orderBy
+        order: ActorOrderBy @orderBy
     ): [Actor!]! @splitQuery @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
@@ -4023,9 +4012,8 @@ enum FilmSort {
         {name: "rental_rate", direction: DESC},
         {name: "title",       direction: ASC}
     ])
-    # Does not identify a row (the seed's 2.99 tie). Through the list-valued filmsOrderedConnection
-    # argument the generated helper appends film_id after the composed sequence, in the direction
-    # of its last part, so a runtime direction: DESC flips the key with the rate.
+    # Does not identify a row (the seed's 2.99 tie). The order is completed with film_id in the
+    # direction of its last key, so a runtime direction: DESC flips the key with the rate.
     RENTAL_RATE @order(fields: [{name: "rental_rate"}])
     # An order on a PostgreSQL enum column whose literals are not Java names ('PG-13', 'NC-17'):
     # the cursor carries the literal, which is the database's text for the value.
@@ -4056,7 +4044,7 @@ type SquadMember @table(name: "squad_member") {
 }
 
 # SQUAD_FOUNDER sorts members by their squad's member_id, a column named like squad_member's own
-# key; the composed order is completed with squad_member.member_id in the helper.
+# key; the order is completed with squad_member.member_id.
 enum SquadMemberSort {
     SQUAD_FOUNDER @order(fields: [{name: "member_id", path: [{key: "squad_member_squad_id_fkey"}]}])
 }

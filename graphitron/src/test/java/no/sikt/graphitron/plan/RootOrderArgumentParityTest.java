@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A root over one table whose {@code @orderBy} argument picks its order by is helped by one spec,
- * whichever route states it: a client's list of orders, or its one order, and on a connection the
- * cursor encoding the columns that spec sorts by. The store's spec equals the walk's on what the helper
+ * whichever route states it: the client's one order, and on a connection the cursor encoding the
+ * columns that spec sorts by. The store's spec equals the walk's on what the helper
  * reads, so a cursor handed out before the store emitted the root reads its next page after.
  */
 @PipelineTier
@@ -36,15 +36,13 @@ class RootOrderArgumentParityTest {
         }
         input FilmOrderBy { field: FilmSort!  direction: SortDirection }
         type Query {
-            filmsComposed(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
-            filmsComposedPage(order: [FilmOrderBy] @orderBy): [Film!]! @asConnection @defaultOrder(primaryKey: true)
             filmsPicked(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(fields: [{name: "title"}])
             filmsPickedPage(order: FilmOrderBy @orderBy): [Film!]! @asConnection
         }
         """;
 
     @ParameterizedTest
-    @ValueSource(strings = {"filmsComposed", "filmsComposedPage", "filmsPicked", "filmsPickedPage"})
+    @ValueSource(strings = {"filmsPicked", "filmsPickedPage"})
     void theStoreStatesTheSpecTheWalksHelperReads(String fieldName) {
         var walk = ((QueryField.QueryTableField) TestSchemaHelper.buildSchema(SCHEMA).field("Query", fieldName))
             .orderBy();
@@ -111,11 +109,8 @@ class RootOrderArgumentParityTest {
             .map(e -> new OrderBySpec.NamedOrder(e.getKey(), LauncherCommands.fixedOf(e.getValue(), ordinal)))
             .toList();
         var base = LauncherCommands.fixedOf(root.order(), ordinal);
-        OrderBySpec.Composition composition = !choice.list() ? new OrderBySpec.Composition.Single(named)
-            : new OrderBySpec.Composition.Sequence(named, choice.rowKey().isEmpty()
-                ? new OrderBySpec.SequenceCompletion.None()
-                : new OrderBySpec.SequenceCompletion.AppendRowKey(choice.rowKey(), choice.identifyingKeys()));
-        return new OrderBySpec.Argument(choice.argument(), choice.inputType(), choice.nonNull(), composition,
+        return new OrderBySpec.Argument(choice.argument(), choice.inputType(), choice.nonNull(),
+            new OrderBySpec.Composition.Single(named),
             choice.sortField(), choice.directionField(), base.entries().isEmpty() ? new OrderBySpec.None() : base);
     }
 
@@ -133,13 +128,6 @@ class RootOrderArgumentParityTest {
         out.add(argument.name() + " " + argument.typeName() + " " + argument.nonNull() + " " + argument.list()
             + " " + argument.sortFieldName() + " " + argument.directionFieldName());
         argument.namedOrders().forEach(named -> out.add("named " + named.name() + " " + fixedShape(named.order())));
-        if (argument.composition() instanceof OrderBySpec.Composition.Sequence sequence) {
-            out.add("completion " + switch (sequence.completion()) {
-                case OrderBySpec.SequenceCompletion.None none -> "none";
-                case OrderBySpec.SequenceCompletion.AppendRowKey key -> "row key " + names(key.rowKey())
-                    + " identifying " + key.identifyingKeys().stream().map(RootOrderArgumentParityTest::names).toList();
-            });
-        }
         out.add("base " + (argument.base() instanceof OrderBySpec.Fixed fixed ? fixedShape(fixed) : argument.base()));
         return out;
     }
@@ -166,9 +154,5 @@ class RootOrderArgumentParityTest {
                     + method.method().methodName();
             };
         };
-    }
-
-    private static List<String> names(List<ColumnRef> columns) {
-        return columns.stream().map(ColumnRef::sqlName).toList();
     }
 }

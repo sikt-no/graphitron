@@ -42,7 +42,7 @@ type Query {
 }
 ----
 
-The `direction:` argument is global across the spec: every column in the list sorts the same way. There is no per-column direction surface on `@defaultOrder` itself; if your design needs per-column direction (e.g. `LAST_NAME ASC, RECENT_LOGIN DESC`), you have already crossed into "this should be a client choice", and the right tool is `@orderBy` (each row of the input list carries its own `SortDirection`).
+The `direction:` argument is global across the spec: every column in the list sorts the same way. There is no per-column direction surface on `@defaultOrder` itself; if your design needs per-column direction (e.g. `LAST_NAME ASC, RECENT_LOGIN DESC`), declare it as an `@order` value of an `@orderBy` argument's sort enum, whose `fields:` elements each carry their own `direction:`.
 
 `@defaultOrder` is *required* on xref:../reference/directives/asConnection.adoc[`@asConnection`] fields that don't carry `@orderBy`; keyset pagination has no anchor without one and the build fails. Connections that only accept dynamic order (`@orderBy` with no fallback) are not a supported shape; supply `@defaultOrder` as the fallback for the no-argument case.
 
@@ -55,7 +55,7 @@ xref:../reference/directives/orderBy.adoc[`@orderBy`] activates a runtime argume
 type Query {
     filmsOrderedConnection(
         rating: MpaaRating @field(name: "RATING"),
-        order: [FilmOrderBy] @orderBy,
+        order: FilmOrderBy @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
 }
@@ -73,9 +73,18 @@ enum FilmSort {
 enum SortDirection { ASC, DESC }
 ----
 
-A request asking `order: [{ field: TITLE, direction: ASC }, { field: FILM_ID, direction: ASC }]` sorts by `title` then `film_id`; the rewrite emits a per-element `case "TITLE" -> ... case "FILM_ID" -> ...` switch in the generated `<fieldName>OrderBy(env, srcAlias)` helper, building a `List<SortField<?>>` plus a parallel `List<Field<?>>` of the same columns for cursor encoding.
+A request asking `order: { field: TITLE, direction: ASC }` sorts by `title`, then by `film_id`, which graphitron appends so the order identifies a row; the rewrite emits a `case "TITLE" -> ... case "FILM_ID" -> ...` switch in the generated `<fieldName>OrderBy(env, srcAlias)` helper, building a `List<SortField<?>>` plus a parallel `List<Field<?>>` of the same columns for cursor encoding. The cursor binds onto whichever ordering was active for that request.
 
-The list shape `[FilmOrderBy]` lets clients compose multi-key orderings; a singular `FilmOrderBy` argument also works when only one column is ever needed. Either way the cursor binds onto whichever ordering was active for that request.
+The client picks one order per request. The argument takes one value of its input type, never a list: a list-typed `@orderBy` argument fails the build (`ORDER_INPUT_LIST`). A combination of choices is itself an order, so the schema names it once, as its own enum value whose `@order` lists all its keys, each with its own direction where it needs one:
+
+[source,graphql]
+----
+enum FilmSort {
+    FILM_ID             @order(primaryKey: true)
+    TITLE               @order(fields: [{name: "title"}])
+    LANGUAGE_THEN_TITLE @order(fields: [{name: "language_id"}, {name: "title"}])
+}
+----
 
 When `@orderBy` and `@defaultOrder` coexist on the same field, the dynamic argument wins when the client supplies it; `@defaultOrder` fills in when the argument is null or absent. This is why the example field has both: `filmsOrderedConnection` falls back to PK order when `order:` is not supplied, and uses the client's order when it is.
 
@@ -87,7 +96,7 @@ xref:../reference/directives/asConnection.adoc[`@asConnection`] emits keyset pag
 . *The order columns are part of the cursor's wire bytes.* Adding a column to `@defaultOrder` or to an `@order` enum value invalidates cursors clients have already issued. New cursors decode against the new column list; old cursors decode the wrong number of values and the request fails. Treat the column list and order as part of the public cursor contract.
 . *Determinism gates "the next page is always the next page".* If two rows compare equal on every order column, a seek from the first steps over the second. Graphitron therefore makes every connection's order identify a row. When the columns you list do not include the table's primary key (or another key that identifies a row: the type's `@node` key, or a unique key whose columns are all `NOT NULL`), graphitron appends the primary key after them, in the direction of your last column. The appended columns are part of the cursor. `@defaultOrder(fields: [{name: "rental_rate", direction: DESC}, {name: "title"}])` pages on `rental_rate DESC, title ASC, film_id ASC`. Listing the key yourself changes nothing, and is still the way to put it somewhere other than last.
 +
-For a list-valued `@orderBy` argument the key goes after the whole sequence the client sends, not after each value, and it takes the direction of the last value; with a single-valued argument it is part of each `@order` value and flips with a runtime `direction:` where that value does. Plain lists and child lists are completed the same way, in the same direction: without a cursor a tie never drops a row, but the database is free to return tied rows in a different order from one execution to the next, so graphitron fixes the tie order for them as well. A list that declares no `@defaultOrder` falls back on the primary key of the table its target type is bound to, which identifies a row, so there is nothing to append. A list with nothing to fall back on (a table with no primary key, or a function's result whose type is bound to no table) and no `@defaultOrder` fails the build with `LIST_ORDER_UNDETERMINED`, unless its `@orderBy` argument is non-null and single-valued: a nullable one is no order stated, since a client may leave it out, and a list may be sent empty. The fix is `@defaultOrder` naming the result's columns with `fields:`, or a non-null, single-valued `@orderBy` argument. A field that hops on to a table after a routine (`@reference`) falls back on that table's key. Where there is no key at all (a view without a synthetic primary key, a function result bound to no table), the listed columns have nothing appended to them. The build warns under the lint rule `connection-order-not-unique` for a connection and `list-order-not-unique` for a list, and the listed columns have to be unique on their own.
+For an `@orderBy` argument the key is part of each `@order` value and flips with a runtime `direction:` where that value does. Plain lists and child lists are completed the same way, in the same direction: without a cursor a tie never drops a row, but the database is free to return tied rows in a different order from one execution to the next, so graphitron fixes the tie order for them as well. A list that declares no `@defaultOrder` falls back on the primary key of the table its target type is bound to, which identifies a row, so there is nothing to append. A list with nothing to fall back on (a table with no primary key, or a function's result whose type is bound to no table) and no `@defaultOrder` fails the build with `LIST_ORDER_UNDETERMINED`, unless its `@orderBy` argument is non-null: a nullable one is no order stated, since a client may leave it out. The fix is `@defaultOrder` naming the result's columns with `fields:`, or a non-null `@orderBy` argument. A field that hops on to a table after a routine (`@reference`) falls back on that table's key. Where there is no key at all (a view without a synthetic primary key, a function result bound to no table), the listed columns have nothing appended to them. The build warns under the lint rule `connection-order-not-unique` for a connection and `list-order-not-unique` for a list, and the listed columns have to be unique on their own.
 +
 A list whose declared order did not identify a row used to leave tied rows in whatever order the database returned them; they now come back ordered by the key. Consumers that read the old, unspecified order see a defined one, which can differ from what they saw before.
 
@@ -222,7 +231,8 @@ For single-table polymorphism, ordering is unchanged from the non-polymorphic ca
 * Exactly one of `index:`, `fields:`, or `primaryKey:` per `@order` value and per `@defaultOrder` directive. Multiple or none fails the build.
 * `@orderBy` argument input types bind by *type*, not by name. The input must contain exactly one `SortDirection`-typed field and exactly one `@order`-bearing enum field. Field names are free.
 * Every value of an `@orderBy`-bound enum must declare a sort spec. Missing values fail the build with a per-value diagnostic.
-* `@defaultOrder.direction:` is global across the spec; per-column direction is only available through `@orderBy` (each list element carries its own `SortDirection`).
+* `@defaultOrder.direction:` is global across the spec; per-column direction is only available through an `@order` value's `fields:` elements, each carrying its own `direction:`.
+* An `@orderBy` argument takes one value of its input type; a list-typed one fails the build (`ORDER_INPUT_LIST`).
 * Cursor wire format embeds the active order's columns. Adding, removing, or reordering columns in `@defaultOrder` or in an `@order` enum value invalidates outstanding cursors.
 * Connection orders that do not identify a row get the table's key appended, which is part of the cursor. Changing a table's primary key invalidates outstanding cursors on its connections.
 * `index:` requires jOOQ index generation. With it disabled, the lookup yields no columns and the directive fails to resolve.

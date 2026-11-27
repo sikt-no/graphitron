@@ -1636,41 +1636,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(arg.namedOrders().get(0).order().uniformAsc()).isTrue();
                 assertThat(orderedColumns(arg.namedOrders().get(1).order())).containsExactly("film_id ASC");
                 assertThat(orderedColumns(arg.base())).containsExactly("title ASC", "film_id ASC");
-            }),
-
-        LIST_ORDER_BY_ON_CONNECTION_APPENDS_AFTER_THE_SEQUENCE(
-            "a list-valued @orderBy on a connection carries its named orders as declared and an "
-            + "AppendRowKey completion for the composed sequence",
-            """
-            enum FilmSortField { RATE @order(fields: [{name: "rental_rate"}]) }
-            input FilmSort { field: FilmSortField! direction: SortDirection }
-            type Film @table(name: "film") { title: String }
-            type Query { films(order: [FilmSort] @orderBy): [Film!]! @asConnection }
-            """,
-            schema -> {
-                var arg = (OrderBySpec.Argument) rootOrder(schema, "films");
-                assertThat(arg.list()).isTrue();
-                var sequence = (OrderBySpec.Composition.Sequence) arg.composition();
-                assertThat(orderedColumns(sequence.namedOrders().get(0).order())).containsExactly("rental_rate ASC");
-                var append = (OrderBySpec.SequenceCompletion.AppendRowKey) sequence.completion();
-                assertThat(append.rowKey()).extracting(ColumnRef::sqlName).containsExactly("film_id");
-                assertThat(append.identifyingKeys())
-                    .extracting(key -> key.stream().map(ColumnRef::sqlName).toList())
-                    .contains(List.of("film_id"));
-            }),
-
-        LIST_ORDER_BY_ON_PLAIN_LIST_IS_COMPLETED(
-            "the same list-valued @orderBy on a plain list carries the same row-key completion",
-            """
-            enum FilmSortField { RATE @order(fields: [{name: "rental_rate"}]) }
-            input FilmSort { field: FilmSortField! direction: SortDirection }
-            type Film @table(name: "film") { title: String }
-            type Query { films(order: [FilmSort] @orderBy): [Film!]! }
-            """,
-            schema -> {
-                var sequence = (OrderBySpec.Composition.Sequence) ((OrderBySpec.Argument) rootOrder(schema, "films"))
-                    .composition();
-                assertThat(sequence.completion()).isInstanceOf(OrderBySpec.SequenceCompletion.AppendRowKey.class);
             });
 
         final String sdl;

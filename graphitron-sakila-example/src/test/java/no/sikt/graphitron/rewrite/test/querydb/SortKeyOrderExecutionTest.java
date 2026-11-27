@@ -24,13 +24,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * derived from the to-many {@code inventory}: store 1 for films 1 to 3, none for films 4 and 5. In
  * both, ties are broken by the {@code film_id} a connection appends, and every walk below, forward
  * and backward over two-row pages, returns each seeded film exactly once, at every site the order
- * renders at: a root connection, an {@code @orderBy} helper in either composition, a
+ * renders at: a root connection, an {@code @orderBy} helper, a
  * {@code @splitQuery} child connection, an inline child list and a plain list root.
  *
  * <p>A third key sorts squad members by their squad's {@code member_id}, a related column named
- * like {@code squad_member}'s own key, through a list-valued {@code @orderBy}: members 1 and 2 tie
- * on it, as do 3 to 5, so the walk returns every member only if the helper appends the member's
- * own key rather than taking the same-named sort key for it.
+ * like {@code squad_member}'s own key, through an {@code @orderBy} argument: members 1 and 2 tie
+ * on it, as do 3 to 5, so the walk returns every member only if the order is completed with the
+ * member's own key rather than taking the same-named sort key for it.
  *
  * <p>Other classes insert films into the database this one shares, so a walk is judged on the
  * seeded rows, as {@code ConnectionTiebreakerExecutionTest} judges its own.
@@ -154,16 +154,6 @@ class SortKeyOrderExecutionTest {
     }
 
     @Test
-    void pathKey_plainList_listValuedOrderByArgument_completedInTheHelper() {
-        assertThat(seeded(filmIdsOf(listOf(
-            "filmsByLanguagesComposedList(order: [{field: ORIGINAL_LANGUAGE, direction: ASC}])"))))
-            .containsExactlyElementsOf(ORIGINAL_ASC);
-        assertThat(seeded(filmIdsOf(listOf(
-            "filmsByLanguagesComposedList(order: [{field: ORIGINAL_LANGUAGE, direction: DESC}])"))))
-            .containsExactlyElementsOf(ORIGINAL_DESC);
-    }
-
-    @Test
     void pathKey_splitQueryChildList_ordersInTheBatchedWindow() {
         var language = (Map<String, Object>) execute(
             "{ languageBySingleKey(language_id: 1) { filmsListByOriginalLanguage { filmId } } }")
@@ -179,10 +169,10 @@ class SortKeyOrderExecutionTest {
     }
 
     @Test
-    void pathKey_composedOrderByArgument_completedInTheHelper() {
-        Function<String, String> query = page -> "{ filmsByLanguagesComposed(order: [{field: ORIGINAL_LANGUAGE,"
-            + " direction: ASC}], " + page + ") " + SELECTION + " }";
-        assertWalks(query, data -> (Map<String, Object>) data.get("filmsByLanguagesComposed"), ORIGINAL_ASC);
+    void pathKey_orderByArgument_rootConnection_completedByTheRowKey() {
+        Function<String, String> query = page -> "{ filmsByLanguages(order: {field: ORIGINAL_LANGUAGE,"
+            + " direction: ASC}, " + page + ") " + SELECTION + " }";
+        assertWalks(query, data -> (Map<String, Object>) data.get("filmsByLanguages"), ORIGINAL_ASC);
     }
 
     @Test
@@ -242,9 +232,9 @@ class SortKeyOrderExecutionTest {
     // ===== a sort key named like the row key =====
 
     @Test
-    void pathKeyNamedLikeTheRowKey_composedOrderByArgument_stillAppendsTheRowKey() {
+    void pathKeyNamedLikeTheRowKey_orderByArgument_stillAppendsTheRowKey() {
         Function<String, Function<String, String>> query = direction -> page ->
-            "{ squadMembers(order: [{field: SQUAD_FOUNDER, direction: " + direction + "}], " + page + ") "
+            "{ squadMembers(order: {field: SQUAD_FOUNDER, direction: " + direction + "}, " + page + ") "
                 + "{ nodes { memberId } pageInfo { startCursor endCursor hasNextPage hasPreviousPage } } }";
         Function<Map<String, Object>, Map<String, Object>> connection =
             data -> (Map<String, Object>) data.get("squadMembers");

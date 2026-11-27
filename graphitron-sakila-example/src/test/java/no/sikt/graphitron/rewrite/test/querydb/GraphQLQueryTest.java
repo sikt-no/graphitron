@@ -1525,10 +1525,10 @@ class GraphQLQueryTest {
         // film.rental_rate carries DEFAULT 4.99, so a film another class inserts without naming a
         // rate leads a rate-DESC walk and would push the seed out of a `first: 5` page.
         Map<String, Object> ascResult = execute(
-            "{ filmsOrderedConnection(order: [{field: RATE_DESC_TITLE_ASC, direction: ASC}]) "
+            "{ filmsOrderedConnection(order: {field: RATE_DESC_TITLE_ASC, direction: ASC}) "
             + "{ nodes { title } } }");
         Map<String, Object> descResult = execute(
-            "{ filmsOrderedConnection(order: [{field: RATE_DESC_TITLE_ASC, direction: DESC}]) "
+            "{ filmsOrderedConnection(order: {field: RATE_DESC_TITLE_ASC, direction: DESC}) "
             + "{ nodes { title } } }");
         var expected = List.of("ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE",
             "AGENT TRUMAN", "ACADEMY DINOSAUR");
@@ -2664,7 +2664,7 @@ class GraphQLQueryTest {
         // `order:` argument resolves and runs, and that the rows come back alphabetically; telling
         // title order apart from id order would need a seed whose two orders disagree.
         Map<String, Object> data = execute(
-            "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}]) { nodes { title } } }");
+            "{ filmsOrderedConnection(order: {field: TITLE, direction: ASC}) { nodes { title } } }");
         assertThat(seededTitlesInOrder(nodesOf(data, "filmsOrderedConnection")))
             .containsExactlyElementsOf(SEEDED_FILM_TITLES);
     }
@@ -2678,7 +2678,7 @@ class GraphQLQueryTest {
         // so a G filter bounds nothing against the films other classes insert, and a page trimmed
         // to one row out of an unbounded set is not this query's row.
         Map<String, Object> data = execute(
-            "{ filmsOrderedConnection(rating: PG, order: [{field: TITLE, direction: ASC}], first: 1) { " +
+            "{ filmsOrderedConnection(rating: PG, order: {field: TITLE, direction: ASC}, first: 1) { " +
             "nodes { title } pageInfo { hasNextPage } } }");
         var conn = assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP));
         conn.extractingByKey("nodes", as(list(Map.class)))
@@ -2700,7 +2700,7 @@ class GraphQLQueryTest {
         Map<String, Object> pageInfo;
         int pages = 0;
         do {
-            String args = "order: [{field: TITLE, direction: ASC}], first: 2"
+            String args = "order: {field: TITLE, direction: ASC}, first: 2"
                 + (after == null ? "" : ", after: \"" + after + "\"");
             Map<String, Object> data = execute(
                 "{ filmsOrderedConnection(" + args + ") { nodes { title } "
@@ -4363,7 +4363,7 @@ class GraphQLQueryTest {
         // Film 2 actors: {PENELOPE GUINESS, ED CHASE}      → last-desc-first = PENELOPE (GUINESS).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsOrderedConnection("
-                + "order: [{field: LAST_NAME, direction: DESC}], first: 1) "
+                + "order: {field: LAST_NAME, direction: DESC}, first: 1) "
                 + "{ nodes { actorId firstName lastName } } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
         var byId = films.stream().collect(java.util.stream.Collectors.toMap(
@@ -4387,7 +4387,7 @@ class GraphQLQueryTest {
         // fails if the argument is ignored and the @defaultOrder fallback runs instead.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsOrderedBySplit("
-                + "order: [{field: LAST_NAME, direction: DESC}]) { actorId lastName } } }");
+                + "order: {field: LAST_NAME, direction: DESC}) { actorId lastName } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
         var byId = films.stream().collect(java.util.stream.Collectors.toMap(
             f -> (Integer) f.get("filmId"),
@@ -4406,7 +4406,7 @@ class GraphQLQueryTest {
         // Same argument, same inversion of the primary-key default, one call site over.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsOrderedBySplitLookup("
-                + "actor_id: [1, 2, 3], order: [{field: LAST_NAME, direction: DESC}]) "
+                + "actor_id: [1, 2, 3], order: {field: LAST_NAME, direction: DESC}) "
                 + "{ actorId lastName } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
         var byId = films.stream().collect(java.util.stream.Collectors.toMap(

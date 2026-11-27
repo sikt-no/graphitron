@@ -1,4 +1,4 @@
-# A list read inline in the orders a client composes: the store states each choice and the
+# A list read inline in the order a client picks: the store states each choice and the
 # projection emitter applies the one picked, but graphitron's generated fetchers do not render it
 # until the store's units replace them, so the choice stays refused where the argument is written,
 # as ordering-refusals pins. This document holds the schema the emitter's execution test reads.
@@ -10,7 +10,7 @@ type Film @table(name: "film") {
 type Category @table(name: "category") {
     name: String
     # By its primary key where the client picks nothing.
-    filmsChosen(order: [FilmOrderBy!] @orderBy): [Film!]! @reference(path: [{table: "film_category"}, {table: "film"}])
+    filmsChosen(order: FilmOrderBy @orderBy): [Film!]! @reference(path: [{table: "film_category"}, {table: "film"}])
 }
 
 input FilmOrderBy {

@@ -21,7 +21,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
@@ -133,12 +132,10 @@ public final class ProjectionQuery {
     }
 
     /**
-     * The argument a client picks a list's order through: its name, whether it takes a list of
-     * choices composed in sequence, the fields of its input object naming the sort enum's value and
-     * the direction, and the order each value picks.
+     * The argument a client picks a list's order through, one value of it: its name, the fields of its
+     * input object naming the sort enum's value and the direction, and the order each value picks.
      */
-    public record Choice(String argument, boolean sequence, String sortField, String directionField,
-                         List<Order> orders) {
+    public record Choice(String argument, String sortField, String directionField, List<Order> orders) {
         public Choice {
             orders = List.copyOf(orders);
         }
@@ -146,20 +143,12 @@ public final class ProjectionQuery {
 
     /**
      * What a list states about reading it: the tables it reads, its default order where it has one,
-     * the argument a client picks one through where it has one, whether anything else narrows it, an
-     * argument other than that one or a {@code @condition}, and over one table the keys identifying
-     * its rows, the row key first, which complete a sequence a client composes; empty over several.
+     * the argument a client picks one through where it has one, and whether anything else narrows it, an
+     * argument other than that one or a {@code @condition}.
      */
-    public record ListRead(List<String> bounds, Order defaultOrder, Choice choice, boolean narrowed,
-                           List<List<Column>> identifyingKeys) {
+    public record ListRead(List<String> bounds, Order defaultOrder, Choice choice, boolean narrowed) {
         public ListRead {
             bounds = List.copyOf(bounds);
-            identifyingKeys = identifyingKeys.stream().map(List::copyOf).toList();
-        }
-
-        /** The best ranked identifying key, the one an order is completed with, or empty. */
-        public List<Column> rowKey() {
-            return identifyingKeys.isEmpty() ? List.of() : identifyingKeys.get(0);
         }
     }
 
@@ -344,8 +333,8 @@ public final class ProjectionQuery {
 
     /**
      * Each list occurrence's orders, each order's keys in sequence followed by the row-key columns
-     * completing it, the choices by the argument picking them, whether an argument besides that one
-     * or a {@code @condition} narrows it, and the keys identifying its rows.
+     * completing it, the choices by the argument picking them, and whether an argument besides that one
+     * or a {@code @condition} narrows it.
      */
     private static Map<String, ListRead> lists(StoreHandle store) {
         var r = GRAPHITRON_OCCURRENCE_ORDER;
@@ -362,7 +351,7 @@ public final class ProjectionQuery {
         var arguments = new LinkedHashMap<String, Choice>();
         var picks = new LinkedHashMap<String, Map<String, List<SortKey>>>();
         store.dsl()
-            .select(r.COORDINATE, r.BOUND, r.KIND, ev.VALUE_NAME, ao.NAME, ga.LIST_DEPTH, oi.SORT_FIELD_NAME,
+            .select(r.COORDINATE, r.BOUND, r.KIND, ev.VALUE_NAME, ao.NAME, oi.SORT_FIELD_NAME,
                 oi.DIRECTION_FIELD_NAME, k.DIRECTION, k.COLLATION, kc.TABLE_SOURCE_NAME, kc.TABLE_SCHEMA,
                 kc.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.NULLABLE, r.CHOICE, k.POSITION, k.KIND)
             .from(r)
@@ -381,19 +370,19 @@ public final class ProjectionQuery {
             .forEach(row -> {
                 String coordinate = row.value1();
                 bounds.computeIfAbsent(coordinate, x -> new LinkedHashSet<>()).add(row.value2());
-                var column = row.value14() == null ? null
-                    : column(row.value11(), row.value12(), row.value13(), row.value14(), row.value15());
-                var path = hops.getOrDefault(java.util.Arrays.asList(coordinate, row.value17(), row.value18()),
+                var column = row.value13() == null ? null
+                    : column(row.value10(), row.value11(), row.value12(), row.value13(), row.value14());
+                var path = hops.getOrDefault(java.util.Arrays.asList(coordinate, row.value16(), row.value17()),
                     List.of());
                 // A path's value is null where a hop reaches no row, so it sorts its nulls last whatever the
                 // column admits, as the walk's path key does.
-                var key = new SortKey(column, row.value19(), !path.isEmpty() || Boolean.TRUE.equals(row.value16()),
-                    row.value9(), row.value10(), path);
+                var key = new SortKey(column, row.value18(), !path.isEmpty() || Boolean.TRUE.equals(row.value15()),
+                    row.value8(), row.value9(), path);
                 if ("DEFAULT".equals(row.value3())) {
                     defaults.computeIfAbsent(coordinate, x -> new ArrayList<>()).add(key);
                 } else {
-                    arguments.putIfAbsent(coordinate, new Choice(row.value5(),
-                        row.value6() != null && row.value6() > 0, row.value7(), row.value8(), List.of()));
+                    arguments.putIfAbsent(coordinate, new Choice(row.value5(), row.value6(), row.value7(),
+                        List.of()));
                     picks.computeIfAbsent(coordinate, x -> new LinkedHashMap<>())
                         .computeIfAbsent(row.value4(), x -> new ArrayList<>()).add(key);
                 }
@@ -419,21 +408,6 @@ public final class ProjectionQuery {
                 .add(new SortKey(column(row.value4(), row.value5(), row.value6(), row.value7(), row.value8()),
                     "COLUMN", false, row.value3(), null, List.of())));
 
-        // The keys identifying each list's rows, the row key first.
-        var ik = GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
-        var identifying = new LinkedHashMap<String, Map<Integer, List<Column>>>();
-        store.dsl()
-            .select(ik.COORDINATE, ik.RANK, ik.TABLE_SOURCE_NAME, ik.TABLE_SCHEMA, ik.TABLE_NAME, c.COLUMN_NAME,
-                c.JOOQ_NAME)
-            .from(ik)
-            .join(c).on(c.SOURCE_NAME.eq(ik.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(ik.TABLE_SCHEMA),
-                c.TABLE_NAME.eq(ik.TABLE_NAME), c.COLUMN_NAME.eq(ik.COLUMN_NAME))
-            .where(ik.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(ik.COORDINATE, ik.RANK, ik.POSITION)
-            .forEach(row -> identifying.computeIfAbsent(row.value1(), x -> new LinkedHashMap<>())
-                .computeIfAbsent(row.value2(), x -> new ArrayList<>())
-                .add(column(row.value3(), row.value4(), row.value5(), row.value6(), row.value7())));
-
         // An argument besides the one picking the order, or a @condition at the occurrence, narrows it.
         var o = GRAPHITRON_OCCURRENCE;
         var cond = GRAPHITRON_OCCURRENCE_CONDITION;
@@ -456,14 +430,12 @@ public final class ProjectionQuery {
                 var orders = new ArrayList<Order>();
                 picks.get(coordinate).forEach((value, keys) -> orders.add(new Order(value,
                     completed(keys, completions.get(java.util.Arrays.asList(coordinate, value))))));
-                choice = new Choice(argument.argument(), argument.sequence(), argument.sortField(),
-                    argument.directionField(), orders);
+                choice = new Choice(argument.argument(), argument.sortField(), argument.directionField(), orders);
             }
             lists.put(coordinate, new ListRead(List.copyOf(bound),
                 defaultKeys == null ? null
                     : new Order(null, completed(defaultKeys, completions.get(java.util.Arrays.asList(coordinate, null)))),
-                choice, narrowed.contains(coordinate),
-                List.copyOf(identifying.getOrDefault(coordinate, Map.of()).values())));
+                choice, narrowed.contains(coordinate)));
         });
         return lists;
     }

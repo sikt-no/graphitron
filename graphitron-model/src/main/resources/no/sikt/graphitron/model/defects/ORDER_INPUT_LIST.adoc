@@ -1,0 +1,13 @@
+Reported at the xref:directives/orderBy.adoc[`@orderBy`] argument whose type is a list, `[FilmOrderBy]`, `[FilmOrderBy!]` or either non-null; the input type is named in the detail. The argument takes one value of its input type, `order: FilmOrderBy @orderBy`.
+
+A list composes the client's choices one after another, each one's keys after the last's. A combination is itself an order, so the schema names it once, as its own value of the sort enum, rather than leaving each client to compose it; where the first choice's order already ends in a unique key, a later choice would never take effect at all.
+
+*Next step.* Take one value, `order: FilmOrderBy @orderBy`, and declare each combination as its own value of the sort enum whose `@order` lists all its keys:
+
+[source,graphql]
+----
+enum FilmSort {
+  TITLE @order(fields: [{name: "title"}])
+  LANGUAGE_THEN_TITLE @order(fields: [{name: "language_id"}, {name: "title"}])
+}
+----

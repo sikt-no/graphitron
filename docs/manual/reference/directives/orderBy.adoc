@@ -22,11 +22,24 @@ The example schema's `filmsOrderedConnection` exposes a dynamic order argument:
 include::examples/orderBy.graphqls[tag=OrderedConnection]
 ----
 
-A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films sorted by `film.title` ascending. The `[FilmOrderBy]` list shape lets the client compose multi-key orderings. On a connection, graphitron appends the primary key after the composed sequence when it does not already contain a key, so `[{ field: TITLE }]` pages on `title, film_id`; sending `FILM_ID` after `TITLE` yourself gives the same order.
+A client requesting `order: { field: TITLE, direction: ASC }` gets the films sorted by `film.title` ascending. On a connection, graphitron appends the primary key when the order does not already contain a key, so `{ field: TITLE }` pages on `title, film_id`.
+
+The argument takes one value of its input type, `order: FilmOrderBy @orderBy`, never a list. A list-typed argument, `[FilmOrderBy]` or `[FilmOrderBy!]`, non-null or not, fails the build (`ORDER_INPUT_LIST`), even one whose choices each sort by a single column. A list would compose the client's choices one after another, and a combination is itself an order, so the schema names it once, as its own value of the sort enum whose `@order` lists all its keys:
+
+[source,graphql]
+----
+enum FilmSort {
+  TITLE @order(fields: [{name: "title"}])
+  LANGUAGE_THEN_TITLE @order(fields: [{name: "language_id"}, {name: "title"}])
+}
+----
+
+The ruling (Alf, 2026-11-27): "this isn't a feature, this is a bug", and "we drop the list and we do it as soon as possible. It's a refusal, it's not a warning."
 
 == Constraints
 
 * Applies only to arguments. Putting `@orderBy` on a field, input field, or enum value is rejected.
+* The argument takes one value of its input type. A list-typed argument fails the build (`ORDER_INPUT_LIST`); declare a combined order as its own enum value instead.
 * A list read inside its parent's query, one with neither `@splitQuery` nor a query of its own, does not apply a client's choice yet, so `@orderBy` on it fails the build (`ORDER_CHOICE_ON_INLINE_LIST`) rather than accept a choice and drop it. Read the list with xref:splitQuery.adoc[`@splitQuery`], or order it with xref:defaultOrder.adoc[`@defaultOrder`].
 * The argument's input type must contain exactly one field typed as an enum whose values carry xref:order.adoc[`@order`], the sort enum, and exactly one other enum field, the direction, conventionally the project's `SortDirection`. Field names are free; the generator tells the two apart by type. Any other shape fails the build (`ORDER_INPUT_SHAPE`).
 * Every value of the bound enum must declare exactly one of `index`, `fields`, or `primaryKey` via xref:order.adoc[`@order`]. Missing or ambiguous specifications fail the build.
@@ -38,6 +51,6 @@ A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films s
 
 * xref:order.adoc[`@order`] specifies how each enum value maps to database sort columns.
 * xref:defaultOrder.adoc[`@defaultOrder`] supplies the fallback sort when the client omits the `@orderBy` argument.
-* xref:../../how-to/sort-results.adoc[How-to: Sort results] covers multi-key orderings and keyset pagination interactions.
+* xref:../../how-to/sort-results.adoc[How-to: Sort results] covers orders over several keys and keyset pagination interactions.
 
 xref:../index.adoc[← Reference index]

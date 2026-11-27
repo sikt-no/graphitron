@@ -72,7 +72,7 @@ class UnlowerableOrderingRejectionPipelineTest {
     /** The reported schema: the pagination, the field-level declaration and the argument together. */
     private static final String REPORTED = DOCUMENTS + """
         type Query {
-            documents(order: [DocumentOrderBy] @orderBy, first: Int, after: String): [Document!]!
+            documents(order: DocumentOrderBy @orderBy, first: Int, after: String): [Document!]!
                 @asConnection @defaultOrder(fields: [{name: "last_update"}])
         }
         """;

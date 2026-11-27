@@ -75,6 +75,8 @@ enum PersonOrderByField {
 }
 ----
 
+A value listing several fields is how an order over several keys is declared: the xref:orderBy.adoc[`@orderBy`] argument takes one value, so a combination the client should be able to pick is a value of its own, never a list of values.
+
 [#sorting-by-a-related-value]
 === Sorting by a related value
 

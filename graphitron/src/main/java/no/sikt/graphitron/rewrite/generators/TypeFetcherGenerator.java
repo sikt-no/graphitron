@@ -296,7 +296,7 @@ public class TypeFetcherGenerator {
             ? (no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Surface)
                 new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Surface.Fixed()
             : new no.sikt.graphitron.rewrite.model.PolymorphicOrdering.Surface.Argument(argument.name(),
-                argument.inputType(), argument.nonNull(), argument.list(), argument.sortField(),
+                argument.inputType(), argument.nonNull(), false, argument.sortField(),
                 argument.directionField());
         return new no.sikt.graphitron.rewrite.model.PolymorphicOrdering(participants, surface, key, slots, named,
             base);

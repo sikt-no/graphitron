@@ -27,7 +27,7 @@ type Film @table(name: "film") {
     ]) @defaultOrder(primaryKey: true)
 
     actorsOrderedConnection(
-        order: [ActorOrderBy] @orderBy,
+        order: ActorOrderBy @orderBy,
         first: Int, last: Int, after: String, before: String
     ): ActorsConnection! @reference(path: [
         {key: "film_actor_film_id_fkey"},

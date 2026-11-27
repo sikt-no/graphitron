@@ -2,7 +2,7 @@
 
 # tag::Legacy[]
 type Query {
-  films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+  films(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
 }
 
 type Film @table(name: "film") {
@@ -22,7 +22,7 @@ enum FilmOrderByField {
 
 # tag::Modern[]
 type Query {
-  films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+  films(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
 }
 
 type Film @table(name: "film") {

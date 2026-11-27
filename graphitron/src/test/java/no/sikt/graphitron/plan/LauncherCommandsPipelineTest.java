@@ -143,7 +143,7 @@ class LauncherCommandsPipelineTest {
             }
             input FilmOrderBy { field: FilmSort! direction: SortDirection }
             type Query {
-                films(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+                films(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(primaryKey: true)
             }
             """);
 
