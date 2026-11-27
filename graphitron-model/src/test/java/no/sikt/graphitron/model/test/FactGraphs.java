@@ -109,7 +109,7 @@ import java.util.stream.Stream;
 public final class FactGraphs implements AutoCloseable {
 
     /** How many stores each catalog and classpath's graphs are spread over. */
-    static final int SHARDS_PER_CATALOG = 4;
+    static final int SHARDS_PER_CATALOG = Integer.getInteger("graphitron.populationShards", 4);
 
     /** The system property that, set to {@code false}, captures each inline schema into a fresh store. */
     static final String INLINE_PROPERTY = "graphitron.inlineShards";
