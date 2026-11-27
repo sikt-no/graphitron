@@ -537,6 +537,23 @@ parallelises a module's tests is priced against that before it is tried.
     sources or generated packages leave `no.sikt`, which would otherwise report as uncovered.
     For Alf and Filip, not a step: step 20's 11.1 and 21.0 minute tier reruns were measured under
     the unrestricted agent, so the nightly decision rests on figures this changes.
+24. **The agreement oracles compare a batch of graphs per statement.** Refuted 2026-11-27.
+    `DetailRuleAgreementTest` and `StageAnswerAgreementTest`, among the model's slowest classes at
+    about 640 and 220 s, compare one graph per statement, about 6,400 and 221,000 statements over
+    the population. Prediction: batching graphs by `GRAPH_NAME IN` removes most of that. Priced in one
+    JVM at `bb5c79d150` over the warmed population (454 graphs, 18 stores), each form twice, every
+    form finding the same 1,350 rows:
+
+    | form | detail rules | stage answers |
+    |---|---|---|
+    | per graph, as now | 5.7, 4.3 s | 122.9, 112.0 s |
+    | 25 graphs a statement | 2.1, 2.9 s | 150.2, 146.4 s |
+    | a store a statement | 0.6, 0.6 s | 169.9, 162.5 s |
+
+    The detail rules' own comparisons are about 5 s: the class's 640 s is the population's warm,
+    which took 1,018 s alone in that JVM. The stage answers are fastest per graph, as the class's
+    `eachReading` says: a rule view over many graphs costs more than the statements it saves. The
+    cost is the warm, which steps 18, 21 and 22 reach.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
