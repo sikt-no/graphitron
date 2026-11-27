@@ -575,6 +575,40 @@ parallelises a module's tests is priced against that before it is tried.
     - H6, a rule runs as well as a statement as it does as a view: one stage's rule text, run as
       `INSERT ... SELECT` against a store without its view, writes the same rows as the view-based
       write.
+    - Measured 2026-11-27, `PopulationHeapProbe` at 0 documents (`heap.probe.views` `none`, `rules`,
+      `lonerules`), one run each. An empty store is 62 MB live (70 against 8 before). `meta_stage_rule`
+      registers 275 rule views, not 248, holding 1,283,455 of the schema's 1,370,197 characters of
+      view text (94%). Dropping all 275 leaves 22 MB: 40 MB freed, 31 bytes a character, `h2-statements`
+      falling from 24 MB to 1. Dropping the 271 that no other module's main source names (the four
+      kept are named in `graphitron`, `graphitron-mcp` or `graphitron-lsp`) leaves 23 MB: 39 MB freed.
+      No rule view is read by another view (`StageRuleGateTest` already holds that), so no drop was
+      refused. H4 holds, H5 holds: (c) frees 97% of what (b) frees.
+    - H6 holds for the one rule tried (`RuleStatementProbe`, `rule.statement.probe=true`):
+      `graphitron_outbox_entry_defect_rule` over `defects/outbox-payload-defects`, its view dropped,
+      run through `EntryDefects.derive` as a derived table over its DDL text, writes the same row as
+      the view did. One row only, so it shows the shape works and not that every rule does. Two
+      things the text needs that a view gives for free: its column list, since the body's own
+      column names differ from the view's (`CREATE VIEW v (a, b) AS ...` puts names on positions),
+      so a rule file carries that list or the body names its columns; and its `WITH`, which H2
+      takes inside a derived table.
+    - Typed through jOOQ's `ResultQuery.coerce(Table)` (3.20.11 has no `Table.coerce`, so a typed
+      source is a fetch into `Result<TRecord>`, not a server-side `INSERT ... SELECT`): the same row
+      again, once three things were done. `coerce` lines columns up by position, not by name, so
+      the projection must name the table's columns in the table's order; this rule projects
+      `..., code, detail, stage` against the table's `..., code, stage, detail`, and with equal counts
+      the two `VARCHAR`s would swap silently. No rule states the mark, so `touched_at` is bound into
+      the projection. And a fetched record is not touched, so it is marked before `batchInsert`, or
+      the insert writes default values.
+    - Every registered rule against the relation it writes, by name, order and type: 6 match
+      exactly, 142 match but for `touched_at` in the same order, 57 but for `touched_at` in another
+      order (the entry-defect rules, `stage` and `detail` swapped), and 101 differ otherwise. Of those,
+      the table holds what the stage adds: a constant (`stage` 11, `priority` 28), or generated columns
+      (the `_ref` columns, `path_head`, `coordinate`); or the rule holds what the stage reads to write
+      something else (`table_name`, `table_schema`, `table_source_name` 17, `class_name`,
+      `method_descriptor`). So a gate that a rule matches its table checks the rule's columns
+      against the table's less its mark, its generated columns and the stage's constants, by name,
+      and the 17 rules whose stage resolves a column in Java stay outside it until that resolution
+      moves into the rule.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every

@@ -28,8 +28,10 @@ import java.util.TreeMap;
  * <p>{@code graphitron.populationCacheSize} and {@code graphitron.populationShards} vary the
  * population's statement cache and its stores a catalog. At {@code 0} documents it holds one booted
  * store with no graph instead, what a store costs before its first capture, and {@value #VIEWS}
- * drops {@code all} or {@code half} of that store's view text, or with {@code tokens} empties the
- * token list each view's parsed query keeps, before it is measured.
+ * drops {@code all} or {@code half} of that store's view text, with {@code rules} every rule view
+ * {@code meta_stage_rule} registers, with {@code lonerules} only those of them no other module's
+ * main source names, or with {@code tokens} empties the token list each view's parsed query keeps,
+ * before it is measured.
  */
 @EnabledIfSystemProperty(named = PopulationHeapProbe.DOCUMENTS, matches = "\\d+")
 class PopulationHeapProbe {
@@ -99,6 +101,9 @@ class PopulationHeapProbe {
         if (share.equals("tokens")) {
             return dropViewTokens(dsl);
         }
+        if (share.equals("rules") || share.equals("lonerules")) {
+            return dropRuleViews(dsl, share.equals("lonerules"));
+        }
         var views = dsl.fetch("SELECT TABLE_NAME, LENGTH(VIEW_DEFINITION) FROM INFORMATION_SCHEMA.VIEWS"
             + " WHERE TABLE_SCHEMA = 'PUBLIC' ORDER BY 2 DESC");
         long total = views.stream().mapToLong(row -> row.get(1, Long.class)).sum();
@@ -114,6 +119,66 @@ class PopulationHeapProbe {
         long left = ((Number) dsl.fetchValue("SELECT COALESCE(SUM(LENGTH(VIEW_DEFINITION)), 0)"
             + " FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = 'PUBLIC'")).longValue();
         return " (dropped " + share + ": view text " + total + " chars before, " + left + " after)";
+    }
+
+    /**
+     * Drops the rule views {@code meta_stage_rule} registers, or with {@code alone} only those no main
+     * source outside this module names, which leaves the ones the editor, the tool server or the
+     * generator read for themselves. Restrict, not cascade, so a view that reads a rule view stops
+     * the drop rather than going with it; the report says how many views and characters went.
+     */
+    private static String dropRuleViews(org.jooq.DSLContext dsl, boolean alone) {
+        var rules = new java.util.TreeSet<String>(dsl.fetch(
+                "SELECT DISTINCT UPPER(rule_view) FROM meta_stage_rule").getValues(0, String.class));
+        long total = ((Number) dsl.fetchValue("SELECT COALESCE(SUM(LENGTH(VIEW_DEFINITION)), 0)"
+            + " FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = 'PUBLIC'")).longValue();
+        var named = alone ? namedOutsideThisModule(rules) : java.util.Set.<String>of();
+        int dropped = 0;
+        var refused = new java.util.ArrayList<String>();
+        for (var rule : rules) {
+            if (named.contains(rule)) {
+                continue;
+            }
+            try {
+                dsl.execute("DROP VIEW \"" + rule + "\" RESTRICT");
+                dropped++;
+            } catch (RuntimeException e) {
+                refused.add(rule);
+            }
+        }
+        long left = ((Number) dsl.fetchValue("SELECT COALESCE(SUM(LENGTH(VIEW_DEFINITION)), 0)"
+            + " FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = 'PUBLIC'")).longValue();
+        return " (dropped " + dropped + " of " + rules.size() + " rule views, " + named.size()
+            + " kept as named elsewhere, " + refused.size() + " refused " + refused + ": view text " + total
+            + " chars before, " + left + " after, " + (total - left) + " dropped)";
+    }
+
+    /** The views in {@code views} that main source of another module names, as a constant or a class. */
+    private static java.util.Set<String> namedOutsideThisModule(java.util.Set<String> views) {
+        var found = new java.util.TreeSet<String>();
+        var root = Path.of("..").toAbsolutePath().normalize();
+        try (var modules = Files.list(root)) {
+            for (var module : modules.filter(m -> Files.isDirectory(m.resolve("src/main/java"))
+                    && !m.getFileName().toString().equals("graphitron-model")).toList()) {
+                try (var sources = Files.walk(module.resolve("src/main/java"))) {
+                    for (var source : sources.filter(f -> f.toString().endsWith(".java")).toList()) {
+                        var text = Files.readString(source);
+                        for (var view : views) {
+                            var camel = java.util.Arrays.stream(view.toLowerCase(java.util.Locale.ROOT).split("_"))
+                                .map(w -> w.isEmpty() ? w : Character.toUpperCase(w.charAt(0)) + w.substring(1))
+                                .collect(java.util.stream.Collectors.joining());
+                            if (text.contains(view) || text.contains(view.toLowerCase(java.util.Locale.ROOT))
+                                    || text.contains(camel)) {
+                                found.add(view);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+        return found;
     }
 
     /**
