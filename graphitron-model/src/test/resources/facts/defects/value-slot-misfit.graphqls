@@ -1,0 +1,65 @@
+# A value that does not fit the call parameter it fills, and the PARAMETER_MISMATCH it draws.
+# Query.byActors hands a list of Int to a routine parameter taking one Integer: the class arrives, the
+# list-ness does not. Query.byTitle hands an Int to a service parameter taking a String: no arrival
+# answers its class. Query.byActor and Query.byTitleText, the same parameters filled as they take
+# them, are the near misses, and so is Query.byRating, an enum filling a routine parameter that takes
+# the MpaaRating jOOQ generates for mpaa_rating, a class outside java.: ANY_NON_JDK. A service's array parameter has no place yet, the code family stating no
+# component for a Java array, so a generated scalar's component filling one is refused outright:
+# Query.byTitleArray. A list filling it is not judged, Query.byTitleArrayFromList the near miss.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+enum Rating { G PG PG_13 R NC_17 }
+
+type RatedRow {
+  filmId: Int @field(name: "film_id")
+}
+
+type FilmRow {
+  filmId: Int @field(name: "film_id")
+  title: String
+}
+
+type Query {
+  byActors(actorIds: [Int!]!, minLength: Int!): [FilmRow!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorIds, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byActor(actorId: Int!, minLength: Int!): [FilmRow!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byRating(rating: Rating!): [RatedRow!]
+    @routine(name: "films_rated", argMapping: "pRating: rating")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byTitle(title: Int): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  byTitleText(title: String): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  byTitleArray(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitleArray", argMapping: "titles: path.startType"})
+  byTitleArrayFromList(titles: [String!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitleArray"})
+}
+
+# The places, the two misfits beside their near misses.
+extend schema @expectEquals(relation: "graphitron_occurrence_value_slot",
+    where: "coordinate IN ('Query.byActors(actorIds:)', 'Query.byActor(actorId:)', 'Query.byRating(rating:)', 'Query.byTitle(title:)', 'Query.byTitleText(title:)')", rows: """
+  coordinate,                stated_by, element_class,                                                 takes_many, arrives_many, arrival_kind, fits
+  Query.byActor(actorId:),   ROUTINE,   java.lang.Integer,                                             FALSE,      FALSE,        EXACT,        TRUE
+  Query.byActors(actorIds:), ROUTINE,   java.lang.Integer,                                             FALSE,      TRUE,         EXACT,        FALSE
+  Query.byRating(rating:),   ROUTINE,   no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, FALSE,      FALSE,        ANY_NON_JDK,  TRUE
+  Query.byTitle(title:),     SERVICE,   java.lang.String,  FALSE,      FALSE,        ,             FALSE
+  Query.byTitleText(title:), SERVICE,   java.lang.String,  FALSE,      FALSE,        EXACT,        TRUE
+  """)
+
+# The two that do not fit are refused, and the component into the array, and nothing else here.
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_defect",
+    where: "coordinate LIKE 'Query.%' AND code = 'PARAMETER_MISMATCH'", rows: """
+  coordinate,         call_kind, parameter_name
+  Query.byActors,     ROUTINE,   pActorId
+  Query.byTitle,      SERVICE,   title
+  Query.byTitleArray, SERVICE,   titles
+  """)
+
+# A service's array parameter is no place yet, filled however it is.
+extend schema @assertEmpty(relation: "graphitron_occurrence_value_slot_parameter",
+    where: "call_coordinate IN ('Query.byTitleArray', 'Query.byTitleArrayFromList')")

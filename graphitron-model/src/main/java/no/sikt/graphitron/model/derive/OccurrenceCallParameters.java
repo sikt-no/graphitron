@@ -22,6 +22,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_PA
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_PARAMETER_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SERVICE_PARAMETER_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_VALUE_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_VALUE_SLOT_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_VALUE_SLOT_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_WRITE_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -97,6 +100,7 @@ public final class OccurrenceCallParameters {
             .execute();
         pairs(dsl, graph, touchedAt, "SERVICE");
         bindings(dsl, graph, touchedAt, "SERVICE");
+        slots(dsl, graph, touchedAt, "SERVICE");
         defects(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_SERVICE_PARAMETER_DEFECT_RULE);
     }
 
@@ -177,6 +181,7 @@ public final class OccurrenceCallParameters {
             .execute();
         pairs(dsl, graph, touchedAt, "ROUTINE");
         bindings(dsl, graph, touchedAt, "ROUTINE");
+        slots(dsl, graph, touchedAt, "ROUTINE");
         defects(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_ROUTINE_PARAMETER_DEFECT_RULE);
     }
 
@@ -326,6 +331,59 @@ public final class OccurrenceCallParameters {
             .set(c.RECORD_SOURCE_REF, excluded(c.RECORD_SOURCE_REF))
             .set(c.RECORD_SCHEMA_REF, excluded(c.RECORD_SCHEMA_REF))
             .set(c.RECORD_TABLE_REF, excluded(c.RECORD_TABLE_REF))
+            .execute();
+    }
+
+    /**
+     * Where each value one kind's fills hand a parameter lands, and whether it fits, read off the value
+     * slot rule once that kind's fills and their pairs are written: the place, then the parameter it
+     * is, then the sweep of that kind's places this reading did not mark, so the defect rule after it
+     * reads only this reading's verdicts.
+     */
+    private static void slots(DSLContext dsl, String graph, LocalDateTime touchedAt, String callKind) {
+        var r = GRAPHITRON_OCCURRENCE_VALUE_SLOT_PARAMETER_RULE;
+        var s = GRAPHITRON_OCCURRENCE_VALUE_SLOT;
+        dsl.insertInto(s)
+            .columns(s.GRAPH_NAME, s.COORDINATE, s.SLOT, s.KIND, s.STATED_BY, s.ELEMENT_CLASS, s.TAKES_MANY,
+                s.ARRIVES_MANY, s.ARRIVAL_KIND, s.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.SLOT, inline(PARAMETER), r.STATED_BY,
+                    r.ELEMENT_CLASS, r.TAKES_MANY, r.ARRIVES_MANY, r.ARRIVAL_KIND, val(touchedAt, s.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph), r.STATED_BY.eq(callKind)))
+            .onConflict(s.GRAPH_NAME, s.COORDINATE, s.SLOT)
+            .doUpdate()
+            .set(s.KIND, excluded(s.KIND))
+            .set(s.STATED_BY, excluded(s.STATED_BY))
+            .set(s.ELEMENT_CLASS, excluded(s.ELEMENT_CLASS))
+            .set(s.TAKES_MANY, excluded(s.TAKES_MANY))
+            .set(s.ARRIVES_MANY, excluded(s.ARRIVES_MANY))
+            .set(s.ARRIVAL_KIND, excluded(s.ARRIVAL_KIND))
+            .set(s.TOUCHED_AT, excluded(s.TOUCHED_AT))
+            .execute();
+        var p = GRAPHITRON_OCCURRENCE_VALUE_SLOT_PARAMETER;
+        dsl.insertInto(p)
+            .columns(p.GRAPH_NAME, p.CALL_COORDINATE, p.CALL, p.POSITION, p.COORDINATE, p.KIND, p.CALL_KIND,
+                p.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.CALL_COORDINATE, r.CALL, r.POSITION, r.COORDINATE,
+                    inline(PARAMETER), r.STATED_BY, val(touchedAt, p.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph), r.STATED_BY.eq(callKind)))
+            .onConflict(p.GRAPH_NAME, p.CALL_COORDINATE, p.CALL, p.POSITION)
+            .doUpdate()
+            .set(p.COORDINATE, excluded(p.COORDINATE))
+            .set(p.KIND, excluded(p.KIND))
+            .set(p.CALL_KIND, excluded(p.CALL_KIND))
+            .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(p)
+            .where(p.GRAPH_NAME.eq(graph))
+            .and(p.CALL_KIND.eq(callKind))
+            .and(p.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        dsl.deleteFrom(s)
+            .where(s.GRAPH_NAME.eq(graph))
+            .and(s.STATED_BY.eq(callKind))
+            .and(s.TOUCHED_AT.ne(touchedAt))
             .execute();
     }
 

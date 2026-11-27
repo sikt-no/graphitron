@@ -35,6 +35,10 @@ public final class ParameterShapeService {
         return String.join(",", titles);
     }
 
+    public static String byTitleArray(String[] titles) {
+        return String.join(",", titles);
+    }
+
     public static String byLongId(Long id) {
         return String.valueOf(id);
     }

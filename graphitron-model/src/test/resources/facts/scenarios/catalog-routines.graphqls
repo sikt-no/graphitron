@@ -28,6 +28,14 @@ extend schema @assertAbsent(relation: "sql_routine", rows: """
   public,       film
   """)
 
+# What one value the parameter takes and whether it takes an array of them, so a reader compares
+# classes rather than parsing the binding type: films_by_ids takes an Integer[], each an Integer.
+extend schema @assertContains(relation: "sql_routine_parameter", rows: """
+  table_schema, routine_name,    position, binding_type,          element_class,     delivery
+  public,       films_for_actor, 0,        java.lang.Integer,     java.lang.Integer, DIRECT
+  public,       films_by_ids,    0,        [Ljava.lang.Integer;,  java.lang.Integer, MANY
+  """)
+
 # A routine that is no table has no sql_table row and no table-form method: it is called through the
 # Routines class's Configuration-first method, and its parameters carry the database's own names beside
 # the camelCased Java ones. A routine that returns no value, a void function as much as a procedure,

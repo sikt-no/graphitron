@@ -1038,6 +1038,40 @@ public final class JooqFactCapture {
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
+    /**
+     * The class a routine parameter takes once an array is peeled off its binding type, a binary name
+     * as {@link Class#getName} spells it: the component of an array of objects, the primitive's own
+     * name for an array of primitives, and the type itself otherwise.
+     */
+    static String elementClassOf(String bindingType) {
+        String component = bindingType;
+        while (component.startsWith("[")) {
+            component = component.substring(1);
+        }
+        if (component.equals(bindingType)) {
+            return bindingType;
+        }
+        if (component.startsWith("L") && component.endsWith(";")) {
+            return component.substring(1, component.length() - 1);
+        }
+        return switch (component) {
+            case "Z" -> "boolean";
+            case "B" -> "byte";
+            case "C" -> "char";
+            case "S" -> "short";
+            case "I" -> "int";
+            case "J" -> "long";
+            case "F" -> "float";
+            case "D" -> "double";
+            default -> throw new IllegalArgumentException("not a binary type name: " + bindingType);
+        };
+    }
+
+    /** How a routine parameter takes its element: MANY for an array, DIRECT for one value. */
+    static String deliveryOf(String bindingType) {
+        return bindingType.startsWith("[") ? "MANY" : "DIRECT";
+    }
+
     private static void routineParameters(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
                                           LocalDateTime touchedAt) {
         var t = SQL_ROUTINE_PARAMETER;
@@ -1063,14 +1097,18 @@ public final class JooqFactCapture {
             i -> val(positions.get(i), t.POSITION),
             i -> val(found.get(i).javaName(), t.JOOQ_NAME),
             i -> val(found.get(i).bindingType(), t.BINDING_TYPE),
+            i -> val(elementClassOf(found.get(i).bindingType()), t.ELEMENT_CLASS),
+            i -> val(deliveryOf(found.get(i).bindingType()), t.DELIVERY),
             i -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.ROUTINE_NAME, t.POSITION, t.JOOQ_NAME,
-                    t.BINDING_TYPE, t.TOUCHED_AT)
+                    t.BINDING_TYPE, t.ELEMENT_CLASS, t.DELIVERY, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
                 .set(t.BINDING_TYPE, excluded(t.BINDING_TYPE))
+                .set(t.ELEMENT_CLASS, excluded(t.ELEMENT_CLASS))
+                .set(t.DELIVERY, excluded(t.DELIVERY))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
@@ -1135,15 +1173,19 @@ public final class JooqFactCapture {
             i -> val(positions.get(i), p.POSITION),
             i -> val(found.get(i).javaName(), p.JOOQ_NAME),
             i -> val(found.get(i).bindingType(), p.BINDING_TYPE),
+            i -> val(elementClassOf(found.get(i).bindingType()), p.ELEMENT_CLASS),
+            i -> val(deliveryOf(found.get(i).bindingType()), p.DELIVERY),
             i -> val(found.get(i).sqlName(), p.SQL_NAME),
             i -> val(touchedAt, p.TOUCHED_AT)));
         BindBatch.execute(dsl, parameterRows, markers ->
             dsl.insertInto(p, p.SOURCE_NAME, p.TABLE_SCHEMA, p.ROUTINE_NAME, p.POSITION, p.JOOQ_NAME,
-                    p.BINDING_TYPE, p.SQL_NAME, p.TOUCHED_AT)
+                    p.BINDING_TYPE, p.ELEMENT_CLASS, p.DELIVERY, p.SQL_NAME, p.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(p.JOOQ_NAME, excluded(p.JOOQ_NAME))
                 .set(p.BINDING_TYPE, excluded(p.BINDING_TYPE))
+                .set(p.ELEMENT_CLASS, excluded(p.ELEMENT_CLASS))
+                .set(p.DELIVERY, excluded(p.DELIVERY))
                 .set(p.SQL_NAME, excluded(p.SQL_NAME))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
     }

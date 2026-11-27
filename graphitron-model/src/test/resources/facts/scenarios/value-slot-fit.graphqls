@@ -1,0 +1,52 @@
+# Where a value that is no node id lands in Java, and whether it fits there, one place per call
+# parameter an argument fills, by which arrival answers the parameter's class.
+#
+# Query.byActor hands an Int to a routine parameter taking a java.lang.Integer: EXACT. Query.byIds
+# hands a list of Int to one taking an Integer[], each element EXACT and both many. Query.byAnything hands an Int to a service parameter taking Object, which takes it whole:
+# UNTYPED. Query.byStart hands the startType component of a generated scalar to one taking a String:
+# COMPONENT. Each fits. An enum taken as a class outside java., ANY_NON_JDK, is value-slot-misfit's
+# near miss, a routine's enum parameter not generating before the routine read does, and the places
+# that do not fit are that document's too.
+
+scalar Path @generatedScalar(kind: SCHEMA_PATH)
+
+type FilmRow {
+  filmId: Int @field(name: "film_id")
+  title: String
+}
+
+type IdRow {
+  filmId: Int @field(name: "film_id")
+}
+
+type Query {
+  byActor(actorId: Int!, minLength: Int!): [FilmRow!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byIds(ids: [Int!]!): [IdRow!]
+    @routine(name: "films_by_ids", argMapping: "pFilmIds: ids")
+    @defaultOrder(fields: [{name: "film_id"}])
+  byAnything(value: Int): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byAnything"})
+  byStart(path: Path): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle", argMapping: "title: path.startType"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_value_slot",
+    where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate,                 kind,      stated_by, element_class,                                                  takes_many, arrives_many, arrival_kind, fits
+  Query.byActor(actorId:),    PARAMETER, ROUTINE,   java.lang.Integer,                                              FALSE,      FALSE,        EXACT,        TRUE
+  Query.byActor(minLength:),  PARAMETER, ROUTINE,   java.lang.Integer,                                              FALSE,      FALSE,        EXACT,        TRUE
+  Query.byAnything(value:),   PARAMETER, SERVICE,   java.lang.Object,                                               FALSE,      FALSE,        UNTYPED,      TRUE
+  Query.byIds(ids:),          PARAMETER, ROUTINE,   java.lang.Integer,                                              TRUE,       TRUE,         EXACT,        TRUE
+  Query.byStart(path:),       PARAMETER, SERVICE,   java.lang.String,                                               FALSE,      FALSE,        COMPONENT,    TRUE
+  """)
+
+# Each place, the parameter it is.
+extend schema @expectEquals(relation: "graphitron_occurrence_value_slot_parameter",
+    where: "call_coordinate IN ('Query.byStart', 'Query.byIds')", rows: """
+  call_coordinate, call,     position, coordinate,           kind,      call_kind
+  Query.byIds,     producer, 0,        Query.byIds(ids:),    PARAMETER, ROUTINE
+  Query.byStart,   producer, 0,        Query.byStart(path:), PARAMETER, SERVICE
+  """)
+
