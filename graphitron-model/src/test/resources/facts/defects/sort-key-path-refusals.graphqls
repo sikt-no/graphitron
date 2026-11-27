@@ -28,8 +28,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code IN
   20,          SORT_KEY_COLUMN_OFF_PATH,    public.language
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_hop", rows: """
-  coordinate,                    hop, constraint_name,                direction, from_table, to_table, to_one
+extend schema @expectEquals(relation: "graphitron_order_sort_key_hop", rows: """
+  choice,                        hop, constraint_name,                direction, from_table, to_table, to_one
   Query.filmsByOriginalLanguage, 0,   film_original_language_id_fkey, FORWARD,   film,       language, TRUE
   Query.filmsByCondition,        0,   film_language_id_fkey,          FORWARD,   film,       language, TRUE
   Query.languagesByFilm,         0,   film_language_id_fkey,          BACKWARD,  language,   film,     FALSE
@@ -38,13 +38,13 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_hop", rows
 
 # A whole path lands where its last hop does, whether or not its name is a column there; a path a
 # hop refuses, or a condition, lands nowhere.
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_landing", rows: """
-  coordinate,                    kind, to_table
+extend schema @expectEquals(relation: "graphitron_order_sort_key_landing", rows: """
+  choice,                        kind, to_table
   Query.filmsByOriginalLanguage, PATH, language
   Query.filmsByNoColumn,         PATH, language
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", rows: """
-  coordinate,                    kind, table_name, column_name
+extend schema @expectEquals(relation: "graphitron_order_sort_key_column", rows: """
+  choice,                        kind, table_name, column_name
   Query.filmsByOriginalLanguage, PATH, language,   name
   """)

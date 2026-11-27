@@ -10,21 +10,23 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_INDEX;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_INDEX_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INDEX;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INDEX_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_COLUMN_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_HOP_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_LANDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_LANDING_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SORT_ENUM;
@@ -42,7 +44,8 @@ import static org.jooq.impl.DSL.val;
  *
  * <p>After {@link OccurrenceLookupKeys}, reading only what {@link OccurrenceBindings} and the stages
  * before it wrote: the table a list's binding reads and the catalog. Each relation is written after the one its rule reads, the argument shapes before the
- * orders their choices are, the orders before their keys, a key before its column, and the
+ * orders their choices are, each occurrence's orders before the orders they name, stated once, an
+ * order before its keys, a key before its column, and the
  * keys identifying a list's rows before the completion that reads them and the written columns. A
  * sort key's path is written a hop at a time after the keys, the table a whole path lands on after
  * its hops, and the column it lands on with the columns the other keys read, after that.
@@ -56,12 +59,13 @@ public final class OccurrenceOrderings {
         replace(dsl, GRAPHITRON_SORT_ENUM, GRAPHITRON_SORT_ENUM_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_ORDER_INPUT, GRAPHITRON_ORDER_INPUT_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_ORDER, GRAPHITRON_OCCURRENCE_ORDER_RULE, graph, touchedAt);
-        replace(dsl, GRAPHITRON_OCCURRENCE_ORDER_INDEX, GRAPHITRON_OCCURRENCE_ORDER_INDEX_RULE, graph, touchedAt);
-        replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY, GRAPHITRON_OCCURRENCE_SORT_KEY_RULE, graph, touchedAt);
+        replace(dsl, GRAPHITRON_ORDER, GRAPHITRON_ORDER_RULE, graph, touchedAt);
+        replace(dsl, GRAPHITRON_ORDER_INDEX, GRAPHITRON_ORDER_INDEX_RULE, graph, touchedAt);
+        replace(dsl, GRAPHITRON_ORDER_SORT_KEY, GRAPHITRON_ORDER_SORT_KEY_RULE, graph, touchedAt);
         hops(dsl, graph, touchedAt);
-        replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING, GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING_RULE, graph,
+        replace(dsl, GRAPHITRON_ORDER_SORT_KEY_LANDING, GRAPHITRON_ORDER_SORT_KEY_LANDING_RULE, graph,
             touchedAt);
-        replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE, graph,
+        replace(dsl, GRAPHITRON_ORDER_SORT_KEY_COLUMN, GRAPHITRON_ORDER_SORT_KEY_COLUMN_RULE, graph,
             touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE,
             graph, touchedAt);
@@ -79,8 +83,8 @@ public final class OccurrenceOrderings {
      */
     @SuppressWarnings("unchecked")
     private static void hops(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var h = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
-        var r = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP_RULE;
+        var h = GRAPHITRON_ORDER_SORT_KEY_HOP;
+        var r = GRAPHITRON_ORDER_SORT_KEY_HOP_RULE;
         dsl.deleteFrom(h).where(h.GRAPH_NAME.eq(graph)).execute();
         var columns = new ArrayList<Field<?>>();
         var selected = new ArrayList<Field<?>>();

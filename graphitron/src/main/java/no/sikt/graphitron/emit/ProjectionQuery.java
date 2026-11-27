@@ -26,9 +26,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_HOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
@@ -338,8 +338,8 @@ public final class ProjectionQuery {
      */
     private static Map<String, ListRead> lists(StoreHandle store) {
         var r = GRAPHITRON_OCCURRENCE_ORDER;
-        var k = GRAPHITRON_OCCURRENCE_SORT_KEY;
-        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var k = GRAPHITRON_ORDER_SORT_KEY;
+        var kc = GRAPHITRON_ORDER_SORT_KEY_COLUMN;
         var c = SQL_COLUMN;
         var ev = GRAPHITRON_ENUM_VALUE;
         var ao = GRAPHITRON_OCCURRENCE.as("ao");
@@ -355,10 +355,8 @@ public final class ProjectionQuery {
                 oi.DIRECTION_FIELD_NAME, k.DIRECTION, k.COLLATION, kc.TABLE_SOURCE_NAME, kc.TABLE_SCHEMA,
                 kc.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.NULLABLE, r.CHOICE, k.POSITION, k.KIND)
             .from(r)
-            .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.COORDINATE.eq(r.COORDINATE), k.BOUND.eq(r.BOUND),
-                k.CHOICE.eq(r.CHOICE))
-            .leftJoin(kc).on(kc.GRAPH_NAME.eq(k.GRAPH_NAME), kc.COORDINATE.eq(k.COORDINATE), kc.BOUND.eq(k.BOUND),
-                kc.CHOICE.eq(k.CHOICE), kc.POSITION.eq(k.POSITION))
+            .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.CHOICE.eq(r.CHOICE), k.READ_SOURCE_NAME.eq(r.READ_SOURCE_NAME), k.READ_SCHEMA.eq(r.READ_SCHEMA), k.READ_TABLE.eq(r.READ_TABLE))
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(k.GRAPH_NAME), kc.CHOICE.eq(k.CHOICE), kc.READ_SOURCE_NAME.eq(k.READ_SOURCE_NAME), kc.READ_SCHEMA.eq(k.READ_SCHEMA), kc.READ_TABLE.eq(k.READ_TABLE), kc.POSITION.eq(k.POSITION))
             .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
             .leftJoin(ev).on(ev.GRAPH_NAME.eq(r.GRAPH_NAME), ev.COORDINATE.eq(r.CHOICE), r.KIND.eq("CHOICE"))
@@ -507,7 +505,8 @@ public final class ProjectionQuery {
      * reaches and the column pairs it joins on, from the side it leaves to the side it reaches.
      */
     private static Map<List<Object>, List<Step>> hops(StoreHandle store) {
-        var h = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+        var h = GRAPHITRON_ORDER_SORT_KEY_HOP;
+        var od = GRAPHITRON_OCCURRENCE_ORDER;
         var t = SQL_TABLE;
         var sch = SQL_SCHEMA;
         var rcc = SQL_REFERENTIAL_CONSTRAINT_COLUMN;
@@ -532,13 +531,15 @@ public final class ProjectionQuery {
             .orderBy(rcc.POSITION));
         var hops = new LinkedHashMap<List<Object>, List<Step>>();
         store.dsl()
-            .select(h.COORDINATE, h.CHOICE, h.POSITION, h.HOP, h.DIRECTION, h.FROM_SOURCE_NAME, h.FROM_SCHEMA,
+            .select(od.COORDINATE, h.CHOICE, h.POSITION, h.HOP, h.DIRECTION, h.FROM_SOURCE_NAME, h.FROM_SCHEMA,
                 h.FROM_TABLE, h.TO_SOURCE_NAME, h.TO_SCHEMA, h.TO_TABLE, sch.TABLES_CLASS_FQN, t.JOOQ_NAME, pairs)
             .from(h)
+            // The occurrences reading the order the hop belongs to.
+            .join(od).on(od.GRAPH_NAME.eq(h.GRAPH_NAME), od.CHOICE.eq(h.CHOICE), od.READ_SOURCE_NAME.eq(h.READ_SOURCE_NAME), od.READ_SCHEMA.eq(h.READ_SCHEMA), od.READ_TABLE.eq(h.READ_TABLE))
             .join(t).on(t.SOURCE_NAME.eq(h.TO_SOURCE_NAME), t.TABLE_SCHEMA.eq(h.TO_SCHEMA), t.TABLE_NAME.eq(h.TO_TABLE))
             .join(sch).on(sch.SOURCE_NAME.eq(t.SOURCE_NAME), sch.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
             .where(h.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(h.COORDINATE, h.CHOICE, h.POSITION, h.HOP)
+            .orderBy(od.COORDINATE, h.CHOICE, h.POSITION, h.HOP)
             .forEach(row -> {
                 boolean forward = "FORWARD".equals(row.value5());
                 var joined = row.value14().map(pair -> forward

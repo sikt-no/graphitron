@@ -55,10 +55,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_NOD
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READ_SCOPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_HOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -517,7 +517,7 @@ public final class RootQuery {
         var oc = GRAPHITRON_OCCURRENCE_CONNECTION;
         var da = GRAPHITRON_DIRECTIVE_APPLICATION;
         var od = GRAPHITRON_OCCURRENCE_ORDER;
-        var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
+        var sk = GRAPHITRON_ORDER_SORT_KEY;
         var gc = GRAPHITRON_CONNECTION;
         var ge = GRAPHITRON_EDGE;
         var te = GRAPHITRON_TABLETYPE.as("te");
@@ -540,15 +540,17 @@ public final class RootQuery {
                     da.DIRECTIVE_NAME.eq("pivot")))),
                 field(exists(selectOne().from(od).where(od.GRAPH_NAME.eq(p.GRAPH_NAME), od.COORDINATE.eq(p.COORDINATE),
                     od.KIND.ne("DEFAULT")))),
-                field(exists(selectOne().from(sk).where(sk.GRAPH_NAME.eq(p.GRAPH_NAME), sk.COORDINATE.eq(p.COORDINATE),
+                field(exists(selectOne().from(od).join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.CHOICE.eq(od.CHOICE), sk.READ_SOURCE_NAME.eq(od.READ_SOURCE_NAME), sk.READ_SCHEMA.eq(od.READ_SCHEMA), sk.READ_TABLE.eq(od.READ_TABLE))
+                    .where(od.GRAPH_NAME.eq(p.GRAPH_NAME), od.COORDINATE.eq(p.COORDINATE),
                     sk.KIND.ne("COLUMN"),
                     // A key the store does not state whole: a path landing on no column.
-                    notExists(selectOne().from(GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN).where(
-                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.GRAPH_NAME.eq(sk.GRAPH_NAME),
-                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.COORDINATE.eq(sk.COORDINATE),
-                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.BOUND.eq(sk.BOUND),
-                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.CHOICE.eq(sk.CHOICE),
-                        GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN.POSITION.eq(sk.POSITION)))))),
+                    notExists(selectOne().from(GRAPHITRON_ORDER_SORT_KEY_COLUMN).where(
+                        GRAPHITRON_ORDER_SORT_KEY_COLUMN.GRAPH_NAME.eq(sk.GRAPH_NAME),
+                        GRAPHITRON_ORDER_SORT_KEY_COLUMN.CHOICE.eq(sk.CHOICE),
+                        GRAPHITRON_ORDER_SORT_KEY_COLUMN.READ_SOURCE_NAME.eq(sk.READ_SOURCE_NAME),
+                        GRAPHITRON_ORDER_SORT_KEY_COLUMN.READ_SCHEMA.eq(sk.READ_SCHEMA),
+                        GRAPHITRON_ORDER_SORT_KEY_COLUMN.READ_TABLE.eq(sk.READ_TABLE),
+                        GRAPHITRON_ORDER_SORT_KEY_COLUMN.POSITION.eq(sk.POSITION)))))),
                 field(exists(selectOne().from(tt).where(tt.GRAPH_NAME.eq(ft.GRAPH_NAME),
                     tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME), tt.TABLE_SOURCE_NAME.eq(r.TABLE_SOURCE_NAME),
                     tt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA), tt.TABLE_NAME.eq(r.TABLE_NAME)))),
@@ -824,8 +826,13 @@ public final class RootQuery {
             .where(x.GRAPH_NAME.eq(graph), x.COORDINATE.eq(coordinate), x.RECOGNIZED_BY.eq("TABLE"))
             .orderBy(x.PARTICIPANT_TYPE)
             .fetch();
-        var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
-        if (store.dsl().fetchExists(sk, sk.GRAPH_NAME.eq(graph), sk.COORDINATE.eq(coordinate), sk.KIND.ne("COLUMN"))) {
+        var sk = GRAPHITRON_ORDER_SORT_KEY;
+        var od = GRAPHITRON_OCCURRENCE_ORDER;
+        if (store.dsl().fetchExists(selectOne().from(od)
+                .join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.CHOICE.eq(od.CHOICE),
+                    sk.READ_SOURCE_NAME.eq(od.READ_SOURCE_NAME), sk.READ_SCHEMA.eq(od.READ_SCHEMA),
+                    sk.READ_TABLE.eq(od.READ_TABLE))
+                .where(od.GRAPH_NAME.eq(graph), od.COORDINATE.eq(coordinate), sk.KIND.ne("COLUMN")))) {
             return new NotYet(coordinate, Reason.SORT_KEY_NOT_A_COLUMN);
         }
         var rsc = GRAPHITRON_OCCURRENCE_READ_SCOPE;
@@ -924,8 +931,8 @@ public final class RootQuery {
                                    boolean connection) {
         var graph = store.graphName();
         var od = GRAPHITRON_OCCURRENCE_ORDER;
-        var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
-        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var sk = GRAPHITRON_ORDER_SORT_KEY;
+        var kc = GRAPHITRON_ORDER_SORT_KEY_COLUMN;
         var ev = GRAPHITRON_ENUM_VALUE;
         var c = SQL_COLUMN;
         var rows = store.dsl()
@@ -933,10 +940,8 @@ public final class RootQuery {
                 c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE, c.NULLABLE)
             .from(od)
             .leftJoin(ev).on(ev.GRAPH_NAME.eq(od.GRAPH_NAME), ev.COORDINATE.eq(od.CHOICE), od.KIND.eq("CHOICE"))
-            .leftJoin(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.COORDINATE.eq(od.COORDINATE), sk.BOUND.eq(od.BOUND),
-                sk.CHOICE.eq(od.CHOICE))
-            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
-                kc.CHOICE.eq(sk.CHOICE), kc.POSITION.eq(sk.POSITION))
+            .leftJoin(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.CHOICE.eq(od.CHOICE), sk.READ_SOURCE_NAME.eq(od.READ_SOURCE_NAME), sk.READ_SCHEMA.eq(od.READ_SCHEMA), sk.READ_TABLE.eq(od.READ_TABLE))
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.CHOICE.eq(sk.CHOICE), kc.READ_SOURCE_NAME.eq(sk.READ_SOURCE_NAME), kc.READ_SCHEMA.eq(sk.READ_SCHEMA), kc.READ_TABLE.eq(sk.READ_TABLE), kc.POSITION.eq(sk.POSITION))
             .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
             .where(od.GRAPH_NAME.eq(graph), od.COORDINATE.eq(coordinate))
@@ -1052,8 +1057,8 @@ public final class RootQuery {
         var ga = GRAPHITRON_ARGUMENT;
         var oi = GRAPHITRON_ORDER_INPUT;
         var ev = GRAPHITRON_ENUM_VALUE;
-        var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
-        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var sk = GRAPHITRON_ORDER_SORT_KEY;
+        var kc = GRAPHITRON_ORDER_SORT_KEY_COLUMN;
         var sc = GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
         var c = SQL_COLUMN;
         record Head(String argument, String inputType, boolean nonNull, String sortField, String directionField) {}
@@ -1080,10 +1085,8 @@ public final class RootQuery {
             .from(od)
             .join(p).on(p.GRAPH_NAME.eq(od.GRAPH_NAME), p.COORDINATE.eq(od.COORDINATE), p.START.eq("ROOT"))
             .join(ev).on(ev.GRAPH_NAME.eq(od.GRAPH_NAME), ev.COORDINATE.eq(od.CHOICE))
-            .join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.COORDINATE.eq(od.COORDINATE), sk.BOUND.eq(od.BOUND),
-                sk.CHOICE.eq(od.CHOICE))
-            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
-                kc.CHOICE.eq(sk.CHOICE), kc.POSITION.eq(sk.POSITION))
+            .join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.CHOICE.eq(od.CHOICE), sk.READ_SOURCE_NAME.eq(od.READ_SOURCE_NAME), sk.READ_SCHEMA.eq(od.READ_SCHEMA), sk.READ_TABLE.eq(od.READ_TABLE))
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.CHOICE.eq(sk.CHOICE), kc.READ_SOURCE_NAME.eq(sk.READ_SOURCE_NAME), kc.READ_SCHEMA.eq(sk.READ_SCHEMA), kc.READ_TABLE.eq(sk.READ_TABLE), kc.POSITION.eq(sk.POSITION))
             .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
             .where(od.GRAPH_NAME.eq(store.graphName()), od.KIND.eq("CHOICE"))
@@ -1724,7 +1727,8 @@ public final class RootQuery {
      * pairs from the side it leaves to the side it reaches.
      */
     private static Map<List<Object>, List<Hop>> sortKeyHops(StoreHandle store) {
-        var h = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+        var h = GRAPHITRON_ORDER_SORT_KEY_HOP;
+        var od = GRAPHITRON_OCCURRENCE_ORDER;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var k = SQL_CONSTRAINT;
         var s = SQL_SCHEMA;
@@ -1735,16 +1739,18 @@ public final class RootQuery {
         var rcol = SQL_COLUMN.as("rcol");
         var out = new LinkedHashMap<List<Object>, List<Hop>>();
         var rows = store.dsl()
-            .select(h.COORDINATE, h.CHOICE, h.POSITION, h.DIRECTION, h.FROM_SOURCE_NAME, h.FROM_SCHEMA, h.FROM_TABLE,
+            .select(od.COORDINATE, h.CHOICE, h.POSITION, h.DIRECTION, h.FROM_SOURCE_NAME, h.FROM_SCHEMA, h.FROM_TABLE,
                 h.TO_SOURCE_NAME, h.TO_SCHEMA, h.TO_TABLE, h.CONSTRAINT_SOURCE_NAME, h.CONSTRAINT_SCHEMA,
                 h.CONSTRAINT_TABLE, h.CONSTRAINT_NAME, k.JOOQ_NAME, s.KEYS_CLASS_FQN)
             .from(h)
-            .join(p).on(p.GRAPH_NAME.eq(h.GRAPH_NAME), p.COORDINATE.eq(h.COORDINATE), p.START.eq("ROOT"))
+            // The occurrences reading the order the hop belongs to, each a root's.
+            .join(od).on(od.GRAPH_NAME.eq(h.GRAPH_NAME), od.CHOICE.eq(h.CHOICE), od.READ_SOURCE_NAME.eq(h.READ_SOURCE_NAME), od.READ_SCHEMA.eq(h.READ_SCHEMA), od.READ_TABLE.eq(h.READ_TABLE))
+            .join(p).on(p.GRAPH_NAME.eq(od.GRAPH_NAME), p.COORDINATE.eq(od.COORDINATE), p.START.eq("ROOT"))
             .join(k).on(k.SOURCE_NAME.eq(h.CONSTRAINT_SOURCE_NAME), k.TABLE_SCHEMA.eq(h.CONSTRAINT_SCHEMA),
                 k.TABLE_NAME.eq(h.CONSTRAINT_TABLE), k.CONSTRAINT_NAME.eq(h.CONSTRAINT_NAME))
             .join(s).on(s.SOURCE_NAME.eq(k.SOURCE_NAME), s.TABLE_SCHEMA.eq(k.TABLE_SCHEMA))
             .where(h.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(h.COORDINATE, h.CHOICE, h.POSITION, h.HOP)
+            .orderBy(od.COORDINATE, h.CHOICE, h.POSITION, h.HOP)
             .fetch();
         for (var row : rows) {
             boolean forward = "FORWARD".equals(row.value4());
@@ -1785,8 +1791,8 @@ public final class RootQuery {
      */
     private static Map<String, List<Key>> orders(StoreHandle store) {
         var od = GRAPHITRON_OCCURRENCE_ORDER;
-        var sk = GRAPHITRON_OCCURRENCE_SORT_KEY;
-        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var sk = GRAPHITRON_ORDER_SORT_KEY;
+        var kc = GRAPHITRON_ORDER_SORT_KEY_COLUMN;
         var sc = GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
         var c = SQL_COLUMN;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -1797,10 +1803,8 @@ public final class RootQuery {
                 sk.DIRECTION, sk.COLLATION, sk.KIND, sk.CHOICE, sk.POSITION)
             .from(od)
             .join(p).on(p.GRAPH_NAME.eq(od.GRAPH_NAME), p.COORDINATE.eq(od.COORDINATE), p.START.eq("ROOT"))
-            .join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.COORDINATE.eq(od.COORDINATE), sk.BOUND.eq(od.BOUND),
-                sk.CHOICE.eq(od.CHOICE))
-            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.COORDINATE.eq(sk.COORDINATE), kc.BOUND.eq(sk.BOUND),
-                kc.CHOICE.eq(sk.CHOICE), kc.POSITION.eq(sk.POSITION))
+            .join(sk).on(sk.GRAPH_NAME.eq(od.GRAPH_NAME), sk.CHOICE.eq(od.CHOICE), sk.READ_SOURCE_NAME.eq(od.READ_SOURCE_NAME), sk.READ_SCHEMA.eq(od.READ_SCHEMA), sk.READ_TABLE.eq(od.READ_TABLE))
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(sk.GRAPH_NAME), kc.CHOICE.eq(sk.CHOICE), kc.READ_SOURCE_NAME.eq(sk.READ_SOURCE_NAME), kc.READ_SCHEMA.eq(sk.READ_SCHEMA), kc.READ_TABLE.eq(sk.READ_TABLE), kc.POSITION.eq(sk.POSITION))
             .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
             .where(od.GRAPH_NAME.eq(store.graphName()), od.KIND.eq("DEFAULT"))

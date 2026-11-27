@@ -32,11 +32,20 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "coordinate = 'Category.filmsChosen'", rows: """
-  choice,                        kind,    surface,              argument_coordinate
-  Category.filmsChosen,          DEFAULT, IMPLICIT_PRIMARY_KEY,
-  FilmSort.LENGTH,               CHOICE,  FIELDS,               Category.filmsChosen(order:)
-  FilmSort.NAME_C,               CHOICE,  FIELDS,               Category.filmsChosen(order:)
-  FilmSort.TITLE,                CHOICE,  FIELDS,               Category.filmsChosen(order:)
+  choice,               kind,    argument_coordinate
+  Category.filmsChosen, DEFAULT,
+  FilmSort.LENGTH,      CHOICE,  Category.filmsChosen(order:)
+  FilmSort.NAME_C,      CHOICE,  Category.filmsChosen(order:)
+  FilmSort.TITLE,       CHOICE,  Category.filmsChosen(order:)
+  """)
+
+extend schema @expectEquals(relation: "graphitron_order",
+    where: "choice IN ('Category.filmsChosen', 'FilmSort.LENGTH', 'FilmSort.NAME_C', 'FilmSort.TITLE')", rows: """
+  choice,               surface
+  Category.filmsChosen, IMPLICIT_PRIMARY_KEY
+  FilmSort.LENGTH,      FIELDS
+  FilmSort.NAME_C,      FIELDS
+  FilmSort.TITLE,       FIELDS
   """)
 # What each @order field list says, as written: an element per position in the order the author wrote
 # them, each element's own fields beside it.

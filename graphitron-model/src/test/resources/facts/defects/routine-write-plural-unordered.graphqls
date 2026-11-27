@@ -45,9 +45,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_input_order", rows:
   Mutation.rentFilmsUnordered,    Mutation.rentFilmsUnordered(inventoryIds:),    WRITE_SHAPE
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column",
-    where: "coordinate LIKE 'Mutation.%'", rows: """
-  coordinate,                table_name,          column_name
+extend schema @expectEquals(relation: "graphitron_order_sort_key_column",
+    where: "choice LIKE 'Mutation.%'", rows: """
+  choice,                    table_name,          column_name
   Mutation.rentFilmsInOrder, rent_films_in_order, input_index
   """)
 
@@ -59,8 +59,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect",
   33,          ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN, last_name
   """)
 
-extend schema @assertAbsent(relation: "graphitron_occurrence_sort_key_hop", rows: """
-  coordinate
+extend schema @assertAbsent(relation: "graphitron_order_sort_key_hop", rows: """
+  choice
   Mutation.rentFilmsByCustomerKey
   """)
 

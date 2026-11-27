@@ -25,13 +25,13 @@ type Query {
     filmsPicked(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(fields: [{name: "title"}])
 }
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column",
-    where: "coordinate = 'Query.filmsPicked'", rows: """
-  coordinate,        choice,                     position, column_name
-  Query.filmsPicked, Query.filmsPicked,          0,        title
-  Query.filmsPicked, FilmSort.FILM_ID,           0,        film_id
-  Query.filmsPicked, FilmSort.LENGTH,            0,        length
-  Query.filmsPicked, FilmSort.ORIGINAL_LANGUAGE, 0,        name
-  Query.filmsPicked, FilmSort.TITLE,             0,        title
-  Query.filmsPicked, FilmSort.TITLE_DESC,        0,        title
+extend schema @expectEquals(relation: "graphitron_order_sort_key_column",
+    where: "choice <> 'Query.filmsComposed'", rows: """
+  choice,                     read_table, position, column_name
+  Query.filmsPicked,          film,       0,        title
+  FilmSort.FILM_ID,           film,       0,        film_id
+  FilmSort.LENGTH,            film,       0,        length
+  FilmSort.ORIGINAL_LANGUAGE, film,       0,        name
+  FilmSort.TITLE,             film,       0,        title
+  FilmSort.TITLE_DESC,        film,       0,        title
   """)

@@ -85,58 +85,75 @@ interface Node {
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", rows: """
-  coordinate, bound, choice, kind, surface, argument_coordinate
-  Film.actors, public.actor, Film.actors, DEFAULT, FIELDS,
-  Film.actorsByIndex, public.actor, Film.actorsByIndex, DEFAULT, INDEX,
-  Query.actorsOrdered, public.actor, ActorSort.ACTOR_ID, CHOICE, PRIMARY_KEY, Query.actorsOrdered(order:)
-  Query.actorsOrdered, public.actor, ActorSort.BY_INDEX, CHOICE, INDEX, Query.actorsOrdered(order:)
-  Query.actorsOrdered, public.actor, ActorSort.LAST_NAME, CHOICE, FIELDS, Query.actorsOrdered(order:)
-  Query.actorsOrdered, public.actor, Query.actorsOrdered, DEFAULT, IMPLICIT_PRIMARY_KEY,
-  Language.films, public.film, Language.films, DEFAULT, FIELDS,
-  Query.films, public.film, Query.films, DEFAULT, IMPLICIT_PRIMARY_KEY,
-  Query.holders, public.role_holder, Query.holders, DEFAULT, IMPLICIT_PRIMARY_KEY,
-  Query.stints, public.stint, Query.stints, DEFAULT, FIELDS,
-  Query.stores, public.store, Query.stores, DEFAULT, IMPLICIT_PRIMARY_KEY,
-  RoleHolder.roles, public.role_assignment, RoleHolder.roles, DEFAULT, FIELDS,
-  Store.films, public.film, Store.films, DEFAULT, FIELDS,
+  coordinate,          bound,                  choice,              kind,    argument_coordinate
+  Film.actors,         public.actor,           Film.actors,         DEFAULT,
+  Film.actorsByIndex,  public.actor,           Film.actorsByIndex,  DEFAULT,
+  Query.actorsOrdered, public.actor,           ActorSort.ACTOR_ID,  CHOICE,  Query.actorsOrdered(order:)
+  Query.actorsOrdered, public.actor,           ActorSort.BY_INDEX,  CHOICE,  Query.actorsOrdered(order:)
+  Query.actorsOrdered, public.actor,           ActorSort.LAST_NAME, CHOICE,  Query.actorsOrdered(order:)
+  Query.actorsOrdered, public.actor,           Query.actorsOrdered, DEFAULT,
+  Language.films,      public.film,            Language.films,      DEFAULT,
+  Query.films,         public.film,            Query.films,         DEFAULT,
+  Query.holders,       public.role_holder,     Query.holders,       DEFAULT,
+  Query.stints,        public.stint,           Query.stints,        DEFAULT,
+  Query.stores,        public.store,           Query.stores,        DEFAULT,
+  RoleHolder.roles,    public.role_assignment, RoleHolder.roles,    DEFAULT,
+  Store.films,         public.film,            Store.films,         DEFAULT,
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key", rows: """
-  coordinate, choice, position, kind, direction, collation
-  Film.actors, Film.actors, 0, COLUMN, DESC, C
-  Film.actors, Film.actors, 1, COLUMN, ASC, 
-  Film.actorsByIndex, Film.actorsByIndex, 0, COLUMN, DESC, 
-  Query.actorsOrdered, ActorSort.ACTOR_ID, 0, COLUMN, ASC, 
-  Query.actorsOrdered, ActorSort.BY_INDEX, 0, COLUMN, ASC, 
-  Query.actorsOrdered, ActorSort.LAST_NAME, 0, COLUMN, DESC, 
-  Query.actorsOrdered, Query.actorsOrdered, 0, COLUMN, ASC, 
-  Language.films, Language.films, 0, COLUMN, DESC, 
-  Language.films, Language.films, 1, COLUMN, ASC, 
-  Query.films, Query.films, 0, COLUMN, ASC, 
-  Query.holders, Query.holders, 0, COLUMN, ASC, 
-  Query.stints, Query.stints, 0, COLUMN, ASC, 
-  Query.stores, Query.stores, 0, COLUMN, ASC, 
-  RoleHolder.roles, RoleHolder.roles, 0, COLUMN, ASC, 
-  Store.films, Store.films, 0, PATH, ASC, 
+extend schema @expectEquals(relation: "graphitron_order", rows: """
+  choice,              read_table,      surface
+  ActorSort.ACTOR_ID,  actor,           PRIMARY_KEY
+  ActorSort.BY_INDEX,  actor,           INDEX
+  ActorSort.LAST_NAME, actor,           FIELDS
+  Film.actors,         actor,           FIELDS
+  Film.actorsByIndex,  actor,           INDEX
+  Language.films,      film,            FIELDS
+  Query.actorsOrdered, actor,           IMPLICIT_PRIMARY_KEY
+  Query.films,         film,            IMPLICIT_PRIMARY_KEY
+  Query.holders,       role_holder,     IMPLICIT_PRIMARY_KEY
+  Query.stints,        stint,           FIELDS
+  Query.stores,        store,           IMPLICIT_PRIMARY_KEY
+  RoleHolder.roles,    role_assignment, FIELDS
+  Store.films,         film,            FIELDS
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", rows: """
-  coordinate, choice, position, column_name
-  Film.actors, Film.actors, 0, last_name
-  Film.actors, Film.actors, 1, first_name
-  Film.actorsByIndex, Film.actorsByIndex, 0, last_name
-  Query.actorsOrdered, ActorSort.ACTOR_ID, 0, actor_id
-  Query.actorsOrdered, ActorSort.BY_INDEX, 0, last_name
-  Query.actorsOrdered, ActorSort.LAST_NAME, 0, last_name
-  Query.actorsOrdered, Query.actorsOrdered, 0, actor_id
-  Language.films, Language.films, 0, title
-  Language.films, Language.films, 1, film_id
-  Query.films, Query.films, 0, film_id
-  Query.holders, Query.holders, 0, holder_id
-  Query.stints, Query.stints, 0, valid_from
-  Query.stores, Query.stores, 0, store_id
-  RoleHolder.roles, RoleHolder.roles, 0, role_code
-  Store.films, Store.films, 0, name
+extend schema @expectEquals(relation: "graphitron_order_sort_key", rows: """
+  choice,              read_table,      position, kind,   direction, collation
+  Film.actors,         actor,           0,        COLUMN, DESC,      C
+  Film.actors,         actor,           1,        COLUMN, ASC,
+  Film.actorsByIndex,  actor,           0,        COLUMN, DESC,
+  ActorSort.ACTOR_ID,  actor,           0,        COLUMN, ASC,
+  ActorSort.BY_INDEX,  actor,           0,        COLUMN, ASC,
+  ActorSort.LAST_NAME, actor,           0,        COLUMN, DESC,
+  Query.actorsOrdered, actor,           0,        COLUMN, ASC,
+  Language.films,      film,            0,        COLUMN, DESC,
+  Language.films,      film,            1,        COLUMN, ASC,
+  Query.films,         film,            0,        COLUMN, ASC,
+  Query.holders,       role_holder,     0,        COLUMN, ASC,
+  Query.stints,        stint,           0,        COLUMN, ASC,
+  Query.stores,        store,           0,        COLUMN, ASC,
+  RoleHolder.roles,    role_assignment, 0,        COLUMN, ASC,
+  Store.films,         film,            0,        PATH,   ASC,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_order_sort_key_column", rows: """
+  choice,              read_table,      position, column_name
+  Film.actors,         actor,           0,        last_name
+  Film.actors,         actor,           1,        first_name
+  Film.actorsByIndex,  actor,           0,        last_name
+  ActorSort.ACTOR_ID,  actor,           0,        actor_id
+  ActorSort.BY_INDEX,  actor,           0,        last_name
+  ActorSort.LAST_NAME, actor,           0,        last_name
+  Query.actorsOrdered, actor,           0,        actor_id
+  Language.films,      film,            0,        title
+  Language.films,      film,            1,        film_id
+  Query.films,         film,            0,        film_id
+  Query.holders,       role_holder,     0,        holder_id
+  Query.stints,        stint,           0,        valid_from
+  Query.stores,        store,           0,        store_id
+  RoleHolder.roles,    role_assignment, 0,        role_code
+  Store.films,         film,            0,        name
   """)
 
 # What identifies each list's rows, ranked: the primary key, else the node key standing in over a
@@ -175,10 +192,10 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
   """)
 
 # The index each INDEX order sorts by, matched once; the keys above read its columns from here.
-extend schema @expectEquals(relation: "graphitron_occurrence_order_index", rows: """
-  coordinate,          choice,             index_table, index_name
-  Film.actorsByIndex,  Film.actorsByIndex, actor,       idx_actor_last_name
-  Query.actorsOrdered, ActorSort.BY_INDEX, actor,       idx_actor_last_name
+extend schema @expectEquals(relation: "graphitron_order_index", rows: """
+  choice,             read_table, index_table, index_name
+  Film.actorsByIndex, actor,      actor,       idx_actor_last_name
+  ActorSort.BY_INDEX, actor,      actor,       idx_actor_last_name
   """)
 
 extend schema @expectEquals(relation: "graphitron_order_input", rows: """

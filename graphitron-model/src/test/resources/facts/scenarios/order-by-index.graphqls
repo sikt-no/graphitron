@@ -26,9 +26,9 @@ extend schema @expectEquals(relation: "graphitron_ast_order_entry", rows: """
   ,                   TRUE
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", rows: """
-  coordinate,  choice,                    position, column_name
-  Query.films, Query.films,               0,        film_id
-  Query.films, FilmOrderByField.LANGUAGE, 0,        language_id
-  Query.films, FilmOrderByField.TITLE,    0,        title
+extend schema @expectEquals(relation: "graphitron_order_sort_key_column", rows: """
+  choice,                    read_table, position, column_name
+  Query.films,               film,       0,        film_id
+  FilmOrderByField.LANGUAGE, film,       0,        language_id
+  FilmOrderByField.TITLE,    film,       0,        title
   """)

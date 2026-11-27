@@ -318,7 +318,7 @@ class SupertypeSignatureGateTest {
         // A sort key's column, a primary key's or an index's own column in its own order: a key
         // and an index are catalog facts of different kinds, and the order reads either by the
         // surface written, stored as the key's column subtype so its readers stop reconstructing it.
-        "graphitron_occurrence_sort_key_column_rule|sql_constraint_column,sql_index_column",
+        "graphitron_order_sort_key_column_rule|sql_constraint_column,sql_index_column",
         // The key a step rode, written or inferred, read to ask its reach: the sibling pair above,
         // kept apart by decision, so the rule reads both rather than a supertype nobody owes.
         "graphitron_join_path_step_to_one_rule|graphitron_join_path_step_inferred_key,graphitron_join_path_step_key",

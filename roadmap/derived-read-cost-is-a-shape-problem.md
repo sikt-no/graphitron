@@ -3664,6 +3664,16 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 
 ## Retired vocabulary
 
+**An order's keys per occurrence** (2026-11-27). `graphitron_occurrence_order_index`,
+`graphitron_occurrence_sort_key`, `graphitron_occurrence_sort_key_hop`,
+`graphitron_occurrence_sort_key_landing` and `graphitron_occurrence_sort_key_column`, each with its
+`_rule` view, and the grain `occurrence-sort-key-hop`; with them `graphitron_occurrence_order`'s
+`surface` and `direction`. An order's index, keys, hops, landings and columns are stated once per
+written order and table it is read against, in `graphitron_order_index`, `graphitron_order_sort_key`
+and its `_hop`, `_landing` and `_column`, keyed by `graphitron_order`, which holds the surface and
+direction; an occurrence reaches them through its choice and read table. Completion and the
+identifying keys stay per occurrence.
+
 **A recapture reads a catalog whose keys changed under their names, claimed by C** (2026-11-25).
 Reported from opptak's kommunikasjon-utsending: a migration rewritten before it was deployed kept
 `melding_element_fk`'s name and pointed it at a three-column `utsending_element` where it had

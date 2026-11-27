@@ -89,14 +89,26 @@ extend schema @expectEquals(relation: "graphitron_occurrence_filter_term",
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order",
     where: "coordinate IN ('Actor.films', 'Actor.filmsSakila', 'Actor.recentFilms')", rows: """
-  coordinate,        bound,                  choice,                kind,    surface
-  Actor.films,       public.films_for_actor, Actor.films,           DEFAULT, FIELDS
-  Actor.films,       public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE,  FIELDS
-  Actor.films,       public.films_for_actor, ActorFilmSort.TITLE,   CHOICE,  FIELDS
-  Actor.filmsSakila, public.films_for_actor, Actor.filmsSakila,     DEFAULT, FIELDS
-  Actor.filmsSakila, public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE,  FIELDS
-  Actor.filmsSakila, public.films_for_actor, ActorFilmSort.TITLE,   CHOICE,  FIELDS
-  Actor.recentFilms, public.film,            Actor.recentFilms,     DEFAULT, IMPLICIT_PRIMARY_KEY
+  coordinate,        bound,                  choice,                kind
+  Actor.films,       public.films_for_actor, Actor.films,           DEFAULT
+  Actor.films,       public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE
+  Actor.films,       public.films_for_actor, ActorFilmSort.TITLE,   CHOICE
+  Actor.filmsSakila, public.films_for_actor, Actor.filmsSakila,     DEFAULT
+  Actor.filmsSakila, public.films_for_actor, ActorFilmSort.FILM_ID, CHOICE
+  Actor.filmsSakila, public.films_for_actor, ActorFilmSort.TITLE,   CHOICE
+  Actor.recentFilms, public.film,            Actor.recentFilms,     DEFAULT
+  """)
+
+# An order is stated once for the table it is read against: Actor.films and Actor.filmsSakila both
+# pick from ActorFilmSort over films_for_actor, and read one row for each of its orders.
+extend schema @expectEquals(relation: "graphitron_order",
+    where: "choice IN ('Actor.films', 'Actor.filmsSakila', 'Actor.recentFilms', 'ActorFilmSort.FILM_ID', 'ActorFilmSort.TITLE')", rows: """
+  choice,                read_table,      surface
+  Actor.films,           films_for_actor, FIELDS
+  Actor.filmsSakila,     films_for_actor, FIELDS
+  Actor.recentFilms,     film,            IMPLICIT_PRIMARY_KEY
+  ActorFilmSort.FILM_ID, films_for_actor, FIELDS
+  ActorFilmSort.TITLE,   films_for_actor, FIELDS
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_producer", rows: """

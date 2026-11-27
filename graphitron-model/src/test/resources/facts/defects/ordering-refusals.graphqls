@@ -106,16 +106,16 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
-  coordinate,              choice,                  surface
-  Film.actorsSorted,       ActorSort.LAST_NAME,     FIELDS
-  Query.actorsFullySorted, ActorFullSort.LAST_NAME, FIELDS
-  Query.actorsFullySorted, ActorFullSort.ACTOR_ID,  PRIMARY_KEY
-  Query.filmRowsChosen,          ActorFilmChoiceSort.TITLE, FIELDS
-  Query.filmRowsChosenDefaulted, ActorFilmChoiceSort.TITLE, FIELDS
-  Query.filmRowsChosenRequired,  ActorFilmChoiceSort.TITLE, FIELDS
-  Query.rolesChosen,             RoleChoiceSort.CODE,       FIELDS
-  Query.rolesChosenList,         RoleChoiceSort.CODE,       FIELDS
-  Query.rolesChosenRequired,     RoleChoiceSort.CODE,       FIELDS
+  coordinate,                    choice
+  Film.actorsSorted,             ActorSort.LAST_NAME
+  Query.actorsFullySorted,       ActorFullSort.LAST_NAME
+  Query.actorsFullySorted,       ActorFullSort.ACTOR_ID
+  Query.filmRowsChosen,          ActorFilmChoiceSort.TITLE
+  Query.filmRowsChosenDefaulted, ActorFilmChoiceSort.TITLE
+  Query.filmRowsChosenRequired,  ActorFilmChoiceSort.TITLE
+  Query.rolesChosen,             RoleChoiceSort.CODE
+  Query.rolesChosenList,         RoleChoiceSort.CODE
+  Query.rolesChosenRequired,     RoleChoiceSort.CODE
   """)
 
 input ActorUndirectedOrderBy {
@@ -212,3 +212,13 @@ extend type Film {
     actorsByName: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
         @defaultOrder(fields: [{name: "last_name"}])
 }
+
+extend schema @expectEquals(relation: "graphitron_order",
+    where: "choice IN ('ActorFilmChoiceSort.TITLE', 'ActorFullSort.ACTOR_ID', 'ActorFullSort.LAST_NAME', 'ActorSort.LAST_NAME', 'RoleChoiceSort.CODE')", rows: """
+  choice,                    surface
+  ActorFilmChoiceSort.TITLE, FIELDS
+  ActorFullSort.ACTOR_ID,    PRIMARY_KEY
+  ActorFullSort.LAST_NAME,   FIELDS
+  ActorSort.LAST_NAME,       FIELDS
+  RoleChoiceSort.CODE,       FIELDS
+  """)

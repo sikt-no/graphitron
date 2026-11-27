@@ -36,8 +36,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_SORT_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -851,7 +851,7 @@ public final class RoutineWriteQuery {
      * {@code Type.field} coordinate: the keys of the default order stated on its routine's result, in
      * order. A write is plural identifying where {@code graphitron_occurrence_input_order} holds a
      * {@code WRITE_SHAPE} row for it; its default order's keys are read where
-     * {@code graphitron_occurrence_sort_key_column} resolves them on the routine's function table. A
+     * {@code graphitron_order_sort_key_column} resolves them on the routine's function table. A
      * write with no such row, or one stating no order there, has no entry, and its capture keeps the
      * order the routine delivered.
      */
@@ -859,8 +859,8 @@ public final class RoutineWriteQuery {
         var io = GRAPHITRON_OCCURRENCE_INPUT_ORDER;
         var pr = GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
         var r = GRAPHITRON_OCCURRENCE_ORDER;
-        var k = GRAPHITRON_OCCURRENCE_SORT_KEY;
-        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var k = GRAPHITRON_ORDER_SORT_KEY;
+        var kc = GRAPHITRON_ORDER_SORT_KEY_COLUMN;
         var c = SQL_COLUMN;
         var coordinates = admitted.stream().map(o -> o.typeName() + "." + o.fieldName()).toList();
         var byKey = new LinkedHashMap<String, List<OrderKey>>();
@@ -869,10 +869,8 @@ public final class RoutineWriteQuery {
             .from(io)
             .join(pr).on(pr.GRAPH_NAME.eq(io.GRAPH_NAME), pr.COORDINATE.eq(io.COORDINATE))
             .join(r).on(r.GRAPH_NAME.eq(io.GRAPH_NAME), r.COORDINATE.eq(io.COORDINATE), r.KIND.eq("DEFAULT"))
-            .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.COORDINATE.eq(r.COORDINATE), k.BOUND.eq(r.BOUND),
-                k.CHOICE.eq(r.CHOICE))
-            .join(kc).on(kc.GRAPH_NAME.eq(k.GRAPH_NAME), kc.COORDINATE.eq(k.COORDINATE), kc.BOUND.eq(k.BOUND),
-                kc.CHOICE.eq(k.CHOICE), kc.POSITION.eq(k.POSITION),
+            .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.CHOICE.eq(r.CHOICE), k.READ_SOURCE_NAME.eq(r.READ_SOURCE_NAME), k.READ_SCHEMA.eq(r.READ_SCHEMA), k.READ_TABLE.eq(r.READ_TABLE))
+            .join(kc).on(kc.GRAPH_NAME.eq(k.GRAPH_NAME), kc.CHOICE.eq(k.CHOICE), kc.READ_SOURCE_NAME.eq(k.READ_SOURCE_NAME), kc.READ_SCHEMA.eq(k.READ_SCHEMA), kc.READ_TABLE.eq(k.READ_TABLE), kc.POSITION.eq(k.POSITION),
                 kc.TABLE_SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME), kc.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA),
                 kc.TABLE_NAME.eq(pr.ROUTINE_NAME))
             .join(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
