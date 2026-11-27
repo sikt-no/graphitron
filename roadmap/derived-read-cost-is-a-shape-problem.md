@@ -976,6 +976,15 @@ static method needs no holder.
     the walk's units `SortKeyFragments`, `OrderByFragments` and the emitted `<field>SortKey<n>` methods.
     FS main writes no `path:` order (0 of 52 `@order` and 77 `@defaultOrder`), so the synthetic path
     serves sakila and later schemas, not a migration.
+    Every order is typed from its keys to its seek, interface and union connections included (Alf,
+    2026-11-27: "Option A should cover everything"): a chosen order is one generated arm per sort enum
+    value calling its order's method, the page step decoding the cursor into `Field<T1>..<Tn>` and
+    seeking with jOOQ's typed `seek`; a connection over several tables projects each participant's
+    order method into typed slot columns and orders and seeks over the slots by the same types, the
+    wrapped form the spike walked. Every key is a column, of the table or where a path lands, since
+    `@order` takes no `method:` key (Alf, 2026-11-27), so each position's type is its column's, and
+    `ORDER_POSITIONS_DISAGREE` already refuses participants whose keys differ in count or, at a
+    position, in SQL or bound Java type.
   * **A sort key's table element infers its key at the element** `open`. A sort key's `path:`
     element written `{table: ...}` names a table and leaves the foreign key to infer; the walk accepts
     one with no condition, so it still generates at the flip. Today only the join path step rules
