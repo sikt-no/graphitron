@@ -140,7 +140,7 @@ class PopulationHeapProbe {
                 continue;
             }
             try {
-                dsl.execute("DROP VIEW \"" + rule + "\" RESTRICT");
+                dsl.execute("DROP VIEW IF EXISTS \"" + rule + "\" RESTRICT");
                 dropped++;
             } catch (RuntimeException e) {
                 refused.add(rule);

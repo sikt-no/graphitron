@@ -2145,37 +2145,25 @@ population's move to fewer stores (R1131 step 22).
 
 ### A stage runs its rule's text, and the store's schema holds no rule view `open`
 
-A stage's rule is a named SQL file the stage runs, not a view the store's schema creates, so no
-store parses 275 rule views it never reads as views: an empty store goes from 62 to 22 MB live, and
-every store pays it, the test population's, a dev loop's and the language server's (R1131 step 25).
-Views of the rules are created only on an opt-in, for debugging. A stage writes a rule's rows with
-every column explicit on both sides (Alf, 2026-11-27): with `r = T.as("r")`,
-`insertInto(T, T.F1, ...).select(r.F1, ...).from(table("(" + ruleSQL + ")").as("r"))`, the text run
-unparsed and parenthesised, its body naming its columns by the target's names, and a stage's
-constants and its mark given as values in the lists.
+A stage's rule is a SQL file the stage runs, not a view the store's schema creates, so no store
+parses 275 rule views it never reads as views: an empty store goes from 62 to 22 MB live, and every
+store pays it, the test population's, a dev loop's and the language server's (R1131 step 25). A rule
+is its gatherer's private implementation and not model (Alf, 2026-11-27): it is not declared, it sits
+in `<gatherer>/<stage>/<rule>.sql` beside the module's code, and no gatherer or stage reads another's.
+A stage writes a rule's rows with every column explicit on both sides (Alf, 2026-11-27): with
+`r = T.as("r")`, `insertInto(T, T.F1, ...).select(r.F1, ...).from(table("(" + ruleSQL + ")").as("r"))`,
+the text run unparsed and parenthesised, its body naming its columns by the target's names, and a
+stage's constants and its mark given as values in the lists. Whether a private rule is still bound by
+`meta_gatherer_dependency`, the stage order and the shape rules is Alf's to settle; the gates hold the
+files to them meanwhile, as `fact-model.adoc` § grain states.
 
-* **The write shape is on the fact-model page** `open`. `fact-model.adoc` states the ruling in prose
-  and restates as rule files the passages that say a stage writes from a stored `_rule` view (§ grain,
-  and the depth loop's ruling of 2026-11-11), with `modeling-discipline.adoc` and
-  `defects-as-facts.adoc`; it lands with the first slice.
-* **A rule file per rule, named by `meta_stage_rule`** `open`. Each rule is
-  `rules/<rule_name>.sql` under `graphitron-model`'s resources, `meta_stage_rule.rule_view` becomes
-  `rule_name`, and a gate holds a file for every row and a row for every file.
-* **The gates that read rule definitions boot one store with the views on** `open`.
-  `StageOrderGateTest`, `StageRosterGateTest`, `StageRuleGateTest`, `ViewComplexityTest` and
-  `MetaDeclarationGateTest` keep reading H2's catalog from one store the opt-in builds, so an
-  unparsed rule keeps its checks; whether that store's gates bind the verification build is Alf's
-  and Filip's to say.
-* **A rule projects exactly what its stage writes** `blocked`, on "A rule file per rule, named by `meta_stage_rule`". A gate reads each rule's columns from `SELECT * FROM (<text>) r WHERE 1 = 0`,
-  no parser needed, and compares them by name with its stage's insert list less the values the
-  stage supplies.
-* **The first slice runs from rule text** `blocked`, on "A rule file per rule, named by `meta_stage_rule`". `macro-expansion`, whose one store helper writes about twenty rules,
-  the outbox stage through `EntryDefects.derive`'s merge, and one claim stage with a priority
-  constant; an executed plan shows the graph filter pushed into the derived table as into the view.
-* **Every rule runs from its text** `blocked`, on "The first slice runs from rule text". The rest go
-  in mechanical slices; the 47 rules carrying columns their table has not, which a stage reads in
-  Java before it writes (`RuleStatementProbe#everyRuleAgainstItsTable` lists them, the occurrence
-  source claims among them), move as text and keep that Java step.
+* **Every rule runs from its text** `open`. The rest go in mechanical slices, each moving a stage's
+  rules into its folder and dropping their views and their `meta_relation` and `meta_stage_rule` rows;
+  the 47 rules carrying columns their table has not, which a stage reads in Java before it writes
+  (`RuleStatementProbe#everyRuleAgainstItsTable` lists them, the occurrence source claims among
+  them), move as text and keep that Java step.
+* **`meta_stage_rule` is gone** `blocked`, on "Every rule runs from its text". With no rule a view,
+  the gates reading it read each stage's folder, and `defects-as-facts.adoc` says so.
 * **A fact document claims a stored relation, not a rule** `open`. A document claiming a rule view's
   rows claims the relation its stage writes instead, or reads the rule through the stage's select.
 

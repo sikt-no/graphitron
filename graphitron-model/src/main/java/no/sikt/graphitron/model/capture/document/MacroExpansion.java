@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
-import no.sikt.graphitron.model.catalog.GeneratedColumns;
 import no.sikt.graphitron.model.derive.EntryDefects;
+import no.sikt.graphitron.model.rules.RuleText;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -15,29 +15,18 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_INHERITED_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_INHERITED_DIRECTIVE_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_ARRIVAL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_ARRIVAL_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MEMBER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MEMBER_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
@@ -59,15 +48,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
@@ -136,17 +120,56 @@ public final class MacroExpansion {
      */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         // The carriers first, since every minted arm and the authored fields read them.
-        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_CARRIER, GRAPHITRON_CONNECTION_CARRIER_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_CARRIER, "graphitron_connection_carrier_rule",
+            GRAPHITRON_CONNECTION_CARRIER.GRAPH_NAME, GRAPHITRON_CONNECTION_CARRIER.TYPE_NAME,
+            GRAPHITRON_CONNECTION_CARRIER.FIELD_NAME, GRAPHITRON_CONNECTION_CARRIER.COORDINATE,
+            GRAPHITRON_CONNECTION_CARRIER.CONNECTION_NAME, GRAPHITRON_CONNECTION_CARRIER.EDGE_NAME,
+            GRAPHITRON_CONNECTION_CARRIER.ELEMENT_TYPE, GRAPHITRON_CONNECTION_CARRIER.ITEM_SDL,
+            GRAPHITRON_CONNECTION_CARRIER.ITEM_NON_NULL, GRAPHITRON_CONNECTION_CARRIER.NON_NULL,
+            GRAPHITRON_CONNECTION_CARRIER.ORDINAL, GRAPHITRON_CONNECTION_CARRIER.DESCRIPTION,
+            GRAPHITRON_CONNECTION_CARRIER.DEFAULT_FIRST_VALUE, GRAPHITRON_CONNECTION_CARRIER.ARGUMENT_COUNT,
+            GRAPHITRON_CONNECTION_CARRIER.SOURCE_NAME, GRAPHITRON_CONNECTION_CARRIER.SOURCE_LINE,
+            GRAPHITRON_CONNECTION_CARRIER.SOURCE_COLUMN);
         // The facets each carrier surfaces, which the facet mint reads: the applications, then the carriers'.
-        store(dsl, graphName, touchedAt, GRAPHITRON_FACET_BINDING, GRAPHITRON_FACET_BINDING_RULE);
-        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_FACET, GRAPHITRON_CONNECTION_FACET_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_FACET_BINDING, "graphitron_facet_binding_rule",
+            GRAPHITRON_FACET_BINDING.GRAPH_NAME, GRAPHITRON_FACET_BINDING.TYPE_NAME,
+            GRAPHITRON_FACET_BINDING.FIELD_NAME, GRAPHITRON_FACET_BINDING.ORDINAL,
+            GRAPHITRON_FACET_BINDING.COLUMN_NAME, GRAPHITRON_FACET_BINDING.VALUE_TYPE_NAME,
+            GRAPHITRON_FACET_BINDING.VALUE_NULLABLE, GRAPHITRON_FACET_BINDING.REFERENCE_BOUND,
+            GRAPHITRON_FACET_BINDING.SOURCE_NAME, GRAPHITRON_FACET_BINDING.SOURCE_LINE,
+            GRAPHITRON_FACET_BINDING.SOURCE_COLUMN);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_FACET, "graphitron_connection_facet_rule",
+            GRAPHITRON_CONNECTION_FACET.GRAPH_NAME, GRAPHITRON_CONNECTION_FACET.TYPE_NAME,
+            GRAPHITRON_CONNECTION_FACET.FIELD_NAME, GRAPHITRON_CONNECTION_FACET.POSITION,
+            GRAPHITRON_CONNECTION_FACET.FILTER_ARGUMENT_NAME, GRAPHITRON_CONNECTION_FACET.FACET_TYPE_NAME,
+            GRAPHITRON_CONNECTION_FACET.FACET_FIELD_NAME, GRAPHITRON_CONNECTION_FACET.COLUMN_NAME,
+            GRAPHITRON_CONNECTION_FACET.VALUE_TYPE_NAME, GRAPHITRON_CONNECTION_FACET.VALUE_NULLABLE,
+            GRAPHITRON_CONNECTION_FACET.SOURCE_NAME, GRAPHITRON_CONNECTION_FACET.SOURCE_LINE,
+            GRAPHITRON_CONNECTION_FACET.SOURCE_COLUMN);
         // What each arm of the mint states per carrier, which the conflicts and the sets read.
         store(dsl, graphName, touchedAt, GRAPHITRON_TYPE_MINTED_CANDIDATE,
-            GRAPHITRON_TYPE_MINTED_CANDIDATE_RULE);
+            "graphitron_type_minted_candidate_rule",
+            GRAPHITRON_TYPE_MINTED_CANDIDATE.GRAPH_NAME, GRAPHITRON_TYPE_MINTED_CANDIDATE.TYPE_NAME,
+            GRAPHITRON_TYPE_MINTED_CANDIDATE.CARRIER_COORDINATE, GRAPHITRON_TYPE_MINTED_CANDIDATE.ARM,
+            GRAPHITRON_TYPE_MINTED_CANDIDATE.DESCRIPTION);
         store(dsl, graphName, touchedAt, GRAPHITRON_FIELD_MINTED_CANDIDATE,
-            GRAPHITRON_FIELD_MINTED_CANDIDATE_RULE);
+            "graphitron_field_minted_candidate_rule",
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.GRAPH_NAME, GRAPHITRON_FIELD_MINTED_CANDIDATE.TYPE_NAME,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.FIELD_NAME,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.CARRIER_COORDINATE, GRAPHITRON_FIELD_MINTED_CANDIDATE.ARM,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.POSITION, GRAPHITRON_FIELD_MINTED_CANDIDATE.ORDINAL,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.TYPE_SDL, GRAPHITRON_FIELD_MINTED_CANDIDATE.NAMED_TYPE,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.NON_NULL, GRAPHITRON_FIELD_MINTED_CANDIDATE.LIST_DEPTH,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE.ITEM_NON_NULL, GRAPHITRON_FIELD_MINTED_CANDIDATE.DESCRIPTION);
         store(dsl, graphName, touchedAt, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE,
-            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE_RULE);
+            "graphitron_argument_minted_candidate_rule",
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.GRAPH_NAME, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.TYPE_NAME,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.FIELD_NAME,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.ARGUMENT_NAME, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.ORDINAL,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.TYPE_SDL, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.NAMED_TYPE,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.NON_NULL, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.LIST_DEPTH,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.ITEM_NON_NULL,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.DEFAULT_VALUE_SDL);
         // Then the conflicts, because every arm below withholds what this finds.
         conflicts(dsl, graphName, touchedAt);
         elements(dsl, graphName, touchedAt);
@@ -161,15 +184,34 @@ public final class MacroExpansion {
         // The members of each union and interface, the class each scalar arrives as and the
         // classes each input type may be handed to, which reads it, then the connection shape,
         // edges before the connections keyed into them.
-        store(dsl, graphName, touchedAt, GRAPHITRON_TYPE_MEMBER, GRAPHITRON_TYPE_MEMBER_RULE);
-        store(dsl, graphName, touchedAt, GRAPHITRON_SCALAR_CLASS, GRAPHITRON_SCALAR_CLASS_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_TYPE_MEMBER, "graphitron_type_member_rule",
+            GRAPHITRON_TYPE_MEMBER.GRAPH_NAME, GRAPHITRON_TYPE_MEMBER.CONTAINER_NAME,
+            GRAPHITRON_TYPE_MEMBER.CONTAINER_KIND, GRAPHITRON_TYPE_MEMBER.MEMBER_TYPE_NAME,
+            GRAPHITRON_TYPE_MEMBER.MEMBER_KIND, GRAPHITRON_TYPE_MEMBER.POSITION);
+        store(dsl, graphName, touchedAt, GRAPHITRON_SCALAR_CLASS, "graphitron_scalar_class_rule",
+            GRAPHITRON_SCALAR_CLASS.GRAPH_NAME, GRAPHITRON_SCALAR_CLASS.TYPE_NAME,
+            GRAPHITRON_SCALAR_CLASS.KIND, GRAPHITRON_SCALAR_CLASS.JAVA_CLASS, GRAPHITRON_SCALAR_CLASS.SOURCE);
         arrivals(dsl, graphName, touchedAt);
-        store(dsl, graphName, touchedAt, GRAPHITRON_EDGE, GRAPHITRON_EDGE_RULE);
-        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION, GRAPHITRON_CONNECTION_RULE);
-        // Then the positions their fields fill, which read both.
-        store(dsl, graphName, touchedAt, GRAPHITRON_FIELD_POSITION, GRAPHITRON_FIELD_POSITION_RULE);
+        connectionShape(dsl, graphName, touchedAt);
         // Last, the defects judging what was just written.
         EntryDefects.derive(dsl, graphName, touchedAt, EntryDefects.MACRO_EXPANSION);
+    }
+
+    /**
+     * The connection shape: the edges, the connections keyed into them, and then the positions their
+     * fields fill, which read both. Its own entry point for a harness that seeds the types and fields
+     * these rules read by hand and wants the shape this stage writes from them.
+     */
+    public static void connectionShape(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        store(dsl, graphName, touchedAt, GRAPHITRON_EDGE, "graphitron_edge_rule",
+            GRAPHITRON_EDGE.GRAPH_NAME, GRAPHITRON_EDGE.TYPE_NAME, GRAPHITRON_EDGE.KIND,
+            GRAPHITRON_EDGE.ITEM_TYPE_NAME);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION, "graphitron_connection_rule",
+            GRAPHITRON_CONNECTION.GRAPH_NAME, GRAPHITRON_CONNECTION.TYPE_NAME, GRAPHITRON_CONNECTION.KIND,
+            GRAPHITRON_CONNECTION.EDGE_TYPE_NAME);
+        store(dsl, graphName, touchedAt, GRAPHITRON_FIELD_POSITION, "graphitron_field_position_rule",
+            GRAPHITRON_FIELD_POSITION.GRAPH_NAME, GRAPHITRON_FIELD_POSITION.TYPE_NAME,
+            GRAPHITRON_FIELD_POSITION.FIELD_NAME, GRAPHITRON_FIELD_POSITION.POSITION);
     }
 
     /**
@@ -350,42 +392,57 @@ public final class MacroExpansion {
      * rows carrying another, in the order the rules read each other: the carriers read the other two.
      */
     private static void federation(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        store(dsl, graphName, touchedAt, GRAPHITRON_CONFIGURED_TAG, GRAPHITRON_CONFIGURED_TAG_RULE);
-        store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_COINAGE, GRAPHITRON_MINTED_COINAGE_RULE);
-        store(dsl, graphName, touchedAt, GRAPHITRON_CARRIER_DIRECTIVE,
-            GRAPHITRON_CARRIER_DIRECTIVE_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONFIGURED_TAG, "graphitron_configured_tag_rule",
+            GRAPHITRON_CONFIGURED_TAG.GRAPH_NAME, GRAPHITRON_CONFIGURED_TAG.COORDINATE,
+            GRAPHITRON_CONFIGURED_TAG.ORDINAL, GRAPHITRON_CONFIGURED_TAG.VALUE_SDL);
+        store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_COINAGE, "graphitron_minted_coinage_rule",
+            GRAPHITRON_MINTED_COINAGE.GRAPH_NAME, GRAPHITRON_MINTED_COINAGE.TYPE_NAME,
+            GRAPHITRON_MINTED_COINAGE.COORDINATE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CARRIER_DIRECTIVE, "graphitron_carrier_directive_rule",
+            GRAPHITRON_CARRIER_DIRECTIVE.GRAPH_NAME, GRAPHITRON_CARRIER_DIRECTIVE.TYPE_NAME,
+            GRAPHITRON_CARRIER_DIRECTIVE.COORDINATE, GRAPHITRON_CARRIER_DIRECTIVE.DIRECTIVE_NAME,
+            GRAPHITRON_CARRIER_DIRECTIVE.ORDINAL, GRAPHITRON_CARRIER_DIRECTIVE.VALUE_SDL);
         // What each minted type inherits from the carriers just stored.
         store(dsl, graphName, touchedAt, GRAPHITRON_INHERITED_DIRECTIVE,
-            GRAPHITRON_INHERITED_DIRECTIVE_RULE);
+            "graphitron_inherited_directive_rule",
+            GRAPHITRON_INHERITED_DIRECTIVE.GRAPH_NAME, GRAPHITRON_INHERITED_DIRECTIVE.TYPE_NAME,
+            GRAPHITRON_INHERITED_DIRECTIVE.DIRECTIVE_NAME, GRAPHITRON_INHERITED_DIRECTIVE.ORDINAL,
+            GRAPHITRON_INHERITED_DIRECTIVE.VALUE_SDL);
     }
+
+    /** The gatherer and stage whose folder this stage's rules are read from. */
+    private static final String GATHERER = "graphitron";
+    private static final String STAGE = "macro-expansion";
 
     /**
      * One stored relation written from its rule: every row the rule answers for the graph upserted
      * with the reading's instant, the columns outside the key brought up to date, and the graph's
-     * rows carrying another instant swept. The rule's columns are the target's but its mark and the
-     * columns the database generates, by name.
+     * rows carrying another instant swept. {@code columns} are the target's the rule states, every
+     * one but the mark and the columns the database generates, named on both sides: the rule's text
+     * runs as a derived table under {@link RuleText#ALIAS}, its columns read through the target
+     * aliased to it.
      */
     private static void store(DSLContext dsl, String graphName, LocalDateTime touchedAt,
-                              Table<?> target, Table<?> rule) {
+                              Table<?> target, String rule, Field<?>... columns) {
         Field<String> graph = target.field("GRAPH_NAME", String.class);
         Field<LocalDateTime> touched = target.field("TOUCHED_AT", LocalDateTime.class);
         var key = target.getPrimaryKey().getFields();
-        var generated = GeneratedColumns.of(dsl, target);
-        var columns = Arrays.stream(target.fields())
-            .filter(f -> !f.equals(touched) && !generated.contains(f)).toList();
+        var r = target.as(RuleText.ALIAS);
         var selected = new ArrayList<Field<?>>();
-        columns.forEach(c -> selected.add(rule.field(c.getName())));
+        for (Field<?> column : columns) {
+            selected.add(r.field(column));
+        }
         selected.add(val(touchedAt, touched));
-        var all = new ArrayList<Field<?>>(columns);
+        var all = new ArrayList<Field<?>>(Arrays.asList(columns));
         all.add(touched);
         var updates = new LinkedHashMap<Field<?>, Field<?>>();
-        Stream.concat(columns.stream().filter(c -> !key.contains(c)), Stream.of(touched))
+        Stream.concat(Arrays.stream(columns).filter(c -> !key.contains(c)), Stream.of(touched))
             .forEach(c -> updates.put(c, excluded(c)));
         dsl.insertInto(target)
             .columns(all)
             .select(dsl.select(selected)
-                .from(rule)
-                .where(rule.field("GRAPH_NAME", String.class).eq(graphName)))
+                .from(RuleText.table(GATHERER, STAGE, rule))
+                .where(r.field(graph).eq(graphName)))
             // Matching on the primary key alone: a target with a unique key beside it would
             // otherwise match on either, scanning every graph's rows.
             .onConflict(key)
@@ -418,7 +475,9 @@ public final class MacroExpansion {
      * resolved stops being a row.
      */
     private static void conflicts(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_CONFLICT, GRAPHITRON_MINTED_CONFLICT_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_CONFLICT, "graphitron_minted_conflict_rule",
+            GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
+            GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS);
     }
 
     // ---------------------------------------------------------------- the fills

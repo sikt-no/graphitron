@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.rules.RuleText;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
@@ -16,10 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.selectDistinct;
-import static org.jooq.impl.DSL.table;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -37,13 +35,17 @@ public final class OccurrenceSourceClaims {
     private OccurrenceSourceClaims() {}
 
     /** One rule: its name, the kind it claims, and the view stating it. */
-    private record Rule(String name, String kind) {
-        Table<?> view() {
+    private record Rule(String name, String kind, String stage) {
+        /**
+         * The rule's text as a derived table, its file named after the rule in the folder of the stage
+         * its precedence row says owns it, so a rule filed under another stage fails to load.
+         */
+        Table<?> text() {
             var snake = new StringBuilder();
             for (char c : name.toCharArray()) {
                 snake.append(Character.isUpperCase(c) ? "_" + Character.toLowerCase(c) : String.valueOf(c));
             }
-            return table(org.jooq.impl.DSL.name(("graphitron_occurrence_source_claim_" + snake + "_rule").toUpperCase()));
+            return RuleText.table("graphitron", stage, "graphitron_occurrence_source_claim_" + snake + "_rule");
         }
     }
 
@@ -57,7 +59,7 @@ public final class OccurrenceSourceClaims {
     private static List<Rule> rules(DSLContext dsl, String stage) {
         var p = GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE;
         return dsl.select(p.RULE, p.KIND).from(p).where(p.OWNER_STAGE.eq(stage)).orderBy(p.PRIORITY)
-            .fetch(r -> new Rule(r.value1(), r.value2()));
+            .fetch(r -> new Rule(r.value1(), r.value2(), stage));
     }
 
     /**
@@ -119,19 +121,20 @@ public final class OccurrenceSourceClaims {
 
     /** One rule's claims, at {@code depth} or for the whole graph where it is null, supertype first. */
     private static void write(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt, Rule rule) {
-        var v = rule.view();
-        Field<String> vGraph = field(name(v.getName(), "GRAPH_NAME"), String.class);
-        Field<String> vCoordinate = field(name(v.getName(), "COORDINATE"), String.class);
-        Field<String> vRule = field(name(v.getName(), "RULE"), String.class);
-        Field<String> vKind = field(name(v.getName(), "KIND"), String.class);
-        var scope = vGraph.eq(graph).and(OccurrenceProducers.atDepth(vGraph, vCoordinate, depth));
+        var v = rule.text();
         var c = GRAPHITRON_OCCURRENCE_SOURCE_CLAIM;
         var p = GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE;
+        // The rule's columns are the claim's, and a table or object claim's beside them, read
+        // through each table aliased to the rule's text.
+        var r = c.as(RuleText.ALIAS);
+        var scope = r.GRAPH_NAME.eq(graph)
+            .and(OccurrenceProducers.atDepth(r.GRAPH_NAME, r.COORDINATE, depth));
         // The rule's priority, carried on each claim so the one taking effect is found without it.
         dsl.insertInto(c)
             .columns(c.GRAPH_NAME, c.COORDINATE, c.RULE, c.KIND, c.PRIORITY, c.TOUCHED_AT)
-            .select(selectDistinct(vGraph, vCoordinate, vRule, vKind, p.PRIORITY, val(touchedAt, c.TOUCHED_AT))
-                .from(v).join(p).on(p.RULE.eq(vRule)).where(scope))
+            .select(selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.RULE, r.KIND, p.PRIORITY,
+                    val(touchedAt, c.TOUCHED_AT))
+                .from(v).join(p).on(p.RULE.eq(r.RULE)).where(scope))
             .onConflict(c.GRAPH_NAME, c.COORDINATE, c.RULE)
             .doUpdate()
             .set(c.KIND, excluded(c.KIND))
@@ -140,13 +143,12 @@ public final class OccurrenceSourceClaims {
             .execute();
         if (rule.kind().equals("TABLE")) {
             var t = GRAPHITRON_OCCURRENCE_SOURCE_CLAIM_TABLE;
+            var rt = t.as(RuleText.ALIAS);
             dsl.insertInto(t)
                 .columns(t.GRAPH_NAME, t.COORDINATE, t.RULE, t.KIND, t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA,
                     t.TABLE_NAME, t.TOUCHED_AT)
-                .select(selectDistinct(vGraph, vCoordinate, vRule, vKind,
-                        field(name(v.getName(), "TABLE_SOURCE_NAME"), String.class),
-                        field(name(v.getName(), "TABLE_SCHEMA"), String.class),
-                        field(name(v.getName(), "TABLE_NAME"), String.class), val(touchedAt, t.TOUCHED_AT))
+                .select(selectDistinct(rt.GRAPH_NAME, rt.COORDINATE, rt.RULE, rt.KIND, rt.TABLE_SOURCE_NAME,
+                        rt.TABLE_SCHEMA, rt.TABLE_NAME, val(touchedAt, t.TOUCHED_AT))
                     .from(v).where(scope))
                 .onConflict(t.GRAPH_NAME, t.COORDINATE, t.RULE, t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME)
                 .doUpdate()
@@ -154,10 +156,11 @@ public final class OccurrenceSourceClaims {
                 .execute();
         } else {
             var b = GRAPHITRON_OCCURRENCE_SOURCE_CLAIM_OBJECT;
+            var rb = b.as(RuleText.ALIAS);
             dsl.insertInto(b)
                 .columns(b.GRAPH_NAME, b.COORDINATE, b.RULE, b.KIND, b.CLASS_NAME, b.TOUCHED_AT)
-                .select(selectDistinct(vGraph, vCoordinate, vRule, vKind,
-                        field(name(v.getName(), "CLASS_NAME"), String.class), val(touchedAt, b.TOUCHED_AT))
+                .select(selectDistinct(rb.GRAPH_NAME, rb.COORDINATE, rb.RULE, rb.KIND, rb.CLASS_NAME,
+                        val(touchedAt, b.TOUCHED_AT))
                     .from(v).where(scope))
                 .onConflict(b.GRAPH_NAME, b.COORDINATE, b.RULE)
                 .doUpdate()

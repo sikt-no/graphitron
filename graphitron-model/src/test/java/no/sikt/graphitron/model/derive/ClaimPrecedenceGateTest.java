@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.test.StageRuleFiles;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -22,7 +23,7 @@ import static org.jooq.impl.DSL.table;
 class ClaimPrecedenceGateTest {
 
     @Test
-    @DisplayName("each occurrence source rule is declared once and has its view")
+    @DisplayName("each occurrence source rule is declared once and has its view or its stage's file")
     void sourceRules() {
         ThreadConfinedStore.run(dsl -> assertThat(views(dsl, "graphitron_occurrence_source_claim_"))
             .containsExactlyInAnyOrderElementsOf(declared(dsl, "graphitron_occurrence_source_precedence",
@@ -30,20 +31,28 @@ class ClaimPrecedenceGateTest {
     }
 
     @Test
-    @DisplayName("each path need rule is declared once and has its view")
+    @DisplayName("each path need rule is declared once and has its view or its stage's file")
     void needRules() {
         ThreadConfinedStore.run(dsl -> assertThat(views(dsl, "graphitron_path_need_claim_"))
             .containsExactlyInAnyOrderElementsOf(declared(dsl, "graphitron_path_need_precedence",
                 "graphitron_path_need_claim_")));
     }
 
-    /** The rule views stating claims, by the prefix every one of them carries. */
+    /**
+     * The rules stating claims, by the prefix every one of them carries: the views, and the rules a
+     * stage keeps as files of its own.
+     */
     private static List<String> views(DSLContext dsl, String prefix) {
-        return dsl.select(field(name("TABLE_NAME"), String.class))
+        var rules = new java.util.ArrayList<>(dsl.select(field(name("TABLE_NAME"), String.class))
             .from(table(name("INFORMATION_SCHEMA", "VIEWS")))
             .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
             .and(field(name("TABLE_NAME"), String.class).like(prefix.toUpperCase(Locale.ROOT) + "%\\_RULE"))
-            .fetch(0, String.class);
+            .fetch(0, String.class));
+        StageRuleFiles.all().stream()
+            .map(StageRuleFiles.RuleFile::rule)
+            .filter(rule -> rule.startsWith(prefix) && rule.endsWith("_rule"))
+            .forEach(rule -> rules.add(rule.toUpperCase(Locale.ROOT)));
+        return rules;
     }
 
     /** The view each declared rule's claims are stated by: the prefix, the rule in snake case, _rule. */

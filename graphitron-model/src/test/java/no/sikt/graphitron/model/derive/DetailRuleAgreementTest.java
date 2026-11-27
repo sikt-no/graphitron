@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.rules.RuleText;
 import no.sikt.graphitron.model.test.FactGraphs;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -27,7 +28,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_ENTR
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_MEMBER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_PAIR_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_TYPE_ENTRY_DEFECT_RULE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
@@ -53,6 +53,10 @@ public class DetailRuleAgreementTest {
 
     @RegisterExtension
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
+    /** The outbox rule's columns, which are the defect table's, read through the rule's alias. */
+    private static final no.sikt.graphitron.model.tables.GraphitronEntryDefect OUTBOX_ROW =
+        no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT.as(RuleText.ALIAS);
 
     /**
      * A detail rule and the stage rule copying it: each one's defect key, graph, file, line, column
@@ -115,13 +119,10 @@ public class DetailRuleAgreementTest {
                 GRAPHITRON_OUTBOX_ENTRY_DEFECT_PAIR_RULE.SOURCE_LINE,
                 GRAPHITRON_OUTBOX_ENTRY_DEFECT_PAIR_RULE.SOURCE_COLUMN,
                 GRAPHITRON_OUTBOX_ENTRY_DEFECT_PAIR_RULE.CODE),
-            GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE,
-            List.of(GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE.GRAPH_NAME,
-                GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE.SOURCE_NAME,
-                GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE.SOURCE_LINE,
-                GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE.SOURCE_COLUMN,
-                GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE.CODE),
-            GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE.CODE.eq("ARGMAPPING_SOURCE_MISFIT")),
+            EntryDefects.OUTBOX.view(),
+            List.of(OUTBOX_ROW.GRAPH_NAME, OUTBOX_ROW.SOURCE_NAME, OUTBOX_ROW.SOURCE_LINE,
+                OUTBOX_ROW.SOURCE_COLUMN, OUTBOX_ROW.CODE),
+            OUTBOX_ROW.CODE.eq("ARGMAPPING_SOURCE_MISFIT")),
         new Copy(GRAPHITRON_ENTRY_DEFECT_MEMBER_RULE,
             List.of(GRAPHITRON_ENTRY_DEFECT_MEMBER_RULE.GRAPH_NAME,
                 GRAPHITRON_ENTRY_DEFECT_MEMBER_RULE.SOURCE_NAME,

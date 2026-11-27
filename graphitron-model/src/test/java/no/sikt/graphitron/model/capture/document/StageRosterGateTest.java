@@ -1,7 +1,9 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.capture.code.CodeCapture;
+import no.sikt.graphitron.model.derive.StageAnswerAgreementTest;
 import no.sikt.graphitron.model.derive.ViewReferences;
+import no.sikt.graphitron.model.test.StageRuleFiles;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -80,30 +82,38 @@ class StageRosterGateTest {
             var declared = declaredWrites(dsl);
             var kinds = declaredKinds(dsl);
             var violations = new TreeSet<String>();
-            for (var rule : no.sikt.graphitron.model.derive.StageAnswerAgreementTest.defectRules(dsl)) {
-                var stage = dsl.selectFrom(META_STAGE)
-                    .where(META_STAGE.STAGE_NAME.eq(rule.stage())).fetchSingle();
-                var later = dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
-                    .where(META_STAGE.GATHERER_NAME.eq(stage.getGathererName()))
-                    .and(META_STAGE.POSITION.gt(stage.getPosition()))
-                    .fetch(META_STAGE.STAGE_NAME);
-                var upTo = dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
-                    .where(META_STAGE.GATHERER_NAME.eq(stage.getGathererName()))
-                    .and(META_STAGE.POSITION.le(stage.getPosition()))
-                    .fetch(META_STAGE.STAGE_NAME);
-                String view = rule.view();
-                var reached = ViewReferences.tablesReachedBy(dsl, view);
-                for (String laterStage : later) {
-                    for (String written : declared.getOrDefault(laterStage, Set.of())) {
-                        // A relation split by a kind column is read in the kinds the reader or a stage
-                        // before it writes, which the later stage never writes.
-                        if (reached.contains(written) && !splitApart(kinds, upTo, laterStage, written)) {
-                            violations.add(view + " (" + rule.stage() + ") reads " + written
-                                + ", which " + laterStage + " writes after it");
+            var rules = new java.util.ArrayList<>(StageAnswerAgreementTest.defectRules(dsl));
+            // A stage's defect rule kept as a file of its own, under the stage its folder names.
+            var files = StageRuleFiles.all().stream()
+                .filter(file -> file.rule().endsWith("_entry_defect_rule")).toList();
+            files.forEach(file ->
+                rules.add(new StageAnswerAgreementTest.DefectRule(file.stage(), file.rule())));
+            StageRuleFiles.withViews(dsl, files, () -> {
+                for (var rule : rules) {
+                    var stage = dsl.selectFrom(META_STAGE)
+                        .where(META_STAGE.STAGE_NAME.eq(rule.stage())).fetchSingle();
+                    var later = dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
+                        .where(META_STAGE.GATHERER_NAME.eq(stage.getGathererName()))
+                        .and(META_STAGE.POSITION.gt(stage.getPosition()))
+                        .fetch(META_STAGE.STAGE_NAME);
+                    var upTo = dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
+                        .where(META_STAGE.GATHERER_NAME.eq(stage.getGathererName()))
+                        .and(META_STAGE.POSITION.le(stage.getPosition()))
+                        .fetch(META_STAGE.STAGE_NAME);
+                    String view = rule.view();
+                    var reached = ViewReferences.tablesReachedBy(dsl, view);
+                    for (String laterStage : later) {
+                        for (String written : declared.getOrDefault(laterStage, Set.of())) {
+                            // A relation split by a kind column is read in the kinds the reader or a stage
+                            // before it writes, which the later stage never writes.
+                            if (reached.contains(written) && !splitApart(kinds, upTo, laterStage, written)) {
+                                violations.add(view + " (" + rule.stage() + ") reads " + written
+                                    + ", which " + laterStage + " writes after it");
+                            }
                         }
                     }
                 }
-            }
+            });
             assertThat(violations)
                 .as("a stage's rule reading a later stage's relation reads the previous reading's"
                     + " rows: move the arm to the later stage, or the stage after it")

@@ -49,7 +49,7 @@ class RuleStatementProbe {
                 .isNotEmpty();
 
             dsl.deleteFrom(d).where(d.GRAPH_NAME.eq("g")).and(d.STAGE.eq(stage)).execute();
-            dsl.execute("DROP VIEW " + VIEW + " RESTRICT");
+            dsl.execute("DROP VIEW IF EXISTS " + VIEW + " RESTRICT");
             // The view's own column list names the columns; the body's names need not match it.
             var asText = DSL.table("(" + text + ")").as(VIEW.toUpperCase(Locale.ROOT),
                 java.util.Arrays.stream(names).map(n -> n.toUpperCase(Locale.ROOT)).toArray(String[]::new));

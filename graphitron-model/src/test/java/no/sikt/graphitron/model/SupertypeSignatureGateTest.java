@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.derive.ViewReferences;
+import no.sikt.graphitron.model.test.StageRuleFiles;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -576,7 +577,14 @@ class SupertypeSignatureGateTest {
             .fetchAny(0, String.class);
     }
 
+    /**
+     * The thread's store, with each stage's rule file a view in it for the check: a rule kept as a
+     * file of its stage's own reads what it reads as surely as a view does.
+     */
     private static void withStore(Consumer<DSLContext> body) {
-        ThreadConfinedStore.run(body);
+        ThreadConfinedStore.run(dsl -> {
+            var files = StageRuleFiles.all();
+            StageRuleFiles.withViews(dsl, files, () -> body.accept(dsl));
+        });
     }
 }

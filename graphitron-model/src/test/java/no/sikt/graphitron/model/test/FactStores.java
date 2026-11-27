@@ -120,18 +120,29 @@ public final class FactStores {
      * schema says. A reader of this text is asking about the schema as authored, which is a
      * question no booted catalog can answer: the engine keeps a view's expanded definition and has
      * already lost the spelling by the time a column has a type.
+     *
+     * <p>Each stage's rule files are appended as the view each once was, {@code CREATE VIEW <rule>
+     * AS <text>;}: a rule is its stage's own and no part of the model, but H2 parses and plans its
+     * text as it did the view's, so a gate over how a statement is written reads the rules too.
      */
     public static String schemaText() {
+        String ddl;
         try (var in = GraphitronModelStore.class
                 .getResourceAsStream(GraphitronModelStore.DDL_RESOURCE)) {
             if (in == null) {
                 throw new IllegalStateException("the fact schema is not on the test classpath at "
                     + GraphitronModelStore.DDL_RESOURCE + "; a reader of it would scan nothing");
             }
-            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            ddl = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException(e);
         }
+        var text = new StringBuilder(ddl);
+        for (var file : StageRuleFiles.all()) {
+            text.append("\n\nCREATE VIEW ").append(file.rule()).append(" AS\n").append(file.text())
+                .append(";\n");
+        }
+        return text.toString();
     }
 
     /**

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.rules.RuleText;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
@@ -43,7 +44,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_GENERATED_SC
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_FIELD_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_ENTRY_DEFECT_RULE;
@@ -116,13 +116,14 @@ public final class EntryDefects {
 
     /**
      * One stage's rule: the {@code meta_stage} row that raises what {@code view} emits and runs its
-     * writer, and the view, which has {@code graphitron_entry_defect}'s columns but the mark, its
-     * stage column naming that stage.
+     * writer, and the rule, a view or its text as {@link RuleText#table} hands it back, which has
+     * {@code graphitron_entry_defect}'s columns but the mark, its stage column naming that stage.
      */
     public record Rule(String stage, Table<?> view) {}
 
     /** The outbox stage's rule. */
-    public static final Rule OUTBOX = new Rule("outbox", GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE);
+    public static final Rule OUTBOX =
+        new Rule("outbox", RuleText.table("graphitron", "outbox", "graphitron_outbox_entry_defect_rule"));
 
     /**
      * The call defects' rule, {@link OccurrenceProducers}: a root routine's parameter nothing fills, and
@@ -399,12 +400,12 @@ public final class EntryDefects {
     public static void derive(DSLContext dsl, String graphName, LocalDateTime readAt, Rule rule) {
         var target = GRAPHITRON_ENTRY_DEFECT;
         var view = rule.view();
-        var source = dsl.select(column(view, "GRAPH_NAME", String.class),
-                column(view, "SOURCE_NAME", String.class), column(view, "SOURCE_LINE", Integer.class),
-                column(view, "SOURCE_COLUMN", Integer.class), column(view, "CODE", String.class),
-                column(view, "STAGE", String.class), column(view, "DETAIL", String.class))
+        // The rule's columns are the defect table's, read through the name the rule goes by.
+        var row = target.as(view.getName());
+        var source = dsl.select(row.GRAPH_NAME, row.SOURCE_NAME, row.SOURCE_LINE, row.SOURCE_COLUMN,
+                row.CODE, row.STAGE, row.DETAIL)
             .from(view)
-            .where(column(view, "GRAPH_NAME", String.class).eq(graphName))
+            .where(row.GRAPH_NAME.eq(graphName))
             .asTable("r");
         Field<String> graph = column(source, "GRAPH_NAME", String.class);
         Field<String> file = column(source, "SOURCE_NAME", String.class);

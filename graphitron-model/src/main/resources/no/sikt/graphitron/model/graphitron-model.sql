@@ -3774,62 +3774,6 @@ CREATE INDEX graphitron_connection_carrier_connection_ix
   ON graphitron_connection_carrier (graph_name, connection_name);
 COMMENT ON INDEX graphitron_connection_carrier_connection_ix IS 'A connection type is asked whether some carrier mints it, which CONNECTION_FACETS_FIELD_DECLARED asks of every declared facets field, and the primary key, the carrier''s type and field names, does not serve.';
 
-CREATE VIEW graphitron_connection_carrier_rule
-  (graph_name, type_name, field_name, coordinate, connection_name, edge_name,
-   element_type, item_sdl, item_non_null, non_null, ordinal, description, default_first_value,
-   argument_count,
-   source_name, source_line, source_column) AS
-SELECT b.graph_name, b.type_name, b.field_name, b.coordinate, b.connection_name,
-       b.connection_name || 'Edge', b.element_type, b.item_sdl, b.item_non_null, b.non_null, b.ordinal,
-       b.description, b.default_first_value, b.argument_count,
-       b.source_name, b.source_line, b.source_column
-  FROM (SELECT ca.graph_name, fe.type_name, fe.field_name, ca.coordinate,
-               COALESCE(NULLIF(c.connection_name, ''),
-                        fe.type_name || UPPER(SUBSTRING(fe.field_name FROM 1 FOR 1))
-                                     || SUBSTRING(fe.field_name FROM 2) || 'Connection')
-                 AS connection_name,
-               f.named_type AS element_type,
-               f.named_type || CASE WHEN f.item_non_null THEN '!' ELSE '' END AS item_sdl,
-               COALESCE(f.item_non_null, FALSE) AS item_non_null,
-               f.non_null, f.ordinal, f.description, c.default_first_value,
-               CAST((SELECT COUNT(*) FROM graphql_argument g
-                      WHERE g.graph_name = ca.graph_name AND g.type_name = fe.type_name
-                        AND g.field_name = fe.field_name) AS INT) AS argument_count,
-               ca.source_name, ca.source_line, ca.source_column
-          -- The field's first @asConnection, what it wrote joined on where it wrote anything.
-          FROM graphql_directive_application ca
-          JOIN graphql_field_element fe
-            ON fe.graph_name = ca.graph_name AND fe.coordinate = ca.coordinate
-          LEFT JOIN graphitron_ast_connection_entry c
-            ON c.graph_name = ca.graph_name AND c.source_name = ca.source_name
-           AND c.source_line = ca.source_line AND c.source_column = ca.source_column
-          JOIN graphql_field f
-            ON f.graph_name = fe.graph_name
-           AND f.type_name = fe.type_name
-           AND f.field_name = fe.field_name
-         -- A bare list of a named type and nothing deeper. list_depth answers this; the expansion
-         -- used to read it off type_sdl by hand because the anchor did not carry the column.
-         WHERE ca.directive_name = 'asConnection' AND ca.ordinal = 0
-           AND f.is_list AND f.list_depth = 1) b;
-COMMENT ON VIEW graphitron_connection_carrier_rule IS 'One row the connection carrier rule computes, in the shape graphitron_connection_carrier stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_carrier, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_connection_carrier.graph_name';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_connection_carrier.type_name';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_connection_carrier.field_name';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_connection_carrier.coordinate';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.connection_name IS 'the connection_name of a row of this rule, which the stage writes into graphitron_connection_carrier.connection_name';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.edge_name IS 'the edge_name of a row of this rule, which the stage writes into graphitron_connection_carrier.edge_name';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.element_type IS 'the element_type of a row of this rule, which the stage writes into graphitron_connection_carrier.element_type';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.item_sdl IS 'the item_sdl of a row of this rule, which the stage writes into graphitron_connection_carrier.item_sdl';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.item_non_null IS 'the item_non_null of a row of this rule, which the stage writes into graphitron_connection_carrier.item_non_null';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.non_null IS 'the non_null of a row of this rule, which the stage writes into graphitron_connection_carrier.non_null';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_connection_carrier.ordinal';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.description IS 'the description of a row of this rule, which the stage writes into graphitron_connection_carrier.description';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.default_first_value IS 'the default_first_value of a row of this rule, which the stage writes into graphitron_connection_carrier.default_first_value';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.argument_count IS 'the argument_count of a row of this rule, which the stage writes into graphitron_connection_carrier.argument_count';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_connection_carrier.source_name';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_connection_carrier.source_line';
--- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_connection_carrier.source_column';
-
 -- An @issue absorbs every field written on its type into the voucher: a member is withheld from the
 -- emitted population, so the authored sets below anti-join it, and the transcription keeps it as
 -- written. Decided from structure alone, before the population is built and independently of every
@@ -3975,95 +3919,6 @@ COMMENT ON VIEW graphitron_type_authored IS 'One of the two sets graphitron_type
 -- COMMENT ON COLUMN graphitron_type_authored.description IS 'the docstring the author wrote, or nothing';
 -- COMMENT ON COLUMN graphitron_type_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 
-CREATE VIEW graphitron_facet_binding_rule
-  (graph_name, type_name, field_name, ordinal, column_name, value_type_name, value_nullable,
-   reference_bound, source_name, source_line, source_column) AS
-SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
-       fb.name_ref,
-       f.named_type,
-       CASE WHEN f.is_list THEN NOT f.item_non_null ELSE TRUE END,
-       -- A @reference written beside the facet marker, asked of the marker's siblings for the
-       -- reason the exclusions below are.
-       EXISTS (SELECT 1
-                 FROM graphql_ast_entry mark
-                 JOIN graphql_ast_entry de
-                   ON de.graph_name = mark.graph_name
-                  AND de.source_name = mark.source_name
-                  AND de.parent_line = mark.parent_line
-                  AND de.parent_column = mark.parent_column
-                 JOIN graphql_ast_directive_application_entry d
-                   ON d.graph_name = de.graph_name AND d.source_name = de.source_name
-                  AND d.source_line = de.source_line AND d.source_column = de.source_column
-                WHERE mark.graph_name = fc.graph_name
-                  AND mark.source_name = fc.source_name
-                  AND mark.source_line = fc.source_line
-                  AND mark.source_column = fc.source_column
-                  AND d.name = 'reference'),
-       fc.source_name, fc.source_line, fc.source_column
-  -- The field's first @asFacet, and the name its first @field binds.
-  FROM graphql_directive_application fc
-  JOIN graphql_field_element fe
-    ON fe.graph_name = fc.graph_name AND fe.coordinate = fc.coordinate
-  JOIN graphql_field f
-    ON f.graph_name = fe.graph_name AND f.type_name = fe.type_name
-   AND f.field_name = fe.field_name
-  JOIN graphql_type owner
-    ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
-   AND owner.kind = 'INPUT_OBJECT'
-  JOIN graphql_directive_application fa
-    ON fa.graph_name = fc.graph_name AND fa.coordinate = fc.coordinate
-   AND fa.directive_name = 'field' AND fa.ordinal = 0
-  JOIN graphitron_ast_binding_entry fb
-    ON fb.graph_name = fa.graph_name AND fb.source_name = fa.source_name
-   AND fb.source_line = fa.source_line AND fb.source_column = fa.source_column
- WHERE fc.directive_name = 'asFacet' AND fc.ordinal = 0
-   AND NOT f.non_null
-   AND f.named_type <> 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphql_type leaf
-                    WHERE leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
-                      AND leaf.kind = 'INPUT_OBJECT')
-   -- The two applications that make a facet field something else instead, asked of the
-   -- applications rather than of their decodes. What excludes the field is that one of them was
-   -- written on it, which is a fact about the document; the decode of what it says is a later
-   -- reading, and asking it here would make this view answer differently depending on how far the
-   -- pass had got.
-   --
-   -- Siblings of the @asFacet application itself, not of the coordinate. Where several documents
-   -- declare one input field the corpus honours one of them, and the declarations it did not honour
-   -- contribute no directives to the merged field; anchoring the search on the position the facet
-   -- marker won at is what keeps a losing declaration's @reference from disqualifying a facet the
-   -- author never wrote it on.
-   --
-   -- @reference is not among them: it does not replace the column binding, it says which table the
-   -- @field(name:) column is on, so a reference-bound facet is a row here like any other.
-   AND NOT EXISTS (SELECT 1
-                     FROM graphql_ast_entry mark
-                     JOIN graphql_ast_entry de
-                       ON de.graph_name = mark.graph_name
-                      AND de.source_name = mark.source_name
-                      AND de.parent_line = mark.parent_line
-                      AND de.parent_column = mark.parent_column
-                     JOIN graphql_ast_directive_application_entry d
-                       ON d.graph_name = de.graph_name AND d.source_name = de.source_name
-                      AND d.source_line = de.source_line AND d.source_column = de.source_column
-                    WHERE mark.graph_name = fc.graph_name
-                      AND mark.source_name = fc.source_name
-                      AND mark.source_line = fc.source_line
-                      AND mark.source_column = fc.source_column
-                      AND d.name IN ('condition', 'nodeId'));
-COMMENT ON VIEW graphitron_facet_binding_rule IS 'One row the facet binding rule computes, in the shape graphitron_facet_binding stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_facet_binding, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_facet_binding.graph_name';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_facet_binding.type_name';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_facet_binding.field_name';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_facet_binding.ordinal';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_facet_binding.column_name';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.value_type_name IS 'the value_type_name of a row of this rule, which the stage writes into graphitron_facet_binding.value_type_name';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.value_nullable IS 'the value_nullable of a row of this rule, which the stage writes into graphitron_facet_binding.value_nullable';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.reference_bound IS 'the reference_bound of a row of this rule, which the stage writes into graphitron_facet_binding.reference_bound';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_facet_binding.source_name';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_facet_binding.source_line';
--- COMMENT ON COLUMN graphitron_facet_binding_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_facet_binding.source_column';
-
 CREATE TABLE graphitron_facet_binding (
   graph_name      VARCHAR   NOT NULL,
   type_name       VARCHAR   NOT NULL,
@@ -4093,59 +3948,6 @@ COMMENT ON COLUMN graphitron_facet_binding.source_name IS 'the @asFacet applicat
 COMMENT ON COLUMN graphitron_facet_binding.source_line IS 'source line of the application, 1-based';
 COMMENT ON COLUMN graphitron_facet_binding.source_column IS 'source column of the application, 1-based';
 COMMENT ON COLUMN graphitron_facet_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
-CREATE VIEW graphitron_connection_facet_rule
-  (graph_name, type_name, field_name, position, filter_argument_name,
-   facet_type_name, facet_field_name, column_name, value_type_name, value_nullable,
-   source_name, source_line, source_column) AS
--- Each facet a carrier reaches through its filter arguments, a facet field reached through two of them
--- kept at the first: one no earlier argument, or earlier facet field, reaches under the same name.
-WITH reached (graph_name, type_name, field_name, argument_ordinal, facet_ordinal, filter_argument_name,
-              facet_type_name, facet_field_name, column_name, value_type_name, value_nullable,
-              source_name, source_line, source_column) AS (
-  SELECT a.graph_name, a.type_name, a.field_name, a.ordinal, fb.ordinal, a.argument_name,
-         fb.type_name, fb.field_name, fb.column_name, fb.value_type_name, fb.value_nullable,
-         fb.source_name, fb.source_line, fb.source_column
-    FROM graphitron_facet_binding fb
-    JOIN graphql_argument a
-      ON a.graph_name = fb.graph_name AND a.named_type = fb.type_name
-    -- The carriers, asked for by name. This used to infer them from the expansion's own
-    -- output, a minted field whose coining coordinate was its own, which made a reading of
-    -- the carriers depend on the mint having already run.
-    JOIN graphitron_connection_carrier c
-      ON c.graph_name = a.graph_name AND c.type_name = a.type_name
-     AND c.field_name = a.field_name
-),
-kept AS (
-  SELECT r.* FROM reached r
-   WHERE NOT EXISTS (SELECT 1 FROM reached e
-                      WHERE e.graph_name = r.graph_name AND e.type_name = r.type_name
-                        AND e.field_name = r.field_name AND e.facet_field_name = r.facet_field_name
-                        AND (e.argument_ordinal, e.facet_ordinal) < (r.argument_ordinal, r.facet_ordinal))
-)
--- Placed by how many of the carrier's kept facets come before it, argument first: dense from one.
-SELECT k.graph_name, k.type_name, k.field_name,
-       CAST(1 + (SELECT COUNT(*) FROM kept b
-                  WHERE b.graph_name = k.graph_name AND b.type_name = k.type_name
-                    AND b.field_name = k.field_name
-                    AND (b.argument_ordinal, b.facet_ordinal) < (k.argument_ordinal, k.facet_ordinal)) AS INT),
-       k.filter_argument_name, k.facet_type_name, k.facet_field_name, k.column_name, k.value_type_name,
-       k.value_nullable, k.source_name, k.source_line, k.source_column
-  FROM kept k;
-COMMENT ON VIEW graphitron_connection_facet_rule IS 'One row the connection facet rule computes, in the shape graphitron_connection_facet stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_facet, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_connection_facet.graph_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_connection_facet.type_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_connection_facet.field_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_connection_facet.position';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.filter_argument_name IS 'the filter_argument_name of a row of this rule, which the stage writes into graphitron_connection_facet.filter_argument_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.facet_type_name IS 'the facet_type_name of a row of this rule, which the stage writes into graphitron_connection_facet.facet_type_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.facet_field_name IS 'the facet_field_name of a row of this rule, which the stage writes into graphitron_connection_facet.facet_field_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_connection_facet.column_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.value_type_name IS 'the value_type_name of a row of this rule, which the stage writes into graphitron_connection_facet.value_type_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.value_nullable IS 'the value_nullable of a row of this rule, which the stage writes into graphitron_connection_facet.value_nullable';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_connection_facet.source_name';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_connection_facet.source_line';
--- COMMENT ON COLUMN graphitron_connection_facet_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_connection_facet.source_column';
 
 CREATE TABLE graphitron_connection_facet (
   graph_name           VARCHAR   NOT NULL,
@@ -4189,45 +3991,6 @@ COMMENT ON COLUMN graphitron_connection_facet.source_line IS 'source line of the
 COMMENT ON COLUMN graphitron_connection_facet.source_column IS 'source column of the application, 1-based';
 COMMENT ON COLUMN graphitron_connection_facet.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- What the arms of the type mint state, one row per arm and carrier, before any disagreement between
--- them is resolved. Stored because two rules build on it, the conflict count and the minted type set,
--- and the coinage is its projection. The arm is in the key because one carrier can coin one name
--- through two arms: connectionName: "PageInfo" names the connection after the page info the same
--- carrier states, under two descriptions.
-CREATE VIEW graphitron_type_minted_candidate_rule
-  (graph_name, type_name, carrier_coordinate, arm, description) AS
-SELECT DISTINCT graph_name, type_name, carrier_coordinate, arm, description
-  FROM (SELECT graph_name, connection_name AS type_name, coordinate AS carrier_coordinate,
-               'CONNECTION' AS arm, 'A connection to a list of items.' AS description
-          FROM graphitron_connection_carrier
-         UNION ALL
-        SELECT graph_name, edge_name, coordinate, 'EDGE', 'An edge in a connection.'
-          FROM graphitron_connection_carrier
-         UNION ALL
-        SELECT graph_name, 'PageInfo', coordinate, 'PAGE_INFO',
-               'Information about pagination in a connection.'
-          FROM graphitron_connection_carrier
-         UNION ALL
-        -- One row per facet, collapsed by the distinct to one per carrier.
-        SELECT f.graph_name, c.facets_name, c.coordinate, 'FACETS',
-               'Facet value counts for a connection.'
-          FROM graphitron_connection_facet f
-          JOIN graphitron_connection_carrier c
-            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name
-         UNION ALL
-        SELECT f.graph_name, f.bucket_type_name, c.coordinate, 'BUCKET',
-               'One facet bucket: a filterable value and its count.'
-          FROM graphitron_connection_facet f
-          JOIN graphitron_connection_carrier c
-            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name) m;
-COMMENT ON VIEW graphitron_type_minted_candidate_rule IS 'One row the type minted candidate rule computes, in the shape graphitron_type_minted_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_minted_candidate, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_type_minted_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_minted_candidate.graph_name';
--- COMMENT ON COLUMN graphitron_type_minted_candidate_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_type_minted_candidate.type_name';
--- COMMENT ON COLUMN graphitron_type_minted_candidate_rule.carrier_coordinate IS 'the carrier_coordinate of a row of this rule, which the stage writes into graphitron_type_minted_candidate.carrier_coordinate';
--- COMMENT ON COLUMN graphitron_type_minted_candidate_rule.arm IS 'the arm of a row of this rule, which the stage writes into graphitron_type_minted_candidate.arm';
--- COMMENT ON COLUMN graphitron_type_minted_candidate_rule.description IS 'the description of a row of this rule, which the stage writes into graphitron_type_minted_candidate.description';
 CREATE TABLE graphitron_type_minted_candidate (
   graph_name         VARCHAR   NOT NULL,
   type_name          VARCHAR   NOT NULL,
@@ -4249,16 +4012,6 @@ COMMENT ON COLUMN graphitron_type_minted_candidate.arm IS 'which of the carrier'
 COMMENT ON COLUMN graphitron_type_minted_candidate.description IS 'the docstring the arm writes, a property of the arm rather than of the carrier; two of these differing at one name are a disagreement';
 COMMENT ON COLUMN graphitron_type_minted_candidate.touched_at IS 'when the reading that last found this row ran: the mark the sweep reads, so a row still stated survives a reading and one no longer stated goes';
 
--- The mint's own provenance. The minted sets are keyed on the coordinate of the thing minted rather
--- than of the thing that minted it, so a reader wanting to carry something from the application to
--- what it coined needs the pairing back. The type candidates keep it, and this is their projection.
-CREATE VIEW graphitron_minted_coinage_rule (graph_name, type_name, coordinate) AS
-SELECT DISTINCT graph_name, type_name, carrier_coordinate
-  FROM graphitron_type_minted_candidate;
-COMMENT ON VIEW graphitron_minted_coinage_rule IS 'One row the coinage rule computes, in the shape graphitron_minted_coinage stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_minted_coinage, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
--- COMMENT ON COLUMN graphitron_minted_coinage_rule.graph_name IS 'the owning graph''''s partition, carried from the carrier';
--- COMMENT ON COLUMN graphitron_minted_coinage_rule.type_name IS 'the minted type''''s name; not unique here, one name being coinable by several applications';
--- COMMENT ON COLUMN graphitron_minted_coinage_rule.coordinate IS 'the application that coined it, on graphitron_element_authored.coordinate''''s terms; with the name above, the grain';
 CREATE TABLE graphitron_minted_coinage (
   graph_name     VARCHAR NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -4369,156 +4122,6 @@ INSERT INTO graphitron_connection_position VALUES
   ('VALUE', 'BUCKET', 'value', 'GRAPHITRON', NULL, NULL, FALSE, NULL),
   ('COUNT', 'BUCKET', 'count', 'GRAPHITRON', NULL, NULL, FALSE, NULL);
 
--- What the arms of the field mint state, one row per arm and carrier, on the type candidates'
--- terms; the arm here is the type of the carrier's the field sits on, or CARRIER for the rewrite.
--- The arms of its union are bracketed as a balanced tree, about log2 n deep rather than one level
--- an arm: one SELECT DISTINCT reads every mint arm, and H2 keeps a parsed copy of a union at every level of its nesting.
-CREATE VIEW graphitron_field_minted_candidate_rule
-  (graph_name, type_name, field_name, carrier_coordinate, arm, position, ordinal, type_sdl,
-   named_type, non_null, list_depth, item_non_null, description) AS
-SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, position, ordinal,
-       type_sdl, named_type, non_null, list_depth, item_non_null, description
-  FROM (
-        (
-        (
-        -- The connection's own machinery.
-        SELECT graph_name, connection_name AS type_name, 'edges' AS field_name,
-               coordinate AS carrier_coordinate, 'CONNECTION' AS arm, 'EDGES' AS position, 0 AS ordinal,
-               '[' || edge_name || '!]!' AS type_sdl, edge_name AS named_type,
-               TRUE AS non_null, 1 AS list_depth, TRUE AS item_non_null,
-               'A list of edges.' AS description
-          FROM graphitron_connection_carrier
-        UNION ALL
-        (
-        SELECT graph_name, connection_name, 'nodes', coordinate, 'CONNECTION', 'NODES', 1,
-               '[' || item_sdl || ']!', element_type, TRUE, 1, item_non_null,
-               'A list of nodes.'
-          FROM graphitron_connection_carrier
-        UNION ALL
-        SELECT graph_name, connection_name, 'pageInfo', coordinate, 'CONNECTION', 'PAGE_INFO', 2,
-               'PageInfo!', 'PageInfo', TRUE, 0, NULL,
-               'Information to aid in pagination.'
-          FROM graphitron_connection_carrier
-        )
-        )
-        UNION ALL
-        (
-        (
-        -- Nullable like the connection's other aggregate: a skipped count degrades to null rather
-        -- than bubbling a failure through the connection.
-        SELECT graph_name, connection_name, 'totalCount', coordinate, 'CONNECTION', 'TOTAL_COUNT', 3,
-               'Int', 'Int', FALSE, 0, NULL,
-               'Identifies the total count of items in the connection.'
-          FROM graphitron_connection_carrier
-        UNION ALL
-        -- The edge's.
-        SELECT graph_name, edge_name, 'cursor', coordinate, 'EDGE', 'CURSOR', 0,
-               'String!', 'String', TRUE, 0, NULL,
-               'A cursor for use in pagination.'
-          FROM graphitron_connection_carrier
-        )
-        UNION ALL
-        (
-        SELECT graph_name, edge_name, 'node', coordinate, 'EDGE', 'NODE', 1,
-               item_sdl, element_type, item_non_null, 0, NULL,
-               'The item at the end of the edge.'
-          FROM graphitron_connection_carrier
-        UNION ALL
-        -- The page info every carrier states whole, which is why the set collapses them.
-        SELECT graph_name, 'PageInfo', 'hasNextPage', coordinate, 'PAGE_INFO', 'HAS_NEXT_PAGE', 0,
-               'Boolean!', 'Boolean', TRUE, 0, NULL,
-               'When paginating forwards, are there more items?'
-          FROM graphitron_connection_carrier
-        )
-        )
-        )
-        UNION ALL
-        (
-        (
-        (
-        SELECT graph_name, 'PageInfo', 'hasPreviousPage', coordinate, 'PAGE_INFO', 'HAS_PREVIOUS_PAGE', 1,
-               'Boolean!', 'Boolean', TRUE, 0, NULL,
-               'When paginating backwards, are there more items?'
-          FROM graphitron_connection_carrier
-        UNION ALL
-        SELECT graph_name, 'PageInfo', 'startCursor', coordinate, 'PAGE_INFO', 'START_CURSOR', 2,
-               'String', 'String', FALSE, 0, NULL,
-               'When paginating backwards, the cursor to continue.'
-          FROM graphitron_connection_carrier
-        )
-        UNION ALL
-        (
-        SELECT graph_name, 'PageInfo', 'endCursor', coordinate, 'PAGE_INFO', 'END_CURSOR', 3,
-               'String', 'String', FALSE, 0, NULL,
-               'When paginating forwards, the cursor to continue.'
-          FROM graphitron_connection_carrier
-        UNION ALL
-        -- The facets the carrier surfaces: the connection's own field reaching the container, one
-        -- row per facet collapsed by the distinct, the container's field per facet, and each
-        -- bucket's value and count.
-        SELECT f.graph_name, c.connection_name, 'facets', c.coordinate, 'CONNECTION', 'FACETS', 4,
-               c.facets_name, c.facets_name, FALSE, 0, NULL,
-               'Per-facet value counts for the items in the connection.'
-          FROM graphitron_connection_facet f
-          JOIN graphitron_connection_carrier c
-            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name
-        )
-        )
-        UNION ALL
-        (
-        (
-        SELECT f.graph_name, c.facets_name, f.facet_field_name, c.coordinate, 'FACETS', 'FACET', f.position,
-               '[' || f.bucket_type_name || '!]', f.bucket_type_name, FALSE, 1, TRUE,
-               'Value counts for this facet, under the connection''s filter minus this facet''s own predicate.'
-          FROM graphitron_connection_facet f
-          JOIN graphitron_connection_carrier c
-            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name
-        UNION ALL
-        SELECT f.graph_name, f.bucket_type_name, 'value', c.coordinate, 'BUCKET', 'VALUE', 0,
-               f.value_type_name || CASE WHEN f.value_nullable THEN '' ELSE '!' END, f.value_type_name,
-               NOT f.value_nullable, 0, NULL,
-               'The facet value; feed it back into the filter to select this bucket.'
-          FROM graphitron_connection_facet f
-          JOIN graphitron_connection_carrier c
-            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name
-        )
-        UNION ALL
-        (
-        SELECT f.graph_name, f.bucket_type_name, 'count', c.coordinate, 'BUCKET', 'COUNT', 1,
-               'Int!', 'Int', TRUE, 0, NULL,
-               'The number of items in this bucket.'
-          FROM graphitron_connection_facet f
-          JOIN graphitron_connection_carrier c
-            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name
-        UNION ALL
-        -- The rewrite: the carrier keeps its own coordinate, ordinal and docstring, and returns
-        -- the connection under the nullability its author wrote.
-        SELECT graph_name, type_name, field_name, coordinate, 'CARRIER', CAST(NULL AS VARCHAR), ordinal,
-               connection_name || CASE WHEN non_null THEN '!' ELSE '' END,
-               connection_name, non_null, 0, NULL,
-               description
-          FROM graphitron_connection_carrier
-        )
-        )
-        )) m;
-COMMENT ON VIEW graphitron_field_minted_candidate_rule IS 'One row the field minted candidate rule computes, in the shape graphitron_field_minted_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_field_minted_candidate, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_minted_candidate.graph_name';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_minted_candidate.type_name';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_minted_candidate.field_name';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.carrier_coordinate IS 'the carrier_coordinate of a row of this rule, which the stage writes into graphitron_field_minted_candidate.carrier_coordinate';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.arm IS 'the arm of a row of this rule, which the stage writes into graphitron_field_minted_candidate.arm';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_field_minted_candidate.position';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_field_minted_candidate.ordinal';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.type_sdl IS 'the type_sdl of a row of this rule, which the stage writes into graphitron_field_minted_candidate.type_sdl';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.named_type IS 'the named_type of a row of this rule, which the stage writes into graphitron_field_minted_candidate.named_type';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.non_null IS 'the non_null of a row of this rule, which the stage writes into graphitron_field_minted_candidate.non_null';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.list_depth IS 'the list_depth of a row of this rule, which the stage writes into graphitron_field_minted_candidate.list_depth';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.item_non_null IS 'the item_non_null of a row of this rule, which the stage writes into graphitron_field_minted_candidate.item_non_null';
--- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.description IS 'the description of a row of this rule, which the stage writes into graphitron_field_minted_candidate.description';
 CREATE TABLE graphitron_field_minted_candidate (
   graph_name         VARCHAR   NOT NULL,
   type_name          VARCHAR   NOT NULL,
@@ -4664,43 +4267,6 @@ COMMENT ON VIEW graphitron_argument_authored IS 'One of the two sets graphitron_
 -- COMMENT ON COLUMN graphitron_argument_authored.default_value_sdl IS 'the default as written, or nothing';
 -- COMMENT ON COLUMN graphitron_argument_authored.description IS 'the docstring the author wrote, or nothing';
 
--- What the arms of the argument mint state, on the type candidates' terms. Keyed by the argument's
--- own coordinate with no arm beside it: each arm adds its own argument to its own carrier, so the
--- argument name is the arm and the carrier the field it sits on.
-CREATE VIEW graphitron_argument_minted_candidate_rule
-  (graph_name, type_name, field_name, argument_name, ordinal, type_sdl, named_type, non_null,
-   list_depth, item_non_null, default_value_sdl) AS
--- Pagination, on every carrier. The page size the application asked for, or the default where it
--- asked for none, lowered to the build's maximum page size where that is smaller, so the default a
--- client is told never exceeds the page it can receive. The 100 is
--- ConnectionDefaults.DEFAULT_PAGE_SIZE, and the CASE its defaultPageSize (not LEAST, whose stored
--- form H2 writes with a RESPECT NULLS the definition walk cannot parse). An authored default passes
--- through as written; graphitron_entry_defect judges it.
-SELECT c.graph_name, c.type_name, c.field_name, 'first',
-       c.argument_count, 'Int', 'Int',
-       FALSE, 0, CAST(NULL AS BOOLEAN),
-       CAST(COALESCE(c.default_first_value,
-                     CASE WHEN mx.max_page_size < 100 THEN mx.max_page_size ELSE 100 END)
-            AS VARCHAR)
-  FROM graphitron_connection_carrier c
-  LEFT JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
- UNION ALL
-SELECT graph_name, type_name, field_name, 'after',
-       argument_count + 1, 'String', 'String',
-       FALSE, 0, NULL, NULL
-  FROM graphitron_connection_carrier;
-COMMENT ON VIEW graphitron_argument_minted_candidate_rule IS 'One row the argument minted candidate rule computes, in the shape graphitron_argument_minted_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_argument_minted_candidate, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.graph_name';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.type_name';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.field_name';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.argument_name IS 'the argument_name of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.argument_name';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.ordinal';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.type_sdl IS 'the type_sdl of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.type_sdl';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.named_type IS 'the named_type of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.named_type';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.non_null IS 'the non_null of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.non_null';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.list_depth IS 'the list_depth of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.list_depth';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.item_non_null IS 'the item_non_null of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.item_non_null';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate_rule.default_value_sdl IS 'the default_value_sdl of a row of this rule, which the stage writes into graphitron_argument_minted_candidate.default_value_sdl';
 CREATE TABLE graphitron_argument_minted_candidate (
   graph_name        VARCHAR   NOT NULL,
   type_name         VARCHAR   NOT NULL,
@@ -4742,35 +4308,6 @@ COMMENT ON INDEX graphitron_field_minted_candidate_carrier_ix IS 'A rule holding
 CREATE INDEX graphitron_argument_minted_candidate_coordinate_ix
   ON graphitron_argument_minted_candidate (graph_name, coordinate);
 COMMENT ON INDEX graphitron_argument_minted_candidate_coordinate_ix IS 'The contested-name defect holds a contested argument coordinate and asks for the field it sits on, which the primary key, leading with the type and field names, does not serve.';
-
--- A coordinate the arms state more than one way. At a type, the arms that coin it: two carriers
--- coining one name through one arm agree, and one carrier coining it through two arms does not,
--- whatever the docstrings say. At a field or an argument, its distinct payloads. Aggregates over
--- each candidate relation, no window, so a stage's graph filter reaches the grouping key.
-CREATE VIEW graphitron_minted_conflict_rule (graph_name, coordinate, element_kind, variants) AS
-SELECT graph_name, coordinate, 'NAMED_TYPE', CAST(COUNT(*) AS INT)
-  FROM (SELECT DISTINCT graph_name, coordinate, arm FROM graphitron_type_minted_candidate) r
- GROUP BY graph_name, coordinate
-HAVING COUNT(*) > 1
- UNION ALL
-SELECT graph_name, coordinate, 'FIELD', CAST(COUNT(*) AS INT)
-  FROM (SELECT DISTINCT graph_name, coordinate, ordinal, type_sdl, named_type, non_null,
-               list_depth, item_non_null, description, rewrite
-          FROM graphitron_field_minted_candidate) r
- GROUP BY graph_name, coordinate
-HAVING COUNT(*) > 1
- UNION ALL
-SELECT graph_name, coordinate, 'FIELD_ARGUMENT', CAST(COUNT(*) AS INT)
-  FROM (SELECT DISTINCT graph_name, coordinate, ordinal, type_sdl, named_type, non_null,
-               list_depth, item_non_null, default_value_sdl
-          FROM graphitron_argument_minted_candidate) r
- GROUP BY graph_name, coordinate
-HAVING COUNT(*) > 1;
-COMMENT ON VIEW graphitron_minted_conflict_rule IS 'One row the minted conflict rule computes, in the shape graphitron_minted_conflict stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_minted_conflict, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_minted_conflict_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_minted_conflict.graph_name';
--- COMMENT ON COLUMN graphitron_minted_conflict_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_minted_conflict.coordinate';
--- COMMENT ON COLUMN graphitron_minted_conflict_rule.element_kind IS 'the element_kind of a row of this rule, which the stage writes into graphitron_minted_conflict.element_kind';
--- COMMENT ON COLUMN graphitron_minted_conflict_rule.variants IS 'the variants of a row of this rule, which the stage writes into graphitron_minted_conflict.variants';
 
 CREATE VIEW graphitron_argument_minted (graph_name, type_name, field_name, argument_name,
                                         coordinate, ordinal, type_sdl, named_type, non_null,
@@ -8369,65 +7906,6 @@ COMMENT ON VIEW graphitron_directive_application_authored IS 'One of the three s
 -- COMMENT ON COLUMN graphitron_directive_application_authored.source_line IS 'source line of the at sign';
 -- COMMENT ON COLUMN graphitron_directive_application_authored.source_column IS 'source column of the at sign';
 
-CREATE VIEW graphitron_configured_tag_rule (graph_name, coordinate, ordinal, value_sdl) AS
-WITH applied (graph_name, coordinate, site_order, tag) AS (
-  -- A field or an input field, declared at one site, takes the tag of its file unless it carries one.
-  SELECT f.graph_name, f.type_name || '.' || f.field_name, 0, s.tag
-    FROM graphql_field f
-    JOIN store_graph_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
-   WHERE s.tag IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                      WHERE d.graph_name = f.graph_name
-                        AND d.coordinate = f.type_name || '.' || f.field_name
-                        AND d.directive_name = 'tag')
-  UNION ALL
-  SELECT a.graph_name, a.type_name || '.' || a.field_name || '(' || a.argument_name || ':)', 0, s.tag
-    FROM graphql_argument a
-    JOIN store_graph_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name
-   WHERE s.tag IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                      WHERE d.graph_name = a.graph_name
-                        AND d.coordinate = a.type_name || '.' || a.field_name
-                                           || '(' || a.argument_name || ':)'
-                        AND d.directive_name = 'tag')
-  UNION ALL
-  SELECT v.graph_name, v.type_name || '.' || v.value_name, 0, s.tag
-    FROM graphql_enum_value v
-    JOIN store_graph_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name
-   WHERE s.tag IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                      WHERE d.graph_name = v.graph_name
-                        AND d.coordinate = v.type_name || '.' || v.value_name
-                        AND d.directive_name = 'tag')
-  UNION ALL
-  -- A union is tagged per declaration site, each site taking the tag of its own file unless the site
-  -- carries one, so a union declared in two tagged files carries both.
-  SELECT t.graph_name, t.type_name, t.merge_ordinal, s.tag
-    FROM graphql_type_declaration t
-    JOIN store_graph_source_input s ON s.graph_name = t.graph_name AND s.source_name = t.source_name
-   WHERE t.kind = 'UNION' AND s.tag IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphql_ast_entry e
-                       JOIN graphql_ast_directive_application_entry a
-                         ON a.graph_name = e.graph_name AND a.source_name = e.source_name
-                        AND a.source_line = e.source_line AND a.source_column = e.source_column
-                      WHERE e.graph_name = t.graph_name AND e.source_name = t.source_name
-                        AND e.parent_line = t.source_line AND e.parent_column = t.source_column
-                        AND a.name = 'tag'))
-SELECT p.graph_name, p.coordinate,
-       CAST((SELECT COUNT(*) FROM graphql_directive_application d
-              WHERE d.graph_name = p.graph_name AND d.coordinate = p.coordinate
-                AND d.directive_name = 'tag') AS INT)
-         -- After every tag the author wrote, in the order of the sites the tags come from: one site
-         -- at its own position, a union's sites at their merge ordinals.
-         + p.site_order,
-       '"' || p.tag || '"'
-  FROM applied p
-  JOIN graphitron_element e ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate;
-COMMENT ON VIEW graphitron_configured_tag_rule IS 'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
--- COMMENT ON COLUMN graphitron_configured_tag_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_configured_tag_rule.coordinate IS 'the element the tag is applied to: a field, an input field, an argument, an enum value, or a union';
--- COMMENT ON COLUMN graphitron_configured_tag_rule.ordinal IS 'after every authored @tag at the coordinate, in declaration-site order where a union takes several';
--- COMMENT ON COLUMN graphitron_configured_tag_rule.value_sdl IS 'the tag as the name: argument an author would have written';
 CREATE TABLE graphitron_configured_tag (
   graph_name     VARCHAR NOT NULL,
   coordinate     VARCHAR NOT NULL,
@@ -8460,33 +7938,6 @@ COMMENT ON VIEW graphitron_directive_application_configured IS 'One of the three
 -- COMMENT ON COLUMN graphitron_directive_application_configured.source_line IS 'always NULL';
 -- COMMENT ON COLUMN graphitron_directive_application_configured.source_column IS 'always NULL';
 
-CREATE VIEW graphitron_carrier_directive_rule
-  (graph_name, type_name, coordinate, directive_name, ordinal, value_sdl) AS
-WITH carried (graph_name, coordinate, directive_name, ordinal, value_sdl) AS (
-  SELECT d.graph_name, d.coordinate, d.directive_name, d.ordinal, a.value_sdl
-    FROM graphql_directive_application d
-    LEFT JOIN graphql_directive_application_arg a
-      ON a.graph_name = d.graph_name AND a.coordinate = d.coordinate
-     AND a.directive_name = d.directive_name AND a.ordinal = d.ordinal
-     AND a.directive_argument_name = 'name'
-   WHERE d.directive_name IN ('tag', 'shareable')
-  UNION ALL
-  SELECT c.graph_name, c.coordinate, 'tag', c.ordinal, c.value_sdl
-    FROM graphitron_configured_tag c)
-SELECT m.graph_name, m.type_name, m.coordinate, c.directive_name, c.ordinal, c.value_sdl
-  FROM graphitron_minted_coinage m
-  -- The minted types as this stage stored them before running the rule, so a type an author
-  -- declared, or one the applications disagree about, inherits nothing.
-  JOIN graphitron_type t ON t.graph_name = m.graph_name AND t.type_name = m.type_name
-   AND t.origin = 'MINTED'
-  JOIN carried c ON c.graph_name = m.graph_name AND c.coordinate = m.coordinate;
-COMMENT ON VIEW graphitron_carrier_directive_rule IS 'One row the carrier-directive rule computes, in the shape graphitron_carrier_directive stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_carrier_directive, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
--- COMMENT ON COLUMN graphitron_carrier_directive_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_carrier_directive_rule.type_name IS 'the minted type the carrier coined; only a type the mint did not stand down for, an author''s declaration inheriting nothing';
--- COMMENT ON COLUMN graphitron_carrier_directive_rule.coordinate IS 'the carrier field';
--- COMMENT ON COLUMN graphitron_carrier_directive_rule.directive_name IS 'tag or shareable';
--- COMMENT ON COLUMN graphitron_carrier_directive_rule.ordinal IS 'the application''s order on the carrier';
--- COMMENT ON COLUMN graphitron_carrier_directive_rule.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable, which takes none';
 CREATE TABLE graphitron_carrier_directive (
   graph_name     VARCHAR NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -8506,53 +7957,6 @@ COMMENT ON COLUMN graphitron_carrier_directive.directive_name IS 'tag or shareab
 COMMENT ON COLUMN graphitron_carrier_directive.ordinal IS 'the application''s order on the carrier';
 COMMENT ON COLUMN graphitron_carrier_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable, which takes none';
 COMMENT ON COLUMN graphitron_carrier_directive.touched_at IS 'when the reading that last found this directive on this carrier ran: the mark the sweep reads, so one still carried survives a reading and one no longer carried goes';
-
-CREATE VIEW graphitron_inherited_directive_rule
-  (graph_name, type_name, directive_name, ordinal, value_sdl) AS
--- Each tag the first carrier carries, the carrier of least coordinate, that every carrier carries.
-WITH placed (graph_name, type_name, value_sdl, first_carrier, first_ordinal) AS (
-  SELECT f.graph_name, f.type_name, f.value_sdl, f.coordinate, MIN(f.ordinal)
-    FROM graphitron_carrier_directive f
-   WHERE f.directive_name = 'tag' AND f.value_sdl IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM graphitron_minted_coinage e
-                      WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
-                        AND e.coordinate < f.coordinate)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_minted_coinage mc
-                      WHERE mc.graph_name = f.graph_name AND mc.type_name = f.type_name
-                        AND NOT EXISTS (SELECT 1 FROM graphitron_carrier_directive d
-                                         WHERE d.graph_name = mc.graph_name AND d.type_name = mc.type_name
-                                           AND d.coordinate = mc.coordinate AND d.directive_name = 'tag'
-                                           AND d.value_sdl = f.value_sdl))
-   GROUP BY f.graph_name, f.type_name, f.value_sdl, f.coordinate)
--- A tag every carrier carries, in the first carrier's order: placed by how many other tags the first
--- carrier carries before it that every carrier carries too, dense from zero.
-SELECT p.graph_name, p.type_name, 'tag',
-       CAST((SELECT COUNT(DISTINCT b.value_sdl) FROM graphitron_carrier_directive b
-              WHERE b.graph_name = p.graph_name AND b.type_name = p.type_name
-                AND b.coordinate = p.first_carrier AND b.directive_name = 'tag'
-                AND b.ordinal < p.first_ordinal AND b.value_sdl IS NOT NULL
-                AND b.value_sdl <> p.value_sdl
-                AND NOT EXISTS (SELECT 1 FROM graphitron_minted_coinage mc
-                                 WHERE mc.graph_name = b.graph_name AND mc.type_name = b.type_name
-                                   AND NOT EXISTS (SELECT 1 FROM graphitron_carrier_directive d
-                                                    WHERE d.graph_name = mc.graph_name
-                                                      AND d.type_name = mc.type_name
-                                                      AND d.coordinate = mc.coordinate
-                                                      AND d.directive_name = 'tag'
-                                                      AND d.value_sdl = b.value_sdl))) AS INT),
-       p.value_sdl
-  FROM placed p
-UNION ALL
--- @shareable where any carrier is.
-SELECT DISTINCT d.graph_name, d.type_name, 'shareable', 0, CAST(NULL AS VARCHAR)
-  FROM graphitron_carrier_directive d
- WHERE d.directive_name = 'shareable';
-COMMENT ON VIEW graphitron_inherited_directive_rule IS 'One row the inherited directive rule computes, in the shape graphitron_inherited_directive stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_inherited_directive, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_inherited_directive_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_inherited_directive.graph_name';
--- COMMENT ON COLUMN graphitron_inherited_directive_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_inherited_directive.type_name';
--- COMMENT ON COLUMN graphitron_inherited_directive_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_inherited_directive.directive_name';
--- COMMENT ON COLUMN graphitron_inherited_directive_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_inherited_directive.ordinal';
--- COMMENT ON COLUMN graphitron_inherited_directive_rule.value_sdl IS 'the value_sdl of a row of this rule, which the stage writes into graphitron_inherited_directive.value_sdl';
 
 CREATE TABLE graphitron_inherited_directive (
   graph_name     VARCHAR   NOT NULL,
@@ -9739,31 +9143,6 @@ COMMENT ON COLUMN graphitron_type_member.touched_at IS 'when the reading that de
 CREATE INDEX graphitron_type_member_member_ix ON graphitron_type_member (graph_name, member_type_name);
 COMMENT ON INDEX graphitron_type_member_member_ix IS 'A reader holding a type asks which unions and interfaces admit it, and the primary key, which leads with the container, serves none of that: graphitron_producer_candidate_rule lands a bound member on each polymorphic type it belongs to.';
 
-CREATE VIEW graphitron_type_member_rule
-  (graph_name, container_name, container_kind, member_type_name, member_kind, position) AS
-SELECT u.graph_name, u.union_name, c.kind, u.member_type_name, m.kind, u.position
-  FROM graphql_union_member u
-  JOIN graphitron_type c
-    ON c.graph_name = u.graph_name AND c.type_name = u.union_name AND c.kind = 'UNION'
-  JOIN graphitron_type m
-    ON m.graph_name = u.graph_name AND m.type_name = u.member_type_name
-   AND m.kind IN ('OBJECT', 'INTERFACE')
-UNION ALL
-SELECT i.graph_name, i.interface_name, c.kind, i.type_name, m.kind, i.position
-  FROM graphql_implements_interface i
-  JOIN graphitron_type c
-    ON c.graph_name = i.graph_name AND c.type_name = i.interface_name AND c.kind = 'INTERFACE'
-  JOIN graphitron_type m
-    ON m.graph_name = i.graph_name AND m.type_name = i.type_name
-   AND m.kind IN ('OBJECT', 'INTERFACE');
-COMMENT ON VIEW graphitron_type_member_rule IS 'One row the type member rule computes, in the shape graphitron_type_member stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_member, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_type_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_member.graph_name';
--- COMMENT ON COLUMN graphitron_type_member_rule.container_name IS 'the container_name of a row of this rule, which the stage writes into graphitron_type_member.container_name';
--- COMMENT ON COLUMN graphitron_type_member_rule.container_kind IS 'the container_kind of a row of this rule, which the stage writes into graphitron_type_member.container_kind';
--- COMMENT ON COLUMN graphitron_type_member_rule.member_type_name IS 'the member_type_name of a row of this rule, which the stage writes into graphitron_type_member.member_type_name';
--- COMMENT ON COLUMN graphitron_type_member_rule.member_kind IS 'the member_kind of a row of this rule, which the stage writes into graphitron_type_member.member_kind';
--- COMMENT ON COLUMN graphitron_type_member_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_type_member.position';
-
 -- A type the schema leads to, whatever runs on it (Alf, 2026-11-19): a field nothing reaches is one
 -- nothing in the schema leads to, its type no root and returned by no field of a reached type, itself
 -- or as a member of a union or interface the field returns. A fact of the types, stated before the
@@ -10196,57 +9575,6 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                                        AND x.arrival_kind = 'EXACT' AND x.type_kind = 'SCALAR' AND x.arrival_class = c.erased_class)));
 COMMENT ON VIEW graphitron_code_reference_entry_defect_rule IS 'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.';
 
-CREATE VIEW graphitron_scalar_class_rule (graph_name, type_name, kind, java_class, source) AS
--- A scalar whose candidates disagree has no class: the constant is named in two entries that
--- coerce differently, and nothing says which the generator is handed. A scalar carrying both
--- @scalarType and @generatedScalar has no class either: each arm stands aside where the other
--- directive is applied, so neither is silently picked and the two claims are the defect.
-SELECT graph_name, type_name, 'SCALAR', MIN(java_class), MIN(source)
-  FROM (SELECT t.graph_name, t.type_name, b.java_class, 'BUILT_IN' AS source
-          FROM graphitron_type t
-          JOIN (VALUES ('ID', 'java.lang.String'), ('String', 'java.lang.String'),
-                       ('Int', 'java.lang.Integer'), ('Float', 'java.lang.Double'),
-                       ('Boolean', 'java.lang.Boolean')) b (scalar, java_class)
-            ON b.scalar = t.type_name
-         WHERE t.kind = 'SCALAR'
-        UNION ALL
-        SELECT t.graph_name, t.type_name, k.input_type, 'SCALAR_TYPE'
-          FROM graphql_directive_application da
-          JOIN graphitron_ast_scalar_type_entry e
-            ON e.graph_name = da.graph_name AND e.source_name = da.source_name
-           AND e.source_line = da.source_line AND e.source_column = da.source_column
-          JOIN graphitron_type t
-            ON t.graph_name = da.graph_name AND t.type_name = da.coordinate AND t.kind = 'SCALAR'
-          JOIN code_graph_class g
-            ON g.graph_name = da.graph_name AND g.class_name = e.scalar_ref_class_part
-          JOIN code_scalar_constant k
-            ON k.source_name = g.source_name AND k.class_name = g.class_name
-           AND k.field_name = e.scalar_ref_field_part
-         WHERE da.directive_name = 'scalarType' AND da.ordinal = 0 AND k.input_type IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM graphql_directive_application g
-                            WHERE g.graph_name = da.graph_name AND g.coordinate = da.coordinate
-                              AND g.directive_name = 'generatedScalar')
-        UNION ALL
-        SELECT t.graph_name, t.type_name, 'java.lang.String', 'GENERATED'
-          FROM graphql_directive_application da
-          JOIN graphitron_ast_generated_scalar_entry e
-            ON e.graph_name = da.graph_name AND e.source_name = da.source_name
-           AND e.source_line = da.source_line AND e.source_column = da.source_column
-          JOIN graphitron_type t
-            ON t.graph_name = da.graph_name AND t.type_name = da.coordinate AND t.kind = 'SCALAR'
-         WHERE da.directive_name = 'generatedScalar' AND da.ordinal = 0
-           AND NOT EXISTS (SELECT 1 FROM graphql_directive_application s
-                            WHERE s.graph_name = da.graph_name AND s.coordinate = da.coordinate
-                              AND s.directive_name = 'scalarType')) c
- GROUP BY graph_name, type_name
-HAVING COUNT(DISTINCT java_class) = 1;
-COMMENT ON VIEW graphitron_scalar_class_rule IS 'One row the scalar class rule computes, in the shape graphitron_scalar_class stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_scalar_class, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_scalar_class_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_scalar_class.graph_name';
--- COMMENT ON COLUMN graphitron_scalar_class_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_scalar_class.type_name';
--- COMMENT ON COLUMN graphitron_scalar_class_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_scalar_class.kind';
--- COMMENT ON COLUMN graphitron_scalar_class_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_scalar_class.java_class';
--- COMMENT ON COLUMN graphitron_scalar_class_rule.source IS 'the source of a row of this rule, which the stage writes into graphitron_scalar_class.source';
-
 -- What an @assertType requires, as a tree keyed by the declaration it is written on: the requirement
 -- holds once per argument or input field, not per occurrence, and the condition beneath it is one
 -- row per node, named by its path from the root rather than by where it was written, so an edit
@@ -10630,23 +9958,6 @@ COMMENT ON COLUMN graphitron_edge.kind IS 'always OBJECT, pinned so the foreign 
 COMMENT ON COLUMN graphitron_edge.item_type_name IS 'the type the edge carries, read off its node field''s named type with its wrappers stripped. A name and not a binding: whether the item is bound to a table is graphitron_tabletype''s answer';
 COMMENT ON COLUMN graphitron_edge.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts, so a type that stopped being an edge leaves';
 
-CREATE VIEW graphitron_edge_rule (graph_name, type_name, kind, item_type_name) AS
--- From the connection down, each step a key probe; an edge two connections share is one row.
-SELECT DISTINCT et.graph_name, et.type_name, et.kind, n.named_type
-  FROM graphitron_type c
-  JOIN graphitron_field e
-    ON e.graph_name = c.graph_name AND e.type_name = c.type_name AND e.field_name = 'edges'
-  JOIN graphitron_type et
-    ON et.graph_name = e.graph_name AND et.type_name = e.named_type AND et.kind = 'OBJECT'
-  JOIN graphitron_field n
-    ON n.graph_name = et.graph_name AND n.type_name = et.type_name AND n.field_name = 'node'
- WHERE c.kind = 'OBJECT';
-COMMENT ON VIEW graphitron_edge_rule IS 'One row the edge rule computes, in the shape graphitron_edge stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_edge, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_edge_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_edge.graph_name';
--- COMMENT ON COLUMN graphitron_edge_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_edge.type_name';
--- COMMENT ON COLUMN graphitron_edge_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_edge.kind';
--- COMMENT ON COLUMN graphitron_edge_rule.item_type_name IS 'the item_type_name of a row of this rule, which the stage writes into graphitron_edge.item_type_name';
-
 CREATE TABLE graphitron_connection (
   graph_name     VARCHAR   NOT NULL,
   type_name      VARCHAR   NOT NULL,
@@ -10669,22 +9980,6 @@ COMMENT ON COLUMN graphitron_connection.kind IS 'always OBJECT, pinned so the fo
 COMMENT ON COLUMN graphitron_connection.edge_type_name IS 'the edge type its edges field names, a graphitron_edge row, whose item is what the connection pages';
 COMMENT ON COLUMN graphitron_connection.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts, so a type that stopped being a connection leaves';
 
-CREATE VIEW graphitron_connection_rule (graph_name, type_name, kind, edge_type_name) AS
-SELECT c.graph_name, c.type_name, c.kind, e.named_type
-  FROM graphitron_type c
-  JOIN graphitron_field e
-    ON e.graph_name = c.graph_name AND e.type_name = c.type_name AND e.field_name = 'edges'
-  JOIN graphitron_type et
-    ON et.graph_name = e.graph_name AND et.type_name = e.named_type AND et.kind = 'OBJECT'
-  JOIN graphitron_field n
-    ON n.graph_name = et.graph_name AND n.type_name = et.type_name AND n.field_name = 'node'
- WHERE c.kind = 'OBJECT';
-COMMENT ON VIEW graphitron_connection_rule IS 'One row the connection rule computes, in the shape graphitron_connection stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_connection_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_connection.graph_name';
--- COMMENT ON COLUMN graphitron_connection_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_connection.type_name';
--- COMMENT ON COLUMN graphitron_connection_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_connection.kind';
--- COMMENT ON COLUMN graphitron_connection_rule.edge_type_name IS 'the edge_type_name of a row of this rule, which the stage writes into graphitron_connection.edge_type_name';
-
 CREATE TABLE graphitron_field_position (
   graph_name VARCHAR   NOT NULL,
   type_name  VARCHAR   NOT NULL,
@@ -10704,31 +9999,6 @@ COMMENT ON COLUMN graphitron_field_position.type_name IS 'the connection, edge o
 COMMENT ON COLUMN graphitron_field_position.field_name IS 'the field; with the graph and the type, the grain';
 COMMENT ON COLUMN graphitron_field_position.position IS 'the position it fills, a graphitron_connection_position row of the role its type plays';
 COMMENT ON COLUMN graphitron_field_position.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts, so a field that stopped filling a position leaves';
-
-CREATE VIEW graphitron_field_position_rule (graph_name, type_name, field_name, position) AS
--- A connection's fields, its edge's fields, and the fields of the type its pageInfo field names.
-SELECT f.graph_name, f.type_name, f.field_name, p.position
-  FROM graphitron_connection c
-  JOIN graphitron_field f ON f.graph_name = c.graph_name AND f.type_name = c.type_name
-  JOIN graphitron_connection_position p ON p.role = 'CONNECTION' AND p.field_name = f.field_name
-UNION
-SELECT f.graph_name, f.type_name, f.field_name, p.position
-  FROM graphitron_edge e
-  JOIN graphitron_field f ON f.graph_name = e.graph_name AND f.type_name = e.type_name
-  JOIN graphitron_connection_position p ON p.role = 'EDGE' AND p.field_name = f.field_name
-UNION
-SELECT f.graph_name, f.type_name, f.field_name, p.position
-  FROM graphitron_connection c
-  JOIN graphitron_connection_position pp ON pp.position = 'PAGE_INFO'
-  JOIN graphitron_field pf
-    ON pf.graph_name = c.graph_name AND pf.type_name = c.type_name AND pf.field_name = pp.field_name
-  JOIN graphitron_field f ON f.graph_name = pf.graph_name AND f.type_name = pf.named_type
-  JOIN graphitron_connection_position p ON p.role = 'PAGE_INFO' AND p.field_name = f.field_name;
-COMMENT ON VIEW graphitron_field_position_rule IS 'One row the field position rule computes, in the shape graphitron_field_position stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_field_position, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_field_position_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_field_position_rule.type_name IS 'the connection, edge or page info type';
--- COMMENT ON COLUMN graphitron_field_position_rule.field_name IS 'the field';
--- COMMENT ON COLUMN graphitron_field_position_rule.position IS 'the position it fills';
 
 CREATE VIEW graphitron_field_target_rule
   (graph_name, type_name, field_name, target_type_name, wrapper_type_name, single_valued) AS
@@ -19708,331 +18978,6 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
                   WHERE em.graph_name = po.graph_name AND em.type_name = po.outcome_type_name
                     AND em.field_name = po.errors_field_name) = 1));
 COMMENT ON VIEW graphitron_outbox_key_rule IS 'One row the outbox key rule computes, in the shape graphitron_outbox_key stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_key, which is the name every reader spells.';
-
-CREATE VIEW graphitron_outbox_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- The configured table name split into its parts and folded, as the target rule splits it, so the
--- table it names is found through the catalog's folded-name index.
-WITH named (graph_name, name_upper, schema_upper) AS (
-  SELECT b.graph_name,
-         UPPER(CASE WHEN POSITION('.', b.table_name) = 0 THEN b.table_name
-                    ELSE REGEXP_REPLACE(b.table_name, '^[^.]*\.', '') END),
-         CASE WHEN POSITION('.', b.table_name) = 0 THEN CAST(NULL AS VARCHAR)
-              ELSE UPPER(REGEXP_REPLACE(b.table_name, '\..*$', '')) END
-    FROM store_graph_outbox b
-   WHERE b.table_name IS NOT NULL
-),
--- A graph whose named handle class the classpath actually holds. Without it the member arms would
--- report a missing class as a missing member; the class itself is reported where it is configured.
-session_handle_found (graph_name, handle_class) AS (
-  SELECT h.graph_name, h.handle_class
-    FROM store_graph_session_handle h
-   WHERE EXISTS (SELECT 1 FROM code_graph_class c
-                  WHERE c.graph_name = h.graph_name AND c.class_name = h.handle_class)
-),
--- One accessor of the handle class under the property name $session.<member> names, the slots the
--- class declares itself: graphitron_session_handle_member's rows, read off the tables it joins.
-handle_member (graph_name, member_name, source_name, class_name, method_name, descriptor) AS (
-  SELECT handle.graph_name, slot.slot_name, slot.source_name, slot.class_name, slot.method_name,
-         slot.descriptor
-    FROM store_graph_session_handle handle
-    JOIN code_graph_class source
-      ON source.graph_name = handle.graph_name AND source.class_name = handle.handle_class
-    JOIN code_read_slot slot
-      ON slot.source_name = source.source_name AND slot.class_name = source.class_name
-   WHERE slot.declaring_class = slot.class_name
-),
--- The written entries of an @outbox whose message has no key by the entry's name though its field
--- writes or calls a service, so the message is judged; NOT_A_WRITE speaks for any other. The
--- message's outcome and the field's errors field come along, so a misfit is told by what the key
--- rule did not resolve and on which outcome, the rule's own joins not repeated.
-outbox_unkeyed (graph_name, source_name, source_line, source_column, position, coordinate, ordinal,
-                key_name, bound_to, write_kind, is_service, outcome, errors_field) AS (
-  SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position, m.coordinate,
-         m.ordinal, p.target_name, p.bound_to, w.kind,
-         CASE WHEN w.kind IS NULL THEN 1 ELSE 0 END, m.outcome,
-         (SELECT po.outcome_type_name || '.' || po.errors_field_name
-            FROM graphitron_field f
-            JOIN graphitron_producer_outcome po
-              ON po.graph_name = f.graph_name AND po.type_name = f.type_name
-             AND po.field_name = f.field_name
-           WHERE f.graph_name = m.graph_name AND f.coordinate = m.coordinate)
-    FROM graphitron_outbox_message m
-    JOIN graphitron_argmapping_site s
-      ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
-     AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
-    JOIN graphitron_ast_argmapping_pair_entry p
-      ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-     AND p.source_line = s.source_line AND p.source_column = s.source_column AND p.target_kind = 'NAME'
-    LEFT JOIN graphitron_occurrence_producer_write w
-      ON w.graph_name = m.graph_name AND w.coordinate = m.occurrence_coordinate_ref
-   WHERE (w.kind IS NOT NULL
-          OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer op
-                      WHERE op.graph_name = m.graph_name AND op.coordinate = m.occurrence_coordinate_ref
-                        AND op.kind = 'SERVICE'))
-     AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
-                      WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
-                        AND k.ordinal = m.ordinal AND k.key_name = p.target_name)
-),
--- Each $result path of an @outbox that lands: whether a step of it is a list, and over a service's
--- value, the type a path read whole ends on, the member's yield or else the class it is read off.
-result_landed (graph_name, coordinate, ordinal, key_name, through_list, type_name) AS (
-  SELECT st.graph_name, st.coordinate, st.ordinal, st.target_name,
-         MAX(CASE WHEN sf.is_list THEN 1 ELSE 0 END),
-         MAX(CASE WHEN st.consumed = st.segments
-                  THEN COALESCE(cs.slot_type, so_src.class_name) END)
-    FROM graphitron_argmapping_step st
-    JOIN graphitron_occurrence so ON so.graph_name = st.graph_name AND so.coordinate = st.step_coordinate
-    JOIN graphitron_field sf ON sf.graph_name = so.graph_name AND sf.coordinate = so.element_coordinate
-    LEFT JOIN graphitron_occurrence_binding_value v
-      ON v.graph_name = st.graph_name AND v.coordinate = st.step_coordinate
-    LEFT JOIN code_read_slot cs
-      ON cs.source_name = v.slot_source_name AND cs.class_name = v.slot_class_name
-     AND cs.method_name = v.slot_method_name AND cs.descriptor = v.slot_descriptor
-    LEFT JOIN graphitron_occurrence_source_object so_src
-      ON so_src.graph_name = st.graph_name AND so_src.coordinate = st.step_coordinate
-   WHERE st.directive_name = 'outbox' AND st.bound_to LIKE '$result.%'
-     AND EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                  WHERE l.graph_name = st.graph_name AND l.coordinate = st.coordinate
-                    AND l.directive_name = st.directive_name AND l.ordinal = st.ordinal
-                    AND l.owner = st.owner AND l.target_name = st.target_name AND l.target_kind = st.target_kind
-                    AND l.call_coordinate = st.call_coordinate)
-   GROUP BY st.graph_name, st.coordinate, st.ordinal, st.target_name
-),
-pair_defect (graph_name, source_name, source_line, source_column, position, code, detail) AS (
-  -- A source found that cannot fill the place it binds, here a payload key: the whole session handle,
-  -- a member whose yield JSON cannot carry, a landed $result path that reads no node id, column or
-  -- value the message can take, $result on an ERROR message, $error on a SUCCESS one, or an $error
-  -- the field's errors field does not resolve, or a field without one. A source not found is a
-  -- defect of its sigil, raised where its facts are. The detail is the entry and why.
-  SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
-         'ARGMAPPING_SOURCE_MISFIT',
-         u.key_name || ': ' || u.bound_to || ' ('
-           || CASE WHEN u.outcome = 'ERROR' AND u.bound_to LIKE '$result%'
-                     THEN 'an ERROR message is written after the rollback, when nothing the call wrote is left'
-                   WHEN u.outcome = 'SUCCESS' AND u.bound_to LIKE '$error%'
-                     THEN 'a SUCCESS message is written when the call succeeds, with no error to read'
-                   WHEN u.bound_to LIKE '$error%' AND u.errors_field IS NULL
-                     THEN 'the field returns no type with an errors field'
-                   WHEN u.bound_to = '$error'
-                     THEN 'the error whole is no value a payload key carries'
-                   WHEN u.bound_to LIKE '$error.%'
-                     THEN 'neither __typename nor a field every error type of ' || u.errors_field
-                          || ' declares with one type'
-                   WHEN u.bound_to = '$session' THEN hf.handle_class
-                   WHEN u.bound_to LIKE '$session.%'
-                     THEN (SELECT MAX(cs.slot_type) FROM handle_member hm
-                             JOIN code_read_slot cs
-                               ON cs.source_name = hm.source_name AND cs.class_name = hm.class_name
-                              AND cs.method_name = hm.method_name AND cs.descriptor = hm.descriptor
-                            WHERE hm.graph_name = u.graph_name
-                              AND hm.member_name = SUBSTRING(u.bound_to, 10))
-                   WHEN rl.through_list = 1 THEN 'through a list, where a key holds one value'
-                   WHEN rl.type_name IS NOT NULL THEN rl.type_name
-                   WHEN u.is_service = 1 AND u.bound_to = '$result'
-                     THEN 'the returned value is no scalar a payload carries'
-                   WHEN u.is_service = 1 THEN 'not a member read off the returned value'
-                   WHEN u.bound_to = '$result'
-                     THEN 'the written table is not one node type keyed by its primary key'
-                   WHEN u.write_kind = 'DELETE' THEN 'after a DELETE only the node id is read'
-                   ELSE 'not the written row''s node id or one of its columns' END
-           || ')'
-    FROM outbox_unkeyed u
-    LEFT JOIN session_handle_found hf ON hf.graph_name = u.graph_name
-    LEFT JOIN result_landed rl
-      ON rl.graph_name = u.graph_name AND rl.coordinate = u.coordinate AND rl.ordinal = u.ordinal
-     AND rl.key_name = u.key_name
-   WHERE (u.bound_to = '$session' AND hf.handle_class IS NOT NULL)
-      OR (u.bound_to LIKE '$session.%'
-          AND (SELECT COUNT(*) FROM handle_member hm
-                WHERE hm.graph_name = u.graph_name AND hm.member_name = SUBSTRING(u.bound_to, 10)) = 1)
-      OR u.bound_to = '$result'
-      OR (u.bound_to LIKE '$result.%' AND (rl.key_name IS NOT NULL OR u.outcome = 'ERROR'))
-      OR u.bound_to = '$error' OR u.bound_to LIKE '$error.%'
-),
--- An entry of an @outbox's own mapping whose key it binds twice, or the common payload also names,
--- with where its mapping string sits so the first one as written is found by position, then site.
-key_conflict (graph_name, source_name, source_line, source_column, site_source_name, site_line,
-              site_column, position, key_name) AS (
-  SELECT m.graph_name, m.source_name, m.source_line, m.source_column, s.source_name, s.source_line,
-         s.source_column, p.position, p.target_name
-    FROM graphitron_outbox_message m
-    JOIN graphitron_argmapping_site s
-      ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
-     AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
-    JOIN graphitron_ast_argmapping_pair_entry p
-      ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-     AND p.source_line = s.source_line AND p.source_column = s.source_column AND p.target_kind = 'NAME'
-   WHERE EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry p2
-                  WHERE p2.graph_name = p.graph_name AND p2.source_name = p.source_name
-                    AND p2.source_line = p.source_line AND p2.source_column = p.source_column
-                    AND p2.target_name = p.target_name AND p2.target_kind = p.target_kind AND p2.position <> p.position)
-      OR EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c
-                  WHERE c.graph_name = m.graph_name AND c.key_name = p.target_name)
-),
--- An entry of the common payload, at one @outbox carrying it, that names a key twice or that the
--- message has no key for; the payload's position is its key within the graph.
-payload_invalid (graph_name, source_name, source_line, source_column, position, key_name, bound_to) AS (
-  SELECT m.graph_name, m.source_name, m.source_line, m.source_column, c.position, c.key_name, c.bound_to
-    FROM graphitron_outbox_message m
-    JOIN store_graph_outbox_payload_entry c ON c.graph_name = m.graph_name
-   WHERE EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c2
-                  WHERE c2.graph_name = c.graph_name AND c2.key_name = c.key_name
-                    AND c2.position <> c.position)
-      OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
-                      WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
-                        AND k.ordinal = m.ordinal AND k.key_name = c.key_name)
-)
--- An @outbox that is not on a field writing a table with @mutation, nor on a mutation field a
--- @service answers: no write, no message. A field no occurrence reaches writes nothing either.
-SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_NOT_A_WRITE',
-       CAST(NULL AS VARCHAR), 'outbox'
-  FROM graphitron_outbox_message m
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_write w
-                    WHERE w.graph_name = m.graph_name AND w.coordinate = m.occurrence_coordinate_ref)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer op
-                     JOIN graphitron_field f
-                       ON f.graph_name = m.graph_name AND f.coordinate = m.coordinate
-                     JOIN graphql_root_operation ro
-                       ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-                      AND ro.operation = 'MUTATION'
-                    WHERE op.graph_name = m.graph_name AND op.coordinate = m.occurrence_coordinate_ref
-                      AND op.kind = 'SERVICE')
-UNION ALL
--- An @outbox in a build that configures no outbox target. The configuration has no SDL position, so
--- the fault is reported at every @outbox it leaves without one.
-SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_NO_TARGET',
-       CAST(NULL AS VARCHAR), 'outbox'
-  FROM graphitron_outbox_message m
- WHERE NOT EXISTS (SELECT 1 FROM store_graph_outbox b
-                    WHERE b.graph_name = m.graph_name
-                      AND (b.table_name IS NOT NULL OR b.function_name IS NOT NULL))
-UNION ALL
--- A configured target that does not resolve, reported at every @outbox it serves, the detail naming
--- why: a role graphitron does not fill, a table with no id or with a column no one fills, or a name
--- that matches no one such table or routine. The table is looked up as the target rule looks it up,
--- by name through the graph's own sources, so the reason can name what the rule refused.
-SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_TARGET_INVALID',
-       CASE WHEN b.table_name IS NOT NULL AND b.function_name IS NOT NULL
-              THEN 'both <table> and <function> are named, name one'
-            WHEN ro.role IS NOT NULL
-              THEN CASE ro.kind WHEN 'COLUMN' THEN '<columns>' ELSE '<parameters>' END || ' binds '
-                   || ro.role || ', a role graphitron does not fill: a message is its type and its'
-                   || ' payload, and a target''s other columns are the database''s'
-            WHEN b.table_name IS NULL
-              THEN '<function> ' || b.function_name || ' is not one procedure or function of the jOOQ'
-                   || ' catalog, no table, whose parameters are the type, text, and the payload, JSON,'
-                   || ' JSONB or text'
-            -- A table that is not one, or lacks a role's column, is named as such before any finer reason.
-            WHEN tn.table_name IS NULL OR NOT EXISTS (SELECT 1 FROM sql_column c
-                             WHERE c.source_name = tn.source_name AND c.table_schema = tn.table_schema
-                               AND c.table_name = tn.table_name
-                               AND c.column_name_upper = UPPER(COALESCE((SELECT x.name FROM store_graph_outbox_role x
-                                     WHERE x.graph_name = m.graph_name AND x.kind = 'COLUMN'
-                                       AND x.role = 'type'), 'type')))
-                 OR NOT EXISTS (SELECT 1 FROM sql_column c
-                             WHERE c.source_name = tn.source_name AND c.table_schema = tn.table_schema
-                               AND c.table_name = tn.table_name
-                               AND c.column_name_upper = UPPER(COALESCE((SELECT x.name FROM store_graph_outbox_role x
-                                     WHERE x.graph_name = m.graph_name AND x.kind = 'COLUMN'
-                                       AND x.role = 'payload'), 'payload')))
-              THEN '<table> ' || b.table_name || ' is not one table of the jOOQ catalog with a type column'
-                   || ' and a payload column that is JSON, JSONB or text'
-            WHEN NOT EXISTS (
-                   SELECT 1 FROM sql_primary_key pk
-                    WHERE pk.source_name = tn.source_name AND pk.table_schema = tn.table_schema
-                      AND pk.table_name = tn.table_name)
-              THEN '<table> ' || b.table_name || ' has no primary key, so a consumer cannot tell a'
-                   || ' message delivered twice from two messages'
-            -- The first NOT NULL column of the table with no default that is no role's column.
-            WHEN (SELECT MIN(c.column_name) FROM sql_column c
-                   WHERE c.source_name = tn.source_name AND c.table_schema = tn.table_schema
-                     AND c.table_name = tn.table_name AND NOT c.nullable AND NOT c.defaulted
-                     AND c.column_name_upper NOT IN (
-                           UPPER(COALESCE((SELECT x.name FROM store_graph_outbox_role x
-                                            WHERE x.graph_name = m.graph_name AND x.kind = 'COLUMN'
-                                              AND x.role = 'type'), 'type')),
-                           UPPER(COALESCE((SELECT x.name FROM store_graph_outbox_role x
-                                            WHERE x.graph_name = m.graph_name AND x.kind = 'COLUMN'
-                                              AND x.role = 'payload'), 'payload')))) IS NOT NULL
-              THEN '<table> ' || b.table_name || '''s column ' || (SELECT MIN(c.column_name) FROM sql_column c
-                   WHERE c.source_name = tn.source_name AND c.table_schema = tn.table_schema
-                     AND c.table_name = tn.table_name AND NOT c.nullable AND NOT c.defaulted
-                     AND c.column_name_upper NOT IN (
-                           UPPER(COALESCE((SELECT x.name FROM store_graph_outbox_role x
-                                            WHERE x.graph_name = m.graph_name AND x.kind = 'COLUMN'
-                                              AND x.role = 'type'), 'type')),
-                           UPPER(COALESCE((SELECT x.name FROM store_graph_outbox_role x
-                                            WHERE x.graph_name = m.graph_name AND x.kind = 'COLUMN'
-                                              AND x.role = 'payload'), 'payload'))))
-                   || ' is NOT NULL with no default, and graphitron fills only the type and the payload'
-            ELSE '<table> ' || b.table_name || ' is not one table of the jOOQ catalog with a type column'
-                 || ' and a payload column that is JSON, JSONB or text' END, 'outbox'
-  FROM graphitron_outbox_message m
-  JOIN store_graph_outbox b ON b.graph_name = m.graph_name
-  -- The first role the configuration binds that graphitron does not fill.
-  LEFT JOIN (SELECT r.graph_name, MIN(r.kind) AS kind, MIN(r.role) AS role
-               FROM store_graph_outbox_role r
-              WHERE r.role NOT IN ('type', 'payload')
-              GROUP BY r.graph_name) ro ON ro.graph_name = m.graph_name
-  -- The one table the name matches, where it matches one.
-  LEFT JOIN (SELECT n.graph_name, MIN(st.source_name) AS source_name,
-                    MIN(st.table_schema) AS table_schema, MIN(st.table_name) AS table_name
-               FROM named n
-               JOIN store_graph_source gs ON gs.graph_name = n.graph_name
-               JOIN sql_table st
-                 ON st.source_name = gs.source_name AND st.table_name_upper = n.name_upper
-                AND (n.schema_upper IS NULL OR st.table_schema_upper = n.schema_upper)
-              GROUP BY n.graph_name
-             HAVING COUNT(*) = 1) tn ON tn.graph_name = m.graph_name
- WHERE (b.table_name IS NOT NULL OR b.function_name IS NOT NULL)
-   AND ((b.table_name IS NOT NULL AND b.function_name IS NOT NULL)
-        OR ro.role IS NOT NULL
-        OR (b.function_name IS NULL
-            AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_target t WHERE t.graph_name = m.graph_name))
-        OR (b.table_name IS NULL
-            AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_routine_target t
-                             WHERE t.graph_name = m.graph_name)))
-UNION ALL
--- Two @outbox with one event, at each of the two.
-SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_DUPLICATE_EVENT', m.event, 'outbox'
-  FROM graphitron_outbox_message m
- WHERE EXISTS (SELECT 1 FROM graphitron_outbox_message o
-                WHERE o.graph_name = m.graph_name AND o.event = m.event
-                  AND (o.coordinate <> m.coordinate OR o.ordinal <> m.ordinal))
-UNION ALL
--- A key bound twice in one mapping, or also a key of the common payload: one row per @outbox, the
--- first offending key as written; the author fixes it and the next one is reported.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT', d.key_name, 'outbox'
-  FROM key_conflict d
- WHERE NOT EXISTS (SELECT 1 FROM key_conflict e
-                    WHERE e.graph_name = d.graph_name AND e.source_name = d.source_name
-                      AND e.source_line = d.source_line AND e.source_column = d.source_column
-                      AND (e.position < d.position
-                           OR (e.position = d.position
-                               AND (e.site_source_name < d.site_source_name
-                                    OR (e.site_source_name = d.site_source_name
-                                        AND (e.site_line < d.site_line
-                                             OR (e.site_line = d.site_line
-                                                 AND e.site_column < d.site_column)))))))
-UNION ALL
--- The configured common payload's faults, reported at every @outbox: a key it names twice, or an
--- entry no message could carry.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYLOAD_INVALID',
-       d.key_name || ': ' || d.bound_to, 'outbox'
-  FROM payload_invalid d
- WHERE NOT EXISTS (SELECT 1 FROM payload_invalid e
-                    WHERE e.graph_name = d.graph_name AND e.source_name = d.source_name
-                      AND e.source_line = d.source_line AND e.source_column = d.source_column
-                      AND e.position < d.position)
-UNION ALL
--- Each string one of whose entries a rule above refuses, once per code; the entries are
--- graphitron_outbox_entry_defect_pair_rule's rows, written under it.
-SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, d.code,
-       CAST(NULL AS VARCHAR), 'outbox'
-  FROM pair_defect d;
-
-COMMENT ON VIEW graphitron_outbox_entry_defect_rule IS 'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.';
 
 -- The entries under the outbox stage's source misfits, which ArgMappingPairDefects writes under the
 -- strings that stage's rule view raises from the same statement.
@@ -32590,417 +31535,6 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
  WHERE r.kind = 'DEFAULT' AND r.surface = 'FIELDS' AND fe.shape IN ('METHOD', 'PATH');
 COMMENT ON VIEW graphitron_occurrence_routine_write_entry_defect_rule IS 'One row the routine write defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a Mutation @routine whose record field is lifted along no path out of the function''s result giving one ROUTINE_WRITE_LIFT_WITHOUT_STEP_UNSUPPORTED row at the field.';
 
-CREATE VIEW graphitron_occurrence_source_claim_declaring_table_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'declaringTable', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.type_name
- WHERE o.kind = 'FIELD' AND o.depth = 0;
-COMMENT ON VIEW graphitron_occurrence_source_claim_declaring_table_rule IS 'One claim the declaringTable rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field where a chain starts, on a type bound to a table, reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_root_routine_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'rootRoutine', 'TABLE', st.source_name, st.table_schema, st.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphql_root_operation ro ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-  JOIN graphitron_producer_routine pr
-    ON pr.graph_name = f.graph_name AND pr.type_name = f.type_name AND pr.field_name = f.field_name
-  JOIN sql_table st
-    ON st.source_name = pr.routine_source_name AND st.table_schema = pr.table_schema
-   AND st.table_name = pr.routine_name AND st.table_type = 'FUNCTION'
- WHERE o.kind = 'FIELD' AND o.depth = 0;
-COMMENT ON VIEW graphitron_occurrence_source_claim_root_routine_rule IS 'One claim the rootRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: a root field whose producer calls a routine reads the derived table its function returns. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_own_service_record_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'ownServiceRecord', 'TABLE', r.table_source_name, r.table_schema, r.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence_producer op ON op.graph_name = o.graph_name AND op.coordinate = o.coordinate
-  JOIN graphitron_occurrence_producer_result r ON r.graph_name = op.graph_name AND r.coordinate = op.coordinate
- WHERE o.kind = 'FIELD' AND op.kind = 'SERVICE' AND op.start = 'CHILD' AND r.table_name IS NOT NULL;
-COMMENT ON VIEW graphitron_occurrence_source_claim_own_service_record_rule IS 'One claim the ownServiceRecord rule makes, in the shape graphitron_occurrence_source_claim_table stores: a child whose own service hands back a table''s records reads the table its producer''s result names. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_record_parameter_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'recordParameter', 'TABLE', bc.record_source_name, bc.record_schema, bc.record_table
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence_built_class bc
-    ON bc.graph_name = o.graph_name AND bc.coordinate = o.coordinate AND bc.stated_by = 'SERVICE'
-   AND bc.record_table IS NOT NULL
-   -- A member a service's bean takes, or a service's own parameter; a write's record is not this rule's.
-   AND (bc.declared_via = 'MEMBER'
-        OR bc.declared_via = 'PARAMETER'
-           AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter c
-                        WHERE c.graph_name = o.graph_name AND c.landing_coordinate = o.coordinate
-                          AND c.call_kind = 'SERVICE' AND c.record_table IS NOT NULL))
- WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD');
-COMMENT ON VIEW graphitron_occurrence_source_claim_record_parameter_rule IS 'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service takes as a table''s jOOQ record, as a parameter or a bean member, reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_argument_routine_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'argumentRoutine', 'TABLE', rr.table_source_name, rr.table_schema, rr.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate AND p.depth = 0
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphql_root_operation ro ON ro.graph_name = pf.graph_name AND ro.type_name = pf.type_name
-  JOIN graphitron_routine_result rr
-    ON rr.graph_name = pf.graph_name AND rr.type_name = pf.type_name AND rr.field_name = pf.field_name
- -- A return a table is bound to steps on from the result to that table, whose rows are filtered.
- WHERE o.kind = 'FIELD_ARGUMENT'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                    WHERE tt.graph_name = rr.graph_name AND tt.type_name = rr.target_type_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_argument_routine_rule IS 'One claim the argumentRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a root field whose path ends on its @routine, returning a type no table is bound to, reads the function''s result, the rows the field returns. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
-
-CREATE VIEW graphitron_occurrence_source_claim_argument_target_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'argumentTarget', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
-  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
- WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
-                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
-                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place);
-COMMENT ON VIEW graphitron_occurrence_source_claim_argument_target_rule IS 'One claim the argumentTarget rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target is bound to a table, writing no path, reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_argument_member_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'argumentMember', 'TABLE', mt.table_source_name, mt.table_schema, mt.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
-  JOIN graphitron_type_member pm ON pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name
-  JOIN graphitron_tabletype mt ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
- WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
-                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
-                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_argument_member_rule IS 'One claim the argumentMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose union or interface target binds no table reads each member''s table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_argument_write_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'argumentWrite', 'TABLE', pw.table_source_name, pw.table_schema, pw.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
-  JOIN graphitron_producer_write pw
-    ON pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name AND pw.field_name = pf.field_name
- WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
-                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
-                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_type gt
-                     WHERE gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
-                       AND gt.kind IN ('INTERFACE', 'UNION'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
-                     JOIN graphitron_tabletype mt
-                       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
-                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_argument_write_rule IS 'One claim the argumentWrite rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a write whose target binds no table reads the table the write mutates. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_record_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'record', 'TABLE', hr.table_source_name, hr.table_schema, hr.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_field_handed_record hr
-    ON hr.graph_name = pf.graph_name AND hr.type_name = pf.type_name AND hr.field_name = pf.field_name
-  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
- WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
-                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate AND po.kind = 'OBJECT')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
-                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
-                       AND ef.field_name = cf.field_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_record_rule IS 'One claim the record rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field under a parent whose service or external field hands back a table''s record reads that table. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_object_rule (graph_name, coordinate, rule, kind, class_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'object', 'OBJECT', hc.class_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_field_handed_class hc
-    ON hc.graph_name = pf.graph_name AND hc.type_name = pf.type_name AND hc.field_name = pf.field_name
-  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
- WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
-                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate AND po.kind = 'OBJECT')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
-                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
-                       AND ef.field_name = cf.field_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_object_rule IS 'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class reads an instance of it, which record overrides where the class is a table''s record. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.class_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_object_member_rule (graph_name, coordinate, rule, kind, class_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'objectMember', 'OBJECT', pa.target_class_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_accessor_path pa ON pa.graph_name = p.graph_name AND pa.coordinate = p.coordinate
-  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
- WHERE o.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM store_graph_source gs
-                     JOIN sql_table st ON st.source_name = gs.source_name
-                    WHERE gs.graph_name = o.graph_name AND st.record_class_fqn = pa.target_class_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
-                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
-                       AND ef.field_name = cf.field_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_object_member_rule IS 'One claim the objectMember rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under an occurrence with an accessor path reads an instance of the class the path reaches. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.class_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_write_payload_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'writePayload', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphql_root_operation ro ON ro.graph_name = pf.graph_name AND ro.type_name = pf.type_name
-  JOIN graphitron_producer_write pw
-    ON pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name AND pw.field_name = pf.field_name
-  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = cf.graph_name AND ft.type_name = cf.type_name AND ft.field_name = cf.field_name
-  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
- WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
-                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
-                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
-                       AND ef.field_name = cf.field_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_write_payload_rule IS 'One claim the writePayload rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose target is bound to a table reads that table. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_write_payload_member_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'writePayloadMember', 'TABLE', pw.table_source_name, pw.table_schema, pw.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphql_root_operation ro ON ro.graph_name = pf.graph_name AND ro.type_name = pf.type_name
-  JOIN graphitron_producer_write pw
-    ON pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name AND pw.field_name = pf.field_name
-  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = cf.graph_name AND ft.type_name = cf.type_name AND ft.field_name = cf.field_name
- WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND pw.table_name IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
-   AND EXISTS (SELECT 1 FROM graphitron_type_member pm
-                 JOIN graphitron_tabletype mt
-                   ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
-                WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
-                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
-                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
-                       AND ef.field_name = cf.field_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_write_payload_member_rule IS 'One claim the writePayloadMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose union or interface target binds no table reads the write''s table, the rows the write produced. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_nested_copy_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'nestedCopy', 'TABLE', pt.table_source_name, pt.table_schema, pt.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_occurrence_source_table pt ON pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
-  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
- WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
-                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
-                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_claim pc
-                     WHERE pc.graph_name = pf.graph_name AND pc.coordinate = pf.coordinate
-                       AND pc.kind = 'SERVICE')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference xr
-                     JOIN code_method xm
-                       ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
-                      AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
-                    WHERE xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
-                      AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
-                      AND xm.result_first_argument_class IS NOT NULL)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
-                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
-                       AND ef.field_name = cf.field_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_target pw
-                     WHERE pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name
-                       AND pw.field_name = pf.field_name AND pw.wrapper_type_name IS NOT NULL);
-COMMENT ON VIEW graphitron_occurrence_source_claim_nested_copy_rule IS 'One claim the nestedCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent with a table source reads its parent''s tables. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_nested_path_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'nestedPath', 'TABLE', j.target_source_name, j.target_schema, j.target_table
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_join_path j ON j.graph_name = p.graph_name AND j.coordinate = p.coordinate
-  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
- WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
-                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
-                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_claim pc
-                     WHERE pc.graph_name = pf.graph_name AND pc.coordinate = pf.coordinate
-                       AND pc.kind = 'SERVICE')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference xr
-                     JOIN code_method xm
-                       ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
-                      AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
-                    WHERE xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
-                      AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
-                      AND xm.result_first_argument_class IS NOT NULL)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
-                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
-                       AND ef.field_name = cf.field_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_target pw
-                     WHERE pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name
-                       AND pw.field_name = pf.field_name AND pw.wrapper_type_name IS NOT NULL);
-COMMENT ON VIEW graphitron_occurrence_source_claim_nested_path_rule IS 'One claim the nestedPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent field that writes a path reads each table the path reaches. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_argument_copy_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'argumentCopy', 'TABLE', pt.table_source_name, pt.table_schema, pt.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
-  JOIN graphitron_occurrence_source_table pt ON pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
- WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
-                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
-                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
-                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
-                     JOIN graphitron_tabletype mt
-                       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
-                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_argument_copy_rule IS 'One claim the argumentCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target binds no table reads its field''s own tables. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_argument_path_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'argumentPath', 'TABLE', j.target_source_name, j.target_schema, j.target_table
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  JOIN graphitron_join_path j ON j.graph_name = p.graph_name AND j.coordinate = p.coordinate
- WHERE o.kind = 'FIELD_ARGUMENT' AND EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
-                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
-                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place);
-COMMENT ON VIEW graphitron_occurrence_source_claim_argument_path_rule IS 'One claim the argumentPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field that writes a path reads each table the field''s join path reaches. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
-CREATE VIEW graphitron_occurrence_source_claim_input_field_copy_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'inputFieldCopy', 'TABLE', pt.table_source_name, pt.table_schema, pt.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
-  JOIN graphitron_occurrence_source_table pt ON pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
- WHERE o.kind = 'INPUT_FIELD';
-COMMENT ON VIEW graphitron_occurrence_source_claim_input_field_copy_rule IS 'One claim the inputFieldCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an input field reads its parent argument''s or input field''s tables. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
-
 CREATE VIEW graphitron_occurrence_source_rule (graph_name, coordinate, kind, rule) AS
 -- The claim of smallest priority value among the occurrence's claims takes effect: one no claim at the
 -- same occurrence outranks.
@@ -34830,24 +33364,8 @@ INSERT INTO meta_stage_rule VALUES
   ('field-targets', 'graphitron_field_many', 'graphitron_field_many_rule'),
   ('field-targets', 'graphitron_field_target', 'graphitron_field_target_rule'),
   ('graph-classes', 'code_graph_class', 'code_graph_class_rule'),
-  ('macro-expansion', 'graphitron_carrier_directive', 'graphitron_carrier_directive_rule'),
-  ('macro-expansion', 'graphitron_configured_tag', 'graphitron_configured_tag_rule'),
-  ('macro-expansion', 'graphitron_connection', 'graphitron_connection_rule'),
-  ('macro-expansion', 'graphitron_connection_carrier', 'graphitron_connection_carrier_rule'),
-  ('macro-expansion', 'graphitron_connection_facet', 'graphitron_connection_facet_rule'),
-  ('macro-expansion', 'graphitron_edge', 'graphitron_edge_rule'),
   ('macro-expansion', 'graphitron_entry_defect', 'graphitron_macro_expansion_entry_defect_rule'),
-  ('macro-expansion', 'graphitron_facet_binding', 'graphitron_facet_binding_rule'),
-  ('macro-expansion', 'graphitron_field_position', 'graphitron_field_position_rule'),
-  ('macro-expansion', 'graphitron_inherited_directive', 'graphitron_inherited_directive_rule'),
-  ('macro-expansion', 'graphitron_minted_coinage', 'graphitron_minted_coinage_rule'),
-  ('macro-expansion', 'graphitron_minted_conflict', 'graphitron_minted_conflict_rule'),
-  ('macro-expansion', 'graphitron_type_minted_candidate', 'graphitron_type_minted_candidate_rule'),
-  ('macro-expansion', 'graphitron_field_minted_candidate', 'graphitron_field_minted_candidate_rule'),
-  ('macro-expansion', 'graphitron_argument_minted_candidate', 'graphitron_argument_minted_candidate_rule'),
-  ('macro-expansion', 'graphitron_scalar_class', 'graphitron_scalar_class_rule'),
   ('macro-expansion', 'graphitron_type_arrival', 'graphitron_type_arrival_rule'),
-  ('macro-expansion', 'graphitron_type_member', 'graphitron_type_member_rule'),
   ('call-parameter-tables', 'graphitron_call_parameter_table', 'graphitron_call_parameter_table_rule'),
   ('minted-keys', 'graphitron_entry_defect', 'graphitron_minted_key_entry_defect_rule'),
   ('minted-keys', 'graphitron_minted_key', 'graphitron_minted_key_rule'),
@@ -34926,26 +33444,6 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate', 'graphitron_occurrence_producer_lift_candidate_rule'),
   ('occurrence-depths', 'graphitron_occurrence_reader', 'graphitron_occurrence_reader_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source', 'graphitron_occurrence_source_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_copy_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_path_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_input_field_copy_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_nested_copy_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_nested_path_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_object_member_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_object_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_record_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_write_payload_member_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_write_payload_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_object', 'graphitron_occurrence_source_claim_object_member_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_object', 'graphitron_occurrence_source_claim_object_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_copy_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_path_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_input_field_copy_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_nested_copy_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_nested_path_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_record_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_write_payload_member_rule'),
-  ('occurrence-depths', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_write_payload_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source_object', 'graphitron_occurrence_source_object_rule'),
   ('occurrence-depths', 'graphitron_occurrence_source_table', 'graphitron_occurrence_source_table_rule'),
   ('occurrence-depths', 'graphitron_path_need_claim', 'graphitron_path_need_claim_argument_copy_rule'),
@@ -35020,22 +33518,6 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-routes', 'graphitron_occurrence_connection_part', 'graphitron_occurrence_connection_rule'),
   ('occurrence-source-claims', 'graphitron_field_handed_class', 'graphitron_field_handed_class_rule'),
   ('occurrence-source-claims', 'graphitron_field_handed_record', 'graphitron_field_handed_record_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_member_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_target_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_write_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_declaring_table_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_own_service_record_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_record_parameter_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_root_routine_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim', 'graphitron_occurrence_source_claim_argument_routine_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_member_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_target_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_write_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_declaring_table_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_own_service_record_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_record_parameter_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_root_routine_rule'),
-  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_argument_routine_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_tenant_entry_defect_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_argument_read_entry_defect_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_filter_column_entry_defect_rule'),
@@ -35056,7 +33538,6 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrences', 'graphitron_occurrence_chain', 'graphitron_occurrence_chain_rule'),
   ('occurrences', 'graphitron_occurrence_input_type', 'graphitron_occurrence_input_type_rule'),
   ('outbox', 'graphitron_argmapping_pair_defect', 'graphitron_outbox_entry_defect_pair_rule'),
-  ('outbox', 'graphitron_entry_defect', 'graphitron_outbox_entry_defect_rule'),
   ('outbox', 'graphitron_outbox_key', 'graphitron_outbox_key_rule'),
   ('outbox', 'graphitron_outbox_message', 'graphitron_outbox_message_rule'),
   ('outbox', 'graphitron_outbox_routine_target', 'graphitron_outbox_routine_target_rule'),
@@ -37020,78 +35501,6 @@ INSERT INTO meta_relation VALUES
    'The class a rule claims one occurrence''s values are an instance of: one row per occurrence and rule.',
    'For example objectMember claims a field under an occurrence whose accessor path reaches FilmBlurbHolder reads an instance of it.',
    'The object side of a claim beside graphitron_occurrence_source_claim_table, one class per claim, as graphitron_occurrence_source_object is beside its supertype.'),
-  ('graphitron_occurrence_source_claim_declaring_table_rule', 'source-claim-table', 'graphitron',
-   'One claim the declaringTable rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field where a chain starts, on a type bound to a table, reads that table.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_argument_routine_rule', 'source-claim-table', 'graphitron',
-   'One claim the argumentRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a root field whose path ends on its @routine, returning a type no table is bound to, reads the function''s result, the rows the field returns.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'The rows an argument of a root routine read filters are the function''s result, which graphitron_routine_result names; argumentTarget reads a @table target only, so without this an argument the routine does not take had no table, no row input, and no filter or refusal the store states.'),
-  ('graphitron_occurrence_source_claim_root_routine_rule', 'source-claim-table', 'graphitron',
-   'One claim the rootRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: a root field whose producer calls a routine reads the derived table its function returns.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_own_service_record_rule', 'source-claim-table', 'graphitron',
-   'One claim the ownServiceRecord rule makes, in the shape graphitron_occurrence_source_claim_table stores: a child whose own service hands back a table''s records reads the table its producer''s result names.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_record_parameter_rule', 'source-claim-table', 'graphitron',
-   'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service takes as a table''s jOOQ record, as a parameter or a bean member, reads that table.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_argument_target_rule', 'source-claim-table', 'graphitron',
-   'One claim the argumentTarget rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target is bound to a table, writing no path, reads that table.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_argument_member_rule', 'source-claim-table', 'graphitron',
-   'One claim the argumentMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose union or interface target binds no table reads each member''s table.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_argument_write_rule', 'source-claim-table', 'graphitron',
-   'One claim the argumentWrite rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a write whose target binds no table reads the table the write mutates.',
-   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_record_rule', 'source-claim-table', 'graphitron',
-   'One claim the record rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field under a parent whose service or external field hands back a table''s record reads that table.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_object_rule', 'source-claim', 'graphitron',
-   'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class reads an instance of it, which record overrides where the class is a table''s record.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_object_member_rule', 'source-claim', 'graphitron',
-   'One claim the objectMember rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under an occurrence with an accessor path reads an instance of the class the path reaches.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_write_payload_rule', 'source-claim-table', 'graphitron',
-   'One claim the writePayload rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose target is bound to a table reads that table.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_write_payload_member_rule', 'source-claim-table', 'graphitron',
-   'One claim the writePayloadMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose union or interface target binds no table reads the write''s table, the rows the write produced.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_nested_copy_rule', 'source-claim-table', 'graphitron',
-   'One claim the nestedCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent with a table source reads its parent''s tables.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_nested_path_rule', 'source-claim-table', 'graphitron',
-   'One claim the nestedPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent field that writes a path reads each table the path reaches.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_argument_copy_rule', 'source-claim-table', 'graphitron',
-   'One claim the argumentCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target binds no table reads its field''s own tables.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_argument_path_rule', 'source-claim-table', 'graphitron',
-   'One claim the argumentPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field that writes a path reads each table the field''s join path reaches.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
-  ('graphitron_occurrence_source_claim_input_field_copy_rule', 'source-claim-table', 'graphitron',
-   'One claim the inputFieldCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an input field reads its parent argument''s or input field''s tables.',
-   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
-   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
   ('graphitron_occurrence_source_rule', 'graph-occurrence', 'graphitron',
    'One row the occurrence source rule computes, in the shape graphitron_occurrence_source stores: the claims that took effect.',
    'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source, which is the name every reader spells.',
@@ -38289,10 +36698,6 @@ INSERT INTO meta_relation VALUES
    'One row the ordering defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_entry_defect, @defaultOrder(primaryKey: true) on a list over a table with no primary key giving one ORDER_PRIMARY_KEY_MISSING row at the application.',
    'What an ordering cannot state, stated beside the orders: a list whose order is not stated is read in whatever order the database returns. Six are rules the walk enforces (OrderByResolver and GraphitronSchemaValidator): a primary key, an index or a column the table lacks, a malformed element, a sort value without @order, an inline list over a keyless table with no order. ORDER_SURFACES is the manual''s rule, stricter than the walk, which takes the first surface written. ORDER_CHOICE_ON_INLINE_LIST is a deferral for a shape the walk throws on. ORDER_POSITIONS_DISAGREE is the walk''s fold of several tables'' orders by position (FieldBuilder.foldParticipantOrderings). Each sits at the written application or element, so an @order value used by two fields is one defect. Its read order family has a rule of its own beside it, so no rule nests a union deeper than seven.'),
-  ('graphitron_outbox_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
-   'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.',
-   'The outbox stage''s own defects, written as its last statement from the relations it has just written, so the rule reaches the messages and the targets as stored rows rather than through the gatherer''s one rule over every arm.'),
   ('graphitron_ast_error_entry', 'sdl-declaration-site', 'graphitron',
    'One @error application, at its @ token.',
    'For example type FilmNotFound @error(handlers: [{handler: VALIDATION}]) gives one row, and its one handler is a row of graphitron_ast_error_handler_entry hanging off it.',
@@ -38510,10 +36915,6 @@ INSERT INTO meta_relation VALUES
    'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph.',
    'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here, no row in graphitron_field, and a MINTED_NAME_CONTESTED defect at each carrier.',
    'Two applications minting one coordinate the same way are the ordinary case and the whole reason the minted relations key by their source, shared machinery being stated whole by every carrier. Two that disagree are not, and neither of them may win. Picking one would put a shape in the emitted population that no application asked for and that nothing records, which is the class of silence this line of work exists to remove; refusing outright would be worse, because the schema is one an author can write and capture runs before assembly and for readers that never run it, so the store has to exist for the diagnostic to sit in. So the coordinate is withheld, this row says why, and each application coining it draws a MINTED_NAME_CONTESTED defect, on the claim conflict''s terms, which is the same shape one increment earlier: a contested coordinate, neither claimant, and a relation naming it. What each application would have written is not copied here; the minted relations keep it, keyed by the coordinate that coined each, so the readings are a join away rather than a duplicate.'),
-  ('graphitron_minted_conflict_rule', 'minted-conflict', 'graphitron',
-   'One row the minted conflict rule computes, in the shape graphitron_minted_conflict stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_minted_conflict, which is the name every reader spells.',
-   'The rule, on graphitron_type_minted_candidate_rule''s terms. The relation was cleared and refilled in Java; stored from its rule it is marked and swept like its neighbours, and the count it states is readable in the catalog.'),
   ('graphitron_element', 'expanded-element', 'graphitron',
    'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',
@@ -38526,18 +36927,6 @@ INSERT INTO meta_relation VALUES
    'A field @asConnection expands, with the names and wrapping its expansion needs: one row per carrier.',
    'For example films: [Film!]! @asConnection on Query is one row naming QueryFilmsConnection, QueryFilmsConnectionEdge and the element Film!, where the same directive on a films: Film field is no row at all.',
    'The admission test and the naming rule are one decision each, and this is where each is made. Every arm of the mint reads it, so an arm cannot disagree with its siblings about which fields are carriers or what a carrier''s connection is called, which is what happens when the join is repeated per arm. Admission is a column test rather than a parse: a bare list of a named type is is_list with list_depth 1, and the expansion used to read that off type_sdl by hand because the anchor dropped the column the entry had already captured. The position travels with the row because the anchor resolving two carriers onto one connection name has to say which application it honoured, and a coordinate cannot say that. Stored, by macro expansion before anything it expands, and keyed into the authored field it describes: the authored fields exclude carriers by anti-join, and as a view joining four relations it was re-evaluated once per field, which on a large consumer schema took the field write from half a second to forty.'),
-  ('graphitron_facet_binding_rule', 'facet-binding', 'graphitron',
-   'One row the facet binding rule computes, in the shape graphitron_facet_binding stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_facet_binding, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so an EXCEPT between the table and this view stays runnable for as long as both exist; stored because the connection facets read it in a NOT EXISTS, which a view cannot serve.'),
-  ('graphitron_connection_facet_rule', 'carrier-facet', 'graphitron',
-   'One row the connection facet rule computes, in the shape graphitron_connection_facet stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_facet, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so an EXCEPT between the table and this view stays runnable for as long as both exist; stored so the facet mint stacked on it reads rows rather than re-deriving them, and so no window ranks them (Alf, 2026-11-15).'),
-  ('graphitron_connection_carrier_rule', 'connection-carrier', 'graphitron',
-   'One row the connection carrier rule computes, in the shape graphitron_connection_carrier stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_carrier, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_connection_facet', 'carrier-facet', 'graphitron',
    'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments.',
    'For example films(filter: FilmFilter) @asConnection surfaces every facet FilmFilter declares, in emission order.',
@@ -38559,10 +36948,6 @@ INSERT INTO meta_relation VALUES
    'Which coordinate coined each type the expansion mints: one row per minted type name and the application it was derived from.',
    'For example films: [Film!]! @asConnection with a title facet coins QueryFilmsConnection, QueryFilmsConnectionEdge, PageInfo, QueryFilmsConnectionFacets and StringFacetValue, all at Query.films.',
    'Named because the pairing was being restated by each reader that wanted it, once as a staging table''s column and then as an enumeration of arms in Java. Distinct because shared machinery is coined by every carrier that wants it and a name coined twice at one coordinate is one row; not distinct across coordinates, because which application coined a name is the fact this relation exists to carry.'),
-  ('graphitron_minted_coinage_rule', 'minted-coinage', 'graphitron',
-   'One row the coinage rule computes, in the shape graphitron_minted_coinage stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_minted_coinage, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_federation_definition', 'federation-definition', 'graphitron',
    'One federation definition a graph''s link brings in, under the name the graph sees it by.',
    'For example @key as @key where the link imports it, as @federation__key where it does not, and FieldSet as federation__FieldSet unless imported.',
@@ -38603,26 +36988,14 @@ INSERT INTO meta_relation VALUES
    'One type one arm of the type mint states for one carrier, before any disagreement between the arms is resolved.',
    'For example connectionName: "PageInfo" on films: [Film!]! @asConnection is two PageInfo rows at Query.films, the CONNECTION arm''s and the PAGE_INFO arm''s, whose descriptions disagree, so graphitron_minted_conflict holds PageInfo and graphitron_type_minted does not.',
    'The population graphitron_minted_conflict is counted over, and so the one relation of the pair that may hold several readings of one coordinate; its set cannot, a set that excluded the contested coordinates having to be read to find them. Stored because the conflict count and the set both build on it and graphitron_minted_coinage is its projection. Keyed by carrier and arm rather than by payload: the payload carries no key a reader asks by, and one carrier stating one name through two arms is the case a key without the arm would fold into one row and lose the disagreement of.'),
-  ('graphitron_type_minted_candidate_rule', 'minted-type-candidate', 'graphitron',
-   'One row the type minted candidate rule computes, in the shape graphitron_type_minted_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_minted_candidate, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the conflict count reads it, so the minted type set reads a relation rather than this view.'),
   ('graphitron_field_minted_candidate', 'minted-field-candidate', 'graphitron',
    'One field one arm of the field mint states for one carrier, before any disagreement between the arms is resolved.',
    'For example two carriers naming one connection through connectionName over different element types are two Shared.nodes rows here, one per carrier, whose type expressions disagree, so graphitron_minted_conflict holds Shared.nodes and graphitron_field_minted does not.',
    'On graphitron_type_minted_candidate''s terms, the arm naming which of the carrier''s types the field sits on. It carries the rewrite flag its set does not need to expose, because whether a row restates an authored field or adds a new one decides which arm of the element anchor owns its coordinate.'),
-  ('graphitron_field_minted_candidate_rule', 'minted-field-candidate', 'graphitron',
-   'One row the field minted candidate rule computes, in the shape graphitron_field_minted_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_field_minted_candidate, which is the name every reader spells.',
-   'The rule, on graphitron_type_minted_candidate_rule''s terms.'),
   ('graphitron_argument_minted_candidate', 'expanded-argument', 'graphitron',
    'What the arms of the argument mint state before any disagreement between them is resolved.',
    'For example a carrier whose author already wrote first is one row here and none in graphitron_argument_minted.',
    'On graphitron_type_minted_candidate''s terms, keyed by the argument''s coordinate with no carrier or arm beside it: each arm adds its own argument to its own carrier, so the coordinate names both.'),
-  ('graphitron_argument_minted_candidate_rule', 'expanded-argument', 'graphitron',
-   'One row the argument minted candidate rule computes, in the shape graphitron_argument_minted_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_argument_minted_candidate, which is the name every reader spells.',
-   'The rule, on graphitron_type_minted_candidate_rule''s terms.'),
   ('graphitron_type_minted', 'expanded-type', 'graphitron',
    'One of the two sets graphitron_type is the union of: a type macro expansion adds, filling a name no author took.',
    'For example QueryFilmsConnection where the author wrote only films: [Film!]! @asConnection.',
@@ -38687,10 +37060,6 @@ INSERT INTO meta_relation VALUES
    'The rule <schemaInput tag> states, as a relation: one row per @tag the configuration applies to an element of the emitted population.',
    'For example a field declared in a file whose entry carries tag stable, and which carries no @tag of its own, is one row naming stable.',
    'The one statement of the rule: the emitted schema applies these rows, and inheritance reads them, so a carrier''s tags and the ones its minted types inherit cannot disagree. Fields, input fields, arguments and enum values take their file''s tag; a union takes one per declaration site, each site judged on its own applications.'),
-  ('graphitron_configured_tag_rule', 'configured-tag', 'graphitron',
-   'One row the configured-tag rule computes, in the shape graphitron_configured_tag stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_configured_tag, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
   ('graphitron_enum_value', 'expanded-enum-value', 'graphitron',
    'Every enum value the generator emits: one row per enum value coordinate.',
    'For example enum Rating { G PG } is the rows Rating.G and Rating.PG. Authored only, the macros minting no enum.',
@@ -38719,14 +37088,6 @@ INSERT INTO meta_relation VALUES
    'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured.',
    'For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.',
    'The input to inheritance and to the narrowing finding, stated once so both read one population. Only types the mint did not stand down for, an author''s declaration inheriting nothing.'),
-  ('graphitron_carrier_directive_rule', 'carrier-directive', 'graphitron',
-   'One row the carrier-directive rule computes, in the shape graphitron_carrier_directive stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_carrier_directive, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
-  ('graphitron_inherited_directive_rule', 'inherited-directive', 'graphitron',
-   'One row the inherited directive rule computes, in the shape graphitron_inherited_directive stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_inherited_directive, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so an EXCEPT between the table and this view stays runnable for as long as both exist; stored so the minted applications read rows rather than a view, and so no window numbers the tags (Alf, 2026-11-15).'),
   ('graphitron_inherited_directive', 'inherited-directive', 'graphitron',
    'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is.',
    'For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.',
@@ -38739,10 +37100,6 @@ INSERT INTO meta_relation VALUES
    'A member of a polymorphic type: one row per union or interface and each type it admits.',
    'For example Searchable = Film | Language draws Film and Language under Searchable, and type Language implements Node draws Language under Node.',
    'The polymorphic subtype of graphitron_type: both ends key into the supertype with their kinds pinned, so a member is a type and a container a union or an interface by the database''s own key. Stored, beside the types macro expansion writes, so a rule asking a container''s members joins one table on its key rather than the graphql_poly_member view, a union of two transcription relations a rule view may not read. What a member is bound to, a table or none, is each reader''s join to graphitron_tabletype, so no caller''s filter is baked into the grain.'),
-  ('graphitron_type_member_rule', 'type-member', 'graphitron',
-   'One row the type member rule computes, in the shape graphitron_type_member stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_member, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_scalar_class', 'expanded-type', 'graphitron',
    'The Java class a scalar''s values arrive as: one row per scalar whose class is known.',
    'For example Int arrives as java.lang.Integer, scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing, and scalar Path @generatedScalar(kind: SCHEMA_PATH) as java.lang.String.',
@@ -38754,10 +37111,6 @@ INSERT INTO meta_relation VALUES
   ('graphitron_type_arrival_rule', 'type-arrival', 'graphitron',
    'One row the type arrival rule computes, in the shape graphitron_type_arrival stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_arrival, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
-  ('graphitron_scalar_class_rule', 'expanded-type', 'graphitron',
-   'One row the scalar class rule computes, in the shape graphitron_scalar_class stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_scalar_class, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_occurrence_input_type', 'graph-occurrence', 'graphitron',
    'The type an argument or input field occurrence takes, and the Java class its values arrive as: one row per such occurrence.',
@@ -38771,26 +37124,14 @@ INSERT INTO meta_relation VALUES
    'An edge of a Relay connection and the item its node names: one row per edge type.',
    'For example FilmsEdge, whose node field names Film, draws one row naming Film, however many connections page through it.',
    'A subtype of graphitron_type pinned to OBJECT, so an edge is a type of its kind by the database''s own key. Structural and not directive-driven: an edge is an object some connection''s edges field names and that declares node, whether @asConnection minted it or the author wrote it. The item is stated once, here, and a connection reaches it through its edge, so two connections sharing an edge cannot disagree about what it carries. A name and not a binding: whether the item is bound to a table is graphitron_tabletype''s answer.'),
-  ('graphitron_edge_rule', 'expanded-type', 'graphitron',
-   'One row the edge rule computes, in the shape graphitron_edge stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_edge, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_connection', 'expanded-type', 'graphitron',
    'A Relay connection type and the edge it pages through: one row per type whose shape is a connection.',
    'For example a FilmsConnection declaring edges: [FilmsEdge] draws one row naming FilmsEdge, and a type that is not a connection draws none, so a reader left-joins this rather than joining it.',
    'A subtype of graphitron_type pinned to OBJECT, keyed into graphitron_edge for what it pages. Structural and not directive-driven: a connection synthesised from @asConnection and one the author wrote out have the same shape and so the same row. The shape test is the spec''s own and its names literal, edges then an OBJECT edge then node; field names being unique within a type, it never fans out. Written by macro expansion beside the types it reads, ahead of the field targets that unwrap it, so no rule reads the shape as a view or re-spells it as anti-joins.'),
-  ('graphitron_connection_rule', 'expanded-type', 'graphitron',
-   'One row the connection rule computes, in the shape graphitron_connection stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_field_position', 'graph-field', 'graphitron',
    'A field that fills a position of the connection shape: one row per field.',
    'For example FilmsConnection.totalCount fills TOTAL_COUNT, and PageInfo.endCursor fills END_CURSOR however many connections share PageInfo; a field filling no position has no row.',
    'Which position of the connection shape a field fills, stated once at the field''s grain so a rule asking whether a field is a connection''s totalCount, facets or page info joins a key instead of spelling the field''s name. A connection''s and its edge''s fields fill the CONNECTION and EDGE positions, and the fields of the type a connection''s pageInfo field names fill the PAGE_INFO ones; a type shared by several connections fills each position once. Recognition of the shape itself is graphitron_connection''s and graphitron_edge''s; this states only the positions a recognised type''s fields fill.'),
-  ('graphitron_field_position_rule', 'graph-field', 'graphitron',
-   'One row the field position rule computes, in the shape graphitron_field_position stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_field_position, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphql_element_field', 'element-field-site', 'graphql-ast',
    'The field a schema element sits on, for the element kinds whose coordinate names one: one row per field coordinate, output and input alike, and one per field-argument coordinate, carrying the parts the spelling is built from.',
    'For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.',

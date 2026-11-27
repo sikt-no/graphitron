@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.test.StageRuleFiles;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -131,6 +132,10 @@ class DefectStageGateTest {
             for (var rule : StageAnswerAgreementTest.defectRules(dsl)) {
                 raised.addAll(codesEmittedBy(dsl, rule.view()));
             }
+            // A stage's rule kept as a file of its own raises codes the same way.
+            var files = defectFiles();
+            StageRuleFiles.withViews(dsl, files,
+                () -> files.forEach(file -> raised.addAll(codesEmittedBy(dsl, file.rule()))));
             javaWriters().values().forEach(raised::addAll);
             var declared = new TreeSet<String>(dsl.select(GRAPHITRON_DEFECT_TYPE.CODE)
                 .from(GRAPHITRON_DEFECT_TYPE).fetch(GRAPHITRON_DEFECT_TYPE.CODE));
@@ -148,22 +153,46 @@ class DefectStageGateTest {
                 String gatherer = gathererOf(dsl, rule.stage());
                 assertThat(gatherer).as("the gatherer running " + view + "'s stage is the view's owner")
                     .isEqualTo(ownerOf(dsl, view));
-                var readable = readableBy(dsl, gatherer);
-                var unreadable = new TreeSet<String>();
-                for (String table : ViewReferences.tablesReachedBy(dsl, view)) {
-                    String tableOwner = dsl.select(META_RELATION.OWNER_NAME).from(META_RELATION)
-                        .where(META_RELATION.RELATION_NAME.eq(table))
-                        .fetchOne(META_RELATION.OWNER_NAME);
-                    if (tableOwner != null && !readable.contains(tableOwner)) {
-                        unreadable.add(table + " (" + tableOwner + ")");
-                    }
-                }
-                assertThat(unreadable)
+                assertThat(unreadable(dsl, gatherer, view))
                     .as("tables " + view + " reaches whose owner " + gatherer
                         + " neither owns nor declares a dependency on in meta_gatherer_dependency")
                     .isEmpty();
             }
+            // A stage's rule kept as a file of its own, every one and not only the defect rules: its
+            // gatherer is the folder it sits in, and what it may read is still what that gatherer may.
+            var files = StageRuleFiles.all();
+            StageRuleFiles.withViews(dsl, files, () -> {
+                for (var file : files) {
+                    assertThat(unreadable(dsl, file.gatherer(), file.rule()))
+                        .as("tables " + file.stage() + "'s rule " + file.rule() + " reaches whose owner "
+                            + file.gatherer() + " neither owns nor declares a dependency on in"
+                            + " meta_gatherer_dependency")
+                        .isEmpty();
+                }
+            });
         });
+    }
+
+    /** The tables {@code rule} reaches whose owner {@code gatherer} neither owns nor may read. */
+    private static Set<String> unreadable(DSLContext dsl, String gatherer, String rule) {
+        var readable = readableBy(dsl, gatherer);
+        var unreadable = new TreeSet<String>();
+        for (String table : ViewReferences.tablesReachedBy(dsl, rule)) {
+            String tableOwner = dsl.select(META_RELATION.OWNER_NAME).from(META_RELATION)
+                .where(META_RELATION.RELATION_NAME.eq(table))
+                .fetchOne(META_RELATION.OWNER_NAME);
+            if (tableOwner != null && !readable.contains(tableOwner)) {
+                unreadable.add(table + " (" + tableOwner + ")");
+            }
+        }
+        return unreadable;
+    }
+
+    /** The stages' defect rules kept as files of their own, which raise rows of the defect relation. */
+    static java.util.List<StageRuleFiles.RuleFile> defectFiles() {
+        return StageRuleFiles.all().stream()
+            .filter(file -> file.rule().endsWith("_entry_defect_rule"))
+            .toList();
     }
 
     /**
