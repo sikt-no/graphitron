@@ -50,11 +50,12 @@ public final class RootReadEmitter {
 
     /**
      * The names a root read calls by: its own method, the conditions class and method its occurrence's
-     * filter is rendered as, the projection unit of the type it returns, and the selection scaffold.
-     * Each is the name the emitter of that unit gives it.
+     * filter is rendered as, the {@code @orderBy} helper its choice is rendered as, the projection unit of
+     * the type it returns, and the selection scaffold. Each is the name the emitter of that unit gives it.
      */
     public interface Names {
         String launcherMethod(String parentType, String fieldName);
+        String orderByHelper(String parentType, String fieldName);
         ClassName conditionsClass(String parentType);
         String conditionMethod(String parentType, String fieldName);
         ClassName projectionUnit(String typeName);
@@ -63,14 +64,14 @@ public final class RootReadEmitter {
 
     /**
      * Whether this emitter renders {@code root}: a list or one record, of a table or a routine, ordered by
-     * columns of the table its rows are on. A lookup, a connection, a chosen order, a root over a
-     * discriminated table and a key down a path or computed by a method are rendered elsewhere until their
-     * piece lands here.
+     * columns of the table its rows are on or as the request's {@code @orderBy} argument chooses. A lookup,
+     * a connection, a root over a discriminated table and a fixed key down a path or computed by a method
+     * are rendered elsewhere until their piece lands here.
      */
     public static boolean renders(Emitted root) {
-        return root.keys().isEmpty() && root.choice() == null && root.pageSize() == null
+        return root.keys().isEmpty() && root.pageSize() == null
             && root.discriminated() == null && root.facets().isEmpty()
-            && root.order().stream().allMatch(key -> key.derived() == null);
+            && (root.choice() != null || root.order().stream().allMatch(key -> key.derived() == null));
     }
 
     /** What the body hands back: the fetched rows for a list, the one record or {@code null} otherwise. */
@@ -103,8 +104,12 @@ public final class RootReadEmitter {
         }
         method.addStatement("$T condition = $L", CONDITION, condition);
 
-        boolean ordered = root.list() && !root.order().isEmpty();
-        if (ordered) {
+        boolean ordered = root.list() && (root.choice() != null || !root.order().isEmpty());
+        if (ordered && root.choice() != null) {
+            // The order the request's argument chooses, or the default, from the root's @orderBy helper.
+            method.addStatement("$T orderBy = $L(env, $L).sortFields()", SORT_FIELD_LIST,
+                names.orderByHelper(root.parentType(), root.fieldName()), source.terminal());
+        } else if (ordered) {
             method.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST, sortParts(root.order(), source.terminal()));
         }
         // The type's projection over the fetched field's own selection.
@@ -232,16 +237,8 @@ public final class RootReadEmitter {
         return call.add(")").build();
     }
 
-    /**
-     * {@code <table>.<COL>.<asc|desc>(), ...} in the order's sequence: a column that admits {@code NULL}
-     * sorts {@code NULLS LAST} either way, and a {@code NOT NULL} one states no placement.
-     */
+    /** Each key's sort term over {@code table}, in the order's sequence, as {@link OrderKeys} renders it. */
     private static CodeBlock sortParts(List<Key> keys, String table) {
-        var parts = new ArrayList<CodeBlock>();
-        for (var key : keys) {
-            parts.add(CodeBlock.of("$L.$L.$L()$L", table, key.column().javaName(),
-                "DESC".equals(key.direction()) ? "desc" : "asc", key.nullable() ? ".nullsLast()" : ""));
-        }
-        return CodeBlock.join(parts, ", ");
+        return keys.stream().map(key -> OrderKeys.sortTerm(key, table, null)).collect(CodeBlock.joining(", "));
     }
 }

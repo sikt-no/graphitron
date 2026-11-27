@@ -1,6 +1,5 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.command.ReservedAliases;
 import no.sikt.graphitron.command.SelectTerm;
 import no.sikt.graphitron.command.SortKeyMethod;
 import com.palantir.javapoet.ClassName;
@@ -45,12 +44,12 @@ public final class SortKeyFragments {
     }
 
     /**
-     * The key's cursor column: {@link #call} aliased under {@link ReservedAliases#sortKey}, so the
+     * The key's cursor column: {@link #call} aliased under {@link no.sikt.graphitron.emit.OrderKeys#cursorAlias}, so the
      * selection merge keeps it beside a selected column of the same name and the cursor reads
      * exactly the value the order sorts on.
      */
     public static CodeBlock cursorColumn(OrderBySpec.SortKeyEntry entry, String srcAlias, IntFunction<String> pathMethodName) {
-        return CodeBlock.of("$L.as($S)", call(entry, srcAlias, pathMethodName), ReservedAliases.sortKey(entry.ordinal()));
+        return CodeBlock.of("$L.as($S)", call(entry, srcAlias, pathMethodName), no.sikt.graphitron.emit.OrderKeys.cursorAlias(entry.ordinal()));
     }
 
     /** The name lookup {@link #call} takes, over the methods a command carries. */

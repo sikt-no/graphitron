@@ -1176,8 +1176,13 @@ public class TypeFetcherGenerator {
         // (minted on the rows) and the @orderBy helpers' (collected as each helper is emitted).
         var sortKeyMethods = launcherSortKeyMethods(typeName, fields, launchers);
         for (var field : fields) {
-            if (field instanceof QueryField.QueryTableField qtf
-                    && argumentOrderOf(qtf, launchers) instanceof OrderBySpec.Argument arg) {
+            var storeHelper = launchers.orderHelperFor(typeName, field.name());
+            if (storeHelper.isPresent()) {
+                // A root the store states whole with a choice: its helper, path keys inline, is the store's.
+                builder.addMethod(no.sikt.graphitron.emit.OrderByHelperEmitter.render(storeHelper.get(),
+                    orderHelperNames(namingVocabulary)));
+            } else if (field instanceof QueryField.QueryTableField qtf
+                    && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = qtf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
                 var sortKeys = sortKeyNames(typeName, qtf.name(), outputPackage);
@@ -1186,9 +1191,7 @@ public class TypeFetcherGenerator {
                     arg, names, tableRef, outputPackage, sortKeys));
                 collectSortKeyMethods(sortKeyMethods, helperOrders(arg), sortKeys);
             } else if (field instanceof QueryField.QueryTableInterfaceField qtif
-                    && launchers.argumentOrderFor(qtif.parentTypeName(), qtif.name())
-                        .orElse(qtif.orderBy() instanceof OrderBySpec.Argument walk ? walk : null)
-                        instanceof OrderBySpec.Argument arg) {
+                    && qtif.orderBy() instanceof OrderBySpec.Argument arg) {
                 // The interface root's launcher references the same minted helper ref as the
                 // table root's; before the launcher migration the legacy body spelled the call
                 // inline while nothing emitted the helper, so an @orderBy argument on this
@@ -1369,6 +1372,11 @@ public class TypeFetcherGenerator {
             @Override
             public String conditionMethod(String parentType, String fieldName) {
                 return units.conditionMethod(parentType, fieldName).methodName();
+            }
+
+            @Override
+            public String orderByHelper(String parentType, String fieldName) {
+                return units.orderByHelperMethod(parentType, fieldName).methodName();
             }
 
             @Override
@@ -4763,15 +4771,21 @@ public class TypeFetcherGenerator {
 
     // -----------------------------------------------------------------------
     // OrderBy helper method generation
-    /**
-     * The {@code @orderBy} spec a root's helper renders: the store's, where the store states the root,
-     * so the helper and the row naming it come off one source, and the walk field's otherwise.
-     * {@code null} where the root has no {@code @orderBy} argument.
-     */
-    private static OrderBySpec.Argument argumentOrderOf(QueryField.QueryTableField qtf,
-            no.sikt.graphitron.plan.LauncherRelation launchers) {
-        return launchers.argumentOrderFor(qtf.parentTypeName(), qtf.name())
-            .orElse(qtf.orderBy() instanceof OrderBySpec.Argument walk ? walk : null);
+    /** The names a store-rendered {@code @orderBy} helper is declared and returns by, as the units mint them. */
+    private static no.sikt.graphitron.emit.OrderByHelperEmitter.Names orderHelperNames(
+            no.sikt.graphitron.plan.GeneratedUnits units) {
+        return new no.sikt.graphitron.emit.OrderByHelperEmitter.Names() {
+            @Override
+            public String orderByHelper(String parentType, String fieldName) {
+                return units.orderByHelperMethod(parentType, fieldName).methodName();
+            }
+
+            @Override
+            public ClassName orderByResult() {
+                var unit = units.orderByResult();
+                return ClassName.get(unit.packageName(), unit.simpleName());
+            }
+        };
     }
 
     // -----------------------------------------------------------------------

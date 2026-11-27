@@ -13,7 +13,10 @@ import no.sikt.graphitron.rewrite.model.AliasOwner;
  * bucket can collide with under the prefixing rule ({@link #RESULT_KEY_PREFIX} + key is outside
  * the client's alias space by construction; an adversarial {@code __rk_foo} client alias mints
  * {@code __rk___rk_foo}, still distinct), and {@link #DISCRIMINATOR} is aliased precisely so the
- * routing read cannot collide with a real catalog column of the same name.
+ * routing read cannot collide with a real catalog column of the same name. The one reserved alias
+ * held elsewhere, a derived sort key's cursor column {@code __sk_<n>}, is spelled by
+ * {@link no.sikt.graphitron.emit.OrderKeys#cursorAlias}, the store emitters' side of the namespace,
+ * and is disjoint from every alias here on its prefix.
  *
  * <p>The result-key namespace has a second axis, the alias <em>owner</em>
  * ({@link AliasOwner}), and it is disjoint from the first on the
@@ -122,18 +125,6 @@ public final class ReservedAliases {
      * reserves the bare {@code __typename} introspection key this alias deliberately mirrors.
      */
     public static final String TYPENAME = "__typename";
-
-    /**
-     * The cursor column of an order's sort key: a {@code path:} or {@code method:} entry's
-     * expression projected under this alias so the connection's cursor reads exactly that value.
-     * Keyed by the entry's ordinal among the field's sort keys, which is unique per field. A
-     * catalog column the field also selects keeps its own name, so the selection merge (which
-     * dedupes by {@code Field.getName()}) never drops the sort key in its favour, and a
-     * list-valued {@code @orderBy}'s row-key coverage check (which compares names) never counts it.
-     */
-    public static String sortKey(int ordinal) {
-        return "__sk_" + ordinal;
-    }
 
     /**
      * The presence probe column of a nullable single-object field ({@link PresenceProbe}): written

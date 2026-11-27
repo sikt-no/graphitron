@@ -1,0 +1,39 @@
+# The orders a root's @orderBy argument picks from, one at a time or composed into a list, beside the
+# default. FilmSort's orders: the primary key, a title that follows the request's direction, a title
+# its author fixed descending, a length that may be NULL, and a name read down a path to the film's
+# original language. filmsPicked takes one order and falls back to the title; filmsComposed takes a
+# list, completed by film_id where the orders listed identify no film, and falls back to the key.
+
+type Film @table(name: "film") {
+    filmId: Int!   @field(name: "film_id")
+    title:  String @field(name: "title")
+}
+
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+    TITLE_DESC @order(fields: [{name: "title", direction: DESC}])
+    LENGTH  @order(fields: [{name: "length"}])
+    ORIGINAL_LANGUAGE @order(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+}
+
+input FilmOrderBy {
+    field:     FilmSort!
+    direction: SortDirection
+}
+
+type Query {
+    filmsPicked(order: FilmOrderBy @orderBy): [Film!]! @defaultOrder(fields: [{name: "title"}])
+    filmsComposed(order: [FilmOrderBy] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column",
+    where: "coordinate = 'Query.filmsPicked'", rows: """
+  coordinate,        choice,                     position, column_name
+  Query.filmsPicked, Query.filmsPicked,          0,        title
+  Query.filmsPicked, FilmSort.FILM_ID,           0,        film_id
+  Query.filmsPicked, FilmSort.LENGTH,            0,        length
+  Query.filmsPicked, FilmSort.ORIGINAL_LANGUAGE, 0,        name
+  Query.filmsPicked, FilmSort.TITLE,             0,        title
+  Query.filmsPicked, FilmSort.TITLE_DESC,        0,        title
+  """)

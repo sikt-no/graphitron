@@ -52,7 +52,7 @@ class RootOrderArgumentParityTest {
                 TestSchemaHelper.testClasspath(), graph -> {
             var result = RootQuery.read(graph.handle()).get("Query." + fieldName);
             assertThat(result).as("the store's verdict on Query." + fieldName).isInstanceOf(RootQuery.Emitted.class);
-            return LauncherCommands.argumentOrderOf((RootQuery.Emitted) result);
+            return storeSpecOf((RootQuery.Emitted) result);
         });
         assertThat(helperShape(store)).isEqualTo(helperShape(walk));
     }
@@ -79,13 +79,14 @@ class RootOrderArgumentParityTest {
         """;
 
     /**
-     * A key down a path or computed by a method is numbered across the field's orders, each choice's in
-     * the sort enum's order and then the default's, and the number names the emitted method a path key
-     * calls and the alias its cursor reads: the store's keys, numbers and paths equal the walk's.
+     * A key down a path or computed by a method states the same identity, path, direction and place in its
+     * order as the walk's, which is what keeps a cursor, a JSON array of values by position, reading the same
+     * value after the store renders the root. The number a derived key is aliased by is each emitter's
+     * own, and no cursor carries it, so it is not compared.
      */
     @ParameterizedTest
     @ValueSource(strings = {"filmsByKeys", "filmsByKeysPage", "filmsByPath", "filmsByPathPage"})
-    void theStoreNumbersAndStatesTheSortKeysTheWalkDoes(String fieldName) {
+    void theStoreStatesTheSortKeysTheWalkDoes(String fieldName) {
         var walk = ((QueryField.QueryTableField) TestSchemaHelper.buildSchema(SORT_KEYS).field("Query", fieldName))
             .orderBy();
         var store = FactGraphs.inline().read("root-sort-key-parity", SORT_KEYS, CatalogInput.of(testContext()),
@@ -94,10 +95,28 @@ class RootOrderArgumentParityTest {
             assertThat(result).as("the store's verdict on Query." + fieldName).isInstanceOf(RootQuery.Emitted.class);
             var emitted = (RootQuery.Emitted) result;
             return emitted.choice() != null
-                ? (OrderBySpec) LauncherCommands.argumentOrderOf(emitted)
+                ? (OrderBySpec) storeSpecOf(emitted)
                 : LauncherCommands.fixedOf(emitted.order(), new int[1]);
         });
         assertThat(helperShape(store)).isEqualTo(helperShape(walk));
+    }
+
+    /**
+     * The store's choice as the walk's spec, for comparing what each states key by key.
+     */
+    private static OrderBySpec.Argument storeSpecOf(RootQuery.Emitted root) {
+        var choice = root.choice();
+        var ordinal = new int[1];
+        var named = choice.orders().entrySet().stream()
+            .map(e -> new OrderBySpec.NamedOrder(e.getKey(), LauncherCommands.fixedOf(e.getValue(), ordinal)))
+            .toList();
+        var base = LauncherCommands.fixedOf(root.order(), ordinal);
+        OrderBySpec.Composition composition = !choice.list() ? new OrderBySpec.Composition.Single(named)
+            : new OrderBySpec.Composition.Sequence(named, choice.rowKey().isEmpty()
+                ? new OrderBySpec.SequenceCompletion.None()
+                : new OrderBySpec.SequenceCompletion.AppendRowKey(choice.rowKey(), choice.identifyingKeys()));
+        return new OrderBySpec.Argument(choice.argument(), choice.inputType(), choice.nonNull(), composition,
+            choice.sortField(), choice.directionField(), base.entries().isEmpty() ? new OrderBySpec.None() : base);
     }
 
     /** What the helper and the cursor read of a spec. */
@@ -134,7 +153,7 @@ class RootOrderArgumentParityTest {
     private static String entryShape(OrderBySpec.OrderEntry entry) {
         return switch (entry) {
             case OrderBySpec.ColumnOrderEntry column -> column.column().sqlName();
-            case OrderBySpec.SortKeyEntry key -> "#" + key.ordinal() + " " + switch (key.key()) {
+            case OrderBySpec.SortKeyEntry key -> switch (key.key()) {
                 case OrderBySpec.SortKey.Path path -> "path " + path.hops().stream()
                     .map(hop -> hop.targetTable().tableName() + " via "
                         + ((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop.on()).keying().describe() + " "

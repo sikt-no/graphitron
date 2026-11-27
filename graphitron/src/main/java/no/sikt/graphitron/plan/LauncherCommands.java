@@ -243,22 +243,15 @@ public final class LauncherCommands {
         if (!dslProjections.isEmpty()) {
             rows.replaceAll(row -> row.withDslProjections(dslProjections));
         }
-        // The @orderBy spec of each root the store states, which its row's helper renders.
-        var argumentOrders = new java.util.LinkedHashMap<FieldCoordinates, OrderBySpec.Argument>();
+        // Each root read the store states whole, whose body and @orderBy helper are rendered from it.
+        var emittedRoots = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.Emitted>();
         // And each node fetcher the store states, whose root method is rendered from it.
         var nodeFetchers = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher>();
         // And each root over several tables the store states, whose participants are read from it.
         var multiTables = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable>();
-        // And each root read whose body the store's root read emitter renders.
-        var rootReads = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.Emitted>();
         for (var root : roots.values()) {
-            if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted
-                    && no.sikt.graphitron.emit.RootReadEmitter.renders(emitted)) {
-                rootReads.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()), emitted);
-            }
-            if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted && emitted.choice() != null) {
-                argumentOrders.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()),
-                    argumentOrderOf(emitted));
+            if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted) {
+                emittedRoots.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()), emitted);
             } else if (root instanceof no.sikt.graphitron.emit.RootQuery.NodeFetcher node) {
                 nodeFetchers.put(FieldCoordinates.coordinates(node.parentType(), node.fieldName()), node);
             } else if (root instanceof no.sikt.graphitron.emit.RootQuery.MultiTable multiTable) {
@@ -266,8 +259,7 @@ public final class LauncherCommands {
                     multiTable);
             }
         }
-        return new LauncherRelation(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables,
-            rootReads);
+        return new LauncherRelation(rows, carrierDsl, connections, emittedRoots, nodeFetchers, multiTables);
     }
 
     /**
@@ -556,29 +548,6 @@ public final class LauncherCommands {
             GeneratedUnits units) {
         return new Ordering.Columns(fixed,
             sortKeyMethods(fixed, units.fetchers(root.parentType()), root.fieldName(), units));
-    }
-
-    /**
-     * A root's {@code @orderBy} argument taking one order, as the spec its helper renders: each value
-     * its sort field takes a named order, and the default order the one read when the client picks
-     * none.
-     */
-    static OrderBySpec.Argument argumentOrderOf(no.sikt.graphitron.emit.RootQuery.Emitted root) {
-        var choice = root.choice();
-        // Numbered as the walk's resolver numbers them: each choice's keys in the sort enum's order, then
-        // the default's.
-        var ordinal = new int[1];
-        var named = choice.orders().entrySet().stream()
-            .map(e -> new OrderBySpec.NamedOrder(e.getKey(), fixedOf(e.getValue(), ordinal)))
-            .toList();
-        var base = fixedOf(root.order(), ordinal);
-        // A list the client composes is completed once composed, so its orders go as declared.
-        OrderBySpec.Composition composition = !choice.list() ? new OrderBySpec.Composition.Single(named)
-            : new OrderBySpec.Composition.Sequence(named, choice.rowKey().isEmpty()
-                ? new OrderBySpec.SequenceCompletion.None()
-                : new OrderBySpec.SequenceCompletion.AppendRowKey(choice.rowKey(), choice.identifyingKeys()));
-        return new OrderBySpec.Argument(choice.argument(), choice.inputType(), choice.nonNull(), composition,
-            choice.sortField(), choice.directionField(), base.entries().isEmpty() ? new OrderBySpec.None() : base);
     }
 
     /**
