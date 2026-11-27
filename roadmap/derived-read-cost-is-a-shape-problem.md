@@ -1275,6 +1275,13 @@ static method needs no holder.
   a `CASE` over stored facts. The tuple arm of that `CASE` re-derives the key's degree with two `EXISTS`
   probes; if more such probes gather there, the key's degree is stored once upstream at the node id's
   own grain instead (architect, 2026-11-26).
+  Before the root read's flip deletes the walk's root routine path, the store also refuses an input
+  cycle in a filter argument the routine does not take, which only the walk refuses today
+  (`BuildContext.classifyInputField`, "circular input type reference"): `INPUT_CYCLE_EXPANDED`'s
+  filter arm reads `graphitron_occurrence_row_input`, which holds no row for such an argument at a
+  root routine read, either its `graphitron_occurrence_source_table` or the field's
+  `graphitron_occurrence_binding_table` missing there. Read which, fix that side, and pin
+  `Query.byCycledFilter` in `root-routine-read.graphqls`.
 * **A routine step's argument coordinate is stated once** `open`, off the critical path.
   `graphitron_join_path_step_parameter` splits into a column and an argument subtype (Alf,
   2026-11-25, recorded in fact-model). The argument subtype's coordinate restates the landing's
