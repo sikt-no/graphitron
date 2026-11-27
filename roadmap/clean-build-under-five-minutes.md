@@ -609,6 +609,15 @@ parallelises a module's tests is priced against that before it is tried.
       against the table's less its mark, its generated columns and the stage's constants, by name,
       and the 17 rules whose stage resolves a column in Java stay outside it until that resolution
       moves into the rule.
+    - The write shape Alf ruled (2026-11-27): no `coerce` and no `T.fields()`, every column explicit
+      on both sides, `insertInto(T, T.F1, ...).select(T.F1, ...)` over the rule's SQL text. Tried on
+      the same rule (`RuleStatementProbe#theExplicitWriteShape`). jOOQ renders `T.F1` schema-qualified,
+      `"PUBLIC"."T"."F1"`, so over a bare `table(ruleSQL)` and over `table(ruleSQL).as(T)` alike H2
+      finds no such column. Two shapes resolve and write the view's row: `T.as("r")`, the generated
+      table aliased so its typed fields render as `"r"."F1"`, selected from `table(ruleSQL).as("r")`;
+      and `.as(T)` under `renderSchema(false)`. The first needs no setting, so it is the one. And
+      `table(sql)` renders its text as it is, so the rule's text is parenthesised to stand as a
+      derived table.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every

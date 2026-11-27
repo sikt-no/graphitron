@@ -88,6 +88,60 @@ class RuleStatementProbe {
     }
 
     /**
+     * The write shape Alf ruled, every column explicit: {@code insertInto(T, T.F1, ...)
+     * .select(T.F1, ...).from(table(ruleSQL))}, the rule projecting its columns under T's names and
+     * the mark bound. Tried as he wrote it and with the rule's table aliased as T, each rendered and
+     * run, so the report says which resolves.
+     */
+    @Test
+    @EnabledIfSystemProperty(named = PROPERTY, matches = "true")
+    void theExplicitWriteShape() throws Exception {
+        var stated = ruleText(VIEW);
+        var ruleSql = "(SELECT * FROM (" + stated[1] + ") rule(" + stated[0] + "))";
+        var tmp = Files.createTempDirectory("rule-statement-probe");
+        try (var store = CapturedStore.ownStoreOfDocument(tmp, DOCUMENT, "g",
+                CatalogInput.of(TestRunContext.of()), ClasspathCorpus.entries())) {
+            var dsl = store.dsl();
+            var d = GRAPHITRON_ENTRY_DEFECT;
+            var stage = EntryDefects.OUTBOX.stage();
+            var fromView = rows(dsl, stage);
+            var now = LocalDateTime.now();
+            for (var shape : List.of("as written", "as(T)", "T.as(r)", "as(T), no schema")) {
+                dsl.deleteFrom(d).where(d.GRAPH_NAME.eq("g")).and(d.STAGE.eq(stage)).execute();
+                // T.as("r"): the generated table aliased, its typed fields rendering against the alias.
+                var r = shape.equals("T.as(r)") ? d.as("r") : d;
+                org.jooq.Table<?> source = switch (shape) {
+                    case "as written" -> DSL.table(ruleSql);
+                    case "T.as(r)" -> DSL.table(ruleSql).as("r");
+                    default -> DSL.table(ruleSql).as(d);
+                };
+                var writer = shape.endsWith("no schema")
+                    ? DSL.using(dsl.configuration().derive(dsl.settings().withRenderSchema(false))) : dsl;
+                var write = writer.insertInto(d, d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN,
+                        d.CODE, d.STAGE, d.DETAIL, d.TOUCHED_AT)
+                    .select(DSL.select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
+                            r.CODE, r.STAGE, r.DETAIL, DSL.val(now, d.TOUCHED_AT))
+                        .from(source)
+                        .where(r.GRAPH_NAME.eq("g")));
+                var rendered = write.getSQL().replaceAll("\\s+", " ");
+                rendered = rendered.substring(0, Math.min(260, rendered.length())) + " ... "
+                    + rendered.substring(Math.max(0, rendered.length() - 160));
+                String outcome;
+                try {
+                    write.execute();
+                    var written = rows(dsl, stage);
+                    outcome = written.size() + " rows, equal to the view's " + written.equals(fromView);
+                } catch (RuntimeException e) {
+                    outcome = "refused: " + String.valueOf(e.getMessage()).replaceAll("\\s+", " ")
+                        .replaceFirst("^.*\\]; ", "");
+                }
+                System.out.println("RULE-SHAPE " + shape + ": " + outcome
+                    + "\n  " + rendered);
+            }
+        }
+    }
+
+    /**
      * Every registered rule's columns against the relation it writes, as a gate that a rule matches
      * its table would read them: the same names in the same order with the same types, the same
      * names in another order, the table's names less its mark, or neither.
