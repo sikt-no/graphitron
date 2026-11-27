@@ -2167,6 +2167,34 @@ files to them meanwhile, as `fact-model.adoc` § grain states.
 * **A fact document claims a stored relation, not a rule** `open`. A document claiming a rule view's
   rows claims the relation its stage writes instead, or reads the rule through the stage's select.
 
+### Every rule is at most one UNION deep `open`
+
+A deep union needs a stated reason, and none has been given, so every stage rule is divided until it
+is at most one `UNION` deep (Alf, 2026-11-27, `fact-model.adoc` § grain): a rule is a statement H2
+parses, plans and caches whole, and a union chain costs heap with the square of its depth. On
+2026-11-27, of 276 rules, 137 hold no union, 38 one, 50 two or three, and 51 four to seven, 37 of
+those entry-defect rules whose arms are one per code they raise, put in one statement only because a
+stage inserted from one view. A rule splits into files its stage runs in turn, all writing the same
+table, which is also how a rule still a view leaves the schema. `ViewComplexityTest` holds the
+ceiling, and it falls only when the rules above it are split, never by an exception.
+
+* **The entry-defect rules are one file per code** `open`. The 37 deeper than three, then the rest,
+  each split into a file per code or small family in its stage's folder, the ceiling lowered as each
+  batch lands.
+* **The other rules deeper than three are one file per arm** `open`. The 11 whose arms each state
+  one kind of row, a reach round's starting sets or a binding's ways to its table among them, split
+  per arm in their stage's folder.
+* **The producer lift rule stores what its arms share** `open`. Its arms share joins, so splitting
+  it repeats them; which intermediate fact to store first is the node's question.
+* **The occurrence node id rule stores what its arms share** `open`. As the lift rule, its arms
+  sharing the joins that find a node id's table.
+* **The join path step rule stores what its arms share** `open`. As the lift rule, its arms sharing
+  the claim and position a step departs from.
+* **The rules two or three deep are split** `open`. The 50 left once the deeper ones are, by the same
+  rule: one file per kind of row.
+* **The gate holds every rule at one UNION** `blocked`, on "The entry-defect rules are one file per code" and "The other rules deeper than three are one file per arm" and "The producer lift rule stores what its arms share" and "The occurrence node id rule stores what its arms share" and "The join path step rule stores what its arms share" and "The rules two or three deep are split".
+  `ViewComplexityTest`'s ceiling is 1, in the commit that splits the last rule above it.
+
 ### The store knows whether an artifact can go stale `open`
 
 Reading a jar is safe for a release and dangerous for a snapshot, and Maven settles which. The
