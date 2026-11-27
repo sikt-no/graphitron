@@ -276,7 +276,6 @@ public final class SeededStore {
         dsl.insertInto(STORE_SOURCE)
             .set(STORE_SOURCE.SOURCE_NAME, sourceName)
             .set(STORE_SOURCE.SOURCE_KIND, sourceKind)
-            .set(STORE_SOURCE.LAST_SEEN, LocalDateTime.now())
             .onDuplicateKeyIgnore()
             .execute();
     }

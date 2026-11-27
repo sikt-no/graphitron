@@ -286,7 +286,7 @@ public final class GraphQLSourceCapture {
         var recorded = dsl.select(STORE_SOURCE.MTIME).from(STORE_SOURCE)
             .where(STORE_SOURCE.SOURCE_NAME.eq(sourceName))
             .fetchOne(STORE_SOURCE.MTIME);
-        recordSource(dsl, sourceName, stamp, readAt);
+        recordSource(dsl, sourceName, stamp);
         // Unknown counts as changed: a source this graph has not transcribed, or one whose bytes
         // could not be hashed, is not one this reading may skip on the strength of a comparison.
         if (stamp != null && stamp.equals(held.get(sourceName))) {
@@ -322,7 +322,7 @@ public final class GraphQLSourceCapture {
                                                     LocalDateTime readAt) {
         String sourceName = SchemaLoader.SPECIFICATION_SOURCE_NAME;
         String stamp = SourceStamp.of(SchemaLoader.specificationBytes());
-        recordSource(dsl, sourceName, stamp, readAt);
+        recordSource(dsl, sourceName, stamp);
         if (stamp.equals(held.get(sourceName))) {
             return new SourceDocument.UnchangedSpecification(sourceName);
         }
@@ -330,19 +330,28 @@ public final class GraphQLSourceCapture {
         return new SourceDocument.Specification(sourceName, SchemaLoader.parseSpecification(), stamp);
     }
 
-    /** One source's row in the shared relation, dated by this reading. */
-    private static void recordSource(DSLContext dsl, String sourceName, String stamp,
-                                     LocalDateTime readAt) {
+    /**
+     * One source's row in the shared relation, written only where something it says changed: the
+     * row is every graph's that reads the file, so a reading that finds it as it was leaves it alone.
+     */
+    private static void recordSource(DSLContext dsl, String sourceName, String stamp) {
         var t = STORE_SOURCE;
         var mtime = modifiedAt(sourceName);
-        dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME, t.LAST_SEEN, t.READ_AT)
-            .values(sourceName, "SCHEMA_FILE", stamp, mtime, readAt, readAt)
-            .onDuplicateKeyUpdate()
-            .set(t.STAMP, stamp)
-            .set(t.MTIME, mtime)
-            .set(t.LAST_SEEN, readAt)
-            .set(t.READ_AT, readAt)
-            .execute();
+        // Read before written: a statement that writes the row holds it for the rest of the
+        // capture's transaction, even an insert that finds it there; a read holds nothing.
+        var held = dsl.select(t.STAMP, t.MTIME).from(t).where(t.SOURCE_NAME.eq(sourceName)).fetchOne();
+        if (held == null) {
+            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME)
+                .values(sourceName, "SCHEMA_FILE", stamp, mtime)
+                .onDuplicateKeyIgnore()
+                .execute();
+        } else if (!java.util.Objects.equals(held.value1(), stamp) || !java.util.Objects.equals(held.value2(), mtime)) {
+            dsl.update(t)
+                .set(t.STAMP, stamp)
+                .set(t.MTIME, mtime)
+                .where(t.SOURCE_NAME.eq(sourceName))
+                .execute();
+        }
     }
 
     /**

@@ -381,7 +381,7 @@ class PersistentStoreTest {
                 .as("the capture recorded the sources this holder is about to hold").isPositive();
             holder.connection().setAutoCommit(false);
             holder.dsl().update(STORE_SOURCE)
-                .set(STORE_SOURCE.LAST_SEEN, LocalDateTime.now()).execute();
+                .set(STORE_SOURCE.MTIME, LocalDateTime.now()).execute();
             var release = new Thread(() -> {
                 try {
                     Thread.sleep(holdMillis);

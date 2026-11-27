@@ -46,7 +46,6 @@ class GathererHandoffTest {
                 var source = dsl.newRecord(STORE_SOURCE);
                 source.setSourceName(SOURCE);
                 source.setSourceKind("JAR");
-                source.setLastSeen(LocalDateTime.now());
                 sink.add(source);
                 var file = dsl.newRecord(STORE_CLASS_FILE);
                 file.setSourceName(SOURCE);
@@ -87,7 +86,6 @@ class GathererHandoffTest {
                     var source = dsl.newRecord(STORE_SOURCE);
                     source.setSourceName(SOURCE);
                     source.setSourceKind("JAR");
-                    source.setLastSeen(LocalDateTime.now());
                     sink.add(source);
                     sink.flush();
                     throw new IllegalStateException("the load dies between two gatherers");

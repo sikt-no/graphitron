@@ -251,8 +251,8 @@ whether the rewrite changed a row. So a sibling graph in a shared store refills 
 that re-walks a source it names, even where the rows came back byte-identical. This is the price of
 recording a claim rather than a content stamp, and the store cannot currently be made to pay less:
 `store_source.stamp` is NULL by design for exactly the two kinds that hold these rows, jOOQ schema
-packages and directory roots, and `last_seen` moves on every run that merely names a source. It is
-also strictly less work than today, which refills that partition unconditionally whether or not any
+packages and directory roots, and nothing else on the row says whether a source's content changed.
+It is also strictly less work than today, which refills that partition unconditionally whether or not any
 capture ran at all.
 
 *Two JVMs capturing into one store at the same moment can leave a claim that should have been
@@ -265,9 +265,10 @@ one store simultaneously, with one capturing a source the other's graph names. C
 cross-process serialization the store does not offer, and the obvious instrument, locking the
 graph's source rows for the pass, invites a deadlock against a capture that locks the same hundreds
 of rows in its own order. If it is ever observed, the cheap detector is a watermark: read
-`max(last_seen)` over the graph's sources before the pass and again before each claim, and withhold
-the claim if it moved. That reuses the column dismissed above, correctly, because a currency key may
-not err and a race detector may err toward doing more work. This item leaves it unbuilt rather than
+`max(store_graph.last_captured)` over the graphs naming any of this graph's sources before the pass
+and again before each claim, and withhold the claim if it moved. A capture date is unfit as a
+currency key and fit as a race detector, because a currency key may not err and a race detector may
+err toward doing more work. This item leaves it unbuilt rather than
 building a mechanism against a failure nobody has seen, and states the window here so that the
 promise in "What changes for a consumer" is one the rule actually keeps.
 

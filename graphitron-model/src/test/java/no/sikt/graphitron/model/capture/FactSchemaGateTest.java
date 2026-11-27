@@ -701,9 +701,8 @@ class FactSchemaGateTest {
 
             // Rows of a catalog source no run reads: well-formed and foreign is all they need be.
             String foreign = "com.example.othermodule.jooq";
-            dsl.insertInto(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.SOURCE_KIND,
-                    STORE_SOURCE.LAST_SEEN)
-                .values(foreign, "JOOQ_SCHEMA", java.time.LocalDateTime.now())
+            dsl.insertInto(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.SOURCE_KIND)
+                .values(foreign, "JOOQ_SCHEMA")
                 .execute();
             dsl.insertInto(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLE_SCHEMA,
                     SQL_SCHEMA.SCHEMA_PACKAGE)

@@ -315,8 +315,8 @@ graph. Nothing per graph reads `read_at`, and a copy of it here would date a rea
 byte.
 
 Nothing else moves onto the row, then: `read_at` for the reason above, and per-graph *age*, when a
-graph last named a source in its inputs, because that is the eviction question `last_seen` answers
-store-global and the reaping policy is another item's. A second timestamp here would be built for a
+graph last named a source in its inputs, because that is the eviction question, a graph's last run
+is already dated by `store_graph.last_captured`, and the reaping policy is another item's. A second timestamp here would be built for a
 reader that does not exist.
 
 **One thing goes rather than moving: the null-stamp protocol.** `ClasspathSources.upsert` blanks an
@@ -863,7 +863,8 @@ title contrasts. Nothing in the tree deletes a `store_source` row, so the only l
 is discarding the whole file; after phase one a source's partition goes in one statement, and the
 twin means the removal does not take a not-running graph's rows with it. **R918, "The fact store
 cache root is bounded in bytes, and quiet workspaces are reclaimed"**, reads the same mechanism from
-the other end, with `last_seen` left store-global as the age signal a reclaim policy wants. Neither
+the other end, with `store_graph.last_captured` as the age signal a reclaim policy has; the
+store-global `store_source.last_seen` was dropped, having no reader. Neither
 gets a policy here: when a source is known to be unwanted is their question, and this item only
 makes acting on the answer expressible.
 

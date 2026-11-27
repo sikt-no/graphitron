@@ -133,7 +133,7 @@ public final class JooqFactCapture {
         // derived.
         dsl.transaction(tx -> {
             dropMembership(tx.dsl(), graphName, current);
-            graphSources(tx.dsl(), graphName, List.copyOf(current), touchedAt, false);
+            graphSources(tx.dsl(), graphName, List.copyOf(current), false);
         });
         Progress.completed(dsl, graphName, GATHERER);
         return true;
@@ -258,9 +258,9 @@ public final class JooqFactCapture {
         if (tables.isEmpty()) {
             return Set.of();
         }
-        graphSources(dsl, graphName, tables.stream().map(TableAt::source).distinct().toList(), touchedAt, true);
+        graphSources(dsl, graphName, tables.stream().map(TableAt::source).distinct().toList(), true);
         // Parents before children, which the sweep then takes in reverse.
-        sources(dsl, tables, touchedAt);
+        sources(dsl, tables);
         schemas(dsl, jooq, tables, touchedAt);
         tables(dsl, tables, touchedAt);
         columns(dsl, jooq, tables, touchedAt);
@@ -319,21 +319,34 @@ public final class JooqFactCapture {
 
     /**
      * The registry rows every {@code sql_} row hangs its source on. A jOOQ package is a source the
-     * store read, on the same terms as a schema file.
+     * store read, on the same terms as a schema file. Written only where it is missing: the row is
+     * shared by every graph reading the package, and nothing it says changes with another reading.
      */
-    private static void sources(DSLContext dsl, List<TableAt> tables, LocalDateTime touchedAt) {
+    private static void sources(DSLContext dsl, List<TableAt> tables) {
+        register(dsl, List.copyOf(sourceNames(tables)));
+    }
+
+    /**
+     * The registry rows of {@code sources} that are missing, inserted, and the rest left alone. Read
+     * before written, since a row every graph shares is held by any statement that writes it, even
+     * an insert that would find it there, for the rest of that capture's transaction; a read holds
+     * nothing.
+     */
+    private static void register(DSLContext dsl, List<String> sources) {
         var t = STORE_SOURCE;
-        var rows = sourceNames(tables).stream().collect(Rows.toRowList(
+        var held = new java.util.HashSet<>(dsl.select(t.SOURCE_NAME).from(t)
+            .where(t.SOURCE_NAME.in(sources)).fetch(t.SOURCE_NAME));
+        var missing = sources.stream().filter(source -> !held.contains(source)).distinct().toList();
+        if (missing.isEmpty()) {
+            return;
+        }
+        var rows = missing.stream().collect(Rows.toRowList(
             source -> val(source, t.SOURCE_NAME),
-            source -> val("JOOQ_SCHEMA", t.SOURCE_KIND),
-            source -> val(touchedAt, t.LAST_SEEN),
-            source -> val(touchedAt, t.READ_AT)));
+            source -> val(JOOQ_SCHEMA, t.SOURCE_KIND)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.LAST_SEEN, t.READ_AT)
+            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND)
                 .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
-                .set(t.READ_AT, excluded(t.READ_AT)));
+                .onDuplicateKeyIgnore());
     }
 
     private static void schemas(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
@@ -1230,24 +1243,11 @@ public final class JooqFactCapture {
      * returns nothing, which reads as a capture that did not run.
      */
     private static void graphSources(DSLContext dsl, String graphName, List<String> sources,
-                                     LocalDateTime touchedAt, boolean read) {
-        var s = STORE_SOURCE;
+                                     boolean read) {
         if (read) {
-            var registry = sources.stream().collect(Rows.toRowList(
-                source -> val(source, s.SOURCE_NAME),
-                source -> val(JOOQ_SCHEMA, s.SOURCE_KIND),
-                source -> val(touchedAt, s.LAST_SEEN),
-                source -> val(touchedAt, s.READ_AT)));
-            BindBatch.execute(dsl, registry, markers ->
-                dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN, s.READ_AT)
-                    .values(markers)
-                    .onDuplicateKeyUpdate()
-                    .set(s.SOURCE_KIND, excluded(s.SOURCE_KIND))
-                    .set(s.LAST_SEEN, excluded(s.LAST_SEEN))
-                    .set(s.READ_AT, excluded(s.READ_AT)));
-        } else {
-            // Seen, not read: the row's read_at stays the reading the stamp vouches for.
-            dsl.update(s).set(s.LAST_SEEN, touchedAt).where(s.SOURCE_NAME.in(sources)).execute();
+            // Only where it is missing: the registry row is shared, and a reading changes nothing
+            // it says. A source seen and not read has its row already.
+            register(dsl, sources);
         }
 
         if (graphName == null) {

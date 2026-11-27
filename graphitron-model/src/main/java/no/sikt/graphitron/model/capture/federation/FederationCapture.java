@@ -92,12 +92,16 @@ public final class FederationCapture {
     static void gather(DSLContext dsl, String graphName, String stamp, String writtenVersion,
                        LocalDateTime readAt) {
         var s = STORE_SOURCE;
-        String held = dsl.select(s.STAMP).from(s).where(s.SOURCE_NAME.eq(SOURCE_NAME)).fetchOne(s.STAMP);
-        dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN)
-            .values(SOURCE_NAME, LIBRARY, readAt)
-            .onDuplicateKeyUpdate()
-            .set(s.LAST_SEEN, readAt)
-            .execute();
+        // Read before written: a statement that writes the shared row holds it for the rest of the
+        // capture's transaction, even an insert that finds it there; a read holds nothing.
+        var row = dsl.select(s.STAMP).from(s).where(s.SOURCE_NAME.eq(SOURCE_NAME)).fetchOne();
+        String held = row == null ? null : row.value1();
+        if (row == null) {
+            dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND)
+                .values(SOURCE_NAME, LIBRARY)
+                .onDuplicateKeyIgnore()
+                .execute();
+        }
         var m = STORE_GRAPH_SOURCE;
         dsl.insertInto(m, m.GRAPH_NAME, m.SOURCE_NAME, m.READ_AT)
             .values(graphName, SOURCE_NAME, readAt)
@@ -107,14 +111,21 @@ public final class FederationCapture {
         if (stamp == null || !stamp.equals(held)) {
             read(dsl, stamp, readAt);
         }
-        // Every reading, the library unchanged or not: a graphitron upgrade can change the version
-        // it writes without the library changing at all.
+        // Every reading checks it, the library unchanged or not: a graphitron upgrade can change the
+        // version it writes without the library changing at all. Written only where it differs, the
+        // row being every graph's.
         var w = FEDERATION_WRITTEN_VERSION;
-        dsl.insertInto(w, w.SOURCE_NAME, w.VERSION)
-            .values(SOURCE_NAME, writtenVersion)
-            .onDuplicateKeyUpdate()
-            .set(w.VERSION, writtenVersion)
-            .execute();
+        var written = dsl.select(w.VERSION).from(w).where(w.SOURCE_NAME.eq(SOURCE_NAME)).fetchOne();
+        if (written == null) {
+            dsl.insertInto(w, w.SOURCE_NAME, w.VERSION)
+                .values(SOURCE_NAME, writtenVersion)
+                .onDuplicateKeyIgnore()
+                .execute();
+        } else if (!writtenVersion.equals(written.value1())) {
+            dsl.update(w).set(w.VERSION, writtenVersion)
+                .where(w.SOURCE_NAME.eq(SOURCE_NAME))
+                .execute();
+        }
     }
 
     /**
@@ -138,7 +149,6 @@ public final class FederationCapture {
         sweep(dsl, readAt);
         dsl.update(s)
             .set(s.STAMP, stamp)
-            .set(s.READ_AT, readAt)
             .where(s.SOURCE_NAME.eq(SOURCE_NAME))
             .execute();
     }

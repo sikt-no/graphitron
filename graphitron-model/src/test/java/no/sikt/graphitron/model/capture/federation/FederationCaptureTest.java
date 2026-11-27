@@ -17,7 +17,7 @@ import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_IMPORT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_DEFINITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
 import static no.sikt.graphitron.model.Tables.FEDERATION_WRITTEN_VERSION;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -48,7 +48,7 @@ class FederationCaptureTest {
 
             FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", SECOND);
             assertThat(dsl.fetchCount(FEDERATION_VERSION_IMPORT)).isEqualTo(imports);
-            assertThat(readAt(dsl))
+            assertThat(lastRead(dsl))
                 .as("dated by the reading that read it, not by the one that found it current")
                 .isEqualTo(FIRST);
         }
@@ -64,14 +64,14 @@ class FederationCaptureTest {
             int imports = dsl.fetchCount(FEDERATION_VERSION_IMPORT);
 
             FederationCapture.gather(dsl, "g", "sha256:b", "v2.10", SECOND);
-            assertThat(readAt(dsl)).isEqualTo(SECOND);
+            assertThat(lastRead(dsl)).isEqualTo(SECOND);
             assertThat(dsl.fetchCount(FEDERATION_VERSION_IMPORT))
                 .as("the same library reads to the same rows")
                 .isEqualTo(imports);
 
             FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(1));
             FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(2));
-            assertThat(readAt(dsl)).isEqualTo(SECOND.plusMinutes(2));
+            assertThat(lastRead(dsl)).isEqualTo(SECOND.plusMinutes(2));
         }
     }
 
@@ -134,9 +134,9 @@ class FederationCaptureTest {
         }
     }
 
-    private static LocalDateTime readAt(DSLContext dsl) {
-        return dsl.select(STORE_SOURCE.READ_AT).from(STORE_SOURCE)
-            .where(STORE_SOURCE.SOURCE_NAME.eq(FederationCapture.SOURCE_NAME))
+    /** The instant of the reading that last wrote the library's rows, each row marked with it. */
+    private static LocalDateTime lastRead(DSLContext dsl) {
+        return dsl.select(org.jooq.impl.DSL.max(FEDERATION_VERSION.TOUCHED_AT)).from(FEDERATION_VERSION)
             .fetchSingle().value1();
     }
 }

@@ -158,7 +158,11 @@ public final class ClasspathSourceCapture {
         }
         // A stamp computed and found equal is a read of the entry as surely as one that differed, so
         // it is dated like one: a session's observation trusts what was verified after its floor.
-        date(dsl, verified, readAt);
+        // Only a run watched by one dates it. The row is every graph's, so a write would hold it
+        // against every capture beside this one, and a run with no session has none to serve.
+        if (observation != null) {
+            date(dsl, verified, readAt);
+        }
         var reading = read(dsl, changed, readAt, stamps);
         var claimed = new LinkedHashSet<String>();
         declared.forEach(entry -> claimed.add(entry.path().toString()));
@@ -421,16 +425,13 @@ public final class ClasspathSourceCapture {
             at -> val(at.kind(), t.SOURCE_KIND),
             at -> val((String) null, t.STAMP),
             at -> val(modifiedAt(at.source()), t.MTIME),
-            at -> val(readAt, t.LAST_SEEN),
             at -> val(readAt, t.READ_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME, t.LAST_SEEN,
-                    t.READ_AT)
+            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.MTIME, t.READ_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.STAMP, excluded(t.STAMP))
                 .set(t.MTIME, excluded(t.MTIME))
-                .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
                 .set(t.READ_AT, excluded(t.READ_AT)));
     }
 
