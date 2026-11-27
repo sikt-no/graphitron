@@ -458,6 +458,8 @@ See `.claude/web-environment.md` for database setup prerequisites and the fixtur
 
 Coverage is off by default. `-Pcoverage` attaches the JaCoCo agent to every module's test fork and writes a per-module report at `verify`.
 
+The agent instruments only the project's own classes, `no.sikt.*`, so every class a module compiles or generates has to live under `no.sikt`, or its report reads it as uncovered. Instrumenting every class a fork loads put H2's query planner, jOOQ and graphql-java under the agent and multiplied the store-backed modules' test time about sixfold for no figure, since a report reads only its own module's classes. `check-coverage-agent-wiring` (roadmap-tool) fails the build when a `prepare-agent` execution lacks the include or a module's sources or generated packages leave `no.sikt`.
+
 [source,bash]
 ----
 # Whole reactor, combined across tiers

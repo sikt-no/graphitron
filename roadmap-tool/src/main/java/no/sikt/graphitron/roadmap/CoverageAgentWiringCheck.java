@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,7 +15,7 @@ import java.util.regex.Pattern;
  * without it, which is why this runs on every build: a profile-conditional check would never
  * fire for anyone.
  *
- * <p>Two invariants, one walker, named for the invariant rather than either symptom so the
+ * <p>Three invariants, one walker, named for the invariant rather than any symptom so the
  * next wiring rule has an obvious home:
  *
  * <ul>
@@ -30,6 +31,14 @@ import java.util.regex.Pattern;
  *       tell at all. Any {@code forkCount} other than {@code 1} fails outright: parallel
  *       forks share one {@code destFile} and truncate each other, and {@code forkCount=0}
  *       skips the {@code argLine} agent entirely, so no distinct-destFile shape repairs it.</li>
+ *   <li>The agent instruments only {@value #INSTRUMENTED}, and everything a report can analyse
+ *       lies under it. Every {@code prepare-agent} execution carries
+ *       {@code <include>}{@value #INSTRUMENTED}{@code </include>}: without it the agent
+ *       instruments every class a fork loads, H2 and jOOQ among them, which multiplied the
+ *       store-backed modules' test time about sixfold. And every class a module compiles, its
+ *       {@code src/main/java} and the packages its pom generates into, sits under
+ *       {@value #PACKAGE_ROOT}: a class outside the include is never instrumented, and its
+ *       module's report reads it as uncovered.</li>
  * </ul>
  */
 final class CoverageAgentWiringCheck {
@@ -43,6 +52,19 @@ final class CoverageAgentWiringCheck {
     private static final Pattern PLUGIN_BLOCK = Pattern.compile("<plugin>(.*?)</plugin>", Pattern.DOTALL);
 
     private static final Pattern XML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
+
+    /** One {@code <execution>} block of a plugin; executions do not nest. */
+    private static final Pattern EXECUTION_BLOCK = Pattern.compile("<execution>(.*?)</execution>", Pattern.DOTALL);
+
+    /** A pom element naming a package that generated sources are written into. */
+    private static final Pattern GENERATED_PACKAGE = Pattern.compile(
+        "<(outputPackage|packageName|jooqPackage)>\\s*(.*?)\\s*</\\1>", Pattern.DOTALL);
+
+    /** The package every compiled class of the reactor lives under. */
+    static final String PACKAGE_ROOT = "no.sikt";
+
+    /** The coverage agent's include, which {@link #PACKAGE_ROOT} has to satisfy. */
+    static final String INSTRUMENTED = "no.sikt.*";
 
     private CoverageAgentWiringCheck() {}
 
@@ -84,6 +106,7 @@ final class CoverageAgentWiringCheck {
                 continue;
             }
             problems.addAll(checkPom(module, Files.readString(pom)));
+            problems.addAll(checkSources(module, root.resolve(module).resolve("src/main/java")));
         }
 
         if (problems.isEmpty()) {
@@ -101,7 +124,7 @@ final class CoverageAgentWiringCheck {
         throw new BuildFailure("JaCoCo agent wiring broken");
     }
 
-    /** Both invariants over one pom, comments stripped first so documentation never trips the scan. */
+    /** The pom-borne invariants over one pom, comments stripped first so documentation never trips the scan. */
     static List<String> checkPom(String module, String pomXml) {
         String text = XML_COMMENT.matcher(pomXml).replaceAll("");
         List<String> problems = new ArrayList<>();
@@ -130,6 +153,20 @@ final class CoverageAgentWiringCheck {
                     && block.contains("<destFile>")) {
                 distinctDestFile = true;
             }
+            if (block.contains("jacoco-maven-plugin")) {
+                Matcher execution = EXECUTION_BLOCK.matcher(block);
+                while (execution.find()) {
+                    String exec = execution.group(1);
+                    if (exec.contains("<goal>prepare-agent") && !exec.contains("<include>" + INSTRUMENTED + "</include>")) {
+                        problems.add(module + ": a JaCoCo prepare-agent execution without"
+                            + " <includes><include>" + INSTRUMENTED + "</include></includes>. Without it"
+                            + " the agent instruments every class a test fork loads, H2's planner and"
+                            + " jOOQ among them, for no figure a report reads, and the store-backed"
+                            + " modules' tests run about six times slower under -Pcoverage. Execution"
+                            + " configuration is not shared between executions, so each one carries it.");
+                    }
+                }
+            }
         }
         if (failsafeExecutes && !distinctDestFile) {
             problems.add(module + ": binds maven-failsafe-plugin executions without a JaCoCo"
@@ -137,7 +174,8 @@ final class CoverageAgentWiringCheck {
                 + " surefire and failsafe forks would both write target/jacoco.exec with"
                 + " append=false, the second silently overwriting the first into a plausible"
                 + " partial coverage figure. Add a prepare-agent-integration execution with its"
-                + " own <destFile> (and a report execution reading it).");
+                + " own <destFile> and <includes><include>" + INSTRUMENTED + "</include></includes>"
+                + " (and a report execution reading it).");
         }
 
         Matcher fork = FORK_COUNT.matcher(text);
@@ -152,6 +190,43 @@ final class CoverageAgentWiringCheck {
                     + " more must carry per-fork JaCoCo wiring and extend this check.");
             }
         }
+        Matcher generated = GENERATED_PACKAGE.matcher(text);
+        while (generated.find()) {
+            String value = generated.group(2);
+            if (!value.contains("${") && !underPackageRoot(value)) {
+                problems.add(module + ": <" + generated.group(1) + ">" + value + "</"
+                    + generated.group(1) + "> generates classes outside " + PACKAGE_ROOT
+                    + ". The coverage agent instruments only " + INSTRUMENTED + ", so under"
+                    + " -Pcoverage the module's report would read them as uncovered.");
+            }
+        }
         return problems;
+    }
+
+    /**
+     * Every source directory holding a {@code .java} file under {@code sourceRoot} must name a
+     * package under {@link #PACKAGE_ROOT}; a module without main sources passes.
+     */
+    static List<String> checkSources(String module, Path sourceRoot) throws IOException {
+        if (!Files.isDirectory(sourceRoot)) {
+            return List.of();
+        }
+        try (Stream<Path> files = Files.walk(sourceRoot)) {
+            return files
+                .filter(f -> f.toString().endsWith(".java"))
+                .map(f -> sourceRoot.relativize(f).getParent())
+                .map(dir -> dir == null ? "" : dir.toString().replace(sourceRoot.getFileSystem().getSeparator(), "."))
+                .distinct()
+                .filter(pkg -> !underPackageRoot(pkg))
+                .sorted()
+                .map(pkg -> module + ": src/main/java holds package '" + pkg + "', outside "
+                    + PACKAGE_ROOT + ". The coverage agent instruments only " + INSTRUMENTED
+                    + ", so under -Pcoverage the module's report would read its classes as uncovered.")
+                .toList();
+        }
+    }
+
+    private static boolean underPackageRoot(String pkg) {
+        return pkg.equals(PACKAGE_ROOT) || pkg.startsWith(PACKAGE_ROOT + ".");
     }
 }

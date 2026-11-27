@@ -14,8 +14,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Pins the agent-wiring contract: an {@code <argLine>} that does not lead with
  * {@code @{argLine}} drops the JaCoCo agent and must fail with the false-0% consequence in the
- * message; a second test-executing execution without a distinct {@code destFile} must fail; the
- * compliant shapes of both rules pass; and commented-out XML never trips the scan.
+ * message; a second test-executing execution without a distinct {@code destFile} must fail; an
+ * agent execution without the {@code no.sikt.*} include, or a class outside {@code no.sikt},
+ * must fail; the compliant shapes of every rule pass; and commented-out XML never trips the scan.
  */
 class CoverageAgentWiringCheckTest {
 
@@ -75,7 +76,8 @@ class CoverageAgentWiringCheckTest {
             + "<executions><execution><goals><goal>integration-test</goal></goals></execution></executions></plugin>"
             + "<plugin><artifactId>jacoco-maven-plugin</artifactId><executions><execution>"
             + "<id>prepare-agent-integration</id><goals><goal>prepare-agent-integration</goal></goals>"
-            + "<configuration><destFile>${project.build.directory}/jacoco-it.exec</destFile></configuration>"
+            + "<configuration><destFile>${project.build.directory}/jacoco-it.exec</destFile>"
+            + "<includes><include>no.sikt.*</include></includes></configuration>"
             + "</execution></executions></plugin>"
             + "</plugins></build></project>";
 
@@ -107,6 +109,77 @@ class CoverageAgentWiringCheckTest {
     void forkCountOfExactlyOne_passes() {
         assertThat(CoverageAgentWiringCheck.checkPom("m", surefire("<forkCount>1</forkCount>")))
             .isEmpty();
+    }
+
+    @Test
+    void prepareAgentWithoutInclude_failsNamingTheInclude() {
+        String pom = plugin("jacoco-maven-plugin", "<executions><execution><id>prepare-agent</id>"
+            + "<goals><goal>prepare-agent</goal></goals>"
+            + "<configuration><append>false</append></configuration></execution></executions>");
+
+        assertThat(CoverageAgentWiringCheck.checkPom("m", pom))
+            .singleElement().asString()
+            .contains("prepare-agent")
+            .contains("<include>no.sikt.*</include>");
+    }
+
+    @Test
+    void everyPrepareAgentExecutionCarriesTheInclude() {
+        // Execution configuration is not shared, so a second agent execution without the
+        // include instruments everything for its fork even when the first is restricted.
+        String pom = plugin("jacoco-maven-plugin", "<executions>"
+            + "<execution><goals><goal>prepare-agent</goal></goals>"
+            + "<configuration><includes><include>no.sikt.*</include></includes></configuration></execution>"
+            + "<execution><goals><goal>prepare-agent-integration</goal></goals>"
+            + "<configuration><destFile>it.exec</destFile></configuration></execution>"
+            + "<execution><goals><goal>report</goal></goals></execution>"
+            + "</executions>");
+
+        assertThat(CoverageAgentWiringCheck.checkPom("m", pom)).singleElement().asString()
+            .contains("prepare-agent");
+    }
+
+    @Test
+    void generatedPackageOutsideTheRoot_fails() {
+        String pom = plugin("graphitron-maven-plugin",
+            "<configuration><outputPackage>org.example.generated</outputPackage>"
+            + "<jooqPackage>${jooqPackage}</jooqPackage></configuration>");
+
+        assertThat(CoverageAgentWiringCheck.checkPom("m", pom))
+            .singleElement().asString()
+            .contains("org.example.generated")
+            .contains("uncovered");
+    }
+
+    @Test
+    void generatedPackageUnderTheRoot_passes() {
+        String pom = plugin("jooq-codegen-maven",
+            "<configuration><packageName>no.sikt.graphitron.model</packageName></configuration>");
+
+        assertThat(CoverageAgentWiringCheck.checkPom("m", pom)).isEmpty();
+    }
+
+    @Test
+    void sourcesOutsideTheRoot_fail(@TempDir Path dir) throws IOException {
+        Files.createDirectories(dir.resolve("no/sikt/a"));
+        Files.writeString(dir.resolve("no/sikt/a/A.java"), "package no.sikt.a; class A {}");
+        Files.createDirectories(dir.resolve("org/example"));
+        Files.writeString(dir.resolve("org/example/B.java"), "package org.example; class B {}");
+        Files.writeString(dir.resolve("C.java"), "class C {}");
+
+        assertThat(CoverageAgentWiringCheck.checkSources("m", dir))
+            .hasSize(2)
+            .anySatisfy(p -> assertThat(p).contains("'org.example'"))
+            .anySatisfy(p -> assertThat(p).contains("''"));
+    }
+
+    @Test
+    void sourcesUnderTheRootOrAbsent_pass(@TempDir Path dir) throws IOException {
+        Files.createDirectories(dir.resolve("no/sikt/a"));
+        Files.writeString(dir.resolve("no/sikt/a/A.java"), "package no.sikt.a; class A {}");
+
+        assertThat(CoverageAgentWiringCheck.checkSources("m", dir)).isEmpty();
+        assertThat(CoverageAgentWiringCheck.checkSources("m", dir.resolve("absent"))).isEmpty();
     }
 
     @Test

@@ -787,7 +787,13 @@
                  the recipes the same -D override.
 
                  The report goal emits target/site/jacoco/jacoco.csv, which
-                 `roadmap-tool source-coverage` aggregates into roadmap/source-coverage.adoc. -->
+                 `roadmap-tool source-coverage` aggregates into roadmap/source-coverage.adoc.
+
+                 includes=no.sikt.* limits the agent to the project's own classes. Without it the
+                 agent instruments every class a fork loads, H2's planner, jOOQ and graphql-java
+                 among them: graphitron-model's tests took 1 h 45 min that way and 17 min limited
+                 to no.sikt, about what they take with no agent. A report analyses only its own
+                 module's classes, all under no.sikt, so the rest was instrumented for nothing. -->
             <id>coverage</id>
             <build>
                 <plugins>
@@ -802,6 +808,9 @@
                                 </goals>
                                 <configuration>
                                     <append>false</append>
+                                    <includes>
+                                        <include>no.sikt.*</include>
+                                    </includes>
                                 </configuration>
                             </execution>
                             <execution>
