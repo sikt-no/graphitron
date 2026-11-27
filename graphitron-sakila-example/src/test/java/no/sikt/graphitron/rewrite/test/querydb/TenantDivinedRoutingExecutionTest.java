@@ -786,6 +786,36 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
     }
 
+    // ===== The escape hatch: a caller-supplied DSLContext serves the key with no parts =====
+
+    @Test
+    void escapeHatch_globalRoot_readsTheSuppliedContext() {
+        // A global root runs on the empty key, which the caller's own DSLContext serves when the
+        // operation is built and run on the escape hatch.
+        var result = Graphitron.newGraphQL().build()
+            .execute(Graphitron.newExecutionInput(dsl).query("{ languages { name } }").build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat((List<?>) ((Map<String, Object>) result.getData()).get("languages")).isNotEmpty();
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get())
+            .as("the supplied context answers; no pool is opened")
+            .isZero();
+    }
+
+    @Test
+    void mixedModes_globalRoot_isRefused() {
+        // An owned operation whose context also carries a caller's DSLContext: two ways to reach a
+        // connection, one operation, so the global root refuses rather than picking one.
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"))
+            .graphQLContext(b -> b.put(DSLContext.class, dsl))
+            .query("{ languages { name } }").build());
+
+        assertThat(result.getErrors()).as("the field fails").hasSize(1);
+        Map<String, Object> data = result.getData();
+        assertThat(data == null ? null : data.get("languages")).isNull();
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
     // ===== ParentRowBound: the parent row names the tenant of the row it references =====
 
     private static final String ENDORSED_FILMS = "{ endorsements(note: \"" + ENDORSEMENT_NOTE + "\")"

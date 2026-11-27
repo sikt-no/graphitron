@@ -214,6 +214,7 @@ public class TypeFetcherGenerator {
                         row.errorRouter().packageName(), row.errorRouter().simpleName()),
                     schema.errorFieldReads(row.typeName())));
         }
+        requireEveryRootFrameRendered(schema, rootFrames);
         return result;
     }
 
@@ -404,6 +405,26 @@ public class TypeFetcherGenerator {
     /** See {@link no.sikt.graphitron.rewrite.NestingReach#pivotWiring}. */
     private static ChildField.NestingField pivotWiring(ChildField.PivotSpecField field) {
         return no.sikt.graphitron.rewrite.NestingReach.pivotWiring(field);
+    }
+
+    /**
+     * Every root read in the frame that the walk classifies had its frame asked for by the fetcher that
+     * renders it: one left over is a fetcher the store states and nothing emits. A root the walk does
+     * not classify at all, a field of a query root bound to a type not named Query, is a gap of the
+     * walk's own that this run renders nothing for either way, and is left to the graph node that
+     * dispatches root reads by what the store states.
+     */
+    private static void requireEveryRootFrameRendered(GraphitronSchema schema,
+            no.sikt.graphitron.emit.RootFrame.Rows rootFrames) {
+        for (var key : rootFrames.unrendered()) {
+            int dot = key.indexOf('.');
+            var field = schema.field(key.substring(0, dot), key.substring(dot + 1));
+            if (field != null) {
+                throw new IllegalStateException("Graphitron generator bug (root frame): the store frames the root read "
+                    + key + ", which the walk classifies as " + field.getClass().getSimpleName()
+                    + ", and no fetcher rendered its frame");
+            }
+        }
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
@@ -1393,14 +1414,14 @@ public class TypeFetcherGenerator {
             String outputPackage) {
         var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row, ctx.connections());
         var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
-        // A root read the store routes runs in the frame around its launcher, on the connection the
-        // store states, rather than on the walk's tenant binding.
+        // A root read the store states whole runs in the frame around its launcher, on the connection
+        // the store states, rather than on the walk's tenant binding.
         if (rootFrame.isPresent()) {
             var framed = rootFrame.get();
             return no.sikt.graphitron.emit.FrameEmitter.render(framed.frame(), field.name(), valueType,
                 new no.sikt.graphitron.emit.FrameEmitter.Body.LauncherCall(launcherClass, row.unit().methodName()),
                 frameRuntime(ctx, new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)), true, false,
-                no.sikt.graphitron.emit.FrameConnections.of(framed.frame(), Optional.of(framed.connection()), false,
+                no.sikt.graphitron.emit.FrameConnections.of(framed.frame(), framed.connection(), false,
                     tenantType, routing(outputPackage), field.parentTypeName() + "." + field.name()));
         }
 
