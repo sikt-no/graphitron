@@ -618,6 +618,11 @@ parallelises a module's tests is priced against that before it is tried.
       and `.as(T)` under `renderSchema(false)`. The first needs no setting, so it is the one. And
       `table(sql)` renders its text as it is, so the rule's text is parenthesised to stand as a
       derived table.
+    - Parsed instead, `parseSelect(text).asTable("r", columns)`: 268 of the 275 rules parse, render
+      back and run; 7 are refused by jOOQ's parser on an `IN` list (the outbox rule above among
+      them). Parsing would also run jOOQ's rendering of a rule rather than its text, so the text goes
+      unparsed through `table(...)`. The seven point at input parsed or classified at query time,
+      which is an R876 node of its own.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every

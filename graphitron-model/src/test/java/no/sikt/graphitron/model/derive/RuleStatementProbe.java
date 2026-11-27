@@ -106,13 +106,16 @@ class RuleStatementProbe {
             var stage = EntryDefects.OUTBOX.stage();
             var fromView = rows(dsl, stage);
             var now = LocalDateTime.now();
-            for (var shape : List.of("as written", "as(T)", "T.as(r)", "as(T), no schema")) {
+            for (var shape : List.of("as written", "as(T)", "T.as(r)", "as(T), no schema", "parsed asTable")) {
                 dsl.deleteFrom(d).where(d.GRAPH_NAME.eq("g")).and(d.STAGE.eq(stage)).execute();
                 // T.as("r"): the generated table aliased, its typed fields rendering against the alias.
-                var r = shape.equals("T.as(r)") ? d.as("r") : d;
+                var r = shape.equals("T.as(r)") || shape.equals("parsed asTable") ? d.as("r") : d;
                 org.jooq.Table<?> source = switch (shape) {
                     case "as written" -> DSL.table(ruleSql);
                     case "T.as(r)" -> DSL.table(ruleSql).as("r");
+                    // The rule's text parsed into jOOQ's model, the view's column list naming its columns.
+                    case "parsed asTable" -> dsl.parser().parseSelect(stated[1])
+                        .asTable("r", stated[0].replaceAll("\\s+", "").split(","));
                     default -> DSL.table(ruleSql).as(d);
                 };
                 var writer = shape.endsWith("no schema")
@@ -139,6 +142,44 @@ class RuleStatementProbe {
                     + "\n  " + rendered);
             }
         }
+    }
+
+    /**
+     * Whether every registered rule survives jOOQ's parser: parsed, rendered back, and run as a derived
+     * table, which is what {@code parseSelect(text).asTable(...)} sends H2 in place of the text.
+     */
+    @Test
+    @EnabledIfSystemProperty(named = PROPERTY, matches = "true")
+    void everyRuleThroughTheParser() {
+        try (var store = FactStores.inMemory()) {
+            var dsl = store.dsl();
+            var outcomes = new java.util.TreeMap<String, List<String>>();
+            for (var view : dsl.fetch("SELECT DISTINCT LOWER(rule_view) FROM meta_stage_rule").getValues(0, String.class)) {
+                var stated = ruleText(view);
+                String outcome;
+                try {
+                    var select = dsl.parser().parseSelect(stated[1]);
+                    try {
+                        dsl.fetchCount(stated[0] == null ? select.asTable("r")
+                            : select.asTable("r", stated[0].replaceAll("\\s+", "").split(",")));
+                        outcome = "parses and runs";
+                    } catch (RuntimeException e) {
+                        outcome = "parses, rendered form refused: " + firstLine(e);
+                    }
+                } catch (RuntimeException e) {
+                    outcome = "does not parse: " + firstLine(e);
+                }
+                outcomes.computeIfAbsent(outcome.replaceAll(":.*", ""), o -> new java.util.ArrayList<>())
+                    .add(view + (outcome.contains(":") ? " (" + outcome.replaceFirst("^[^:]*: ", "") + ")" : ""));
+            }
+            outcomes.forEach((outcome, views) -> System.out.println("RULE-PARSE " + outcome + ": " + views.size()
+                + (outcome.equals("parses and runs") ? "" : "\n  " + String.join("\n  ", views.subList(0, Math.min(15, views.size()))))));
+        }
+    }
+
+    private static String firstLine(RuntimeException e) {
+        var message = String.valueOf(e.getMessage()).replaceAll("\\s+", " ").replaceFirst("^.*\\]; ", "");
+        return message.substring(0, Math.min(200, message.length()));
     }
 
     /**
