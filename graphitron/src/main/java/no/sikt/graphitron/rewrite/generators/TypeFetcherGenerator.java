@@ -799,10 +799,22 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow,
                         launchers.rootFrameFor(qtf.parentTypeName(), qtf.name()), outputPackage));
-                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(launcherRow, launchers.carrierDsl(), ctx.connections(), CodeBlock.of(""),
-                            TenantDslEmitter.fanOutNarrowing(ctx, launcherRow, outputPackage),
-                            ctx.argPathHelpers(), ctx.projectedKeyHost()));
+                    // A root read the store states whole is rendered by its own emitter, off the store's
+                    // values; the row's renderer keeps the rest until their piece lands there.
+                    var rootRead = launchers.rootReadFor(qtf.parentTypeName(), qtf.name());
+                    if (rootRead.isPresent()) {
+                        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+                        var names = rootReadNames(units);
+                        var projection = names.projectionUnit(rootRead.get().returnType());
+                        builder.addMethod(no.sikt.graphitron.emit.RootReadEmitter.render(rootRead.get(), names,
+                            launcherRow.dslProjections().stream()
+                                .anyMatch(unit -> unit.fqcn().equals(projection.canonicalName()))));
+                    } else {
+                        builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                            .render(launcherRow, launchers.carrierDsl(), ctx.connections(), CodeBlock.of(""),
+                                TenantDslEmitter.fanOutNarrowing(ctx, launcherRow, outputPackage),
+                                ctx.argPathHelpers(), ctx.projectedKeyHost()));
+                    }
                     // The keyed-lookup row additionally owns a VALUES-building input-rows
                     // helper; the row's source arm is the fork, the same shape the batched
                     // rows renderer reads, so no leaf identity and no schema participate.
@@ -1310,6 +1322,40 @@ public class TypeFetcherGenerator {
             case ChildField.BatchedInterfaceField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.BatchedUnionField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             default -> false;
+        };
+    }
+
+    /** The names a store root read calls by, as the units that render them name them. */
+    private static no.sikt.graphitron.emit.RootReadEmitter.Names rootReadNames(
+            no.sikt.graphitron.plan.GeneratedUnits units) {
+        return new no.sikt.graphitron.emit.RootReadEmitter.Names() {
+            @Override
+            public String launcherMethod(String parentType, String fieldName) {
+                return units.launcherMethod(parentType, fieldName).methodName();
+            }
+
+            @Override
+            public ClassName conditionsClass(String parentType) {
+                var unit = units.conditions(parentType);
+                return ClassName.get(unit.packageName(), unit.simpleName());
+            }
+
+            @Override
+            public String conditionMethod(String parentType, String fieldName) {
+                return units.conditionMethod(parentType, fieldName).methodName();
+            }
+
+            @Override
+            public ClassName projectionUnit(String typeName) {
+                var unit = units.typeClass(typeName);
+                return ClassName.get(unit.packageName(), unit.simpleName());
+            }
+
+            @Override
+            public ClassName selectionOccurrences() {
+                var unit = units.selectionOccurrences();
+                return ClassName.get(unit.packageName(), unit.simpleName());
+            }
         };
     }
 

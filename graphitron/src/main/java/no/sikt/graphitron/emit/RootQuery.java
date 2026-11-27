@@ -24,6 +24,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CROSS_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_INTERFACE_SHARED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
@@ -33,6 +34,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_CONVERSION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_SIGNATURE;
@@ -47,6 +52,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_CON
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READ_SCOPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
@@ -61,6 +67,8 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
@@ -73,7 +81,7 @@ import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
- * Each root {@code SELECT} or {@code LOOKUP} producer, and whether the store states its fetcher whole:
+ * Each root {@code SELECT}, {@code LOOKUP} or query root's {@code ROUTINE} producer, and whether the store states its fetcher whole:
  * read off its occurrence, the table its records are rows of, the type whose projection selects them,
  * its default order and the condition method its table has.
  *
@@ -117,7 +125,13 @@ public final class RootQuery {
         /** A key of its order is not a column of its table. */
         SORT_KEY_NOT_A_COLUMN,
         /** It produces no records of one table-bound type. */
-        NOT_ONE_TABLE
+        NOT_ONE_TABLE,
+        /** It reads a routine's rows as a connection, or in an order a client chooses. */
+        ROUTINE_SHAPE,
+        /** A routine parameter it fills takes a node id's key column or a generated scalar's component. */
+        ROUTINE_ARGUMENT,
+        /** A step out of its routine's result joins by no columns. */
+        ROUTINE_HOP
     }
 
     /** One root producer's verdict, keyed by its occurrence. */
@@ -157,12 +171,13 @@ public final class RootQuery {
      * serves where the client asks for none, {@code null} for a list or a record. A lookup's list
      * follows its keys rather than an order; a list with a choice reads the default order where the
      * client picks none. {@code routed} is whether it reads a tenant's tables on the connection the
-     * store routes by the tenant its arguments name.
+     * store routes by the tenant its arguments name. {@code routine} is the routine whose result its
+     * rows are read from, and the steps on to {@code table}, {@code null} for a read of a table.
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
                           List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated,
-                          List<Facet> facets, boolean routed)
+                          List<Facet> facets, boolean routed, Routine routine)
             implements Result {
         public Emitted {
             facets = List.copyOf(facets);
@@ -432,6 +447,50 @@ public final class RootQuery {
     /** What the table's condition method takes beside the table and the arguments. */
     public record Signature(boolean takesContext, boolean takesSession) {}
 
+    /**
+     * The table-valued routine a root read calls: its {@code Routines} class and method, the table its
+     * result is, the value each parameter takes in declaration order, and the steps from the result on
+     * to the table the rows are read off, none where the rows are the result's own.
+     */
+    public record Routine(String routinesClass, String method, TableRef result, List<RoutineArgument> arguments,
+                          List<RoutineHop> hops) {
+        public Routine {
+            Objects.requireNonNull(routinesClass, "routinesClass");
+            Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(result, "result");
+            arguments = List.copyOf(arguments);
+            hops = List.copyOf(hops);
+        }
+    }
+
+    /**
+     * One routine parameter as its argument fills it: the parameter's name and the class it takes as
+     * the catalog spells it, the argument and input field names its value sits at, and how the value
+     * reaches it, as {@code graphitron_occurrence_binding_extraction} states: {@code AS_SENT},
+     * {@code ENUM_CONSTANT} or {@code LIST_TO_ARRAY}.
+     */
+    public record RoutineArgument(String parameter, String bindingType, List<String> path, String extraction) {
+        public RoutineArgument {
+            Objects.requireNonNull(parameter, "parameter");
+            Objects.requireNonNull(bindingType, "bindingType");
+            path = List.copyOf(path);
+            Objects.requireNonNull(extraction, "extraction");
+        }
+    }
+
+    /**
+     * One step from a routine's result toward its rows' table: the table it reaches, the column pairs
+     * it joins by from the table it leaves, and the condition methods it is filtered by, each taking
+     * the table left and the one reached.
+     */
+    public record RoutineHop(TableRef target, List<Pair> pairs, List<JoinMethod> filters) {
+        public RoutineHop {
+            Objects.requireNonNull(target, "target");
+            pairs = List.copyOf(pairs);
+            filters = List.copyOf(filters);
+        }
+    }
+
     private record Producer(String coordinate, String kind, String shape, String parentType, String fieldName,
                             String returnType, String source, String schema, String table) {}
 
@@ -506,7 +565,11 @@ public final class RootQuery {
             .leftJoin(ge).on(ge.GRAPH_NAME.eq(gc.GRAPH_NAME), ge.TYPE_NAME.eq(gc.EDGE_TYPE_NAME))
             .leftJoin(te).on(te.GRAPH_NAME.eq(ge.GRAPH_NAME), te.TYPE_NAME.eq(ge.ITEM_TYPE_NAME))
             .leftJoin(cc).on(cc.GRAPH_NAME.eq(f.GRAPH_NAME), cc.COORDINATE.eq(f.COORDINATE))
-            .where(p.GRAPH_NAME.eq(graph), p.START.eq("ROOT"), p.KIND.in("SELECT", "LOOKUP"))
+            .where(p.GRAPH_NAME.eq(graph), p.START.eq("ROOT"), p.KIND.in("SELECT", "LOOKUP")
+                // A query root's routine reads rows; a mutation root's writes, which another emitter states.
+                .or(p.KIND.eq("ROUTINE").and(exists(selectOne().from(GRAPHQL_ROOT_OPERATION).where(
+                    GRAPHQL_ROOT_OPERATION.GRAPH_NAME.eq(f.GRAPH_NAME), GRAPHQL_ROOT_OPERATION.TYPE_NAME.eq(f.TYPE_NAME),
+                    GRAPHQL_ROOT_OPERATION.OPERATION.eq("QUERY"))))))
             .orderBy(p.COORDINATE)
             .fetch();
 
@@ -537,11 +600,15 @@ public final class RootQuery {
                 out.put(at.coordinate(), multiTable(store, at, pageSize, signatures));
                 continue;
             }
-            if (told != null && told.reason() != null) reason = told.reason();
+            boolean routineRead = "ROUTINE".equals(at.kind());
+            RoutineRead routine = routineRead ? routine(store, at, connection || choices.containsKey(at.coordinate()))
+                : null;
+            if (routine != null && routine.reason() != null) reason = routine.reason();
+            else if (told != null && told.reason() != null) reason = told.reason();
             // A discriminated lookup joins its keys' rows on the shared table, a source of its own.
             else if (told != null && "LOOKUP".equals(at.kind())) reason = Reason.POLYMORPHIC;
             else if (at.table() == null || at.returnType() == null
-                || !(connection || Boolean.TRUE.equals(row.value16()))
+                || !(connection || routineRead || Boolean.TRUE.equals(row.value16()))
                 || !(connection || "RECORD_LIST".equals(at.shape()) || "SINGLE_RECORD".equals(at.shape()))) {
                 reason = Reason.NOT_ONE_TABLE;
             }
@@ -566,7 +633,8 @@ public final class RootQuery {
                     + at.coordinate() + " reads a tenant's tables on a connection " + row.value20()
                     + ", which only a routed one may be");
             }
-            var table = tableRef(store, at.source(), at.schema(), at.table());
+            // A routine read's rows are on the table its last step reaches, else on the routine's result.
+            var table = routine != null ? routine.terminal() : tableRef(store, at.source(), at.schema(), at.table());
             var faceted = Boolean.TRUE.equals(row.value11()) ? facets.get(at.coordinate()) : List.<Facet>of();
             if (table == null || faceted == null) {
                 out.put(at.coordinate(), new NotYet(at.coordinate(), Reason.NOT_ONE_TABLE));
@@ -576,11 +644,152 @@ public final class RootQuery {
             boolean lookup = "LOOKUP".equals(at.kind());
             Integer pageSize = !connection ? null
                 : row.value18() != null ? row.value18() : ConnectionDefaults.defaultPageSize(maxPageSize);
+            var bound = routine != null ? routine.terminalBound() : at.schema() + "." + at.table();
+            var signature = signatures.get(List.of(at.coordinate(), bound));
+            // A routine read whose filter the store states on another table than its rows' is held back
+            // rather than read unfiltered.
+            if (routine != null && signature == null && signatures.keySet().stream()
+                    .anyMatch(k -> k.getFirst().equals(at.coordinate()))) {
+                out.put(at.coordinate(), new NotYet(at.coordinate(), Reason.ROUTINE_HOP));
+                continue;
+            }
             out.put(at.coordinate(), new Emitted(at.coordinate(), at.parentType(), at.fieldName(), at.returnType(),
                 table, list, list && !lookup ? orders.getOrDefault(at.coordinate(), List.of()) : List.of(),
-                signatures.get(List.of(at.coordinate(), at.schema() + "." + at.table())),
-                lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()), pageSize,
-                told == null ? null : told.discriminated(), faceted, routed));
+                signature, lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()),
+                pageSize, told == null ? null : told.discriminated(), faceted, routed,
+                routine == null ? null : routine.routine()));
+        }
+        return out;
+    }
+
+    /**
+     * A routine read as the store states it: the routine, the table its rows are read off and that
+     * table's {@code schema.table}, or why it is held back.
+     */
+    private record RoutineRead(Routine routine, TableRef terminal, String terminalBound, Reason reason) {
+        static RoutineRead held(Reason reason) {
+            return new RoutineRead(null, null, null, reason);
+        }
+    }
+
+    /**
+     * The routine a query root's routine producer calls, read off the store: its call surface, what
+     * fills each parameter and how, and the steps from its result on to the table the rows are read
+     * off. Held back where it reads a connection or a chosen order ({@code shaped}), a parameter takes
+     * a value no plain read hands over, or a step joins by no columns.
+     */
+    private static RoutineRead routine(StoreHandle store, Producer at, boolean shaped) {
+        if (shaped) {
+            return RoutineRead.held(Reason.ROUTINE_SHAPE);
+        }
+        var graph = store.graphName();
+        var pr = GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
+        var sr = SQL_ROUTINE;
+        var call = store.dsl()
+            .select(pr.ROUTINE_SOURCE_NAME, pr.TABLE_SCHEMA, pr.ROUTINE_NAME, sr.ROUTINES_CLASS_FQN,
+                sr.ROUTINES_METHOD_NAME)
+            .from(pr)
+            .join(sr).on(sr.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME), sr.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA),
+                sr.ROUTINE_NAME.eq(pr.ROUTINE_NAME))
+            .where(pr.GRAPH_NAME.eq(graph), pr.COORDINATE.eq(at.coordinate()), sr.ROUTINES_CLASS_FQN.isNotNull())
+            .fetchOne();
+        if (call == null) {
+            return RoutineRead.held(Reason.NOT_ONE_TABLE);
+        }
+        var result = tableRef(store, call.value1(), call.value2(), call.value3());
+        if (result == null) {
+            return RoutineRead.held(Reason.NOT_ONE_TABLE);
+        }
+        var arguments = routineArguments(store, at.coordinate(), call.value1(), call.value2(), call.value3());
+        if (arguments == null) {
+            return RoutineRead.held(Reason.ROUTINE_ARGUMENT);
+        }
+        // The steps on from the result, as the field's path states them toward the type it returns.
+        var js = GRAPHITRON_JOIN_PATH_STEP;
+        var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        var sm = GRAPHITRON_JOIN_PATH_STEP_METHOD;
+        var fieldCoordinate = at.parentType() + "." + at.fieldName();
+        var steps = store.dsl()
+            .select(js.POSITION, js.TO_SOURCE_NAME, js.TO_SCHEMA, js.TO_TABLE)
+            .from(js)
+            .where(js.GRAPH_NAME.eq(graph), js.COORDINATE.eq(fieldCoordinate), js.TARGET_TYPE.eq(at.returnType()))
+            .orderBy(js.POSITION)
+            .fetch();
+        var hops = new ArrayList<RoutineHop>();
+        var left = result;
+        String bound = call.value2() + "." + call.value3();
+        for (var step : steps) {
+            var target = tableRef(store, step.value2(), step.value3(), step.value4());
+            if (target == null) {
+                return RoutineRead.held(Reason.NOT_ONE_TABLE);
+            }
+            var from = left;
+            var pairs = store.dsl()
+                .select(sc.FROM_COLUMN, sc.TO_COLUMN)
+                .from(sc)
+                .where(sc.GRAPH_NAME.eq(graph), sc.COORDINATE.eq(fieldCoordinate), sc.TARGET_TYPE.eq(at.returnType()),
+                    sc.POSITION.eq(step.value1()))
+                .orderBy(sc.ORDINAL)
+                .fetch(pair -> new Pair(columnOf(from, pair.value1()), columnOf(target, pair.value2())));
+            if (pairs.isEmpty() || pairs.stream().anyMatch(pair -> pair.from() == null || pair.to() == null)) {
+                return RoutineRead.held(Reason.ROUTINE_HOP);
+            }
+            var filters = store.dsl()
+                .select(sm.METHOD_CLASS_NAME, sm.METHOD_NAME)
+                .from(sm)
+                .where(sm.GRAPH_NAME.eq(graph), sm.COORDINATE.eq(fieldCoordinate), sm.TARGET_TYPE.eq(at.returnType()),
+                    sm.POSITION.eq(step.value1()))
+                .orderBy(sm.METHOD_CLASS_NAME, sm.METHOD_NAME)
+                .fetch(method -> new JoinMethod(method.value1(), method.value2()));
+            hops.add(new RoutineHop(target, pairs, filters));
+            left = target;
+            bound = step.value3() + "." + step.value4();
+        }
+        return new RoutineRead(new Routine(call.value4(), call.value5(), result, arguments, hops), left, bound, null);
+    }
+
+    /** The column of {@code table} of the given SQL name, {@code null} where it has none. */
+    private static ColumnRef columnOf(TableRef table, String sqlName) {
+        return table.allColumns().stream().filter(c -> c.sqlName().equals(sqlName)).findFirst().orElse(null);
+    }
+
+    /**
+     * Each parameter of the routine a query root's routine producer calls, in declaration order, with
+     * the argument that fills it and how its value reaches it; {@code null} where a parameter is filled
+     * otherwise than by an argument read as sent, as an enum's constant or as an array of a list.
+     */
+    private static List<RoutineArgument> routineArguments(StoreHandle store, String coordinate, String source,
+                                                          String schema, String routine) {
+        var graph = store.graphName();
+        var sp = SQL_ROUTINE_PARAMETER;
+        var cp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var b = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        var e = GRAPHITRON_OCCURRENCE_BINDING_EXTRACTION;
+        var parameters = store.dsl()
+            .select(sp.POSITION, sp.JOOQ_NAME, sp.BINDING_TYPE, cp.FILL, cp.LANDING_COORDINATE, e.EXTRACTION)
+            .from(sp)
+            .leftJoin(cp).on(cp.GRAPH_NAME.eq(graph), cp.COORDINATE.eq(coordinate), cp.CALL_KIND.eq("ROUTINE"),
+                cp.POSITION.eq(sp.POSITION))
+            .leftJoin(b).on(b.GRAPH_NAME.eq(cp.GRAPH_NAME), b.CALL_COORDINATE.eq(cp.COORDINATE), b.CALL.eq(cp.CALL),
+                b.POSITION.eq(cp.POSITION))
+            .leftJoin(e).on(e.GRAPH_NAME.eq(b.GRAPH_NAME), e.COORDINATE.eq(b.COORDINATE), e.BOUND.eq(b.BOUND))
+            .where(sp.SOURCE_NAME.eq(source), sp.TABLE_SCHEMA.eq(schema), sp.ROUTINE_NAME.eq(routine))
+            .orderBy(sp.POSITION)
+            .fetch();
+        var st = GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+        var out = new ArrayList<RoutineArgument>();
+        for (var parameter : parameters) {
+            if (!"ARGUMENT".equals(parameter.value4())
+                    || !List.of("AS_SENT", "ENUM_CONSTANT", "LIST_TO_ARRAY").contains(parameter.value6())) {
+                return null;
+            }
+            var path = store.dsl()
+                .select(st.NAME)
+                .from(st)
+                .where(st.GRAPH_NAME.eq(graph), st.COORDINATE.eq(parameter.value5()))
+                .orderBy(st.DEPTH)
+                .fetch(st.NAME);
+            out.add(new RoutineArgument(parameter.value2(), parameter.value3(), path, parameter.value6()));
         }
         return out;
     }

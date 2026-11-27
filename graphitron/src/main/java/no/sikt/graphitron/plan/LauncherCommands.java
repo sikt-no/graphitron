@@ -239,7 +239,13 @@ public final class LauncherCommands {
         var nodeFetchers = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher>();
         // And each root over several tables the store states, whose participants are read from it.
         var multiTables = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable>();
+        // And each root read whose body the store's root read emitter renders.
+        var rootReads = new java.util.LinkedHashMap<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.Emitted>();
         for (var root : roots.values()) {
+            if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted
+                    && no.sikt.graphitron.emit.RootReadEmitter.renders(emitted)) {
+                rootReads.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()), emitted);
+            }
             if (root instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted && emitted.choice() != null) {
                 argumentOrders.put(FieldCoordinates.coordinates(emitted.parentType(), emitted.fieldName()),
                     argumentOrderOf(emitted));
@@ -251,7 +257,7 @@ public final class LauncherCommands {
             }
         }
         return new LauncherRelation(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables,
-            rootFrames(store, roots));
+            rootFrames(store, roots), rootReads);
     }
 
     /**

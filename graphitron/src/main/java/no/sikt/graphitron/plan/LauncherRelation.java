@@ -47,6 +47,9 @@ import java.util.Optional;
  * <p>{@link #multiTables} is each root over several tables the store states, keyed by coordinate:
  * its participants and their condition calls are read from it rather than from the walk's field.
  *
+ * <p>{@link #rootReads} is each root read whose body {@link no.sikt.graphitron.emit.RootReadEmitter}
+ * renders, keyed by coordinate: its launcher method is that emitter's, not the row's renderer's.
+ *
  * <p><b>Method-name census.</b> Coordinate uniqueness does not imply method-name uniqueness:
  * the {@code rows} / {@code load} / {@code lookup} formulas upper-camel a field name, which is
  * not injective, and several naming schemes mint onto one fetchers class. This relation
@@ -71,7 +74,8 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
         Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
         Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
-        Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames) {
+        Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames,
+        Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.Emitted> rootReads) {
 
     /** The relation over {@code rows}, indexed on the coordinate key it is declared to have. */
     public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
@@ -113,8 +117,19 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
             Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames) {
+        this(rows, carrierDsl, connections, argumentOrders, nodeFetchers, multiTables, rootFrames, Map.of());
+    }
+
+    /** The relation over {@code rows}, with everything above and the root reads the store's emitter renders. */
+    public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
+            Map<FieldCoordinates, no.sikt.graphitron.rewrite.model.OrderBySpec.Argument> argumentOrders,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetchers,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.MultiTable> multiTables,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootFrame> rootFrames,
+            Map<FieldCoordinates, no.sikt.graphitron.emit.RootQuery.Emitted> rootReads) {
         this(CoordinateIndex.of(rows, LauncherCommand::coordinate, "launcher"), carrierDsl, connections,
-            argumentOrders, nodeFetchers, multiTables, rootFrames);
+            argumentOrders, nodeFetchers, multiTables, rootFrames, rootReads);
     }
 
     public LauncherRelation {
@@ -125,6 +140,7 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
         nodeFetchers = Map.copyOf(nodeFetchers);
         multiTables = Map.copyOf(multiTables);
         rootFrames = Map.copyOf(rootFrames);
+        rootReads = Map.copyOf(rootReads);
         var byMethod = new LinkedHashMap<UnitMethodRef, LauncherCommand>();
         for (var row : index.rows()) {
             var existing = byMethod.putIfAbsent(row.unit(), row);
@@ -170,6 +186,11 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
     public Optional<no.sikt.graphitron.emit.RootQuery.NodeFetcher> nodeFetcherFor(String parentTypeName,
             String fieldName) {
         return Optional.ofNullable(nodeFetchers.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
+    }
+
+    /** The root read at this coordinate whose body the store's root read emitter renders, if it is one. */
+    public Optional<no.sikt.graphitron.emit.RootQuery.Emitted> rootReadFor(String parentTypeName, String fieldName) {
+        return Optional.ofNullable(rootReads.get(FieldCoordinates.coordinates(parentTypeName, fieldName)));
     }
 
     /** The frame the root read at this coordinate runs in, where the store routes it. */

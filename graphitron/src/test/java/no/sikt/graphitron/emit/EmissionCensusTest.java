@@ -418,16 +418,21 @@ class EmissionCensusTest {
                 "Query.presenceDetailByKey", "Query.presenceDetailNode", "Query.presenceDetailRequired",
                 "Query.presenceHostRefs", "Query.presenceHosts", "Query.projectNotesByPlainFilter",
                 "Query.projectNotesByPlainFilterConnection", "Query.projectNotesByProject", "Query.projects",
-                "Query.rentalsByInventoryItem", "Query.roleHolders", "Query.secureNotes", "Query.sessionStores",
+                "Query.recentComedyFilmsForActor", "Query.recentFilmsForActor",
+                "Query.recentFilmsForActorInferred", "Query.rentalsByInventoryItem", "Query.roleHolders", "Query.secureNotes", "Query.sessionStores",
                 "Query.splitFilterParents", "Query.splitFilterParentsByTargetLabel", "Query.splitParents",
                 "Query.squadMembers", "Query.storeById", "Query.stores", "Query.studyLevels",
-                "Query.validityPeriodsByValidTo", "Query.validityPeriodsByValidToDesc",
+                "Query.tilganger", "Query.tilgangerAdmin", "Query.validityPeriodsByValidTo", "Query.validityPeriodsByValidToDesc",
                 "Query.validityPeriodsByValidToDescList", "Query.validityPeriodsOrdered",
                 "Query.xlatChildByParentId", "Query.xlatChildrenByFilter", "Query.xlatChildrenByParentIds",
                 "Query.xlatCompChildrenByParentIds");
             // Each line goes as its shape is stated; a root moving between lines is a change to look at,
             // not to re-pin.
-            soft.assertThat(held).as("the roots the walk keeps").isEmpty();
+            soft.assertThat(held).as("the roots the walk keeps").containsExactly(
+                Map.entry("ROUTINE_ARGUMENT", List.of("Query.actorFilmsFiltered", "Query.filmsForOptionalActor",
+                    "Query.filmsForOptionalActorFilter")),
+                Map.entry("ROUTINE_SHAPE", List.of("Query.recentFilmsForActorConnection", "Query.tilgangerConnection",
+                    "Query.tilgangerSortert")));
         });
     }
 
