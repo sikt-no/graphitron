@@ -623,6 +623,17 @@ parallelises a module's tests is priced against that before it is tried.
       them). Parsing would also run jOOQ's rendering of a rule rather than its text, so the text goes
       unparsed through `table(...)`. The seven point at input parsed or classified at query time,
       which is an R876 node of its own.
+26. **A trunk push renders the site in the build job.** Done 2026-11-27. The `docs-build` job
+    rebuilt everything the docs module renders from with `-am` on a fresh runner: sakila-db's jOOQ
+    codegen through Testcontainers, graphitron-model, graphitron and its test schemas, whose exec
+    ignores `-DskipTests`. It took 11:48 on 11-26 (8:19 of it the test schemas) and 5:28 on 11-27
+    once the generator kept 1,024 statements, all after the build job had installed the same tree.
+    The build job now renders the site itself after the leaf-coverage regen, with
+    `mvn -pl :graphitron-docs clean package` and no `-am`, from the jars its reactor installed, and
+    uploads the Pages artifact; `docs-deploy` needs `build`. That render took 54 s on the 4-core
+    sandbox. About 4 to 5 minutes off every trunk push's time to Pages and its hold on the
+    workflow's concurrency slot; PRs are unchanged. The `inference-axis-coverage` artifact went
+    with the job, its only consumer.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
@@ -1031,3 +1042,8 @@ The `build-profile` skill owns the method, and this item follows it:
 Nothing about what is tested changes. The build stays green with every test passing, and each step
 keeps the counts surefire reports per module. A2 and A3 change where a test's store comes from, by R1160's rules: the population is read-only to
 tests, and a test that asserts something about its own boot or lifecycle keeps a store of its own.
+
+## Retired vocabulary
+
+* `docs-build`, the CI job that rebuilt the reactor to render the site (step 26).
+* The `inference-axis-coverage` workflow artifact, which carried the leaf-coverage page to it.
