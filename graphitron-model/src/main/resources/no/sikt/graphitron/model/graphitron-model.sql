@@ -32066,6 +32066,10 @@ INSERT INTO meta_stated_relation VALUES
    'One rule view a stage inserts a relation from: one row per stage, relation and view.',
    'For example occurrence-builds inserts graphitron_occurrence_binding from graphitron_occurrence_binding_member_rule, whose kind column says MEMBER.',
    'Which rule views a stage writes each relation from is this file''s own vocabulary, stated once here rather than as Java lists beside the gates that read it: the agreement of every stage-written table with the union of its rules, the kinds a stage declares in meta_stage_write_kind held to what its views yield, and one defect rule view per raising stage. A stage taking a rule view adds its row, and the gates cover it the day it lands.'),
+  ('meta_stage_dependency',
+   'One earlier stage of its own gatherer whose writes a stage reads.',
+   'For example outbox reads the rows occurrence-producers writes.',
+   'A stage reads only from the stages before it, and declares them as a gatherer declares its own dependencies (Alf, 2026-11-27): a read nobody declared fails its gate even where the order happens to make it safe. A read of another gatherer''s relations goes through meta_gatherer_dependency, and a gatherer''s own capture precedes every stage it runs.'),
   ('meta_stage_write_kind',
    'One kind of row a stage writes into a relation it shares with another stage, the relation split between them by a column it carries: one row per stage, relation and kind.',
    'For example occurrence-producers writes the SERVICE, WRITE and ROUTINE rows of graphitron_occurrence_call, and occurrence-bindings its CONDITION and EXPRESSION rows.',
@@ -32909,6 +32913,17 @@ COMMENT ON TABLE meta_stage_write IS 'One relation a stage writes rows into: an 
 COMMENT ON COLUMN meta_stage_write.stage_name IS 'the writing stage, a meta_stage key';
 COMMENT ON COLUMN meta_stage_write.relation_name IS 'the base table written, lower case as declared; a gate in this module reads the stage writes the fact documents'' captures recorded and refuses one its stage does not declare here';
 
+CREATE TABLE meta_stage_dependency (
+  stage_name          VARCHAR NOT NULL,
+  upstream_stage_name VARCHAR NOT NULL,
+  PRIMARY KEY (stage_name, upstream_stage_name),
+  FOREIGN KEY (stage_name) REFERENCES meta_stage (stage_name),
+  FOREIGN KEY (upstream_stage_name) REFERENCES meta_stage (stage_name)
+);
+COMMENT ON TABLE meta_stage_dependency IS 'One earlier stage of its own gatherer whose writes a stage reads. For example outbox reads the rows occurrence-producers writes.';
+COMMENT ON COLUMN meta_stage_dependency.stage_name IS 'the reading stage, a meta_stage key';
+COMMENT ON COLUMN meta_stage_dependency.upstream_stage_name IS 'a stage of the same gatherer placed before it, a meta_stage key; a gate in this module refuses a row naming a later stage or another gatherer''s, and a relation a stage''s rule reads that no stage it names, nor the stage itself, its gatherer''s capture or a gatherer its gatherer depends on, writes';
+
 CREATE TABLE meta_stage_write_kind (
   stage_name    VARCHAR NOT NULL,
   relation_name VARCHAR NOT NULL,
@@ -33229,6 +33244,38 @@ INSERT INTO meta_stage_write VALUES
   ('tenant-columns', 'graphitron_tenant_fan_out_key'),
   ('graph-classes', 'code_graph_class'),
   ('call-parameter-tables', 'graphitron_call_parameter_table');
+
+-- The earlier stages each stage whose rule is a file of its own reads from. A stage whose rule is still
+-- a view gains its rows when it moves.
+INSERT INTO meta_stage_dependency VALUES
+  ('occurrence-depths', 'binding-claims'),
+  ('occurrence-depths', 'code-references'),
+  ('occurrence-depths', 'fetchers'),
+  ('occurrence-depths', 'field-targets'),
+  ('occurrence-depths', 'macro-expansion'),
+  ('occurrence-depths', 'occurrence-source-claims'),
+  ('occurrence-depths', 'occurrences'),
+  ('occurrence-depths', 'path-claims'),
+  ('occurrence-depths', 'producer-claims'),
+  ('occurrence-depths', 'table-types'),
+  ('occurrence-depths', 'type-claims'),
+  ('occurrence-source-claims', 'federation-vocabulary'),
+  ('occurrence-source-claims', 'fetchers'),
+  ('occurrence-source-claims', 'field-targets'),
+  ('occurrence-source-claims', 'macro-expansion'),
+  ('occurrence-source-claims', 'occurrence-producers'),
+  ('occurrence-source-claims', 'occurrences'),
+  ('occurrence-source-claims', 'path-claims'),
+  ('occurrence-source-claims', 'routine-results'),
+  ('occurrence-source-claims', 'table-types'),
+  ('outbox', 'argmapping-landings'),
+  ('outbox', 'argmapping-sites'),
+  ('outbox', 'fetchers'),
+  ('outbox', 'macro-expansion'),
+  ('outbox', 'occurrence-depths'),
+  ('outbox', 'occurrence-producers'),
+  ('outbox', 'occurrence-values'),
+  ('outbox', 'occurrences');
 
 -- The call relations split between the stage writing the producers' calls and the one writing the
 -- conditions' and the expressions', by call kind (Alf, 2026-11-12). The bindings split by their kind

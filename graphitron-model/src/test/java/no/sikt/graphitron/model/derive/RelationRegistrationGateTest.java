@@ -815,6 +815,7 @@ class RelationRegistrationGateTest {
         registrations.put("meta_relation", Arm.DERIVED);
         registrations.put("meta_stage", Arm.DERIVED);
         registrations.put("meta_stage_write", Arm.DERIVED);
+        registrations.put("meta_stage_dependency", Arm.DERIVED);
         registrations.put("meta_stage_write_kind", Arm.DERIVED);
         registrations.put("meta_stage_rule", Arm.DERIVED);
         registrations.put("meta_stated_relation", Arm.DERIVED);

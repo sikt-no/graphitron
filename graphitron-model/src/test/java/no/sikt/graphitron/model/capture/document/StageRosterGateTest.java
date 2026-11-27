@@ -16,7 +16,10 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
+import static no.sikt.graphitron.model.Tables.META_GATHERER_DEPENDENCY;
+import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
+import static no.sikt.graphitron.model.Tables.META_STAGE_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.META_STAGE_WRITE;
 import static no.sikt.graphitron.model.Tables.META_STAGE_WRITE_KIND;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -117,6 +120,92 @@ class StageRosterGateTest {
             assertThat(violations)
                 .as("a stage's rule reading a later stage's relation reads the previous reading's"
                     + " rows: move the arm to the later stage, or the stage after it")
+                .isEmpty();
+        });
+    }
+
+    @Test
+    @DisplayName("a stage declares only earlier stages of its own gatherer as the ones it reads from")
+    void aStageDeclaresOnlyEarlierStagesOfItsGatherer() {
+        ThreadConfinedStore.run(dsl -> {
+            var stage = META_STAGE.as("s");
+            var upstream = META_STAGE.as("u");
+            var d = META_STAGE_DEPENDENCY;
+            var wrong = dsl.select(d.STAGE_NAME, d.UPSTREAM_STAGE_NAME).from(d)
+                .join(stage).on(stage.STAGE_NAME.eq(d.STAGE_NAME))
+                .join(upstream).on(upstream.STAGE_NAME.eq(d.UPSTREAM_STAGE_NAME))
+                .where(upstream.GATHERER_NAME.ne(stage.GATHERER_NAME)
+                    .or(upstream.POSITION.ge(stage.POSITION)))
+                .fetch(r -> r.value1() + " names " + r.value2());
+            assertThat(wrong)
+                .as("a stage reads another gatherer's relations through meta_gatherer_dependency, and only"
+                    + " the stages before it in its own")
+                .isEmpty();
+        });
+    }
+
+    /**
+     * A stage reads only from the stages before it that it declares (Alf, 2026-11-27): every relation
+     * its rule reaches is written by the stage itself, by an earlier stage of its gatherer it names in
+     * {@code meta_stage_dependency}, by its gatherer's capture, or by a gatherer its gatherer depends
+     * on. A relation no gatherer owns, a stated vocabulary, is everyone's to read. Over the rules kept
+     * as files of their stage's own; a rule still a view is held to the order by the case above.
+     */
+    @Test
+    @DisplayName("every relation a stage's rule file reads comes from a stage or gatherer it may read from")
+    void aStageReadsOnlyWhatItDeclares() {
+        ThreadConfinedStore.run(dsl -> {
+            var gathererOf = new TreeMap<String, String>();
+            dsl.select(META_STAGE.STAGE_NAME, META_STAGE.GATHERER_NAME).from(META_STAGE)
+                .forEach(r -> gathererOf.put(r.value1(), r.value2()));
+            var writers = new TreeMap<String, Set<String>>();
+            dsl.select(META_STAGE_WRITE.RELATION_NAME, META_STAGE_WRITE.STAGE_NAME).from(META_STAGE_WRITE)
+                .forEach(r -> writers
+                    .computeIfAbsent(r.value1().toLowerCase(Locale.ROOT), k -> new TreeSet<>())
+                    .add(r.value2()));
+            var owner = new TreeMap<String, String>();
+            dsl.select(META_RELATION.RELATION_NAME, META_RELATION.OWNER_NAME).from(META_RELATION)
+                .forEach(r -> owner.put(r.value1().toLowerCase(Locale.ROOT), r.value2()));
+            var dependsOn = new TreeSet<String>();
+            dsl.select(META_GATHERER_DEPENDENCY.GATHERER_NAME, META_GATHERER_DEPENDENCY.DEPENDS_ON)
+                .from(META_GATHERER_DEPENDENCY)
+                .forEach(r -> dependsOn.add(r.value1() + " " + r.value2()));
+            var declared = new TreeSet<String>();
+            dsl.selectFrom(META_STAGE_DEPENDENCY)
+                .forEach(r -> declared.add(r.getStageName() + " " + r.getUpstreamStageName()));
+            var undeclared = new TreeSet<String>();
+            var files = StageRuleFiles.all();
+            StageRuleFiles.withViews(dsl, files, () -> {
+                for (var file : files) {
+                    String gatherer = file.gatherer();
+                    for (String table : ViewReferences.tablesReachedBy(dsl, file.rule())) {
+                        var stagesWriting = writers.getOrDefault(table, Set.of());
+                        var own = stagesWriting.stream()
+                            .filter(w -> gatherer.equals(gathererOf.get(w))).toList();
+                        boolean readable;
+                        if (!own.isEmpty()) {
+                            readable = own.stream().anyMatch(w -> w.equals(file.stage())
+                                || declared.contains(file.stage() + " " + w));
+                        } else {
+                            var sources = new TreeSet<String>();
+                            stagesWriting.forEach(w -> sources.add(gathererOf.get(w)));
+                            if (owner.get(table) != null) {
+                                sources.add(owner.get(table));
+                            }
+                            readable = sources.stream().allMatch(source -> source.equals(gatherer)
+                                || dependsOn.contains(gatherer + " " + source));
+                        }
+                        if (!readable) {
+                            undeclared.add(file.stage() + "'s " + file.rule() + " reads " + table
+                                + ", written by "
+                                + (stagesWriting.isEmpty() ? owner.get(table) : stagesWriting));
+                        }
+                    }
+                }
+            });
+            assertThat(undeclared)
+                .as("reads no declaration allows: name the earlier stage in meta_stage_dependency, or the"
+                    + " gatherer in meta_gatherer_dependency")
                 .isEmpty();
         });
     }

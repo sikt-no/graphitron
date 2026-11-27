@@ -158,18 +158,6 @@ class DefectStageGateTest {
                         + " neither owns nor declares a dependency on in meta_gatherer_dependency")
                     .isEmpty();
             }
-            // A stage's rule kept as a file of its own, every one and not only the defect rules: its
-            // gatherer is the folder it sits in, and what it may read is still what that gatherer may.
-            var files = StageRuleFiles.all();
-            StageRuleFiles.withViews(dsl, files, () -> {
-                for (var file : files) {
-                    assertThat(unreadable(dsl, file.gatherer(), file.rule()))
-                        .as("tables " + file.stage() + "'s rule " + file.rule() + " reaches whose owner "
-                            + file.gatherer() + " neither owns nor declares a dependency on in"
-                            + " meta_gatherer_dependency")
-                        .isEmpty();
-                }
-            });
         });
     }
 
