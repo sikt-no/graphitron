@@ -1,0 +1,28 @@
+# A graph that configures no catalog still sees the generated catalog its classpath carries. Which
+# classes are a catalog's is read off the entry, the package of a concrete class extending
+# org.jooq.impl.SchemaImpl, never off another graph's choice of catalog, so the code rows of the
+# fixture catalog's jar are the same whichever graphs share the store (Alf, 2026-11-27).
+
+extend schema @withConfiguration(jooqPackage: null)
+
+"Backed by FilmRecord through the service that produces it."
+type FilmDetailsCarrier { filmId: Int @field(name: "film_id") }
+
+type Query {
+  filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+}
+
+# The catalog's nested path classes, which a table's methods name, are among the graph's classes.
+extend schema @assertContains(relation: "code_graph_class",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor$ActorPath'", rows: """
+  class_name
+  no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor$ActorPath
+  """)
+
+# And a catalog table's members are read like any other class's.
+extend schema @assertContains(relation: "code_method",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor' AND method_name = 'getSchema'", rows: """
+  method_name
+  getSchema
+  """)

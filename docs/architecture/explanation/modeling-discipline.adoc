@@ -68,7 +68,13 @@ The `jvm_` family was eaten away as this proceeded, from thirteen relations to n
 The classes jOOQ generates are classes like any other, and the code family captures them as code
 facts, so a relation that names a record class or a parameter type can key into it with a foreign
 key. The census reads the generated package's classes with their members, as it reads any other
-class, so a holder method's form and a record's accessors are code facts like any others. A nested class is no census class of its own, its methods reached
+class, so a holder method's form and a record's accessors are code facts like any others. Which
+classes are a catalog's is read off the entry that carries them, the package of a concrete class
+extending `org.jooq.impl.SchemaImpl`, never off a graph's choice of catalog, so an entry's rows are
+the same whichever graphs share the store. A graph that configures no catalog therefore sees the
+catalog its classpath carries (Alf, 2026-11-27, asked whether a graph that never configured a
+catalog should see that catalog's classes and members in its code view when the jar is on its
+classpath: "Ja"). A nested class is no census class of its own, its methods reached
 through the class declaring it; where a census method or constructor on its own entry returns or
 takes one, the census reads it by name for its members and builds it where a parameter takes it, so
 a value a service hands back as a nested record, and a bean a service takes as one, is known like

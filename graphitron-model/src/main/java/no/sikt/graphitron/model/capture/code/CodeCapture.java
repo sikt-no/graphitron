@@ -40,7 +40,6 @@ import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_ENUM_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
-import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.CODE_DELIVERY_CONTAINER;
@@ -99,6 +98,9 @@ public final class CodeCapture {
     /** The type that lifter's sole parameter must be, which is the table it lifts from. */
     private static final String JOOQ_TABLE = "org.jooq.Table";
     private static final String JOOQ_TABLE_LIKE = "org.jooq.TableLike";
+
+    /** The class a schema jOOQ generated extends; its package is the schema's. */
+    private static final String JOOQ_SCHEMA_IMPL = "org.jooq.impl.SchemaImpl";
 
     /** The type a {@code @service} parameter has when the run's own jOOQ context is passed to it. */
     private static final String JOOQ_DSL_CONTEXT = "org.jooq.DSLContext";
@@ -164,7 +166,7 @@ public final class CodeCapture {
         classes(dsl, census.classes(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         enumConstants(dsl, census.classes(), touchedAt);
-        var catalog = catalogClasses(dsl, census);
+        var catalog = catalogClasses(census);
         var reactor = memberClasses(census, catalog);
         var nested = nestedClasses(reactor, deliveryContainers(dsl));
         admitted(dsl, nested, touchedAt);
@@ -1433,10 +1435,11 @@ public final class CodeCapture {
      * <p>A graph's catalog is consumer code whatever entry carries it. A reactor build's generated
      * classes are the reactor's already, and a catalog built elsewhere and declared as a jar is the
      * same code reached another way, so its schema packages are read with their members too: a
-     * holder method's form and a record's accessors are code facts like any others. The catalog is
-     * the one the jOOQ reading registered, a {@code sql_schema} row whose source is the entry and
-     * the schema's package, so the classes admitted are those of an entry some graph reads its
-     * catalog from. What a class's rows say is still read from its classfile alone.
+     * holder method's form and a record's accessors are code facts like any others. Which classes
+     * are a catalog's is read off the entry too, never off a graph's choice of catalog, so an
+     * entry's rows are the same whichever graphs share the store; a graph that configures no
+     * catalog still sees the one its classpath carries (Alf, 2026-11-27). What a class's rows say
+     * is still read from its classfile alone.
      */
     private static List<ClassfileCensus.ClassAt> memberClasses(ClassfileCensus.Census census,
                                                                Set<String> catalog) {
@@ -1448,29 +1451,29 @@ public final class CodeCapture {
     }
 
     /**
-     * The census classes of a graph's generated catalog, each as its entry and its name joined by a
-     * NUL: the classes of a schema package the jOOQ reading registered, in the entry it registered
-     * the package from. A {@code sql_schema} row's source is that entry and the package, so this is a
-     * join on the stored name rather than a test of the class name's spelling.
+     * The census classes of the generated catalogs the entries carry, each as its entry and its name
+     * joined by a NUL: the classes under the package of a schema class jOOQ generated, a concrete
+     * class extending {@code org.jooq.impl.SchemaImpl}, in the entry that declares it. Read off the
+     * entry's own classfiles, so every reading of an entry admits the same classes.
      */
-    private static Set<String> catalogClasses(DSLContext dsl, ClassfileCensus.Census census) {
-        var catalogs = dsl.selectDistinct(SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.SCHEMA_PACKAGE)
-            .from(SQL_SCHEMA)
-            .fetch();
-        if (catalogs.isEmpty()) {
+    private static Set<String> catalogClasses(ClassfileCensus.Census census) {
+        var schemaPackages = new java.util.HashSet<String>();
+        for (ClassfileCensus.ClassAt at : census.classes()) {
+            if (!at.isAbstract() && at.supertypes().stream().anyMatch(supertype ->
+                    supertype.name().equals(JOOQ_SCHEMA_IMPL) && supertype.declaredVia().equals("EXTENDS"))) {
+                int dot = at.className().lastIndexOf('.');
+                if (dot > 0) {
+                    schemaPackages.add(at.source() + '\u0000' + at.className().substring(0, dot));
+                }
+            }
+        }
+        if (schemaPackages.isEmpty()) {
             return Set.of();
         }
-        var sources = new java.util.HashSet<String>();
-        var packages = new java.util.TreeSet<String>();
-        catalogs.forEach(r -> {
-            sources.add(r.value1());
-            packages.add(r.value2());
-        });
         var found = new java.util.HashSet<String>();
         for (ClassfileCensus.ClassAt at : census.classes()) {
-            for (String schemaPackage : packages) {
-                if (at.className().startsWith(schemaPackage + ".")
-                        && sources.contains(at.source() + "!" + schemaPackage)) {
+            for (int dot = at.className().lastIndexOf('.'); dot > 0; dot = at.className().lastIndexOf('.', dot - 1)) {
+                if (schemaPackages.contains(at.source() + '\u0000' + at.className().substring(0, dot))) {
                     found.add(at.source() + '\u0000' + at.className());
                     break;
                 }

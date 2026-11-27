@@ -35105,9 +35105,6 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- source reading records. ModelCapture runs it first.
   ('graphitron', 'graphql-source'),
   ('code', 'classpath-source'),
-  -- Which catalog table a method's table parameter fits pairs the method with the catalog's tables,
-  -- which the jooq gatherer read first.
-  ('code', 'jooq'),
   -- The handle class a graph names for its session identity is read for its members whatever
   -- package or origin it is in, and the name is a row the store gatherer wrote first.
   ('code', 'store'),
