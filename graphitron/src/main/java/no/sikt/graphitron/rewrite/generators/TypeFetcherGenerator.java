@@ -800,6 +800,11 @@ public class TypeFetcherGenerator {
             if (emitFromStore(ctx, builder, field, outputPackage)) {
                 continue;
             }
+            // A root read the store states whole is rendered off the store's values, launched through no
+            // row, whatever leaf the walk gave its field.
+            if (emitRootRead(ctx, builder, launchers, rootFrames, field, outputPackage)) {
+                continue;
+            }
             switch (field) {
                 case ChildField.ColumnBackedField cf -> {
                     if (parentTable == null) {
@@ -814,35 +819,19 @@ public class TypeFetcherGenerator {
                     // LightFetcher); this arm emits no method itself.
                 }
                 case QueryField.QueryTableField qtf -> {
-                    // Row-presence dispatch: the launcher producer's membership is the one
-                    // predicate deciding which coordinates launch through the seam; every
-                    // QueryTableField coordinate mints a row now (the invocation strategy,
-                    // fan-out included, is a field on it), so absence is a drift bug.
+                    // Row-presence dispatch for the rest: the launcher producer mints a row for every
+                    // QueryTableField coordinate the store does not render whole, so absence is a drift bug.
                     var launcherRow = launchers.rowFor(qtf.parentTypeName(), qtf.name())
                         .orElseThrow(() -> new IllegalStateException(
                             "Graphitron generator bug (root launcher dispatch): root coordinate '"
-                            + qtf.qualifiedName() + "' has no launcher row;"
+                            + qtf.qualifiedName() + "' has no launcher row and the store renders no read for it;"
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow,
                         rootFrames.frameFor(qtf.parentTypeName(), qtf.name()), rootFrames.tenantType(), outputPackage));
-                    // A root read the store states whole is rendered by its own emitter, off the store's
-                    // values; the row's renderer keeps the rest until their piece lands there.
-                    var rootRead = launchers.rootReadFor(qtf.parentTypeName(), qtf.name());
-                    if (rootRead.isPresent()) {
-                        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
-                        var names = rootReadNames(units);
-                        var projection = names.projectionUnit(rootRead.get().returnType());
-                        builder.addMethod(no.sikt.graphitron.emit.RootReadEmitter.render(rootRead.get(), names,
-                            launcherRow.dslProjections().stream()
-                                .anyMatch(unit -> unit.fqcn().equals(projection.canonicalName())),
-                            rootRead.get().pageSize() == null ? null
-                                : ctx.connections().at(qtf.parentTypeName(), qtf.name())));
-                    } else {
-                        builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                            .render(launcherRow, launchers.carrierDsl(), ctx.connections(), CodeBlock.of(""),
-                                TenantDslEmitter.fanOutNarrowing(ctx, launcherRow, outputPackage),
-                                ctx.argPathHelpers(), ctx.projectedKeyHost()));
-                    }
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
+                        .render(launcherRow, launchers.carrierDsl(), ctx.connections(), CodeBlock.of(""),
+                            TenantDslEmitter.fanOutNarrowing(ctx, launcherRow, outputPackage),
+                            ctx.argPathHelpers(), ctx.projectedKeyHost()));
                     // The keyed-lookup row additionally owns a VALUES-building input-rows
                     // helper; the row's source arm is the fork, the same shape the batched
                     // rows renderer reads, so no leaf identity and no schema participate.
@@ -1405,6 +1394,56 @@ public class TypeFetcherGenerator {
                 return ClassName.get(unit.packageName(), unit.simpleName());
             }
         };
+    }
+
+    /**
+     * Renders the root read at {@code field}'s coordinate where the store reads it whole: the fetcher, a
+     * frame around a call to the body, and the body RootReadEmitter renders. Whether it does is the
+     * store's answer, so no leaf the walk gave the field is consulted.
+     */
+    private static boolean emitRootRead(TypeFetcherEmissionContext ctx, TypeSpec.Builder builder,
+            no.sikt.graphitron.plan.LauncherRelation launchers, no.sikt.graphitron.emit.RootFrame.Rows rootFrames,
+            GraphitronField field, String outputPackage) {
+        var rootRead = launchers.rootReadFor(field.parentTypeName(), field.name());
+        if (rootRead.isEmpty()) {
+            return false;
+        }
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var names = rootReadNames(units);
+        var root = rootRead.get();
+        var connection = root.pageSize() == null ? null
+            : ctx.connections().at(field.parentTypeName(), field.name());
+        builder.addMethod(buildRootReadFetcher(ctx, field, root, names,
+            connection, rootFrames.frameFor(field.parentTypeName(), field.name()), rootFrames.tenantType(),
+            outputPackage));
+        builder.addMethod(no.sikt.graphitron.emit.RootReadEmitter.render(root, names, connection));
+        return true;
+    }
+
+    /**
+     * The fetcher of a root read RootReadEmitter renders: the frame around a call to that body, on the
+     * connection the store states, its value type the body's own. A root the store reads whole always
+     * runs in its frame.
+     */
+    private static MethodSpec buildRootReadFetcher(TypeFetcherEmissionContext ctx,
+            GraphitronField field, no.sikt.graphitron.emit.RootQuery.Emitted root,
+            no.sikt.graphitron.emit.RootReadEmitter.Names names,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection,
+            Optional<no.sikt.graphitron.emit.RootFrame> rootFrame, Optional<String> tenantType,
+            String outputPackage) {
+        var framed = rootFrame.orElseThrow(() -> new IllegalStateException(
+            "Graphitron generator bug (root read): the store reads " + root.coordinate()
+            + " whole and states no frame for it; the queries have drifted"));
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var fetchers = units.fetchers(root.parentType());
+        return no.sikt.graphitron.emit.FrameEmitter.render(framed.frame(), field.name(),
+            no.sikt.graphitron.emit.RootReadEmitter.valueTypeOf(root, names, connection),
+            new no.sikt.graphitron.emit.FrameEmitter.Body.LauncherCall(
+                ClassName.get(fetchers.packageName(), fetchers.simpleName()),
+                names.launcherMethod(root.parentType(), root.fieldName())),
+            frameRuntime(ctx, units), true, false,
+            no.sikt.graphitron.emit.FrameConnections.of(framed.frame(), framed.connection(), false,
+                tenantType, routing(outputPackage), field.parentTypeName() + "." + field.name()));
     }
 
     /**

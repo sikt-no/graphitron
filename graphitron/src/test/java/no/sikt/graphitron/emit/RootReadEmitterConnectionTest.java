@@ -43,7 +43,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * compiles them and run against PostgreSQL: a page in the root's own order, the next one read after the
  * first's last cursor without repeating a row, a page in the order the request's {@code @orderBy}
  * argument chooses, a page ordered by a key read down a path, and the count, on the request's connection
- * where the store states the root none and on the body's own where it states one. The projection unit
+ * where the store states the root none. The count on a root's own connection is the multi-tenant
+ * example's, read by {@code TenantDivinedRoutingExecutionTest} over a routed root. The projection unit
  * and the selection scaffold are stubbed, so the page itself is what is checked. Read over the
  * {@code scenarios/root-connection} fact document.
  */
@@ -121,17 +122,11 @@ class RootReadEmitterConnectionTest {
         var host = TypeSpec.classBuilder("Bodies").addModifiers(Modifier.PUBLIC);
         for (var field : List.of("filmsPage", "filmsPicked", "filmsByOriginalLanguage")) {
             var root = (RootQuery.Emitted) read.roots().get("Query." + field);
-            host.addMethod(RootReadEmitter.render(root, NAMES, false, read.byField().at("Query", field)));
+            host.addMethod(RootReadEmitter.render(root, NAMES, read.byField().at("Query", field)));
             if (root.choice() != null) {
                 host.addMethod(OrderByHelperEmitter.render(root, HELPER_NAMES));
             }
         }
-        // The same root, the store stating it a connection of its own: its count runs on the body's dsl.
-        var own = (RootQuery.Emitted) read.roots().get("Query.filmsPage");
-        var routed = new RootQuery.Emitted(own.coordinate(), own.parentType(), "filmsPageOwnConnection",
-            own.returnType(), own.table(), own.list(), own.order(), own.condition(), own.keys(), own.choice(),
-            own.pageSize(), own.discriminated(), own.facets(), own.routine(), ConnectionQuery.Outcome.ROUTED);
-        host.addMethod(RootReadEmitter.render(routed, NAMES, false, read.byField().at("Query", "filmsPage")));
 
         var units = new ArrayList<JavaFile>();
         units.add(JavaFile.builder(PACKAGE, host.build()).build());
@@ -294,14 +289,6 @@ class RootReadEmitterConnectionTest {
     void theCountRunsOnTheRequestsConnectionWhereTheStoreStatesNoneOfItsOwn() throws Exception {
         var connection = page("filmsPage", Map.of("first", 1));
         assertThat(invoke(connection, "totalCount", env(Map.of())))
-            .isEqualTo(TestDatabase.dsl().fetchCount(Tables.FILM));
-    }
-
-    @Test
-    void theCountRunsOnTheBodysConnectionWhereTheStoreStatesOne() throws Exception {
-        var connection = page("filmsPageOwnConnection", Map.of("first", 1));
-        context.getField("dsl").set(null, null);
-        assertThat(invoke(connection, "totalCount", new Object[] {null}))
             .isEqualTo(TestDatabase.dsl().fetchCount(Tables.FILM));
     }
 }

@@ -197,6 +197,7 @@ public final class PlanCompileGraph {
             addConditionEdges();
             addProjectionEdges();
             addLauncherEdges();
+            addRootReadEdges();
             addFetcherEdgeRows();
             addEncoderLeafEdges();
             addEnumHelperLeafEdges();
@@ -618,6 +619,36 @@ public final class PlanCompileGraph {
                                 precise(owner, entry.condition().method().owner()));
                         }
                     }
+                }
+            }
+        }
+
+        /**
+         * The roots the store reads whole, which launch through no row: the parent's fetchers class
+         * calls its type's projection unit, its condition's glue unit, the {@code OrderByResult} carrier
+         * where a choice orders it, and for a connection the helper and the connection classes.
+         */
+        private void addRootReadEdges() {
+            for (var root : plan.launchers().rootReads()) {
+                UnitRef owner = fetchersByTypeName.get(root.parentType());
+                if (owner == null || !owner.packageName().endsWith("." + GeneratedUnits.SUB_FETCHERS)) {
+                    throw new IllegalStateException("the root read " + root.coordinate()
+                        + " has no fetchers class for its parent type " + root.parentType());
+                }
+                // The names the body is rendered with, by the formulas the body's own names come from.
+                var units = new GeneratedUnits(owner.packageName().substring(0,
+                    owner.packageName().length() - GeneratedUnits.SUB_FETCHERS.length() - 1));
+                precise(owner, units.typeClass(root.returnType()));
+                if (root.condition() != null) {
+                    precise(owner, units.conditions(root.parentType()));
+                }
+                declared(owner, require(GlobalUnitKind.SELECTION_OCCURRENCES));
+                if (root.choice() != null) {
+                    precise(owner, require(GlobalUnitKind.ORDER_BY_RESULT));
+                }
+                if (root.pageSize() != null) {
+                    precise(owner, require(GlobalUnitKind.CONNECTION_HELPER));
+                    refOf(GlobalUnitKind.CONNECTIONS).ifPresent(c -> precise(owner, c));
                 }
             }
         }

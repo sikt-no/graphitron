@@ -15,6 +15,7 @@ import java.util.Objects;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE_SESSION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
@@ -175,12 +176,14 @@ public final class RootQuery {
      * client picks none. {@code routine} is the routine whose result its
      * rows are read from, and the steps on to {@code table}, {@code null} for a read of a table.
      * {@code connection} is the connection the store states the root runs on, {@code null} where it runs
-     * on the request's own.
+     * on the request's own; {@code projectionTakesSession} is whether its type's projection reads the
+     * session, its {@code $project} then taking the executing {@code DSLContext}.
      */
     public record Emitted(String coordinate, String parentType, String fieldName, String returnType,
                           TableRef table, boolean list, List<Key> order, Signature condition,
                           List<LookupArg> keys, Choice choice, Integer pageSize, Discriminated discriminated,
-                          List<Facet> facets, Routine routine, ConnectionQuery.Outcome connection)
+                          List<Facet> facets, Routine routine, ConnectionQuery.Outcome connection,
+                          boolean projectionTakesSession)
             implements Result {
         public Emitted {
             facets = List.copyOf(facets);
@@ -600,6 +603,10 @@ public final class RootQuery {
         var choices = choices(store);
         var maxPageSize = maxPageSize(store);
         var discriminated = discriminated(store);
+        // The types whose projection reads the session, which a root reading one hands its dsl.
+        var ts = GRAPHITRON_TABLETYPE_SESSION;
+        var sessionTypes = java.util.Set.copyOf(store.dsl().select(ts.TYPE_NAME).from(ts)
+            .where(ts.GRAPH_NAME.eq(graph)).fetch(ts.TYPE_NAME));
         boolean multiTenant = store.dsl().fetchExists(STORE_GRAPH_TENANT_COLUMN,
             STORE_GRAPH_TENANT_COLUMN.GRAPH_NAME.eq(graph));
         var out = new LinkedHashMap<String, Result>();
@@ -677,7 +684,8 @@ public final class RootQuery {
                 signature, lookup ? lookups.get(at.coordinate()).keys() : List.of(), choices.get(at.coordinate()),
                 pageSize, told == null ? null : told.discriminated(), faceted,
                 routine == null ? null : routine.routine(),
-                row.value20() == null ? null : ConnectionQuery.Outcome.valueOf(row.value20())));
+                row.value20() == null ? null : ConnectionQuery.Outcome.valueOf(row.value20()),
+                sessionTypes.contains(at.returnType())));
         }
         return out;
     }

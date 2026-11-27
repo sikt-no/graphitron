@@ -93,12 +93,11 @@ public final class RootReadEmitter {
     }
 
     /**
-     * The body. {@code projectionTakesDsl} is whether the projection unit's {@code $project} takes the
-     * executing {@code DSLContext}, a session-reading condition inside it reading the handle off it;
-     * {@code connection} is the store's answer for the root's field where it is a connection.
+     * The body. {@code connection} is the store's answer for the root's field where it is a connection.
+     * Where the type's projection reads the session its {@code $project} takes the executing
+     * {@code DSLContext}, a session-reading condition inside it reading the handle off it.
      */
-    public static MethodSpec render(Emitted root, Names names, boolean projectionTakesDsl,
-            ConnectionsQuery.FieldConnection connection) {
+    public static MethodSpec render(Emitted root, Names names, ConnectionsQuery.FieldConnection connection) {
         if (!renders(root)) {
             throw new IllegalStateException("Graphitron generator bug (root read): " + root.coordinate()
                 + " is no read this emitter renders; its caller dispatched it here regardless");
@@ -126,7 +125,7 @@ public final class RootReadEmitter {
         // The type's projection over the fetched field's own selection, or its connection's nodes.
         var projection = CodeBlock.of("$T.$$project($T.$L(env.getSelectionSet()), $L, env$L)",
             names.projectionUnit(root.returnType()), names.selectionOccurrences(),
-            page ? "connectionNodes" : "ownFields", source.terminal(), projectionTakesDsl ? ", dsl" : "");
+            page ? "connectionNodes" : "ownFields", source.terminal(), root.projectionTakesSession() ? ", dsl" : "");
         if (page) {
             method.addCode(order(root, names, source.terminal(), true));
             method.addCode(connectionPage(root, names, connection, source, projection));

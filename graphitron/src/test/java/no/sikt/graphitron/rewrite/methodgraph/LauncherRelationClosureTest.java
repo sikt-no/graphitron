@@ -42,7 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li><b>model → row</b>: every schema coordinate the covered families claim (derived
  *       per-family from the model's leaf kinds, never a hand tag) has exactly one relation
- *       row;</li>
+ *       row, but for a root the store reads whole, which is covered and launches through no
+ *       row; RootReadEmitter renders it;</li>
  *   <li><b>row → emit</b>: every row's {@code (owner, method)} ref is a method the run
  *       actually declared (a row with no method behind it is production that bypassed the
  *       render);</li>
@@ -153,15 +154,43 @@ class LauncherRelationClosureTest {
         return row.coordinate().getTypeName() + "." + row.coordinate().getFieldName();
     }
 
-    /** Model → row: the relation's coordinate keys are exactly the fact-derived covered families. */
+    /** The roots RootReadEmitter renders, each read off the store whole and launched through no row. */
+    private static Set<String> rootReadCoordinates() {
+        return launchers.rootReads().stream()
+            .map(root -> root.parentType() + "." + root.fieldName())
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
+     * Model → row: the relation's coordinate keys are exactly the fact-derived covered families,
+     * less the roots the store reads whole.
+     */
     @Test
     void everyCoveredCoordinateHasExactlyOneRow() {
+        Set<String> expected = new LinkedHashSet<>(coveredCoordinates());
+        expected.removeAll(rootReadCoordinates());
         assertThat(launchers.rows())
             .extracting(LauncherRelationClosureTest::coordinateOf)
-            .as("relation coordinates == the coordinates the covered families' leaf kinds claim"
-                + " (a missing entry means a family member bypassed production; an extra one"
-                + " means production minted outside the declared families)")
-            .containsExactlyInAnyOrderElementsOf(coveredCoordinates());
+            .as("relation coordinates == the coordinates the covered families' leaf kinds claim,"
+                + " less the roots the store reads whole (a missing entry means a family member"
+                + " bypassed production; an extra one means production minted outside the declared"
+                + " families)")
+            .containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    /** A root the store reads whole is covered and launches through no row; RootReadEmitter renders it. */
+    @Test
+    void everyRootTheStoreReadsWholeIsCoveredAndHasNoRow() {
+        assertThat(rootReadCoordinates())
+            .as("the fixture's plain roots are read off the store whole")
+            .contains("Query.film", "Query.city");
+        assertThat(coveredCoordinates()).containsAll(rootReadCoordinates());
+        for (var root : launchers.rootReads()) {
+            assertThat(launchers.rowFor(root.parentType(), root.fieldName()))
+                .as("root %s.%s, read off the store whole, launches through no row", root.parentType(),
+                    root.fieldName())
+                .isEmpty();
+        }
     }
 
     /**

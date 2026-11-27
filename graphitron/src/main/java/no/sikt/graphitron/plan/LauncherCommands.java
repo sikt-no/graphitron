@@ -226,6 +226,12 @@ public final class LauncherCommands {
                 if (verdict == Launch.NONE) {
                     continue;
                 }
+                // A root RootReadEmitter renders is read off the store whole and launches through no row.
+                if (verdict == Launch.ROOT_CATALOG && roots.get(field.qualifiedName())
+                        instanceof no.sikt.graphitron.emit.RootQuery.Emitted emitted
+                        && no.sikt.graphitron.emit.RootReadEmitter.renders(emitted)) {
+                    continue;
+                }
                 rows.add(switch (verdict) {
                     case NONE -> throw new IllegalStateException("unreachable: NONE is filtered above");
                     case DML_REENTRY -> dmlRowOf(schema, requireDmlCarrier(field), units);
@@ -323,11 +329,12 @@ public final class LauncherCommands {
     }
 
     /**
-     * A root the store states whole, read off its occurrence: the table its rows are of, projected by
-     * its type's unit, its condition method where its table has one, called as the store says it is
-     * defined, and a list in its default order or one record, or a connection's page. A lookup joins
-     * its keys' rows instead, its list following the keys. A single record is null exactly when the
-     * read finds no row.
+     * A root the store states whole that RootReadEmitter does not render yet, read off its occurrence:
+     * a lookup, a root over a discriminated table, or a faceted connection. The table its rows are of,
+     * projected by its type's unit, its condition method where its table has one, called as the store
+     * says it is defined, and a list in its default order or one record, or a connection's page. A
+     * lookup joins its keys' rows instead, its list following the keys. A single record is null exactly
+     * when the read finds no row.
      */
     private static LauncherCommand storeRootRow(no.sikt.graphitron.emit.RootQuery.Emitted root,
             GeneratedUnits units) {

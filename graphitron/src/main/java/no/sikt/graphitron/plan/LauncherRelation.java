@@ -152,6 +152,14 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
             .filter(no.sikt.graphitron.emit.RootReadEmitter::renders);
     }
 
+    /**
+     * The roots RootReadEmitter renders, each read off the store whole and launched through no row: its
+     * fetcher calls the body that emitter renders, and the units it reads are the store's.
+     */
+    public List<no.sikt.graphitron.emit.RootQuery.Emitted> rootReads() {
+        return roots.values().stream().filter(no.sikt.graphitron.emit.RootReadEmitter::renders).toList();
+    }
+
     /** The root over several tables the store states at this coordinate, if it states one. */
     public Optional<no.sikt.graphitron.emit.RootQuery.MultiTable> multiTableFor(String parentTypeName,
             String fieldName) {
