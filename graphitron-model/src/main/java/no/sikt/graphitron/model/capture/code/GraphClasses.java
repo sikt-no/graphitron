@@ -4,17 +4,17 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS_DECLARED_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS_RULE;
+import static org.jooq.impl.DSL.any;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.select;
-import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
@@ -83,10 +83,12 @@ public final class GraphClasses {
      *
      * <p>Two anchored reachabilities, each grown downward one hop per round over the graph's own
      * edges until a round changes nothing, and never an all-pairs closure: the classes reaching the
-     * record, then, among the rest, the classes reaching a name the graph does not read. A round only
-     * ever sets a flag that was unset or lowers a name, so it terminates on any edge set, a cycle a
-     * broken classpath could hold included; the round limit is the guard should that ever fail.
-     * Recomputed whole on every capture, as the names it reads are.
+     * record, then, among the rest, the classes reaching a name the graph does not read. Each round
+     * reaches only the classes naming what the round before settled, through the edges by supertype
+     * name, so the work follows the records and the unread chains rather than the graph's classes.
+     * A round only ever sets a flag that was unset or lowers a name, so it terminates on any edge
+     * set, a cycle a broken classpath could hold included; the round limit is the guard should that
+     * ever fail. Recomputed whole on every capture, as the names it reads are.
      */
     private static void jooqRecords(DSLContext dsl, String graph) {
         var c = CODE_GRAPH_CLASS;
@@ -102,22 +104,23 @@ public final class GraphClasses {
             .where(c.GRAPH_NAME.eq(graph))
             .and(c.CLASS_NAME.eq(JOOQ_RECORD))
             .execute();
-        // A class naming a record, or naming a class this graph already knows to be one. The name
-        // is the anchor rather than its row, so a class naming org.jooq.Record is one even where the
-        // graph reads no jOOQ jar.
-        converge("is_jooq_record", () -> dsl.update(c)
-            .set(c.IS_JOOQ_RECORD, inline(true))
-            .where(c.GRAPH_NAME.eq(graph))
-            .and(c.IS_JOOQ_RECORD.isNull())
-            .and(exists(selectOne().from(e)
-                .where(e.SOURCE_NAME.eq(c.SOURCE_NAME))
-                .and(e.CLASS_NAME.eq(c.CLASS_NAME))
-                .and(e.SUPERTYPE_NAME.eq(JOOQ_RECORD)
-                    .or(exists(selectOne().from(p)
-                        .where(p.GRAPH_NAME.eq(c.GRAPH_NAME))
-                        .and(p.CLASS_NAME.eq(e.SUPERTYPE_NAME))
-                        .and(p.IS_JOOQ_RECORD.eq(inline(true))))))))
-            .execute());
+        // A class naming a record, or naming a class this graph already knows to be one, grown from
+        // the names a round settled to the classes naming them and no further. The name is the anchor
+        // rather than its row, so a class naming org.jooq.Record is one even where the graph reads no
+        // jOOQ jar.
+        var frontier = List.of(JOOQ_RECORD);
+        for (int rounds = 0; !frontier.isEmpty(); rounds++) {
+            guard("is_jooq_record", rounds);
+            var reached = namingAny(dsl, graph, frontier, c.IS_JOOQ_RECORD.isNull());
+            if (!reached.isEmpty()) {
+                dsl.update(c)
+                    .set(c.IS_JOOQ_RECORD, inline(true))
+                    .where(c.GRAPH_NAME.eq(graph))
+                    .and(c.CLASS_NAME.eq(any(val(reached.toArray(String[]::new)))))
+                    .execute();
+            }
+            frontier = reached;
+        }
         // Among the rest, the least name the chain reaches that the graph reads no class of: a
         // supertype with no row here is that name itself, one with a row hands on what it reached.
         Field<String> least = field(select(min(
@@ -127,13 +130,31 @@ public final class GraphClasses {
             .where(e.SOURCE_NAME.eq(c.SOURCE_NAME))
             .and(e.CLASS_NAME.eq(c.CLASS_NAME))
             .and(e.SUPERTYPE_NAME.notLike(PLATFORM_ONLY)));
-        converge("unread_supertype_name", () -> dsl.update(c)
+        var lowerable = c.IS_JOOQ_RECORD.isNull().and(least.isNotNull())
+            .and(c.UNREAD_SUPERTYPE_NAME.isNull().or(least.lt(c.UNREAD_SUPERTYPE_NAME)));
+        // One pass over the graph's classes settles every class naming an unread name itself; after
+        // it a class's name can only lower where a supertype's did, so each later round reaches only
+        // the classes naming one the round before touched, and stops when none lowers.
+        dsl.update(c)
             .set(c.UNREAD_SUPERTYPE_NAME, least)
             .where(c.GRAPH_NAME.eq(graph))
-            .and(c.IS_JOOQ_RECORD.isNull())
-            .and(least.isNotNull())
-            .and(c.UNREAD_SUPERTYPE_NAME.isNull().or(least.lt(c.UNREAD_SUPERTYPE_NAME)))
-            .execute());
+            .and(lowerable)
+            .execute();
+        List<String> touched = dsl.select(c.CLASS_NAME).from(c)
+            .where(c.GRAPH_NAME.eq(graph))
+            .and(c.UNREAD_SUPERTYPE_NAME.isNotNull())
+            .fetch(c.CLASS_NAME);
+        for (int rounds = 0; !touched.isEmpty(); rounds++) {
+            guard("unread_supertype_name", rounds);
+            var reached = namingAny(dsl, graph, touched, c.IS_JOOQ_RECORD.isNull());
+            int lowered = reached.isEmpty() ? 0 : dsl.update(c)
+                .set(c.UNREAD_SUPERTYPE_NAME, least)
+                .where(c.GRAPH_NAME.eq(graph))
+                .and(c.CLASS_NAME.eq(any(val(reached.toArray(String[]::new)))))
+                .and(lowerable)
+                .execute();
+            touched = lowered == 0 ? List.of() : reached;
+        }
         dsl.update(c)
             .set(c.IS_JOOQ_RECORD, inline(false))
             .where(c.GRAPH_NAME.eq(graph))
@@ -142,13 +163,29 @@ public final class GraphClasses {
             .execute();
     }
 
-    /** Runs {@code round} until it changes no row. */
-    private static void converge(String column, java.util.function.IntSupplier round) {
-        for (int rounds = 0; round.getAsInt() > 0; rounds++) {
-            if (rounds == ROUND_LIMIT) {
-                throw new IllegalStateException("code_graph_class." + column + " did not converge in "
-                    + ROUND_LIMIT + " rounds");
-            }
+    /**
+     * The graph's classes meeting {@code condition} whose own classfile names one of {@code names}
+     * as a supertype: read from the edges by supertype name, so a round costs what its frontier
+     * reaches rather than a pass over the graph's classes. The names bind as one array, so every
+     * round runs one statement.
+     */
+    private static List<String> namingAny(DSLContext dsl, String graph, List<String> names,
+                                          org.jooq.Condition condition) {
+        var c = CODE_GRAPH_CLASS;
+        var e = CODE_CLASS_DECLARED_SUPERTYPE;
+        return dsl.selectDistinct(c.CLASS_NAME).from(e)
+            .join(c).on(c.GRAPH_NAME.eq(graph)).and(c.SOURCE_NAME.eq(e.SOURCE_NAME))
+                .and(c.CLASS_NAME.eq(e.CLASS_NAME))
+            .where(e.SUPERTYPE_NAME.eq(any(val(names.toArray(String[]::new)))))
+            .and(condition)
+            .fetch(c.CLASS_NAME);
+    }
+
+    /** Fails a reachability that has run more rounds than any hierarchy is deep. */
+    private static void guard(String column, int rounds) {
+        if (rounds == ROUND_LIMIT) {
+            throw new IllegalStateException("code_graph_class." + column + " did not converge in "
+                + ROUND_LIMIT + " rounds");
         }
     }
 }

@@ -6393,6 +6393,8 @@ COMMENT ON COLUMN code_class_declared_supertype.class_name IS 'the class whose h
 COMMENT ON COLUMN code_class_declared_supertype.supertype_name IS 'the binary name the clause writes, completing the key. A name and never a foreign key: the class it names may be on no entry the graph reads, which is a fact a reader asks about rather than one the store refuses. java.lang.Object is no row where the JVM writes it for a class with no extends clause, so what remains is what the author typed';
 COMMENT ON COLUMN code_class_declared_supertype.declared_via IS 'EXTENDS for a class''s superclass and for an interface''s super-interfaces, which the source writes after extends though the classfile keeps them where a class keeps its interfaces; IMPLEMENTS for a class''s interfaces';
 COMMENT ON COLUMN code_class_declared_supertype.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from, so a class recompiled against another supertype loses the old row though it keeps its own';
+CREATE INDEX code_class_declared_supertype_supertype_ix ON code_class_declared_supertype (supertype_name);
+COMMENT ON INDEX code_class_declared_supertype_supertype_ix IS 'Serves the graph-classes stage reading downward: whether a graph''s class is a jOOQ record, or reaches a name the graph reads no class of, grows from the names a round settled to the classes naming them, and without it each round would read every edge to find the few naming those names.';
 
 CREATE TABLE code_graph_class (
   graph_name  VARCHAR   NOT NULL,
