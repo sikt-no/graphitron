@@ -667,6 +667,11 @@ parallelises a module's tests is priced against that before it is tried.
       4 GB: 38:59 wall, graphitron-model 18:55 (22:38 before), graphitron 13:07 (14:28),
       StageAnswerAgreement 805 s (1,030), CapturedGraphInvariants 538 (906), DetailRuleAgreement 469
       (875), CaptureCorpusIsolation 1 (606).
+    - Two stores a catalog did not fit CI's heap: graphitron-model run twice at -Xmx4g passed once
+      and then hit OutOfMemoryError inside H2 in five classes. The population now keeps one store a
+      catalog at 1024, which gives back the warm-time gain: graphitron-model at -Xmx4g took 22:35,
+      22:19 and 22:06 over three runs with no OutOfMemoryError (17:33 with two stores, 22:38 before
+      either fix). What remains of the speed-up is the graph-classes fix.
     - Left: the three preparing steps of 11-18, 11-20 and 11-24, each about 6 s a round, to bisect
       next; and a consumer's generate, which captures once and gains nothing from the cache, needs
       fewer and cheaper distinct statements per capture (R876).
