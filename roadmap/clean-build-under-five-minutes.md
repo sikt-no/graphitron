@@ -635,6 +635,42 @@ parallelises a module's tests is priced against that before it is tried.
     workflow's concurrency slot; PRs are unchanged. The `inference-axis-coverage` artifact went
     with the job, its only consumer.
 
+27. **The build-time regression since 11-16.** Open, partly fixed 2026-11-28. Alf: build time is a
+    regression, and a regression is found and fixed. graphitron-model's summed class time went from
+    1,610 s on 11-18 to 5,000-5,600 on 11-27, most of it the four population classes, on fact
+    documents that grew only 441 to 519. Bisected with a fixed probe: 23 fact documents byte-identical
+    at both ends, 20 of them the fixture combination, captured into one fresh store per round, four
+    rounds in one JVM and the first a warm-up, reporting each stage's executing and preparing time.
+    - Baseline c40c73355e (11-16) 38.7 s a round, tip e938efdfd1 (11-28) 68.8 s. By day: 39.3 on
+      11-17, 44.5 on 11-18 (occurrence-producers preparing 13 to 19 s, occurrence-depth-defects 7.6
+      to 11.4), 41.7, 43.3 on 11-20 (occurrence-builds preparing 9 to 15 s), 51.3 on 11-22
+      (graph-classes executing 0.8 to 11.6 s), 54.2 on 11-24 (occurrence-bindings preparing 12 to
+      19 s), 55.2 on 11-26, 68.8 on 11-28 (occurrence-depths preparing 25 to 54 s).
+    - The 11-28 step is 380b4ea4e7, the first rule-file slice (R876): a statement over a rule's text
+      parses the whole text at every prepare where a view reference parsed little. The 11-22 step is
+      6f772af571 (R876): whether a graph's class is a jOOQ record, decided in rounds that each updated
+      every undecided class of the graph, the test corpus now declaring the jOOQ runtime's thousands of
+      classes.
+    - Nearly all of a capture's cost is preparing statements. At the tip the fixed set takes 68.8 s a
+      round at the 64-statement cache, 62.4 at 256, 60.9 at 512 and 13.2 at 1024, and occurrence-depths
+      preparing falls from 54 to 1.3 s. One fresh store per document: 81.8 at 64, 71.1 at 1024. So the
+      win is reuse across the captures of one store, not repeats within one capture, and a statement
+      pool for a capture's lifetime would buy about 13%; it was dropped. The rule-file slice's own
+      cost once nothing is evicted is about 0.8 s a round (12.4 at its parent, 13.2 at the tip, both
+      at 1024); the baseline at 1024 is 6.2.
+    - Fixed (2026-11-28): graph-classes grows its two reachabilities from the frontier through a new
+      index on code_class_declared_supertype(supertype_name), 11.8 to 6.4 s executing over the
+      probe's measured rounds, the rest the corpus's larger graphs; and the population keeps two
+      stores a catalog, each with room for 1024 statements. PopulationHeapProbe at 120 documents and
+      -Xmx4g: four shards at 64, 6 stores, 546 MB, warm 183 s; two at 1024, 4 stores, 665 MB, 88 s;
+      one at 1024, 509 MB, 141 s; four at 1024, 1,003 MB, 66 s. Full build with both, forks at their
+      4 GB: 38:59 wall, graphitron-model 18:55 (22:38 before), graphitron 13:07 (14:28),
+      StageAnswerAgreement 805 s (1,030), CapturedGraphInvariants 538 (906), DetailRuleAgreement 469
+      (875), CaptureCorpusIsolation 1 (606).
+    - Left: the three preparing steps of 11-18, 11-20 and 11-24, each about 6 s a round, to bisect
+      next; and a consumer's generate, which captures once and gains nothing from the cache, needs
+      fewer and cheaper distinct statements per capture (R876).
+
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
 session on the database, the writer's included. The model suite runs it four times, so it costs the

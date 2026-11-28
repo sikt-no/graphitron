@@ -288,6 +288,10 @@ census it replaced is gone.
     alone, so a store holding two source roots that declare one class answers a hover or a goto from
     either; they read through the graph's source roots as the `code_` readers read through
     `code_graph_class`.
+* **Whether a jar's class is a jOOQ record is stated once per jar** `open`. The graph-classes stage
+  decides `code_graph_class.is_jooq_record` per graph, so graphs on one classpath decide it again
+  each, the jOOQ runtime's thousands of classes among them (R1131 step 27); the answer for a class
+  whose whole chain lies in one jar is that jar's, a grain question for the code family.
 
 ### A resolution keeps what a diagnostic needs `open`
 
@@ -2194,6 +2198,11 @@ ceiling, and it falls only when the rules above it are split, never by an except
   the claim and position a step departs from.
 * **The rules two or three deep are split** `open`. The 50 left once the deeper ones are, by the same
   rule: one file per kind of row.
+* **A capture prepares fewer and cheaper distinct statements** `open`. Preparing is most of what a
+  capture costs, and a consumer's generate captures once, so no statement cache helps it (R1131
+  step 27): every rule split into files a stage runs, every union-depth split above among them, is
+  priced by what a cold capture prepares, and a rule whose text is the heavy part is the shape to
+  fix.
 * **The gate holds every rule at one UNION** `blocked`, on "The entry-defect rules are one file per code" and "The other rules deeper than three are one file per arm" and "The producer lift rule stores what its arms share" and "The occurrence node id rule stores what its arms share" and "The join path step rule stores what its arms share" and "The rules two or three deep are split".
   `ViewComplexityTest`'s ceiling is 1, in the commit that splits the last rule above it.
 
