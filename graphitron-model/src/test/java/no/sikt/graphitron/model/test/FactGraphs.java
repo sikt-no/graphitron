@@ -74,7 +74,8 @@ import java.util.stream.Stream;
  * <p><b>Shards.</b> A store has one writing connection, and a capture holds it for its whole
  * transaction, so one store for every graph would serialize every capture in a run. Graphs are
  * spread over {@value #SHARDS_PER_CATALOG} stores per catalog and classpath, a graph's store chosen by
- * its name. Graphs share a store only when they share a catalog and a classpath, the
+ * its name. Few stores, each capturing many graphs, is also what lets a capture reuse the statements
+ * the store's earlier captures prepared, which is most of what a capture costs. Graphs share a store only when they share a catalog and a classpath, the
  * {@linkplain ClasspathFixtures fixture} their document names or the corpus: a relation keyed by no
  * graph (the catalog and classpath families) holds every row its store's captures wrote, so keeping
  * one catalog and one classpath per store keeps those rows the same in every store a graph can land
@@ -109,7 +110,7 @@ import java.util.stream.Stream;
 public final class FactGraphs implements AutoCloseable {
 
     /** How many stores each catalog and classpath's graphs are spread over. */
-    static final int SHARDS_PER_CATALOG = Integer.getInteger("graphitron.populationShards", 4);
+    static final int SHARDS_PER_CATALOG = Integer.getInteger("graphitron.populationShards", 2);
 
     /** The system property that, set to {@code false}, captures each inline schema into a fresh store. */
     static final String INLINE_PROPERTY = "graphitron.inlineShards";

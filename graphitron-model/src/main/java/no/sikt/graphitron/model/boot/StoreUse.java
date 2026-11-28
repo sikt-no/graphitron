@@ -48,13 +48,15 @@ public enum StoreUse {
 
     /**
      * Many captures into one store held open for a whole test run, beside other such stores: the
-     * test population. A cached statement keeps its compiled plan and the tokens it was parsed
-     * from, and a rule view expands into a large plan, so a cache sized for a long-lived connection
-     * held in every session of every store outgrows a test JVM's heap. It keeps {@link #ONE_CAPTURE}'s
-     * room unless the system property {@value #POPULATION_CACHE_SIZE_PROPERTY} says otherwise, for a
-     * suite whose readers replay statements that room evicts.
+     * test population. Room for a whole capture's statements, as {@link #LONG_LIVED} has, since a
+     * capture repeats the statements every capture before it in the store prepared and preparing
+     * them is most of what a capture costs; a cache too small for the set evicts each one just
+     * before it comes round again. A cached statement keeps its compiled plan and the tokens it was
+     * parsed from, so this is paid per store, and the population keeps its stores few for that
+     * reason. The system property {@value #POPULATION_CACHE_SIZE_PROPERTY} replaces the number, for a
+     * measurement.
      */
-    POPULATION(64);
+    POPULATION(1024);
 
     /** The system property that replaces the cache size of every use for one JVM. */
     public static final String CACHE_SIZE_PROPERTY = "graphitron.queryCacheSize";
