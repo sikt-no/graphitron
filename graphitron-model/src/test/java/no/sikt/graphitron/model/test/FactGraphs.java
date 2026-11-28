@@ -72,10 +72,13 @@ import java.util.stream.Stream;
  * the heap, its schema and its statement cache, is why there are few of them.
  *
  * <p><b>Shards.</b> A store has one writing connection, and a capture holds it for its whole
- * transaction, so one store for every graph would serialize every capture in a run. Graphs are
- * spread over {@value #SHARDS_PER_CATALOG} stores per catalog and classpath, a graph's store chosen by
- * its name. Few stores, each capturing many graphs, is also what lets a capture reuse the statements
- * the store's earlier captures prepared, which is most of what a capture costs. Graphs share a store only when they share a catalog and a classpath, the
+ * transaction, so the captures into one store run one at a time. Each store also keeps a statement
+ * cache with room for a whole capture's statements, which lets a capture reuse what the store's
+ * earlier captures prepared, most of what a capture costs, and that cache is paid on the heap per
+ * store. Each catalog and classpath gets one store: a second buys concurrent captures at a heap cost
+ * the module's run at CI's heap has no room for. The system property
+ * {@code graphitron.populationShards} spreads them over more stores, a graph's store chosen by its
+ * name, for a measurement. Graphs share a store only when they share a catalog and a classpath, the
  * {@linkplain ClasspathFixtures fixture} their document names or the corpus: a relation keyed by no
  * graph (the catalog and classpath families) holds every row its store's captures wrote, so keeping
  * one catalog and one classpath per store keeps those rows the same in every store a graph can land
@@ -110,7 +113,7 @@ import java.util.stream.Stream;
 public final class FactGraphs implements AutoCloseable {
 
     /** How many stores each catalog and classpath's graphs are spread over. */
-    static final int SHARDS_PER_CATALOG = Integer.getInteger("graphitron.populationShards", 2);
+    static final int SHARDS_PER_CATALOG = Integer.getInteger("graphitron.populationShards", 1);
 
     /** The system property that, set to {@code false}, captures each inline schema into a fresh store. */
     static final String INLINE_PROPERTY = "graphitron.inlineShards";

@@ -95,7 +95,7 @@ class FactGraphsTest {
         var defaultStores = stores.stream()
             .filter(store -> store.held().stream().anyMatch(defaultCatalog::contains))
             .toList();
-        assertThat(defaultStores).as("the default catalog's graphs are spread over stores").hasSizeGreaterThan(1);
+        assertThat(defaultStores).as("the default catalog's graphs fill each of its stores").hasSize(FactGraphs.SHARDS_PER_CATALOG);
         assertThat(defaultStores.stream().map(Seen::tables).distinct().toList())
             .as("sql_table, keyed by no graph, holds the same rows in every store of one catalog")
             .hasSize(1);
